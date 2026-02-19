@@ -36,7 +36,9 @@
             display: flex; justify-content: space-between; align-items: center;
             border-bottom: 2px solid var(--gold); z-index: 100;
         }
-        .brand { display: flex; flex-direction: column; }
+        
+        /* العلامة التجارية - قابلة للضغط لتفعيل وضع المدير السري */
+        .brand { display: flex; flex-direction: column; cursor: pointer; user-select: none; }
         .brand h1 { margin: 0; font-family: 'Bebas Neue', sans-serif; color: var(--gold); font-size: 26px; letter-spacing: 1px; }
         .brand p { margin: 0; font-size: 10px; color: var(--text-gray); text-transform: uppercase; letter-spacing: 1px; }
 
@@ -46,6 +48,11 @@
             padding: 6px 12px; border-radius: 5px; text-decoration: none; font-weight: bold; font-size: 13px; cursor: pointer; transition: 0.3s;
         }
         .btn-outline:hover { background: var(--gold); color: var(--dark); }
+        .btn-danger { border-color: var(--danger); color: var(--danger); background: transparent; }
+        .btn-danger:hover { background: var(--danger); color: #fff; }
+
+        /* الأزرار المخفية للمدير */
+        #adminToggleBtn, #logoutBtn { display: none; }
 
         /* لوحة تحكم المدير */
         .admin-panel {
@@ -68,13 +75,13 @@
         .live-details h2 { margin: 0 0 5px 0; color: var(--gold); font-size: 24px; font-weight: 900; }
         .live-details p { margin: 0; color: #fff; font-size: 14px; opacity: 0.9; max-width: 80%; line-height: 1.4; }
 
-        /* الزر الإجباري لفتح الكاميرا (مفصول عن المكتبة ليظهر دائماً) */
+        /* الزر الإجباري لفتح الكاميرا */
         .force-ar-btn {
             background: linear-gradient(45deg, #D4AF37, #f1c40f); color: #000; border: none;
             border-radius: 50px; padding: 15px 25px; font-family: 'Tajawal', sans-serif; font-size: 16px; font-weight: 900;
             position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%);
             box-shadow: 0 8px 20px rgba(212, 175, 55, 0.4); cursor: pointer; display: flex; align-items: center; gap: 10px;
-            white-space: nowrap; transition: 0.3s; z-index: 999; /* Z-index عالي ليظهر فوق كل شيء */
+            white-space: nowrap; transition: 0.3s; z-index: 999;
         }
         .force-ar-btn:active { transform: translateX(-50%) scale(0.95); }
 
@@ -108,17 +115,20 @@
 <body>
 
     <header>
-        <div class="brand">
+        <div class="brand" onclick="handleSecretAdminLogin()">
             <h1>Amr Osman</h1>
             <p>AR Smart Showroom</p>
         </div>
         <div class="header-actions">
-            <button class="btn-outline" onclick="toggleAdminPanel()"><i class="fa-solid fa-gear"></i> الإدارة</button>
+            <button id="adminToggleBtn" class="btn-outline" onclick="toggleAdminPanel()"><i class="fa-solid fa-gear"></i> الإدارة</button>
+            <button id="logoutBtn" class="btn-outline btn-danger" onclick="adminLogout()"><i class="fa-solid fa-sign-out-alt"></i></button>
+            
+            <a href="index.html" class="btn-outline" title="نظام التسعير"><i class="fa-solid fa-file-invoice"></i></a>
         </div>
     </header>
 
     <div class="admin-panel" id="adminPanel">
-        <h3>➕ إضافة تصميم جديد للمكتبة</h3>
+        <h3>➕ إضافة تصميم جديد للمكتبة (يظهر على هذا الجهاز فقط)</h3>
         <div class="input-group">
             <input type="text" id="newTitle" placeholder="اسم التصميم (مثال: مطبخ HPL)">
             <input type="text" id="newDesc" placeholder="وصف قصير للعميل">
@@ -153,146 +163,3 @@
         <button class="force-ar-btn" onclick="forceOpenAR()">
             <i class="fa-solid fa-camera"></i> افتح الكاميرا لمعاينة المنتج
         </button>
-
-        <div class="loading-overlay" id="loadingScreen">
-            <div class="spinner"></div>
-            <div style="font-weight: bold; letter-spacing: 1px;">جاري تجهيز التصميم...</div>
-        </div>
-    </div>
-
-    <div class="catalog-container" id="catalogSection">
-        <div class="catalog-title">اختر التصميم للمعاينة:</div>
-        <div class="products-scroll" id="productsList">
-            </div>
-    </div>
-
-    <script>
-        const viewer = document.getElementById('main-viewer');
-        const loadingScreen = document.getElementById('loadingScreen');
-        const productsList = document.getElementById('productsList');
-        const adminPanel = document.getElementById('adminPanel');
-        const catalogSection = document.getElementById('catalogSection');
-
-        // دالة تشغيل الكاميرا الإجبارية
-        function forceOpenAR() {
-            if (viewer.canActivateAR) {
-                viewer.activateAR(); // فتح الكاميرا لو الموبايل يدعم
-            } else {
-                // رسالة توضح لك سبب عدم فتح الكاميرا بالضبط
-                alert("⚠️ عذراً يا هندسة!\n\nالكاميرا لم تفتح للأسباب التالية:\n1. أنت تفتح الرابط من الكمبيوتر (ويجب فتحه من الموبايل).\n2. أنت تفتح الرابط من متصفح داخل الواتساب أو الفيس بوك (اضغط على الثلاث نقاط بالأعلى واختر 'فتح في Chrome' أو 'Safari').\n3. هاتفك لا يدعم خدمات الواقع المعزز.");
-            }
-        }
-
-        // البيانات الافتراضية
-        const defaultModels = [
-            {
-                title: "مطبخ مودرن بولي باك",
-                desc: "تصميم عصري بخامات مقاومة للرطوبة وتوزيع ذكي للمساحات، جربه الآن في مطبخك.",
-                glb: "https://donia679-glitch.github.io/amr-osman/kitchen.glb",
-                img: "https://images.unsplash.com/photo-1556910103-1c02745a828d?auto=format&fit=crop&q=80&w=300"
-            },
-            {
-                title: "دريسنج HPL",
-                desc: "وحدة تخزين ذكية وعملية، قم بفتح الكاميرا لمعرفة هل تناسب مساحة غرفتك.",
-                glb: "https://modelviewer.dev/shared-assets/models/glTF-Sample-Models/2.0/DamagedHelmet/glTF-Binary/DamagedHelmet.glb",
-                img: "https://images.unsplash.com/photo-1555041469-a586c61ea9bc?auto=format&fit=crop&q=80&w=300"
-            }
-        ];
-
-        let library = JSON.parse(localStorage.getItem('ao_ar_models')) || defaultModels;
-        let currentIndex = 0;
-
-        viewer.addEventListener('load', () => loadingScreen.classList.add('hidden'));
-        viewer.addEventListener('progress', (e) => {
-            if (e.detail.totalProgress < 1) loadingScreen.classList.remove('hidden');
-        });
-
-        function toggleAdminPanel() {
-            if(adminPanel.style.display === "flex") {
-                adminPanel.style.display = "none";
-                catalogSection.classList.remove('admin-active');
-            } else {
-                adminPanel.style.display = "flex";
-                catalogSection.classList.add('admin-active');
-            }
-        }
-
-        function renderCatalog() {
-            productsList.innerHTML = "";
-            library.forEach((item, index) => {
-                let imgSource = item.img ? item.img : "https://via.placeholder.com/150x100?text=3D+Model";
-                let activeClass = index === currentIndex ? "active" : "";
-                
-                let cardHTML = `
-                <div class="product-card ${activeClass}" onclick="loadModel(${index})">
-                    <img src="${imgSource}" alt="${item.title}">
-                    <div class="info">
-                        <h3>${item.title}</h3>
-                        <button class="delete-btn" onclick="deleteModel(event, ${index})">حذف</button>
-                    </div>
-                </div>`;
-                productsList.innerHTML += cardHTML;
-            });
-
-            if(library.length > 0) {
-                if(!viewer.src.includes(library[currentIndex].glb)) {
-                    loadModel(currentIndex);
-                }
-            } else {
-                viewer.src = "";
-                document.getElementById('modelTitle').innerText = "المكتبة فارغة";
-                document.getElementById('modelDesc').innerText = "يرجى إضافة تصاميم من لوحة الإدارة.";
-            }
-        }
-
-        function loadModel(index) {
-            currentIndex = index;
-            let item = library[index];
-            
-            document.querySelectorAll('.product-card').forEach((card, i) => {
-                if(i === index) card.classList.add('active');
-                else card.classList.remove('active');
-            });
-
-            loadingScreen.classList.remove('hidden');
-            viewer.src = item.glb;
-            document.getElementById('modelTitle').innerText = item.title;
-            document.getElementById('modelDesc').innerText = item.desc;
-        }
-
-        function addNewModel() {
-            let title = document.getElementById('newTitle').value.trim();
-            let desc = document.getElementById('newDesc').value.trim();
-            let glb = document.getElementById('newGlbUrl').value.trim();
-            let img = document.getElementById('newImgUrl').value.trim();
-
-            if(!title || !glb) return alert("الاسم ورابط ملف الـ .glb مطلوبان على الأقل!");
-            if(!glb.endsWith('.glb') && !glb.endsWith('.gltf')) return alert("تأكد أن رابط الـ 3D ينتهي بصيغة .glb أو .gltf");
-
-            library.push({ title: title, desc: desc, glb: glb, img: img });
-            localStorage.setItem('ao_ar_models', JSON.stringify(library));
-            
-            document.getElementById('newTitle').value = "";
-            document.getElementById('newDesc').value = "";
-            document.getElementById('newGlbUrl').value = "";
-            document.getElementById('newImgUrl').value = "";
-            
-            renderCatalog();
-            alert("تمت إضافة التصميم للمكتبة بنجاح!");
-        }
-
-        function deleteModel(event, index) {
-            event.stopPropagation();
-            if(confirm("هل أنت متأكد من حذف هذا التصميم من المكتبة؟")) {
-                library.splice(index, 1);
-                localStorage.setItem('ao_ar_models', JSON.stringify(library));
-                currentIndex = 0;
-                renderCatalog();
-            }
-        }
-
-        window.onload = renderCatalog;
-
-    </script>
-</body>
-</html>
