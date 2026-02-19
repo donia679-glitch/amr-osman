@@ -37,7 +37,6 @@
             border-bottom: 2px solid var(--gold); z-index: 100;
         }
         
-        /* العلامة التجارية - قابلة للضغط لتفعيل وضع المدير السري */
         .brand { display: flex; flex-direction: column; cursor: pointer; user-select: none; }
         .brand h1 { margin: 0; font-family: 'Bebas Neue', sans-serif; color: var(--gold); font-size: 26px; letter-spacing: 1px; }
         .brand p { margin: 0; font-size: 10px; color: var(--text-gray); text-transform: uppercase; letter-spacing: 1px; }
@@ -122,19 +121,17 @@
         <div class="header-actions">
             <button id="adminToggleBtn" class="btn-outline" onclick="toggleAdminPanel()"><i class="fa-solid fa-gear"></i> الإدارة</button>
             <button id="logoutBtn" class="btn-outline btn-danger" onclick="adminLogout()"><i class="fa-solid fa-sign-out-alt"></i></button>
-            
-            <a href="index.html" class="btn-outline" title="نظام التسعير"><i class="fa-solid fa-file-invoice"></i></a>
         </div>
     </header>
 
     <div class="admin-panel" id="adminPanel">
-        <h3>➕ إضافة تصميم جديد للمكتبة (يظهر على هذا الجهاز فقط)</h3>
+        <h3>➕ إضافة تصميم للمكتبة (لجهازك الحالي فقط)</h3>
         <div class="input-group">
-            <input type="text" id="newTitle" placeholder="اسم التصميم (مثال: مطبخ HPL)">
+            <input type="text" id="newTitle" placeholder="اسم التصميم">
             <input type="text" id="newDesc" placeholder="وصف قصير للعميل">
         </div>
         <div class="input-group">
-            <input type="text" id="newGlbUrl" placeholder="رابط ملف الـ .glb (من جيت هب)">
+            <input type="text" id="newGlbUrl" placeholder="رابط ملف الـ .glb">
             <input type="text" id="newImgUrl" placeholder="رابط صورة الغلاف (اختياري)">
             <button class="add-btn" onclick="addNewModel()">حفظ في المكتبة</button>
         </div>
@@ -163,3 +160,198 @@
         <button class="force-ar-btn" onclick="forceOpenAR()">
             <i class="fa-solid fa-camera"></i> افتح الكاميرا لمعاينة المنتج
         </button>
+
+        <div class="loading-overlay" id="loadingScreen">
+            <div class="spinner"></div>
+            <div style="font-weight: bold; letter-spacing: 1px;">جاري تجهيز التصميم...</div>
+        </div>
+    </div>
+
+    <div class="catalog-container" id="catalogSection">
+        <div class="catalog-title">اختر التصميم للمعاينة:</div>
+        <div class="products-scroll" id="productsList">
+            </div>
+    </div>
+
+    <script>
+        const viewer = document.getElementById('main-viewer');
+        const loadingScreen = document.getElementById('loadingScreen');
+        const productsList = document.getElementById('productsList');
+        const adminPanel = document.getElementById('adminPanel');
+        const catalogSection = document.getElementById('catalogSection');
+
+        // ==========================================
+        // 🔑 حماية تسجيل الدخول
+        // ==========================================
+        const ADMIN_PASSWORD = "amr"; 
+        let clickCount = 0;
+        let clickTimer;
+
+        function handleSecretAdminLogin() {
+            if (localStorage.getItem('ao_isAdmin') === 'true') return;
+            clickCount++;
+            clearTimeout(clickTimer);
+            clickTimer = setTimeout(() => { clickCount = 0; }, 1500);
+
+            if (clickCount >= 5) {
+                clickCount = 0;
+                let pass = prompt("🔒 يرجى إدخال كلمة مرور المدير:");
+                if (pass === ADMIN_PASSWORD) {
+                    localStorage.setItem('ao_isAdmin', 'true');
+                    enableAdminMode();
+                    alert("✅ تم تسجيل الدخول كمدير بنجاح!");
+                }
+            }
+        }
+
+        function enableAdminMode() {
+            document.getElementById('adminToggleBtn').style.display = 'inline-block';
+            document.getElementById('logoutBtn').style.display = 'inline-block';
+            catalogSection.classList.add('admin-active');
+        }
+
+        function adminLogout() {
+            localStorage.removeItem('ao_isAdmin');
+            document.getElementById('adminToggleBtn').style.display = 'none';
+            document.getElementById('logoutBtn').style.display = 'none';
+            adminPanel.style.display = 'none';
+            catalogSection.classList.remove('admin-active');
+            alert("تم تسجيل الخروج بنجاح.");
+        }
+
+        // ==========================================
+        // 📦 حماية البيانات وقراءتها بأمان (لحل مشكلة توقف الصفحة)
+        // ==========================================
+        const defaultModels = [
+            {
+                title: "مطبخ مودرن بولي باك",
+                desc: "تصميم عصري بخامات مقاومة للرطوبة وتوزيع ذكي للمساحات، جربه الآن في مطبخك.",
+                glb: "https://donia679-glitch.github.io/amr-osman/kitchen.glb",
+                img: "https://images.unsplash.com/photo-1556910103-1c02745a828d?auto=format&fit=crop&q=80&w=300"
+            },
+            {
+                title: "دريسنج HPL",
+                desc: "وحدة تخزين ذكية وعملية، قم بفتح الكاميرا لمعرفة هل تناسب مساحة غرفتك.",
+                glb: "https://modelviewer.dev/shared-assets/models/glTF-Sample-Models/2.0/DamagedHelmet/glTF-Binary/DamagedHelmet.glb",
+                img: "https://images.unsplash.com/photo-1555041469-a586c61ea9bc?auto=format&fit=crop&q=80&w=300"
+            }
+        ];
+
+        let library = [];
+        // هذه الدالة تمنع أي خطأ وتتأكد أن الذاكرة نظيفة وصحيحة
+        try {
+            let storedData = localStorage.getItem('ao_ar_models');
+            if (storedData) {
+                library = JSON.parse(storedData);
+                if (!Array.isArray(library)) library = defaultModels;
+            } else {
+                library = defaultModels;
+            }
+        } catch (e) {
+            console.error("تم تنظيف البيانات التالفة", e);
+            library = defaultModels; // لو فيه مشكلة يرجع للأساسي فوراً
+        }
+
+        let currentIndex = 0;
+
+        // ==========================================
+        // ⚙️ وظائف العرض والـ AR
+        // ==========================================
+        function forceOpenAR() {
+            if (viewer.canActivateAR) {
+                viewer.activateAR(); 
+            } else {
+                alert("⚠️ تنبيه الكاميرا:\nلا يمكن فتح الكاميرا لأنك تستخدم كمبيوتر، أو تفتح من تطبيق داخلي كالواتساب. (يرجى الفتح في متصفح كروم أو سفاري).");
+            }
+        }
+
+        viewer.addEventListener('load', () => loadingScreen.classList.add('hidden'));
+        viewer.addEventListener('progress', (e) => {
+            if (e.detail.totalProgress < 1) loadingScreen.classList.remove('hidden');
+        });
+
+        function toggleAdminPanel() {
+            adminPanel.style.display = (adminPanel.style.display === "flex") ? "none" : "flex";
+        }
+
+        function renderCatalog() {
+            productsList.innerHTML = "";
+            library.forEach((item, index) => {
+                let imgSource = item.img ? item.img : "https://via.placeholder.com/150x100?text=3D+Model";
+                let activeClass = index === currentIndex ? "active" : "";
+                
+                let cardHTML = `
+                <div class="product-card ${activeClass}" onclick="loadModel(${index})">
+                    <img src="${imgSource}" alt="${item.title}">
+                    <div class="info">
+                        <h3>${item.title}</h3>
+                        <button class="delete-btn" onclick="deleteModel(event, ${index})">حذف</button>
+                    </div>
+                </div>`;
+                productsList.innerHTML += cardHTML;
+            });
+
+            if(library.length > 0) {
+                if(!viewer.src.includes(library[currentIndex].glb)) {
+                    loadModel(currentIndex);
+                }
+            } else {
+                viewer.src = "";
+                document.getElementById('modelTitle').innerText = "المكتبة فارغة";
+                document.getElementById('modelDesc').innerText = "يرجى إضافة تصاميم من لوحة الإدارة.";
+            }
+        }
+
+        function loadModel(index) {
+            currentIndex = index;
+            let item = library[index];
+            
+            document.querySelectorAll('.product-card').forEach((card, i) => {
+                if(i === index) card.classList.add('active');
+                else card.classList.remove('active');
+            });
+
+            loadingScreen.classList.remove('hidden');
+            viewer.src = item.glb;
+            document.getElementById('modelTitle').innerText = item.title;
+            document.getElementById('modelDesc').innerText = item.desc;
+        }
+
+        function addNewModel() {
+            let title = document.getElementById('newTitle').value.trim();
+            let desc = document.getElementById('newDesc').value.trim();
+            let glb = document.getElementById('newGlbUrl').value.trim();
+            let img = document.getElementById('newImgUrl').value.trim();
+
+            if(!title || !glb) return alert("الاسم ورابط الـ 3D مطلوبان!");
+            
+            library.push({ title: title, desc: desc, glb: glb, img: img });
+            localStorage.setItem('ao_ar_models', JSON.stringify(library));
+            
+            document.getElementById('newTitle').value = "";
+            document.getElementById('newDesc').value = "";
+            document.getElementById('newGlbUrl').value = "";
+            document.getElementById('newImgUrl').value = "";
+            
+            renderCatalog();
+        }
+
+        function deleteModel(event, index) {
+            event.stopPropagation();
+            if(confirm("هل أنت متأكد من حذف هذا التصميم؟")) {
+                library.splice(index, 1);
+                localStorage.setItem('ao_ar_models', JSON.stringify(library));
+                currentIndex = 0;
+                renderCatalog();
+            }
+        }
+
+        // تشغيل دوال البداية
+        window.onload = () => {
+            if (localStorage.getItem('ao_isAdmin') === 'true') enableAdminMode();
+            renderCatalog();
+        };
+
+    </script>
+</body>
+</html>
