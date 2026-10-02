@@ -158,6 +158,10 @@ summary { font-weight: 600; cursor: pointer; padding: 4px 0 8px; list-style-posi
 .pop { position: fixed; inset: 0; z-index: 20; background: rgba(10,16,12,.45); display: grid; place-items: center; padding: 16px; }
 .popbox { background: var(--panel); border-radius: 16px; width: min(560px, 100%); max-height: 86%; overflow: auto; padding: 12px 16px 16px; }
 .popbox h3 { font-size: 13px; color: var(--muted); margin: 14px 0 6px; }
+.finbox { border: 1px solid var(--line); border-radius: 12px; padding: 8px 12px; margin: 6px 0 12px; display: grid; gap: 8px; }
+.finbox > summary { cursor: pointer; font-weight: 700; padding: 4px 0; }
+.finbox[open] { gap: 10px; }
+.finpre { display: flex; flex-wrap: wrap; gap: 6px; }
 .swgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 8px; }
 .swb { border: 1px solid var(--line); background: var(--panel2); border-radius: 10px; padding: 6px; display: flex; flex-direction: column; gap: 6px; text-align: right; font-size: 12px; }
 .swb i { height: 44px; border-radius: 7px; border: 1px solid rgba(0,0,0,.12); }

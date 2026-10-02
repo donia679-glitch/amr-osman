@@ -1274,6 +1274,34 @@ props.addEventListener("click", (e) => {
 
 // ------------------------------------------------------------------ popovers (materials, projects)
 /** give the selected unit's material role (ui.matPick) a catalogue or custom material ("" = default) */
+// ---- surface finish per material of a unit: gloss, metal, reflection strength, clear lacquer
+const FIN_PRESETS = {
+  matte: ["مط", { gloss: 12, metal: 0, refl: 60, coat: 0 }],
+  satin: ["ساتان", { gloss: 45, metal: 0, refl: 100, coat: 0 }],
+  gloss: ["لامع", { gloss: 72, metal: 0, refl: 130, coat: 0 }],
+  hgloss: ["هاي جلوس", { gloss: 88, metal: 0, refl: 160, coat: 100 }],
+  brushed: ["معدن مط", { gloss: 50, metal: 100, refl: 100, coat: 0 }],
+  chrome: ["كروم / مرايا", { gloss: 97, metal: 100, refl: 150, coat: 0 }],
+};
+function finOf(u, key) {
+  const f = u?.fin || {};
+  let k = key; const seen = new Set();
+  while (k && !seen.has(k)) {
+    seen.add(k);
+    if (f[k]) return f[k];
+    k = u.kind === "dressing" ? D.MATERIAL_KEYS[k]?.fallback : u.kind === "panel" ? Catalog.MATERIAL_KEYS[k]?.fallback : null;
+  }
+  return null;
+}
+/** a material for one finish (MeshPhysical when it has a clear lacquer coat) */
+function finMaterial(THREE, f, opts) {
+  if (!f) return new THREE.MeshStandardMaterial(opts);
+  const m = f.coat > 0 ? new THREE.MeshPhysicalMaterial({ ...opts, clearcoat: f.coat / 100, clearcoatRoughness: 0.06 }) : new THREE.MeshStandardMaterial(opts);
+  m.roughness = Math.max(0.02, 1 - (f.gloss / 100) * 0.98);
+  m.metalness = f.metal / 100;
+  m.userData.refl = f.refl / 100;
+  return m;
+}
 function applyLib(lib) {
   const key = ui.matPick;
   const u = selUnit();
@@ -1303,6 +1331,13 @@ function renderPop() {
     const u = selUnit();
     const label = u?.kind === "dressing" ? D.MATERIAL_KEYS[ui.matPick]?.label : u?.kind === "kitchen" ? KU.K_MATS[ui.matPick]?.[0] : PANEL_MATS[ui.matPick];
     h = `<div class="popbox" role="dialog" aria-label="اختار خامة"><div class="libhead"><h2>${esc(label)}</h2><button class="x" data-close aria-label="قفل">×</button></div>`;
+    const f = u?.fin?.[ui.matPick];
+    const fv = f || { gloss: 30, metal: 0, refl: 100, coat: 0 };
+    h += `<details class="finbox" ${f ? "open" : ""}><summary>✦ اللمعة والانعكاس${f ? " · متعدّلة" : ""}</summary>
+      <div class="finpre">${Object.entries(FIN_PRESETS).map(([k, [l]]) => `<button class="chip" data-finpre="${k}">${l}</button>`).join("")}</div>
+      ${[["gloss", "اللمعة", 0, 100], ["refl", "قوة الانعكاس", 0, 200], ["metal", "معدني", 0, 100], ["coat", "ورنيش / لاكيه (طبقة لامعة فوق الخامة)", 0, 100]].map(([k, l, a, z]) => `<label class="sl"><span>${l} <b class="num">${fv[k]}${k === "refl" ? "%" : ""}</b></span><input type="range" min="${a}" max="${z}" step="1" data-fin="${k}" value="${fv[k]}"></label>`).join("")}
+      <div class="btnrow">${f ? `<button class="ghost2" data-finreset>رجّع الطبيعي</button>` : ""}<button class="ghost2" data-finall>طبّقها على نفس الخامة في كل الوحدات</button></div>
+      <p class="hint">بتبان أكتر في "ريندر واقعي" و"الريندر النهائي".</p></details>`;
     h += `<h3>خاماتي (من الصور)</h3><div class="swgrid">${Mat.all().map((m) => `<span class="swwrap"><button class="swb" data-lib="${m.id}"><i style="background:url('${m.img}') center/cover"></i><span>${esc(m.name)}</span></button><button class="swedit" data-editmat="${m.id}" aria-label="عدّل ${esc(m.name)}">✎</button></span>`).join("")}
       <button class="swb addmat" data-newmat><i>＋</i><span>خامة جديدة من صورة</span></button></div>`;
     for (const [g, test] of LIB_GROUPS) {
@@ -1454,6 +1489,19 @@ $("#pop").addEventListener("change", async (e) => {
   }
 });
 $("#pop").addEventListener("input", (e) => {
+  const fk = e.target.dataset?.fin;
+  if (fk && ui.pop === "mat") {
+    const u = selUnit();
+    if (!u) return;
+    u.fin ??= {};
+    const cur = (u.fin[ui.matPick] ??= { gloss: 30, metal: 0, refl: 100, coat: 0 });
+    cur[fk] = +e.target.value;
+    const lab = e.target.closest("label")?.querySelector("b");
+    if (lab) lab.textContent = cur[fk] + (fk === "refl" ? "%" : "");
+    clearTimeout(ui.finT);
+    ui.finT = setTimeout(() => { save(); view.update(); }, 120);
+    return;
+  }
   if (e.target.id !== "pname") return;
   state.project.name = e.target.value;
   $("#projName").textContent = state.project.name;
@@ -1464,6 +1512,20 @@ $("#pop").addEventListener("click", async (e) => {
   const b = e.target.closest("button");
   if (!b) return;
   const d = b.dataset;
+  if (ui.pop === "mat" && (d.finpre || b.hasAttribute("data-finreset") || b.hasAttribute("data-finall"))) {
+    const u = selUnit();
+    if (!u) return;
+    u.fin ??= {};
+    if (d.finpre) u.fin[ui.matPick] = { ...FIN_PRESETS[d.finpre][1] };
+    else if (b.hasAttribute("data-finreset")) delete u.fin[ui.matPick];
+    else {
+      const f = u.fin[ui.matPick];
+      for (const x of state.project.units) if (x.kind === u.kind) { x.fin ??= {}; if (f) x.fin[ui.matPick] = { ...f }; else delete x.fin[ui.matPick]; }
+      alertBar("اتطبّقت على كل الوحدات اللي من نفس النوع.");
+    }
+    save(); renderPop(); view.update();
+    return;
+  }
   if (ui.pop === "mat" && (b.hasAttribute("data-newmat") || d.editmat)) {
     const ex = d.editmat ? Mat.get(d.editmat) : null;
     ui.matDraft = ex ? { ...ex } : { id: "c_" + uid(), name: "خامة " + (Mat.all().length + 1), img: "", avg: "#bbbbbb", ...Mat.DEFAULT };
@@ -2241,7 +2303,7 @@ const view = {
         if (mats[id]) return mats[id];
         const led = key === "led", glass = key === "glass";
         const lib = r.libOf?.(key), tx = Mat.textureFor(THREE, lib, !!state.render), sf = Mat.surface(lib);
-        const m = new THREE.MeshStandardMaterial({ color: tx ? new THREE.Color(1, 1, 1).multiplyScalar(sf.bright) : r.colors[key] || "#cccccc", map: tx?.tex || null,
+        const m = finMaterial(THREE, led || glass ? null : finOf(u, key), { color: tx ? new THREE.Color(1, 1, 1).multiplyScalar(sf.bright) : r.colors[key] || "#cccccc", map: tx?.tex || null,
           roughness: state.render || lib ? sf.rough : 0.7, metalness: ["frame", "rail", "handle"].includes(key) ? 0.5 : sf.metal,
           transparent: see || glass, opacity: see ? 0.16 : glass ? 0.4 : 1, side: THREE.DoubleSide,
           emissive: new THREE.Color(led ? "#ffcf6a" : "#000000"), emissiveIntensity: led ? 0.9 : 0 });
@@ -2318,7 +2380,7 @@ const view = {
       const glassy = pt.material === "glass";
       const see = state.xray && isFront;
       const plib = r.libOf?.(pt.material), ptx = led ? null : Mat.textureFor(THREE, plib, !!state.render), psf = Mat.surface(plib);
-      const mat = new THREE.MeshStandardMaterial({ color: ptx ? new THREE.Color(1, 1, 1).multiplyScalar(psf.bright) : color, map: ptx?.tex || null,
+      const mat = finMaterial(THREE, led || glassy ? null : finOf(u, pt.material), { color: ptx ? new THREE.Color(1, 1, 1).multiplyScalar(psf.bright) : color, map: ptx?.tex || null,
         roughness: state.render || plib ? psf.rough : 0.72, metalness: pt.material === "mirror" || pt.material === "rail" ? 0.45 : psf.metal,
         transparent: see || glassy, opacity: see ? 0.16 : glassy ? 0.45 : 1,
         emissive: new THREE.Color(led ? "#ffcf6a" : vs === "cur" ? "#d9a63a" : "#000000"), emissiveIntensity: led ? 0.9 : vs === "cur" ? 0.45 : 0 });

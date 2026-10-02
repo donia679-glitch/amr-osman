@@ -114,7 +114,7 @@ export function applyTime(view, s, dark) {
     if (!o.isMesh) return;
     for (const m of [].concat(o.material)) {
       if (!m) continue;
-      if ("envMapIntensity" in m) m.envMapIntensity = m.userData.mirror ? 1 : T.env;
+      if ("envMapIntensity" in m) m.envMapIntensity = m.userData.mirror ? 1 : T.env * (m.userData.refl ?? 1);
       if (o.userData.led && m.emissive) { m.emissiveIntensity = s.led ? T.led : 0.05; m.color?.set(s.led ? 0xfff0d0 : 0xd8d2c4); }
     }
   });
@@ -311,7 +311,7 @@ function prepareForTrace(view) {
   const THREE = view.three, swaps = [];
   // every unit builds its own materials; the tracer is faster (and safer) with one material per look
   const shared = new Map();
-  const keyOf = (m) => [m.type, m.color?.getHexString(), m.map?.uuid || "", m.roughness, m.metalness, m.transparent, m.opacity, m.side, m.emissive?.getHexString(), m.emissiveIntensity, m.userData?.glass, m.userData?.mirror].join("|");
+  const keyOf = (m) => [m.type, m.color?.getHexString(), m.map?.uuid || "", m.roughness, m.metalness, m.clearcoat ?? 0, m.transparent, m.opacity, m.side, m.emissive?.getHexString(), m.emissiveIntensity, m.userData?.glass, m.userData?.mirror].join("|");
   const share = (m) => { if (!m) return m; const k = keyOf(m); if (!shared.has(k)) shared.set(k, m); return shared.get(k); };
   // multi-material meshes (walls: caps + face finish) are split into one mesh per material — the tracer
   // mixes up material indices on grouped geometry
