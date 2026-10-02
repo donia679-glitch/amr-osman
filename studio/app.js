@@ -721,6 +721,12 @@ $("#home").addEventListener("click", async (e) => {
   const d = b.dataset;
   if (b.hasAttribute("data-hnew")) { await newProject($("#homeName").value); return; }
   if (b.hasAttribute("data-hlast")) { closeHome(); render(true); return; }
+  if (b.hasAttribute("data-hcut")) {
+    await newProject(($("#homeName").value || "").trim() || "كت ليست");
+    const u = { id: uid(), kind: "pieces", name: "قطع حرة", params: { pieces: [{ ...PIECE_DEF(), name: "قطعة 1" }] } };
+    state.project.units.push(u); state.sel = u.id; state.libOpen = false; save(); render(true);
+    return;
+  }
   if (b.hasAttribute("data-hlook")) { ui.pop = "look"; renderPop(); return; }
   if (b.hasAttribute("data-habout")) { ui.pop = "about"; renderPop(); return; }
   if (d.hopen) { await openProject(d.hopen); return; }
@@ -758,7 +764,9 @@ function swatches(colors) {
 }
 function renderLib() {
   let h = `<div class="libhead"><h2>المكتبة</h2><button class="x" data-close aria-label="قفل المكتبة">×</button></div>
-    <p class="hint">دوس على أي تصميم يتضاف للمشروع وتعدّله براحتك.</p><h3>المطابخ</h3><div class="cards">`;
+    <p class="hint">دوس على أي تصميم يتضاف للمشروع وتعدّله براحتك.</p>
+    <button class="card cutcard" data-pieces="1"><span class="sw" style="font-size:26px">✂</span><b>قطع حرة — كت ليست بمقاساتك</b><small>اكتب مقاسات القطع (أو الزقها من Excel) ويطلعلك خطة القص والملصقات بالباركود من غير تصميم.</small></button>
+    <h3>المطابخ</h3><div class="cards">`;
   for (const [key, s] of Object.entries(KU.KITCHEN)) {
     const base = !s.params.unit_type || s.params.unit_type === "base";
     h += `<button class="card" data-kitchen="${key}"><span class="sw">${swatches([KU.K_DEFAULT_COLORS.front, KU.K_DEFAULT_COLORS.carcass, base ? KU.K_DEFAULT_COLORS.countertop : null])}</span><b>${esc(s.label)}</b><small>${esc(s.desc)}</small></button>`;
@@ -2044,7 +2052,7 @@ async function showHome() {
   el.innerHTML = `<div class="homein">
     <div class="homehead"><span class="mark big">N</span><div><b>NOVERA Studio</b><small>تصميم وتصنيع المطابخ والأثاث</small></div></div>
     <div class="homenew"><input id="homeName" placeholder="اسم المشروع الجديد (مثلاً: مطبخ أ. محمد — التجمع)" aria-label="اسم المشروع الجديد"><button class="primary" data-hnew>＋ مشروع جديد</button></div>
-    <div class="homeacts"><button class="ghost2" data-hlast>↩ كمّل «${esc(state.project.name)}»</button><label class="ghost2 filebtn">📂 افتح ملف مشروع (JSON)<input type="file" id="homeImp" accept=".json,application/json" hidden></label><button class="ghost2" data-hlook>🎨 الألوان والمظهر</button><button class="ghost2" data-habout>ⓘ عن التطبيق</button></div>
+    <div class="homeacts"><button class="ghost2" data-hlast>↩ كمّل «${esc(state.project.name)}»</button><label class="ghost2 filebtn">📂 افتح ملف مشروع (JSON)<input type="file" id="homeImp" accept=".json,application/json" hidden></label><button class="ghost2" data-hcut>✂ كت ليست بمقاساتك</button><button class="ghost2" data-hlook>🎨 الألوان والمظهر</button><button class="ghost2" data-habout>ⓘ عن التطبيق</button></div>
     <h3>المشاريع</h3>
     <div class="homelist">${list.map((x) => `<div class="hcard ${x.id === state.project.id ? "cur" : ""}"><button class="hopen" data-hopen="${x.id}"><b>${esc(x.name)}</b>
       <small>${x.units != null ? `${x.units} وحدة · ` : ""}${when(x.updatedAt)}${x.where === "cloud" ? " · أونلاين" : x.where === "both" ? " · على الجهاز وأونلاين" : ""}</small></button>
