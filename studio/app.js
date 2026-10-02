@@ -1398,7 +1398,7 @@ function renderPop() {
       D.site && `<a class="ghost2" href="${esc(D.site)}" target="_blank" rel="noopener">${esc(D.site)}</a>`,
     ].filter(Boolean).join("");
     h = `<div class="popbox about" role="dialog" aria-label="عن التطبيق"><div class="libhead"><h2>عن التطبيق</h2><button class="x" data-close aria-label="قفل">×</button></div>
-      <div class="abhead"><span class="mark big">N</span><div><b>NOVERA Studio</b><small>الإصدار ${APP_VERSION}</small></div></div>
+      <div class="abhead"><span class="mark big">N</span><div><b>NOVERA Studio</b><small>الإصدار ${APP_VERSION}${window.NOVERA_BUILD ? ` · تحديث ${window.NOVERA_BUILD}` : ""}</small></div></div>
       <p>تطبيق لتصميم وتصنيع المطابخ والدريسنج وغرف النوم ووحدات الأثاث من الألواح — من أول رسم الأوضة لحد القص والتجميع في الورشة.</p>
       <ul class="feat">
         <li>وحدات بمحرّك البلجن نفسه (Kitchen Unit Designer) — نفس القطع والمقاسات اللي في سكتش أب بالظبط.</li>

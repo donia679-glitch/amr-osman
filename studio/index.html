@@ -7,6 +7,7 @@
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <style>html,body{margin:0;padding:0}body{min-height:100vh;min-height:100dvh}</style>
+<script>window.NOVERA_BUILD = "2026-10-02 20:46";</script>
 </head>
 <body>
 <title>NOVERA Studio</title>
@@ -480,6 +481,16 @@ body.fs #views { position: fixed; inset: 0; z-index: 10; }
 <div id="app"></div>
 <script type="module" src="app.js"></script>
 
-<script>if ("serviceWorker" in navigator) addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));</script>
+<script>
+if ("serviceWorker" in navigator) {
+  // look for a new version on every open and whenever the app comes back to the screen; reload once it is in
+  let reloaded = false;
+  navigator.serviceWorker.addEventListener("controllerchange", () => { if (!reloaded) { reloaded = true; location.reload(); } });
+  addEventListener("load", () => navigator.serviceWorker.register("sw.js", { updateViaCache: "none" }).then((r) => {
+    r.update().catch(() => {});
+    document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") r.update().catch(() => {}); });
+  }).catch(() => {}));
+}
+</script>
 </body>
 </html>
