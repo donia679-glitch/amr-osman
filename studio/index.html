@@ -7,7 +7,7 @@
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <style>html,body{margin:0;padding:0}body{min-height:100vh;min-height:100dvh}</style>
-<script>window.NOVERA_BUILD = "2026-10-02 20:46";</script>
+<script>window.NOVERA_BUILD = "2026-10-02 21:14";</script>
 </head>
 <body>
 <title>NOVERA Studio</title>
@@ -44,6 +44,11 @@
 [hidden] { display: none !important; }
 html, body { height: 100%; }
 body { background: var(--bg); color: var(--ink); font-family: var(--font); font-size: 14px; direction: rtl; -webkit-tap-highlight-color: transparent; }
+/* an app, not a page: no text selection or callouts on double tap / long press (inputs still work) */
+body { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+input, textarea, select, [contenteditable] { -webkit-user-select: text; user-select: text; -webkit-touch-callout: default; }
+button, .chip, a { touch-action: manipulation; }
+.view3d canvas { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 #app { height: 100%; display: flex; flex-direction: column; }
 button, input, select { font: inherit; color: inherit; }
 button { cursor: pointer; }
@@ -72,6 +77,17 @@ button { cursor: pointer; }
 .view3d { flex: 1; min-height: 0; position: relative; touch-action: none; }
 .view3d canvas { display: block; width: 100%; height: 100%; }
 .fallback { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); padding: 24px; text-align: center; }
+.ctabs { flex-basis: 100%; display: flex; gap: 4px; pointer-events: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 4px; box-shadow: 0 3px 10px rgba(0,0,0,.12); width: max-content; max-width: 100%; overflow-x: auto; }
+.ctabs button { border: 0; background: transparent; color: var(--muted); font: inherit; font-size: 13.5px; font-weight: 600; padding: 0 14px; min-height: 38px; border-radius: 10px; white-space: nowrap; }
+.ctabs button[aria-selected="true"] { background: var(--brand); color: var(--brand-ink); }
+.chiphint { pointer-events: auto; margin: 0; font-size: 12.5px; color: var(--muted); background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 6px 10px; max-width: 420px; }
+.uchip.multi { outline: 3px solid var(--gold); outline-offset: -3px; }
+.multibar { bottom: 90px; background: var(--brand); color: var(--brand-ink); flex-wrap: wrap; }
+.multibar button { background: var(--bar) !important; color: #fff; }
+.mkeys { display: grid; gap: 6px; }
+.alist { display: grid; gap: 8px; }
+.arow { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; border: 1px solid var(--line); border-radius: 12px; padding: 8px 10px; }
+.aopts { display: flex; gap: 6px; flex-wrap: wrap; }
 .chips { position: absolute; top: 10px; inset-inline: 10px; z-index: 2; display: flex; flex-wrap: wrap; gap: 6px; pointer-events: none; }
 .chip { pointer-events: auto; display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 12px; border-radius: 20px; border: 0; background: var(--bar); color: #fff; font-size: 13px; box-shadow: 0 3px 10px rgba(0,0,0,.18); }
 .chip b { color: #f1cf86; font-weight: 600; }
@@ -163,6 +179,7 @@ summary { font-weight: 600; cursor: pointer; padding: 4px 0 8px; list-style-posi
 .finbox > summary { cursor: pointer; font-weight: 700; padding: 4px 0; }
 .finbox[open] { gap: 10px; }
 .finpre { display: flex; flex-wrap: wrap; gap: 6px; }
+.swb.on { outline: 3px solid var(--brand); outline-offset: 1px; }
 .swgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 8px; }
 .swb { border: 1px solid var(--line); background: var(--panel2); border-radius: 10px; padding: 6px; display: flex; flex-direction: column; gap: 6px; text-align: right; font-size: 12px; }
 .swb i { height: 44px; border-radius: 7px; border: 1px solid rgba(0,0,0,.12); }

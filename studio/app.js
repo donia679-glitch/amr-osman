@@ -297,6 +297,7 @@ app.innerHTML = `
   <div class="brand"><span class="mark" aria-hidden="true">N</span><b>NOVERA</b><span class="studio">Studio</span></div>
   <button id="projBtn" class="projbtn">${ICON.folder}<span id="projName"></span></button>
   <button id="expBtn" class="projbtn">${ICON.share}<span>تصدير</span></button>
+  <button id="lookBtn" class="projbtn" aria-label="الألوان والمظهر">🎨</button>
   <button id="aboutBtn" class="projbtn" aria-label="عن التطبيق">ⓘ</button>
   <span id="cloud" class="cloud"></span>
   <nav class="tabs" role="tablist">
@@ -313,6 +314,7 @@ app.innerHTML = `
       <button id="fsBtn" class="fsbtn" aria-label="ملء الشاشة" title="ملء الشاشة">⛶</button>
       <div id="chips" class="chips"></div>
       <div id="scenep" class="scenep" hidden></div>
+      <div id="multibar" class="movebar multibar" hidden></div>
       <div id="movebar" class="movebar" hidden><span>وضع التحريك — اسحب الوحدة اللي عليها الإطار الدهبي. دوس على وحدة تانية عشان تختارها.</span><button data-moveoff>✕ خروج</button></div>
       <div id="view3d" class="view3d"><div id="fallback" class="fallback" hidden></div><div id="ptbar" class="ptbar" hidden></div>
         <div class="vctl" role="toolbar" aria-label="التحكم في العرض">
@@ -348,7 +350,7 @@ $(".tabs").addEventListener("click", (e) => {
 $("#libBtn").addEventListener("click", () => { state.libOpen = !state.libOpen; render(); });
 {
   // tap a unit to select it; drag the selected unit along the floor — it snaps to walls and neighbours
-  let down = null, drag = null;
+  let down = null, drag = null, ptDrag = null;
   const host = $("#view3d");
   let press = 0;
   const startDrag = (e, id) => {
@@ -369,6 +371,19 @@ $("#libBtn").addEventListener("click", () => { state.libOpen = !state.libOpen; r
     if (e.target.closest(".vctl, .movebar") || view.final?.active) return;
     down = [e.clientX, e.clientY];
     clearTimeout(press);
+    // move mode + a selected electrical/plumbing point under the finger: slide it over its wall
+    if (ui.moveMode && ui.room3d && ui.planSel?.kind === "pt" && state.project.room) {
+      const h = view.pickAny(e.clientX, e.clientY);
+      const pt = (state.project.room.points || []).find((x) => x.id === ui.planSel.id);
+      const seg = pt && Room.segments(state.project.room).find((g) => g.id === pt.wall);
+      if (h?.kind === "pt" && h.id === pt?.id && seg) {
+        e.stopPropagation();
+        ptDrag = { pt, seg };
+        view.ctl.enabled = false;
+        try { host.setPointerCapture(e.pointerId); } catch { /* gone */ }
+        return;
+      }
+    }
     if (!wholeView() || ui.mode !== "owner" || !view.ready || !e.isPrimary) return;
     const id = view.pickAt(e.clientX, e.clientY);
     if (!id || id !== state.sel) return; // only the outlined (selected) unit ever moves
@@ -382,6 +397,20 @@ $("#libBtn").addEventListener("click", () => { state.libOpen = !state.libOpen; r
     }, 450);
   }, true);
   host.addEventListener("pointermove", (e) => {
+    if (ptDrag) {
+      const T = view.three, { pt, seg } = ptDrag;
+      const rc = view.ren.domElement.getBoundingClientRect();
+      const ray = new T.Raycaster();
+      ray.setFromCamera(new T.Vector2(((e.clientX - rc.left) / rc.width) * 2 - 1, -((e.clientY - rc.top) / rc.height) * 2 + 1), view.cam);
+      const plane = new T.Plane(new T.Vector3(seg.n[0], 0, seg.n[1]), -(seg.n[0] * seg.A[0] + seg.n[1] * seg.A[1]));
+      const q = new T.Vector3();
+      if (!ray.ray.intersectPlane(plane, q)) return;
+      pt.at = Math.round(Math.max(5, Math.min(seg.L - 5, (q.x - seg.A[0]) * seg.d[0] + (q.z - seg.A[1]) * seg.d[1])));
+      pt.z = Math.round(Math.max(5, Math.min(seg.h - 5, q.y)));
+      view.group?.traverse((o) => { if (o.userData.pt === pt.id) o.position.set(seg.A[0] + seg.d[0] * pt.at + seg.n[0] * 0.8, pt.z, seg.A[1] + seg.d[1] * pt.at + seg.n[1] * 0.8); });
+      view.dirty = true;
+      return;
+    }
     if (down && !drag) { down[2] = e.clientX - down[0]; down[3] = e.clientY - down[1]; if (Math.hypot(down[2], down[3]) > 8) clearTimeout(press); }
     if (!drag) return;
     const hit = view.floorAt(e.clientX, e.clientY);
@@ -391,6 +420,7 @@ $("#libBtn").addEventListener("click", () => { state.libOpen = !state.libOpen; r
   });
   const end = (e) => {
     clearTimeout(press);
+    if (ptDrag) { ptDrag = null; view.ctl.enabled = true; down = null; save(); renderProps(); view.update(); return; }
     if (view.final?.active && !drag) { down = null; return; } // taps never change the selection while the final render runs
     if (drag) {
       view.highlight(drag.u.id, false);
@@ -408,8 +438,18 @@ $("#libBtn").addEventListener("click", () => { state.libOpen = !state.libOpen; r
     const moved = Math.hypot(e.clientX - down[0], e.clientY - down[1]);
     down = null;
     if (moved > 6) return;
-    const id = view.pickAt(e.clientX, e.clientY);
-    if (id && id !== state.sel) { state.sel = id; save(); renderStrip(); renderChips(); renderProps(); renderErrs(); view.update(); }
+    const hit = view.pickAny(e.clientX, e.clientY);
+    if (hit?.kind === "unit") {
+      if (ui.multi) { ui.multi.has(hit.id) ? ui.multi.delete(hit.id) : ui.multi.add(hit.id); renderMulti(); renderStrip(); view.update(); return; }
+      ui.room3d = false; ui.planSel = null;
+      if (hit.id !== state.sel) { state.sel = hit.id; save(); renderStrip(); renderChips(); renderProps(); renderErrs(); view.update(); }
+      else renderProps();
+    } else if (hit && state.project.room) {
+      // a wall, an electrical/plumbing point or a column: its settings open on the side, like in the plan
+      ui.room3d = true; ui.planSel = { kind: hit.kind, id: hit.id };
+      renderProps(); renderChips();
+      if (matchMedia("(max-width: 640px), (max-height: 520px)").matches && ui.sheet !== "full") { ui.sheet = "half"; document.body.dataset.sheet = "half"; }
+    }
   };
   host.addEventListener("pointerup", end);
   host.addEventListener("pointercancel", end);
@@ -569,6 +609,7 @@ document.body.dataset.sheet = "min";
 $("#projBtn").addEventListener("click", () => { ui.pop = "projects"; renderPop(); refreshProjects(); });
 $("#expBtn").addEventListener("click", () => { ui.pop = "export"; renderPop(); });
 $("#aboutBtn").addEventListener("click", () => { ui.pop = "about"; renderPop(); });
+$("#lookBtn").addEventListener("click", () => { ui.pop = "look"; renderPop(); });
 
 // ------------------------------------------------------------------ library
 function swatches(colors) {
@@ -628,13 +669,14 @@ $("#lib").addEventListener("click", (e) => {
 function renderStrip() {
   $("#unitStrip").innerHTML = state.project.units.map((u) => {
     const r = R(u);
-    return `<button class="uchip ${u.id === state.sel ? "on" : ""} ${r.ok ? "" : "bad"}" data-unit="${u.id}">
+    return `<button class="uchip ${u.id === state.sel ? "on" : ""} ${ui.multi?.has(u.id) ? "multi" : ""} ${r.ok ? "" : "bad"}" data-unit="${u.id}">
       <b><span class="ucode">${esc(unitCode(u))}</span>${esc(u.name)}</b><small>${r.ok ? `${r.pieces} قطعة` : "فيها أخطاء"}</small></button>`;
   }).join("") || `<span class="empty">المشروع فاضي — افتح المكتبة وضيف أول وحدة.</span>`;
 }
 $("#unitStrip").addEventListener("click", (e) => {
   const b = e.target.closest("[data-unit]");
   if (!b) return;
+  if (ui.multi) { const id = b.dataset.unit; ui.multi.has(id) ? ui.multi.delete(id) : ui.multi.add(id); if (!state.sel) state.sel = id; renderMulti(); renderStrip(); view.update(); return; }
   if (state.sel === b.dataset.unit && matchMedia("(max-width: 640px), (max-height: 520px)").matches) { ui.sheet = ui.sheet === "min" ? "half" : "min"; document.body.dataset.sheet = ui.sheet; setTimeout(() => view.resize(), 260); }
   state.sel = b.dataset.unit;
   save();
@@ -716,25 +758,37 @@ function renderChips() {
       });
     }
   }
-  h += `<button class="chip tog ${state.xray ? "on" : ""}" data-xray>${ICON.eye}شفاف</button>`;
-  h += `<button class="chip tog ${state.render ? "on" : ""}" data-render>✦ ريندر واقعي</button>`;
-  if (state.render) h += `<button class="chip tog ${ui.sceneOpen ? "on" : ""}" data-scene>☀ المشهد والإضاءة</button><button class="chip tog ${ui.pt ? "on" : ""}" data-final>📸 ريندر نهائي</button><button class="chip tog" data-shot>احفظ صورة</button>`;
-  if (r.ok && (r.movers?.length || state.whole)) h += `<button class="chip tog ${ui.open ? "on" : ""}" data-open>${ui.open ? "اقفل الضلف" : "افتح الضلف"}</button>`;
-  if (state.project.units.length > 1 || state.project.room) h += `<button class="chip tog ${state.whole ? "on" : ""}" data-whole>${ICON.lib}المشروع كله</button>`;
-  h += `<button class="chip tog" data-plan>المسقط والحيطان</button>`;
-  if (wholeView() || state.project.room) { const n = designChecks().filter((c) => c.level !== "n").length; h += `<button class="chip tog ${n ? "warnchip" : ""}" data-checks>فحص التصميم${n ? ` (${n})` : " ✓"}</button>`; }
-  if (wholeView()) {
+  // the chips are grouped in tabs so the stage stays calm: the unit · the view · arranging · the room
+  const whole = wholeView();
+  const tabs = [["unit", "الوحدة"], ["view", "العرض والريندر"], ...(whole ? [["arr", "الترتيب"]] : []), ["room", "الأوضة"]];
+  if (!tabs.some(([k]) => k === ui.chipTab)) ui.chipTab = "unit";
+  let v = "";
+  v += `<button class="chip tog ${state.xray ? "on" : ""}" data-xray>${ICON.eye}شفاف</button>`;
+  if (r.ok && (r.movers?.length || state.whole)) v += `<button class="chip tog ${ui.open ? "on" : ""}" data-open>${ui.open ? "اقفل الضلف" : "افتح الضلف"}</button>`;
+  if (state.project.units.length > 1 || state.project.room) v += `<button class="chip tog ${state.whole ? "on" : ""}" data-whole>${ICON.lib}المشروع كله</button>`;
+  v += `<button class="chip tog ${state.render ? "on" : ""}" data-render>✦ ريندر واقعي</button>`;
+  if (state.render) v += `<button class="chip tog ${ui.sceneOpen ? "on" : ""}" data-scene>☀ المشهد والإضاءة</button><button class="chip tog ${ui.pt ? "on" : ""}" data-final>📸 ريندر نهائي</button>`;
+  v += `<button class="chip tog" data-shot>احفظ صورة</button>`;
+  let a = "";
+  if (whole) {
     const L = projectPoses(state.project).get(u.id);
+    a += `<button class="chip tog ${ui.moveMode ? "on" : ""}" data-move>✋ ${ui.moveMode ? "بتحرّك — دوس للخروج" : "حرّك"}</button>`;
+    a += `<button class="chip tog ${ui.multi ? "on" : ""}" data-multi>☑ ${ui.multi ? `مختار ${ui.multi.size}` : "اختار أكتر من وحدة"}</button>`;
+    a += `<button class="chip tog" data-alignpop>⇹ محاذاة مع وحدة</button>`;
     if (L?.wall) {
       const segs = roomSegs(state.project);
       const seg = segs.find((g) => g.id === L.wall);
-      h += `<span class="chip step zone"><span class="zl">على الحيطة ${seg && !seg.virtual ? segs.indexOf(seg) + 1 : ""} · من أولها</span><button data-mv="-5" aria-label="5 سم لورا">${ICON.minus}</button><b>${n1(L.s)}</b><button data-mv="5" aria-label="5 سم لقدام">${ICON.plus}</button></span>`;
+      a += `<span class="chip step zone"><span class="zl">على الحيطة ${seg && !seg.virtual ? segs.indexOf(seg) + 1 : ""} · من أولها</span><button data-mv="-5" aria-label="5 سم لورا">${ICON.minus}</button><b>${n1(L.s)}</b><button data-mv="5" aria-label="5 سم لقدام">${ICON.plus}</button></span>`;
     }
-    h += `<button class="chip tog ${ui.moveMode ? "on" : ""}" data-move>✋ ${ui.moveMode ? "بتحرّك الوحدات — دوس تاني للخروج" : "حرّك"}</button>`;
-    h += `<span class="chip step zone"><span class="zl">لف</span><button data-rot="-90" aria-label="لف 90 شمال">↺90</button><button data-rot="-15" aria-label="لف 15 شمال">↺15</button><button data-rot="15" aria-label="لف 15 يمين">↻15</button><button data-rot="90" aria-label="لف 90 يمين">↻90</button></span>`;
-    h += `<span class="chip step zone"><span class="zl">↕ من الأرض</span><button data-lift="-5" aria-label="نزّل 5 سم">${ICON.minus}</button><b>${n1(+u.lift || 0)}</b><button data-lift="5" aria-label="ارفع 5 سم">${ICON.plus}</button></span>`;
-    if (state.project.units.some((x) => x.pos)) h += `<button class="chip tog" data-autolay>رصّ تلقائي</button>`;
+    a += `<span class="chip step zone"><span class="zl">↕ من الأرض</span><button data-lift="-5" aria-label="نزّل 5 سم">${ICON.minus}</button><b>${n1(+u.lift || 0)}</b><button data-lift="5" aria-label="ارفع 5 سم">${ICON.plus}</button></span>`;
+    a += `<span class="chip step zone"><span class="zl">لف</span><button data-rot="-90" aria-label="لف 90 شمال">↺90</button><button data-rot="-15" aria-label="لف 15 شمال">↺15</button><button data-rot="15" aria-label="لف 15 يمين">↻15</button><button data-rot="90" aria-label="لف 90 يمين">↻90</button></span>`;
+    if (state.project.units.some((x) => x.pos)) a += `<button class="chip tog" data-autolay>رصّ تلقائي</button>`;
   }
+  let rm = `<button class="chip tog" data-plan>المسقط والحيطان</button>`;
+  if (whole || state.project.room) { const n = designChecks().filter((c) => c.level !== "n").length; rm += `<button class="chip tog ${n ? "warnchip" : ""}" data-checks>فحص التصميم${n ? ` (${n})` : " ✓"}</button>`; }
+  if (state.project.room) rm += `<p class="chiphint">في العرض 3D: دوس على حيطة أو بريزة أو عمود عشان تعدّله. البريزة تتسحب على الحيطة من "الترتيب ← حرّك".</p>`;
+  const body = { unit: h, view: v, arr: a, room: rm }[ui.chipTab];
+  h = `<div class="ctabs" role="tablist">${tabs.map(([k, l]) => `<button role="tab" aria-selected="${ui.chipTab === k}" data-ctab="${k}">${l}</button>`).join("")}</div>` + body;
   el.innerHTML = h;
 }
 const ZTYPES = ["doors", "drawers", "flap", "open"];
@@ -744,6 +798,9 @@ $("#chips").addEventListener("click", (e) => {
   const b = e.target.closest("button");
   if (!b) return;
   const d = b.dataset;
+  if (d.ctab) { ui.chipTab = d.ctab; renderChips(); return; }
+  if (b.hasAttribute("data-multi")) { ui.multi = ui.multi ? null : new Set([state.sel].filter(Boolean)); renderMulti(); renderChips(); renderStrip(); view.update(); return; }
+  if (b.hasAttribute("data-alignpop")) { ui.pop = "align"; renderPop(); return; }
   if (b.hasAttribute("data-plan")) { ui.planOn = !ui.planOn; ui.planView = "plan"; ui.planTool = "select"; plan.vb = null; if (!ui.planOn) { state.whole = state.whole || !!state.project.room; } render(true); return; }
   if (b.hasAttribute("data-roompop")) { ui.pop = "room"; renderPop(); return; }
   if (b.hasAttribute("data-checks")) { ui.pop = "checks"; renderPop(); return; }
@@ -901,7 +958,7 @@ function renderProps() {
   const u = selUnit();
   const el = $("#props");
   if (ui.planOn && ui.planTool === "draw") { el.innerHTML = drawProps(); return; }
-  if (ui.planOn && state.project.room && ["wall", "open", "pt", "col"].includes(ui.planSel?.kind)) { el.innerHTML = roomProps(); return; }
+  if ((ui.planOn || ui.room3d) && state.project.room && ["wall", "open", "pt", "col"].includes(ui.planSel?.kind)) { el.innerHTML = roomProps(); return; }
   if (ui.planOn && state.project.room && !ui.planSel) { el.innerHTML = roomOverview(); return; }
   if (!u) { el.innerHTML = `<div class="emptyp"><h2>ابدأ بوحدة</h2><p class="hint">افتح المكتبة واختار تصميم جاهز أو قالب فاضي.</p></div>`; return; }
   const r = R(u);
@@ -1287,6 +1344,71 @@ props.addEventListener("click", (e) => {
 
 // ------------------------------------------------------------------ popovers (materials, projects)
 /** give the selected unit's material role (ui.matPick) a catalogue or custom material ("" = default) */
+// ---- look: light / dark / automatic, the accent colour, the 3D background
+const ACCENTS = {
+  green: ["أخضر NOVERA", "#1f6d3d", "#123f23", "#4caf72", "#0b1d11"],
+  blue: ["أزرق", "#1f5a8f", "#11314f", "#5aa0e0", "#0b1622"],
+  brown: ["بني خشبي", "#8a5a2b", "#4a2f16", "#d29a5e", "#1d140b"],
+  gray: ["رمادي", "#4a5560", "#22282e", "#9fb0c0", "#121619"],
+  purple: ["بنفسجي", "#5b3f8f", "#2e2050", "#a98ae0", "#170f26"],
+};
+const STAGE_BGS = { "": "افتراضي", "#ffffff": "أبيض", "#ecebe6": "رمادي فاتح", "#efe6d8": "بيج", "#7d8288": "رمادي", "#3a3f44": "رمادي غامق", "#141618": "أسود" };
+function isDark() { const root = document.documentElement; return root.dataset.theme === "dark" || (root.dataset.theme !== "light" && matchMedia("(prefers-color-scheme: dark)").matches); }
+function applyLook() {
+  const L = (state.look ??= { mode: "auto", accent: "green", stage: "" });
+  const root = document.documentElement;
+  if (L.mode === "auto") delete root.dataset.theme; else root.dataset.theme = L.mode;
+  const a = ACCENTS[L.accent] || ACCENTS.green, dark = isDark();
+  root.style.setProperty("--brand", dark ? a[3] : a[1]);
+  root.style.setProperty("--bar", dark ? a[4] : a[2]);
+  if (L.stage) root.style.setProperty("--stage", L.stage); else root.style.removeProperty("--stage");
+  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", dark ? a[4] : a[2]);
+  view.stageBg = L.stage || null;
+}
+// ---- several units at once: the selected unit plus the ones ticked in "اختار أكتر من وحدة"
+function targetUnits() {
+  const u = selUnit();
+  if (!ui.multi?.size) return u ? [u] : [];
+  const list = state.project.units.filter((x) => ui.multi.has(x.id));
+  return u && !list.includes(u) ? [u, ...list] : list;
+}
+function renderMulti() {
+  const el = $("#multibar");
+  if (!ui.multi || state.tab !== "design" || ui.planOn) { el.hidden = true; return; }
+  const n = targetUnits().length;
+  el.hidden = false;
+  el.innerHTML = `<span>دوس على الوحدات (في العرض أو تحت) عشان تضيفها أو تشيلها · <b>مختار ${n}</b></span>
+    <button data-mm="mat">🎨 الخامات</button><button data-mm="up">↑ 5</button><button data-mm="down">↓ 5</button><button data-mm="all">الكل</button><button data-mm="off">✕ خلاص</button>`;
+}
+$("#multibar").addEventListener("pointerdown", (e) => e.stopPropagation());
+$("#multibar").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-mm]");
+  if (!b) return;
+  const k = b.dataset.mm;
+  if (k === "off") { ui.multi = null; renderMulti(); renderChips(); renderStrip(); view.update(); return; }
+  if (k === "all") { ui.multi = new Set(state.project.units.map((x) => x.id)); renderMulti(); renderStrip(); view.update(); return; }
+  if (k === "up" || k === "down") { for (const x of targetUnits()) x.lift = Math.max(0, (+x.lift || 0) + (k === "up" ? 5 : -5)); save(); renderChips(); view.update(); return; }
+  if (k === "mat") { ui.pop = "mkeys"; renderPop(); }
+});
+/** line a unit up with another one: its left edges, centres or right edges (as you face the units) */
+function alignUnit(u, o, mode) {
+  const poses = projectPoses(state.project);
+  const Lu = poses.get(u.id), Lo = poses.get(o.id);
+  if (!Lu || !Lo) return;
+  const bu = localBox(R(u)), bo = localBox(R(o));
+  const wu = bu.x1 - bu.x0, wo = bo.x1 - bo.x0;
+  if (Lu.wall && Lu.wall === Lo.wall) {
+    const sv = mode === "start" ? Lo.s : mode === "end" ? Lo.s + wo - wu : Lo.s + (wo - wu) / 2;
+    u.pos = { wall: Lu.wall, s: Math.max(0, Math.round(sv * 10) / 10) };
+    return;
+  }
+  const ax = Room.axisX(Lo.rot), cu = Room.centerOf(Lu, bu), co = Room.centerOf(Lo, bo);
+  const want = mode === "start" ? -(wo - wu) / 2 : mode === "end" ? (wo - wu) / 2 : 0;
+  const now = (cu[0] - co[0]) * ax[0] + (cu[1] - co[1]) * ax[1];
+  const c = [cu[0] + ax[0] * (want - now), cu[1] + ax[1] * (want - now)];
+  const pose = Room.snapPose([], bu, c, Lo.rot, [], rowOf(u, R(u)));
+  u.pos = { x: pose.x, z: pose.z, rot: Lo.rot };
+}
 // ---- surface finish per material of a unit: gloss, metal, reflection strength, clear lacquer
 const FIN_PRESETS = {
   matte: ["مط", { gloss: 12, metal: 0, refl: 60, coat: 0 }],
@@ -1317,11 +1439,14 @@ function finMaterial(THREE, f, opts) {
 }
 function applyLib(lib) {
   const key = ui.matPick;
-  const u = selUnit();
+  const first = selUnit();
   ui.pop = null;
   renderPop();
-  if (!u) return;
+  if (!first) return;
   if (lib && Mat.isCustom(lib)) { const m = Mat.get(lib); if (m) state.project.mats = [...(state.project.mats || []).filter((x) => x.id !== lib), m]; }
+  for (const u of targetUnits().filter((x) => x.kind === first.kind)) applyLibTo(u, key, lib);
+}
+function applyLibTo(u, key, lib) {
   const nm = (l) => (Mat.isCustom(l) ? Mat.get(l)?.name || "خامة" : Catalog.libName(l));
   if (u.kind === "kitchen") {
     u.libs ??= {};
@@ -1388,6 +1513,35 @@ function renderPop() {
         <label class="f"><span>الإضاءة: <b id="mBrightV">${m.bright}</b></span><input id="mBright" type="range" min="-40" max="40" step="5" value="${m.bright}"></label>
         <label class="f"><span>اللمعة: <b id="mGlossV">${m.gloss}</b>%</span><input id="mGloss" type="range" min="0" max="100" step="5" value="${m.gloss}"></label></div></div>
       <div class="btnrow"><button class="primary" data-savemat ${m.img ? "" : "disabled"}>احفظ واستخدمها</button>${m.id && Mat.get(m.id) ? `<button class="ghost2 danger" data-delmat>امسح الخامة</button>` : ""}<button class="ghost2" data-back="mat">رجوع</button></div></div>`;
+  }
+  else if (ui.pop === "look") {
+    const L = (state.look ??= { mode: "auto", accent: "green", stage: "" });
+    h = `<div class="popbox" role="dialog" aria-label="الألوان والمظهر"><div class="libhead"><h2>الألوان والمظهر</h2><button class="x" data-close aria-label="قفل">×</button></div>
+      <h3>الوضع</h3><div class="seg">${[["auto", "تلقائي (زي الجهاز)"], ["light", "فاتح"], ["dark", "غامق"]].map(([k, l]) => `<button data-lmode="${k}" class="${L.mode === k ? "on" : ""}">${l}</button>`).join("")}</div>
+      <h3>لون التطبيق</h3><div class="swgrid">${Object.entries(ACCENTS).map(([k, a]) => `<button class="swb ${L.accent === k ? "on" : ""}" data-laccent="${k}"><i style="background:linear-gradient(135deg, ${a[2]} 50%, ${a[1]} 50%)"></i><span>${a[0]}</span></button>`).join("")}</div>
+      <h3>خلفية شاشة التصميم</h3><div class="swgrid">${Object.entries(STAGE_BGS).map(([k, l]) => `<button class="swb ${L.stage === k ? "on" : ""}" data-lstage="${k}"><i style="background:${k || "var(--stage)"}"></i><span>${l}</span></button>`).join("")}
+        <label class="swb"><i style="background:${L.stage || "#cccccc"}"></i><span>لون تاني</span><input type="color" id="lookColor" value="${L.stage || "#cccccc"}" style="width:100%;height:28px;border:0;background:none"></label></div>
+      <p class="hint">الخلفية دي بتبان ورا التصميم في العرض العادي والريندر.</p></div>`;
+  }
+  else if (ui.pop === "mkeys") {
+    const u = selUnit();
+    const keys = u?.kind === "kitchen" ? Object.entries(KU.K_MATS).map(([k, v]) => [k, v[0]]) : u?.kind === "dressing" ? Object.entries(D.MATERIAL_KEYS).map(([k, v]) => [k, v.label]) : Object.entries(PANEL_MATS);
+    const n = targetUnits().filter((x) => x.kind === u?.kind).length;
+    h = `<div class="popbox" role="dialog" aria-label="خامات الوحدات المختارة"><div class="libhead"><h2>خامات ${n} وحدة</h2><button class="x" data-close aria-label="قفل">×</button></div>
+      <p class="hint">اختار الجزء، وبعدين الخامة أو اللمعة — هتتطبّق على كل الوحدات المختارة من نفس النوع.</p>
+      <div class="mkeys">${keys.map(([k, l]) => `<button class="mrow" data-mkey="${k}"><b>${esc(l)}</b></button>`).join("")}</div></div>`;
+  }
+  else if (ui.pop === "align") {
+    const u = selUnit(), poses = projectPoses(state.project), Lu = poses.get(u?.id);
+    const cu = Lu ? Room.centerOf(Lu, localBox(R(u))) : [0, 0];
+    const others = state.project.units.filter((x) => x.id !== u?.id && poses.get(x.id) && R(x).ok)
+      .map((x) => { const c = Room.centerOf(poses.get(x.id), localBox(R(x))); return [x, Math.hypot(c[0] - cu[0], c[1] - cu[1])]; })
+      .sort((a, b) => a[1] - b[1]).slice(0, 8);
+    const n = targetUnits().length;
+    h = `<div class="popbox" role="dialog" aria-label="محاذاة"><div class="libhead"><h2>محاذاة ${n > 1 ? `${n} وحدات` : esc(u?.name || "")}</h2><button class="x" data-close aria-label="قفل">×</button></div>
+      <p class="hint">اختار الوحدة اللي هتتظبط عليها (مثلاً العلوية على السفلية اللي تحتها). الشمال واليمين وانت باصص على وش الوحدات.</p>
+      <div class="alist">${others.map(([x]) => `<div class="arow"><span><span class="ucode">${esc(unitCode(x))}</span>${esc(x.name)}</span>
+        <span class="aopts"><button class="chip" data-al="${x.id}" data-am="start">⇤ الشمال</button><button class="chip" data-al="${x.id}" data-am="mid">⇹ السنتر</button><button class="chip" data-al="${x.id}" data-am="end">⇥ اليمين</button></span></div>`).join("") || `<p class="hint">مفيش وحدات تانية في المشروع.</p>`}</div></div>`;
   }
   else if (ui.pop === "about") {
     const D = DEVELOPER;
@@ -1457,6 +1611,7 @@ function roomIcon(k) {
   return `<svg viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round" aria-hidden="true"><path d="${P}"/></svg>`;
 }
 $("#pop").addEventListener("input", (e) => {
+  if (e.target.id === "lookColor") { (state.look ??= { mode: "auto", accent: "green", stage: "" }).stage = e.target.value; applyLook(); save(); view.update(); return; }
   if (ui.pop !== "newmat") return;
   const m = ui.matDraft, t = e.target;
   const map = { mName: "name", mKind: "kind", mTile: "tile", mRot: "rot", mBright: "bright", mGloss: "gloss" };
@@ -1509,6 +1664,7 @@ $("#pop").addEventListener("input", (e) => {
     u.fin ??= {};
     const cur = (u.fin[ui.matPick] ??= { gloss: 30, metal: 0, refl: 100, coat: 0 });
     cur[fk] = +e.target.value;
+    for (const x of targetUnits()) if (x !== u && x.kind === u.kind) { x.fin ??= {}; x.fin[ui.matPick] = { ...cur }; }
     const lab = e.target.closest("label")?.querySelector("b");
     if (lab) lab.textContent = cur[fk] + (fk === "refl" ? "%" : "");
     clearTimeout(ui.finT);
@@ -1525,12 +1681,26 @@ $("#pop").addEventListener("click", async (e) => {
   const b = e.target.closest("button");
   if (!b) return;
   const d = b.dataset;
+  if (ui.pop === "look" && (d.lmode || d.laccent || d.lstage !== undefined)) {
+    const L = (state.look ??= { mode: "auto", accent: "green", stage: "" });
+    if (d.lmode) L.mode = d.lmode; else if (d.laccent) L.accent = d.laccent; else L.stage = d.lstage;
+    applyLook(); save(); renderPop(); view.update();
+    return;
+  }
+  if (ui.pop === "mkeys" && d.mkey) { ui.matPick = d.mkey; ui.pop = "mat"; renderPop(); return; }
+  if (ui.pop === "align" && d.al) {
+    const o = state.project.units.find((x) => x.id === d.al);
+    for (const x of targetUnits()) if (x.id !== o.id) alignUnit(x, o, d.am);
+    ui.pop = null; renderPop(); save(); renderChips(); view.update(); if (ui.planOn) plan.render();
+    return;
+  }
   if (ui.pop === "mat" && (d.finpre || b.hasAttribute("data-finreset") || b.hasAttribute("data-finall"))) {
     const u = selUnit();
     if (!u) return;
     u.fin ??= {};
-    if (d.finpre) u.fin[ui.matPick] = { ...FIN_PRESETS[d.finpre][1] };
-    else if (b.hasAttribute("data-finreset")) delete u.fin[ui.matPick];
+    const same = targetUnits().filter((x) => x.kind === u.kind);
+    if (d.finpre) for (const x of same) { x.fin ??= {}; x.fin[ui.matPick] = { ...FIN_PRESETS[d.finpre][1] }; }
+    else if (b.hasAttribute("data-finreset")) for (const x of same) delete x.fin?.[ui.matPick];
     else {
       const f = u.fin[ui.matPick];
       for (const x of state.project.units) if (x.kind === u.kind) { x.fin ??= {}; if (f) x.fin[ui.matPick] = { ...f }; else delete x.fin[ui.matPick]; }
@@ -2065,6 +2235,8 @@ const view = {
       this.ready = true;
       // render only when something changed and the view is on screen (saves the iPad's battery)
       this.postFx = new Render.Post(this);
+      // rounded panel edges for the realistic look (the 1–2 mm radius that catches the light on real boards)
+      import("three/addons/geometries/RoundedBoxGeometry.js").then((m) => { this.RBox = m.RoundedBoxGeometry; if (state.render) this.update(); }).catch(() => {});
       this.final = new Render.FinalRender(this);
       const loop = () => {
         requestAnimationFrame(loop);
@@ -2264,6 +2436,7 @@ const view = {
         const x = seg.A[0] + seg.d[0] * pt.at + seg.n[0] * 0.8, z = seg.A[1] + seg.d[1] * pt.at + seg.n[1] * 0.8;
         m.position.set(x, pt.z, z);
         m.rotation.y = Room.rotFor(seg.n);
+        m.userData.pt = pt.id;
         wg.add(m);
       }
       const mid = Room.piecePoly(geo, seg.L / 2, seg.L / 2)[0];
@@ -2291,6 +2464,7 @@ const view = {
     for (const c of room.columns || []) {
       const m = new THREE.Mesh(new THREE.BoxGeometry(c.w, c.h || 280, c.d), new THREE.MeshStandardMaterial({ color: dark ? 0x4a524c : 0xe4e1d8, roughness: 0.9 }));
       m.position.set(c.x + c.w / 2, (c.h || 280) / 2, c.z + c.d / 2);
+      m.userData.col = c.id;
       g.add(m);
     }
   },
@@ -2355,11 +2529,19 @@ const view = {
             all.push(...A, ...B, ...C);
           }
         }
+        const bx = m.box, bmin = Math.min(bx.x1 - bx.x0, bx.y1 - bx.y0, bx.z1 - bx.z0);
+        const rounded = state.render && this.RBox && m.faces.length === 6 && byMat.size === 1 && bmin >= 0.5;
         for (const [key, arr] of byMat) {
           if (!arr.length) continue;
-          const geo = new THREE.BufferGeometry();
-          geo.setAttribute("position", new THREE.Float32BufferAttribute(arr, 3));
-          geo.computeVertexNormals();
+          let geo;
+          if (rounded) {
+            geo = new this.RBox(bx.x1 - bx.x0, bx.z1 - bx.z0, bx.y1 - bx.y0, 2, Math.min(0.2, bmin * 0.3));
+            geo.translate((bx.x0 + bx.x1) / 2, (bx.z0 + bx.z1) / 2, -(bx.y0 + bx.y1) / 2);
+          } else {
+            geo = new THREE.BufferGeometry();
+            geo.setAttribute("position", new THREE.Float32BufferAttribute(arr, 3));
+            geo.computeVertexNormals();
+          }
           const mm = matFor(key, front);
           if (mm.userData.tile) Mat.planarUV(THREE, geo, mm.userData.tile);
           const mesh = new THREE.Mesh(geo, vs === "cur" ? hiMat(mm) : mm);
@@ -2418,7 +2600,8 @@ const view = {
         if (s.type === "cylinder_y") mesh.rotation.x = Math.PI / 2;
         mesh.position.set(s.cx, s.cz, -s.cy);
       } else {
-        geo = new THREE.BoxGeometry(Math.max(b.x1 - b.x0, 0.05), Math.max(b.z1 - b.z0, 0.05), Math.max(b.y1 - b.y0, 0.05));
+        const sx = Math.max(b.x1 - b.x0, 0.05), sy = Math.max(b.z1 - b.z0, 0.05), sz = Math.max(b.y1 - b.y0, 0.05), mn = Math.min(sx, sy, sz);
+        geo = state.render && this.RBox && mn >= 0.5 ? new this.RBox(sx, sy, sz, 2, Math.min(0.2, mn * 0.3)) : new THREE.BoxGeometry(sx, sy, sz);
         mesh = new THREE.Mesh(geo, mat);
         mesh.position.set((b.x0 + b.x1) / 2, (b.z0 + b.z1) / 2, -(b.y0 + b.y1) / 2);
       }
@@ -2495,6 +2678,17 @@ const view = {
       g.add(fp);
       this.selFoot = fp;
     } else { this.selFoot = null; this.selGlass = null; }
+    // the other units ticked in multi-select get a gold outline too
+    if (ui.multi?.size && whole) {
+      for (const ug of this.pickables) {
+        if (!ui.multi.has(ug.userData.unitId) || ug === selBox) continue;
+        const mb = new THREE.Box3().setFromObject(ug), ms = mb.getSize(new THREE.Vector3()).addScalar(3);
+        const e = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(ms.x, ms.y, ms.z)), new THREE.LineBasicMaterial({ color: 0xd9a63a }));
+        e.position.copy(mb.getCenter(new THREE.Vector3()));
+        g.add(e);
+        (this.selGlass ??= []).push(e);
+      }
+    }
     this.setOpen(!!ui.open, false);
     this.applyRender(box, dark);
     if (box.isEmpty()) return;
@@ -2546,6 +2740,27 @@ const view = {
     let o = hit?.object;
     while (o && !o.userData.unitId) o = o.parent;
     return o?.userData.unitId ?? null;
+  },
+  /** what is under the finger: a unit, or a wall / electrical point / column of the room */
+  pickAny(clientX, clientY) {
+    if (!this.ready) return null;
+    const THREE = this.three;
+    const rc = this.ren.domElement.getBoundingClientRect();
+    const v = new THREE.Vector2(((clientX - rc.left) / rc.width) * 2 - 1, -((clientY - rc.top) / rc.height) * 2 + 1);
+    const ray = new THREE.Raycaster();
+    ray.setFromCamera(v, this.cam);
+    const cols = [];
+    this.group?.traverse((o) => { if (o.userData.col) cols.push(o); });
+    const hits = ray.intersectObjects([...(this.pickables || []), ...(this.walls || []).filter((w) => w.visible), ...cols], true).filter((h) => h.object.isMesh && h.object.visible);
+    for (const h of hits) {
+      let o = h.object;
+      if (o.userData.pt) return { kind: "pt", id: o.userData.pt, hit: h.point };
+      if (o.userData.col) return { kind: "col", id: o.userData.col, hit: h.point };
+      while (o && !o.userData.unitId && !o.userData.wallId) o = o.parent;
+      if (o?.userData.unitId) return { kind: "unit", id: o.userData.unitId };
+      if (o?.userData.wallId) return { kind: "wall", id: o.userData.wallId, hit: h.point };
+    }
+    return null;
   },
   /** camera buttons (for anyone who'd rather tap than pinch) */
   zoom(k) { const t = this.ctl.target, c = this.cam.position; c.sub(t).multiplyScalar(k).add(t); this.dirty = true; },
@@ -4020,7 +4235,7 @@ function render(refit = false) {
   if (ui.mode !== "owner") return;
   if (state.tab === "design") {
     $("#view3d").hidden = !!ui.planOn;
-    renderStrip(); renderChips(); renderProps(); renderErrs(); renderMoveBar(); renderScene();
+    renderStrip(); renderChips(); renderProps(); renderErrs(); renderMoveBar(); renderScene(); renderMulti();
     plan.render();
     if (!ui.planOn) view.update(refit);
   }
@@ -4099,5 +4314,6 @@ const _render = render;
 let lastPid = state.project.id;
 render = function (refit) { _render(refit); if (state.project.id !== lastPid) { lastPid = state.project.id; watchOwnerShared(); } };
 boot();
-matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", () => view.update());
+matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", () => { applyLook(); view.update(); });
+applyLook();
 window.__dbg = { view, plan, R, layout: asmLayout, elev: (u) => unitElevSvg(u), get state() { return state; } };

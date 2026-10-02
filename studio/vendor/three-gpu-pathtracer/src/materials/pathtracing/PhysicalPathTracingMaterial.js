@@ -436,8 +436,10 @@ export class PhysicalPathTracingMaterial extends MaterialBase {
 						// early out if this is a matte material
 						if ( material.matte && state.firstRay ) {
 
-							gl_FragColor = vec4( 0.0 );
-							break;
+							// NOVERA: pass straight through (cut-away wall) — the camera sees what is behind it
+							ray.origin = stepRayOrigin( ray.origin, ray.direction, - surfaceHit.faceNormal, surfaceHit.dist );
+							i -= 1;
+							continue;
 
 						}
 

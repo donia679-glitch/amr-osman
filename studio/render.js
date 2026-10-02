@@ -109,7 +109,7 @@ export function applyTime(view, s, dark) {
   view.sun.visible = T.sun > 0;
   view.fill.intensity = T.sun > 0 ? 0.3 * (T.sun / 2.2) : 0;
   view.ren.toneMappingExposure = s.exposure;
-  view.scene.background = new THREE.Color(dark ? T.bgDark : T.bg);
+  view.scene.background = new THREE.Color(view.stageBg || (dark ? T.bgDark : T.bg));
   view.group?.traverse((o) => {
     if (!o.isMesh) return;
     for (const m of [].concat(o.material)) {
@@ -243,8 +243,7 @@ export class FinalRender {
     this.keepEnv = v.scene.environment;
     v.scene.environment = v.envCube || null;
     v.scene.environmentIntensity = (TIMES[v.sceneSettings?.time] || TIMES.day).ptEnv;
-    v.cutaway();
-    this.sig = (v.walls || []).map((w) => (w.visible ? 1 : 0)).join("");
+    this.sig = this.cutForTrace();
     this.pt.setScene(v.scene, v.cam);
     this.target = PT_QUALITY[opts.quality]?.[1] || 500;
     // the camera stays put while tracing — a touch on the screen must not throw the picture away
@@ -277,9 +276,8 @@ export class FinalRender {
     const v = this.view;
     if (v.ctl.update() || this.camMoved) {
       this.camMoved = false;
-      v.cutaway();
-      // walls that hide/show with the camera change the geometry, so the tracer needs the scene again
-      const sig = (v.walls || []).map((w) => (w.visible ? 1 : 0)).join("");
+      // walls that turn see-through with the camera change the materials, so the tracer needs the scene again
+      const sig = this.cutForTrace();
       if (sig !== this.sig) { this.sig = sig; this.pt.setScene(v.scene, v.cam); } else this.pt.updateCamera();
       this.t0 = performance.now();
     }
@@ -296,6 +294,36 @@ export class FinalRender {
     this.pt.pausePathTracing = this.paused || this.pt.samples >= this.target;
     return url;
   }
+  /** the walls in front of the camera stay in the scene but turn "matte" (invisible to the camera, still in
+   * reflections and bounced light) — so mirrors, glossy fronts and the floor reflect a whole room */
+  cutForTrace() {
+    const v = this.view;
+    v.cutaway();
+    const sig = (v.walls || []).map((w) => (w.visible ? 1 : 0)).join("");
+    this.matte ??= new Map();
+    const matteOf = (m) => {
+      if (!m) return m;
+      if (!this.matte.has(m.uuid)) { const c = m.clone(); c.matte = true; c.castShadow = false; this.matte.set(m.uuid, c); }
+      return this.matte.get(m.uuid);
+    };
+    for (const w of v.walls || []) {
+      const cut = !w.visible;
+      w.visible = true;
+      w.traverse((o) => {
+        if (!o.isMesh) return;
+        if (!o.userData.ptOrig) o.userData.ptOrig = o.material;
+        const m0 = o.userData.ptOrig;
+        o.material = cut ? (Array.isArray(m0) ? m0.map(matteOf) : matteOf(m0)) : m0;
+      });
+    }
+    return sig;
+  }
+  uncut() {
+    for (const w of this.view.walls || []) w.traverse((o) => { if (o.userData.ptOrig) { o.material = o.userData.ptOrig; delete o.userData.ptOrig; } });
+    for (const m of this.matte?.values() || []) m.dispose();
+    this.matte = null;
+    this.view.cutaway();
+  }
   /** unlock to re-frame (every camera move restarts the picture), lock again to keep it */
   setLocked(on) {
     this.locked = on;
@@ -306,6 +334,7 @@ export class FinalRender {
     const v = this.view, r = v.ren;
     this.active = false;
     v.ctl.enabled = true;
+    this.uncut();
     restoreAfterTrace(v, this.swap);
     v.scene.environment = this.keepEnv;
     r.setPixelRatio(this.keepSize?.pr || Math.min(devicePixelRatio, 2));
@@ -320,7 +349,7 @@ function prepareForTrace(view) {
   const THREE = view.three, swaps = [];
   // every unit builds its own materials; the tracer is faster (and safer) with one material per look
   const shared = new Map();
-  const keyOf = (m) => [m.type, m.color?.getHexString(), m.map?.uuid || "", m.roughness, m.metalness, m.clearcoat ?? 0, m.transparent, m.opacity, m.side, m.emissive?.getHexString(), m.emissiveIntensity, m.userData?.glass, m.userData?.mirror].join("|");
+  const keyOf = (m) => [m.type, m.color?.getHexString(), m.map?.uuid || "", m.roughness, m.metalness, m.clearcoat ?? 0, !!m.matte, m.transparent, m.opacity, m.side, m.emissive?.getHexString(), m.emissiveIntensity, m.userData?.glass, m.userData?.mirror].join("|");
   const share = (m) => { if (!m) return m; const k = keyOf(m); if (!shared.has(k)) shared.set(k, m); return shared.get(k); };
   // multi-material meshes (walls: caps + face finish) are split into one mesh per material — the tracer
   // mixes up material indices on grouped geometry
