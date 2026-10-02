@@ -182,6 +182,15 @@ export async function deliver(downloads, filename, data) {
     try { await downloads.save({ filename, data: blob }); return "saved"; }
     catch (e) { if (e?.code === "declined") return "declined"; if (!["unavailable", "not_granted", "capability_disabled", "capability_removed"].includes(e?.code)) throw e; }
   }
+  // inside the NOVERA iPad/iPhone app: hand the file to iOS (share sheet → Files, WhatsApp, AirDrop …)
+  const native = window.webkit?.messageHandlers?.noveraSave;
+  if (native) {
+    const buf = new Uint8Array(await blob.arrayBuffer());
+    let bin = "";
+    for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode.apply(null, buf.subarray(i, i + 0x8000));
+    native.postMessage({ name: filename, mime: blob.type, b64: btoa(bin) });
+    return "shared";
+  }
   try {
     const file = new File([blob], filename, { type: blob.type });
     if (navigator.canShare?.({ files: [file] })) { await navigator.share({ files: [file], title: filename }); return "shared"; }
