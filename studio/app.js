@@ -162,7 +162,7 @@ function R(u) {
   const key = u.kind + JSON.stringify(u.params) + JSON.stringify(u.libs || {});
   if (cache.has(key)) return cache.get(key);
   if (cache.size > 80) cache.delete(cache.keys().next().value);
-  const out = u.kind === "dressing" ? adaptDressing(u) : u.kind === "kitchen" ? adaptKitchen(u) : adaptPanel(u);
+  const out = u.kind === "dressing" ? adaptDressing(u) : u.kind === "kitchen" ? adaptKitchen(u) : u.kind === "pieces" ? adaptPieces(u) : adaptPanel(u);
   cache.set(key, out);
   return out;
 }
@@ -217,6 +217,57 @@ function partMovers(parts) {
     mv.slide = Math.max(15, (d * 0.75) / 1.4);
   });
   return { movers, of };
+}
+// ---- free pieces: a cut list typed in by hand (no design) → cut plan, labels, barcodes like any unit
+const PIECE_DEF = () => ({ name: "", l: 60, w: 40, t: 1.8, qty: 1, lib: "hpl_white", band: { l1: true, l2: false, w1: false, w2: false }, grain: false });
+function adaptPieces(u) {
+  const rows = (u.params?.pieces || []).filter((r) => +r.l > 0 && +r.w > 0 && +r.t > 0 && +r.qty > 0);
+  const names = {}, colors = {}, libs = {};
+  const parts = [];
+  let x = 0, y = 0, rowD = 0;
+  rows.forEach((r, ri) => {
+    const key = "m_" + (r.lib || "custom") + "_" + Math.round(+r.t * 10);
+    const lib = r.lib && Catalog.LIB[r.lib] ? r.lib : null;
+    names[key] = lib ? Catalog.libName(lib) : (r.mat || "خامة");
+    colors[key] = lib ? Catalog.LIB[lib][2] : "#d9cfbf";
+    libs[key] = lib;
+    const q = Math.min(500, Math.round(+r.qty));
+    for (let i = 0; i < q; i++) {
+      const L = +r.l, W = +r.w, T = +r.t;
+      if (x + L > 420 && x > 0) { x = 0; y += rowD + 6; rowD = 0; }
+      parts.push({ name: (r.name || `قطعة ${ri + 1}`) + (q > 1 ? ` (${i + 1}/${q})` : ""), material: key, cut_piece: true, role: "panel",
+        label: { w: L, h: W, t: T, banded: { bottom: !!r.band?.l1, top: !!r.band?.l2, left: !!r.band?.w1, right: !!r.band?.w2 }, grain: !!r.grain },
+        box: { x0: x, x1: x + L, y0: y, y1: y + W, z0: 0, z1: T } });
+      x += L + 6; rowD = Math.max(rowD, W);
+    }
+  });
+  const ok = parts.length > 0;
+  return { kind: "pieces", ok, errors: ok ? [] : ["ضيف قطعة واحدة على الأقل بمقاساتها."], warnings: [], notes: [], params: u.params || {}, parts, checks: [],
+    movers: [], partMover: [], names, colors, hardware: {}, pieces: parts.length, banding: bandM(parts), doors: 0, drawers: 0, label: "قطع حرة (كت ليست)", libOf: (k) => libs[k] || null };
+}
+function piecesProps(u) {
+  const rows = (u.params.pieces ||= []);
+  const libOpts = (v) => LIB_GROUPS.map(([g, test]) => `<optgroup label="${esc(g)}">${Object.keys(Catalog.LIB).filter(test).map((k) => `<option value="${k}" ${k === v ? "selected" : ""}>${esc(Catalog.LIB[k][0])}</option>`).join("")}</optgroup>`).join("");
+  const total = rows.reduce((a, r) => a + (+r.qty || 0), 0);
+  return `<details open><summary>القطع (${rows.length} صنف · ${total} قطعة)</summary>
+    <p class="hint">المقاسات بالسم. الطول هو اتجاه الألياف. علّم على الحروف اللي عليها شريط: ط١ ط٢ = حرفين الطول، ع١ ع٢ = حرفين العرض.</p>
+    <div class="pcs">${rows.map((r, i) => `<div class="pcrow" data-pi="${i}">
+      <div class="pchead"><b class="num">${i + 1}</b><input data-pf="name" value="${esc(r.name || "")}" placeholder="اسم القطعة (جنب، رف، باب…)"><button class="danger sm" data-pdel="${i}" aria-label="امسح القطعة">${ICON.trash}</button></div>
+      <div class="pcgrid">
+        <label><span>الطول</span><input type="number" inputmode="decimal" step="0.1" data-pf="l" value="${r.l}"></label>
+        <label><span>العرض</span><input type="number" inputmode="decimal" step="0.1" data-pf="w" value="${r.w}"></label>
+        <label><span>السمك</span><input type="number" inputmode="decimal" step="0.1" data-pf="t" value="${r.t}"></label>
+        <label><span>العدد</span><input type="number" inputmode="numeric" step="1" min="1" data-pf="qty" value="${r.qty}"></label>
+      </div>
+      <label class="pcmat"><span>الخامة</span><select data-pf="lib">${libOpts(r.lib)}</select></label>
+      <div class="pcband">${[["l1", "ط١"], ["l2", "ط٢"], ["w1", "ع١"], ["w2", "ع٢"]].map(([k, l]) => `<label><input type="checkbox" data-pb="${k}" ${r.band?.[k] ? "checked" : ""}>${l}</label>`).join("")}<label><input type="checkbox" data-pf="grain" ${r.grain ? "checked" : ""}>ألياف (ما تلفّش)</label></div>
+    </div>`).join("")}</div>
+    <div class="btnrow"><button class="add" data-padd>${ICON.plus}قطعة جديدة</button><button class="ghost2" data-pdup>نسخ آخر قطعة</button></div></details>
+    <details><summary>لزق من Excel أو ملف CSV</summary>
+      <p class="hint">كل سطر قطعة: الاسم، الطول، العرض، العدد (والسمك اختياري). من Excel انسخ الأعمدة وألزقها هنا.</p>
+      <textarea id="pcPaste" rows="5" placeholder="جنب, 72, 58, 2&#10;رف, 56.4, 54, 3, 1.8"></textarea>
+      <div class="btnrow"><button class="ghost2" data-ppaste>ضيف القطع دي</button></div></details>
+    <p class="hint">خطة القص والملصقات بالباركود في تبويب <b>القص</b>، والجدول في <b>القطع والحصر</b>، وكل التصديرات (Excel، PDF، الملصقات) شغالة عادي.</p>`;
 }
 function adaptPanel(u) {
   const r = panelCompute(u.params);
@@ -728,7 +779,7 @@ function renderLib() {
     }
     h += "</div>";
   }
-  h += `<h3>قوالب فاضية</h3><div class="tpls"><button class="tpl" data-kitchen="__blank">وحدة مطبخ<small>المطابخ</small></button><button class="tpl" data-dress="__blank">دريسنج فاضي<small>الدريسنج</small></button>`;
+  h += `<h3>قوالب فاضية</h3><div class="tpls"><button class="tpl" data-kitchen="__blank">وحدة مطبخ<small>المطابخ</small></button><button class="tpl" data-dress="__blank">دريسنج فاضي<small>الدريسنج</small></button><button class="tpl" data-pieces="1">✂ قطع حرة<small>كت ليست وباركود بمقاساتك</small></button>`;
   for (const [key, t] of Object.entries(Schema.TEMPLATES)) {
     if (key === "free") continue;
     h += `<button class="tpl" data-template="${key}">${esc(t.label)}<small>${esc(t.group)}</small></button>`;
@@ -737,7 +788,7 @@ function renderLib() {
 }
 $("#lib").addEventListener("click", (e) => {
   if (e.target.closest("[data-close]")) { state.libOpen = false; render(); return; }
-  const c = e.target.closest("[data-preset],[data-template],[data-dress],[data-kitchen]");
+  const c = e.target.closest("[data-preset],[data-template],[data-dress],[data-kitchen],[data-pieces]");
   if (!c) return;
   let u;
   if (c.dataset.kitchen) {
@@ -746,7 +797,8 @@ $("#lib").addEventListener("click", (e) => {
   } else if (c.dataset.dress) {
     const s = DRESSING[c.dataset.dress];
     u = s ? { id: uid(), kind: "dressing", name: s.label, params: clone(s.params), libs: clone(s.libs || {}) } : { id: uid(), kind: "dressing", name: "دريسنج", params: {} };
-  } else if (c.dataset.preset) u = { id: uid(), kind: "panel", name: PRESETS[c.dataset.preset].label, params: { preset: c.dataset.preset } };
+  } else if (c.dataset.pieces) u = { id: uid(), kind: "pieces", name: "قطع حرة", params: { pieces: [{ ...PIECE_DEF(), name: "قطعة 1" }] } };
+  else if (c.dataset.preset) u = { id: uid(), kind: "panel", name: PRESETS[c.dataset.preset].label, params: { preset: c.dataset.preset } };
   else u = { id: uid(), kind: "panel", name: Schema.TEMPLATES[c.dataset.template].label, params: { template: c.dataset.template } };
   state.project.units.push(u);
   state.sel = u.id;
@@ -829,6 +881,8 @@ function renderChips() {
       const ci = s.compartments.indexOf(big);
       h += `<span class="chip zone"><span class="zl">قسم ${si + 1}</span><button data-dcc="${si}.${ci}">${esc(short(D.CONTENTS[big.content]))}${ICON.cycle}</button><button data-dcd="${si}.${ci}">${esc(short(D.DOORS[big.door]))}${ICON.cycle}</button></span>`;
     });
+  } else if (u.kind === "pieces") {
+    h += `<span class="chip"><b>${r.pieces || 0}</b> قطعة · <b>${r.banding || 0}</b> م شريط</span><button class="chip tog" data-gotocut>✂ خطة القص والملصقات</button>`;
   } else {
     const tpl = p.template;
     const spec = Schema.SPECIAL[tpl];
@@ -890,6 +944,7 @@ $("#chips").addEventListener("click", (e) => {
   if (!b) return;
   const d = b.dataset;
   if (d.ctab) { ui.chipTab = d.ctab; renderChips(); return; }
+  if (b.hasAttribute("data-gotocut")) { state.tab = "cut"; save(); render(true); return; }
   if (b.hasAttribute("data-multi")) { ui.multi = ui.multi ? null : new Set([state.sel].filter(Boolean)); renderMulti(); renderChips(); renderStrip(); view.update(); return; }
   if (b.hasAttribute("data-alignpop")) { ui.pop = "align"; renderPop(); return; }
   if (b.hasAttribute("data-plan")) { ui.planOn = !ui.planOn; ui.planView = "plan"; ui.planTool = "select"; plan.vb = null; if (!ui.planOn) { state.whole = state.whole || !!state.project.room; } render(true); return; }
@@ -1062,6 +1117,7 @@ function renderProps() {
   if (ui.asm?.id === u.id) { el.innerHTML = asmProps(u); return; }
   if (r.ok && wholeView()) h += `<div class="grid2"><label class="f"><span>↕ رفع الوحدة من الأرض (سم)</span><input type="number" inputmode="decimal" step="1" min="0" data-ulift value="${+u.lift || 0}"></label></div>
     <p class="hint">زيادة على ارتفاعها العادي — مثلاً وحدة على قاعدة أو رف معلّق. الوحدات العلوية للمطبخ ارتفاعها من "التعليق من الأرض".</p>`;
+  if (u.kind === "pieces") { el.innerHTML = h + (r.ok ? summaryHtml(u) : "") + piecesProps(u); return; }
   if (r.ok) h += summaryHtml(u);
   h += u.kind === "dressing" ? dressingProps(p) : u.kind === "kitchen" ? kitchenProps(p) : panelProps(p, r);
   h += `<details open><summary>الخامات</summary><div class="mats">`;
@@ -1282,6 +1338,18 @@ function dressingProps(p) {
 const props = $("#props");
 props.addEventListener("change", (e) => {
   const t = e.target;
+  const prow = t.closest?.(".pcrow");
+  if (prow) {
+    const u = selUnit(), i = +prow.dataset.pi, r = u?.params?.pieces?.[i];
+    if (!r) return;
+    if (t.dataset.pb) { r.band ??= {}; r.band[t.dataset.pb] = t.checked; }
+    else if (t.dataset.pf === "grain") r.grain = t.checked;
+    else if (t.dataset.pf === "name" || t.dataset.pf === "lib") r[t.dataset.pf] = t.value;
+    else if (t.dataset.pf) r[t.dataset.pf] = Math.max(0, +t.value || 0);
+    u.params = { ...u.params, pieces: [...u.params.pieces] };
+    save(); render();
+    return;
+  }
   const room = state.project.room;
   const fd = t.dataset;
   if (room && (fd.rwf || fd.rwb || fd.rall || fd.rfl)) {
@@ -1337,6 +1405,30 @@ props.addEventListener("input", (e) => {
 });
 props.addEventListener("click", (e) => {
   const rb = e.target.closest("button");
+  const pu = selUnit();
+  if (pu?.kind === "pieces" && rb && (rb.hasAttribute("data-padd") || rb.hasAttribute("data-pdup") || rb.dataset.pdel || rb.hasAttribute("data-ppaste"))) {
+    const list = [...(pu.params.pieces || [])];
+    if (rb.hasAttribute("data-padd")) list.push({ ...PIECE_DEF(), name: `قطعة ${list.length + 1}`, lib: list[list.length - 1]?.lib || "hpl_white", t: list[list.length - 1]?.t || 1.8 });
+    else if (rb.hasAttribute("data-pdup") && list.length) list.push(JSON.parse(JSON.stringify(list[list.length - 1])));
+    else if (rb.dataset.pdel) list.splice(+rb.dataset.pdel, 1);
+    else {
+      const txt = $("#pcPaste")?.value || "";
+      let n = 0;
+      for (const line of txt.split(/\r?\n/)) {
+        const c = line.split(/\t|,|،|;/).map((x) => x.trim());
+        if (c.length < 3) continue;
+        const num = (v) => +String(v).replace(/[٠-٩]/g, (d) => "٠١٢٣٤٥٦٧٨٩".indexOf(d)).replace("٫", ".");
+        const [name, L, W, q, T] = [c[0], num(c[1]), num(c[2]), num(c[3] || 1), num(c[4] || 0)];
+        if (!(L > 0 && W > 0)) continue;
+        list.push({ ...PIECE_DEF(), name, l: L, w: W, qty: q > 0 ? Math.round(q) : 1, t: T > 0 ? T : list[list.length - 1]?.t || 1.8, lib: list[list.length - 1]?.lib || "hpl_white" });
+        n++;
+      }
+      alertBar(n ? `اتضاف ${n} صنف.` : "مالقيتش قطع في الكلام ده — كل سطر: الاسم، الطول، العرض، العدد.");
+    }
+    pu.params = { ...pu.params, pieces: list };
+    save(); render();
+    return;
+  }
   const room = state.project.room;
   if (rb?.dataset.drawdir != null && ui.planTool === "draw") {
     const L = +$("#drawLen").value || 0;
@@ -2003,7 +2095,7 @@ function rowOf(u, r) {
 }
 /** where every unit of a project stands (room cm, rotation about the vertical) — see room.js arrange() */
 function projectItems(project) {
-  return (project?.units || []).map((u) => { const r = R(u); return r.ok ? { id: u.id, box: localBox(r), row: rowOf(u, r), corner: cornerUnit(u, r), pos: u.pos } : null; }).filter(Boolean);
+  return (project?.units || []).filter((u) => u.kind !== "pieces").map((u) => { const r = R(u); return r.ok ? { id: u.id, box: localBox(r), row: rowOf(u, r), corner: cornerUnit(u, r), pos: u.pos } : null; }).filter(Boolean);
 }
 function projectPoses(project) { return Room.arrange(project?.room || null, projectItems(project)); }
 const roomSegs = (project) => (project?.room ? Room.segments(project.room) : Room.virtualSegments());
@@ -3071,7 +3163,7 @@ const view = {
 /** every sheet piece of a project with a stable key (unit index + part id) */
 /** unit codes: K = kitchen, D = dressing, P = other furniture + a running number (K01, K02, D01 …).
  * Stored on the unit, so editing or deleting another unit never renumbers it. */
-const CODE_PREFIX = { kitchen: "K", dressing: "D", panel: "P" };
+const CODE_PREFIX = { kitchen: "K", dressing: "D", panel: "P", pieces: "C" };
 function ensureCodes(project) {
   if (!project?.units) return;
   const used = new Set(project.units.map((u) => u.code).filter(Boolean));
