@@ -793,8 +793,9 @@ function swatches(colors) {
   return colors.filter((v, i, a) => v && a.indexOf(v) === i).slice(0, 3).map((hex) => `<i style="background:${hex}"></i>`).join("");
 }
 function kitchenGroup(s) {
-  if (s.group) return s.group;
   const p = s.params || {};
+  if (["fridge", "oven", "microwave", "washing_machine"].includes(p.unit_category) || /hob90|sink/.test(s.key || "")) return "🔌 أجهزة وتجاويف (تلاجة · فرن · ميكروويف · غسالة)";
+  if (s.group) return s.group;
   if (p.element_mode === "accessory") return "مطابخ — إكسسوارات";
   if (p.unit_category === "bedroom_wardrobe") return "دواليب غرف النوم";
   if (p.unit_category === "corner" || p.unit_category === "corner_glass_display") return "مطابخ — زوايا";
@@ -826,8 +827,8 @@ function renderLib() {
     <button class="card cutcard" data-pieces="1"><span class="sw" style="font-size:26px">✂</span><b>قطع حرة — كت ليست بمقاساتك</b><small>اكتب مقاسات القطع (أو الزقها من Excel) ويطلعلك خطة القص والملصقات بالباركود من غير تصميم.</small></button>
 `;
   const kg = {};
-  for (const [key, s] of Object.entries(KU.KITCHEN)) (kg[kitchenGroup(s)] ??= []).push([key, s]);
-  for (const g of ["مطابخ — سفلي", "مطابخ — علوي", "مطابخ — طويل", "مطابخ — زوايا", "مطابخ — إكسسوارات", "دواليب غرف النوم", ...Object.keys(kg)].filter((g, i, a) => kg[g] && a.indexOf(g) === i)) {
+  for (const [key, s] of Object.entries(KU.KITCHEN)) (kg[kitchenGroup({ ...s, key })] ??= []).push([key, s]);
+  for (const g of ["🔌 أجهزة وتجاويف (تلاجة · فرن · ميكروويف · غسالة)", "مطابخ — سفلي", "مطابخ — علوي", "مطابخ — طويل", "مطابخ — زوايا", "مطابخ — إكسسوارات", "دواليب غرف النوم", ...Object.keys(kg)].filter((g, i, a) => kg[g] && a.indexOf(g) === i)) {
     h += `<h3>${esc(g)}</h3><div class="cards">`;
     for (const [key, s] of kg[g]) {
       const base = !s.params.unit_type || s.params.unit_type === "base";
@@ -1204,10 +1205,11 @@ function renderProps() {
   if (r.ok && wholeView()) h += `<div class="grid2"><label class="f"><span>↕ رفع الوحدة من الأرض (سم)</span><input type="number" inputmode="decimal" step="1" min="0" data-ulift value="${+u.lift || 0}"></label></div>
     <p class="hint">زيادة على ارتفاعها العادي — مثلاً وحدة على قاعدة أو رف معلّق. الوحدات العلوية للمطبخ ارتفاعها من "التعليق من الأرض".</p>`;
   if (u.kind === "pieces") { el.innerHTML = h + (r.ok ? summaryHtml(u) : "") + piecesProps(u); return; }
+  if (u.kind === "kitchen" && r.ok) h += applianceField(u, p);
   if (r.ok) h += summaryHtml(u);
   h += u.kind === "dressing" ? dressingProps(p) : u.kind === "kitchen" ? kitchenProps(p) : panelProps(p, r);
   if (u.kind === "panel" && r.ok) h += softProps(u, r);
-  if (u.kind === "kitchen") h += applianceField(u, p);
+
   h += `<details open><summary>الخامات</summary><div class="mats">`;
   const keys = u.kind === "dressing" ? Object.keys(D.MATERIAL_KEYS) : u.kind === "kitchen" ? Object.keys(KU.K_MATS) : Object.keys(PANEL_MATS);
   const used = new Set([...r.parts.map((x) => x.material), ...(r.meshes || []).map((m) => m.mat)]);
@@ -1771,6 +1773,128 @@ function finMaterial(THREE, f, opts) {
   m.metalness = f.metal / 100;
   m.userData.refl = f.refl / 100;
   return m;
+}
+// ---- appliances drawn in their cavities (pictures only — never in the cut list)
+const APM = {};
+function apMat(THREE, k) {
+  if (APM[k]) return APM[k];
+  const S = { steel: [0xc9cbcd, 0.85, 0.3], glass: [0x0d0f10, 0.25, 0.08], white: [0xf1f1ee, 0, 0.45], chrome: [0xe3e6e9, 1, 0.16], dark: [0x2a2c2e, 0.4, 0.5], basin: [0xb9bcbf, 0.9, 0.38] }[k];
+  const m = new THREE.MeshStandardMaterial({ color: S[0], metalness: S[1], roughness: S[2] });
+  if (k === "glass") m.envMapIntensity = 1.4;
+  return (APM[k] = m);
+}
+/** the appliance pictures for a kitchen unit: cavities are the heights no front covers */
+function applianceMeshes(THREE, u, r) {
+  const out = [];
+  const p = r.params || {}, cat = p.unit_category || "standard";
+  const box = (k, x0, x1, y0, y1, z0, z1, name = "جهاز") => {
+    if (x1 - x0 < 0.05 || y1 - y0 < 0.05 || z1 - z0 < 0.05) return null;
+    const m = new THREE.Mesh(new THREE.BoxGeometry(x1 - x0, z1 - z0, y1 - y0), apMat(THREE, k));
+    m.position.set((x0 + x1) / 2, (z0 + z1) / 2, -(y0 + y1) / 2);
+    m.castShadow = m.receiveShadow = !!state.render;
+    m.userData.pname = name; m.userData.appl = true;
+    out.push(m);
+    return m;
+  };
+  const cyl = (k, r0, len, x, y, z, axis = "x") => {
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(r0, r0, len, 16), apMat(THREE, k));
+    if (axis === "x") m.rotation.z = Math.PI / 2; else if (axis === "y") m.rotation.x = Math.PI / 2;
+    m.position.set(x, z, -y);
+    m.userData.pname = "جهاز"; m.userData.appl = true;
+    out.push(m);
+  };
+  const ms = r.meshes;
+  const W0 = Math.min(...ms.map((m) => m.box.x0)), W1 = Math.max(...ms.map((m) => m.box.x1));
+  const D1 = Math.max(...ms.filter((m) => m.mat !== "countertop").map((m) => m.box.y1));
+  const label = `${p.unit_label || ""} ${u.name}`;
+  // free heights between the fronts → the cavities
+  const appl = ["fridge", "oven", "microwave", "washing_machine"].includes(cat);
+  if (appl) {
+    const sides = ms.filter((m) => /^جنب/.test(m.name));
+    const zLo = Math.min(...sides.map((m) => m.box.z0)), zHi = Math.max(...sides.map((m) => m.box.z1));
+    const wide = (m) => m.box.x1 - m.box.x0 > (W1 - W0) * 0.5;
+    const blocks = ms.filter((m) => wide(m) && (m.layer === "Kitchen - Front" || m.door || m.drawer || /قاعدة|رأس|رف/.test(m.name) && m.box.z1 - m.box.z0 < 4)).map((m) => [m.box.z0, m.box.z1]).sort((a, b) => a[0] - b[0]);
+    const gaps = [];
+    let z = zLo;
+    for (const [a, b] of blocks) { if (a - z >= 25) gaps.push([z, a]); z = Math.max(z, b); }
+    if (zHi - z >= 25) gaps.push([z, zHi]);
+    const xIn = (z0, z1) => {
+      const mid = (W0 + W1) / 2, sd = sides.filter((m) => m.box.z0 < z1 - 1 && m.box.z1 > z0 + 1);
+      const L = Math.max(W0, ...sd.filter((m) => (m.box.x0 + m.box.x1) / 2 < mid).map((m) => m.box.x1));
+      const R_ = Math.min(W1, ...sd.filter((m) => (m.box.x0 + m.box.x1) / 2 >= mid).map((m) => m.box.x0));
+      return [L, R_];
+    };
+    const kinds = cat === "oven" ? (p.include_microwave ? ["oven", "microwave"] : ["oven"]) : cat === "microwave" ? ["microwave"] : cat === "fridge" ? ["fridge"] : ["washer"];
+    const used = cat === "fridge" ? [gaps.reduce((a, b) => (b[1] - b[0] > a[1] - a[0] ? b : a), gaps[0])].filter(Boolean) : gaps.slice(0, kinds.length);
+    used.forEach(([z0, z1], i) => {
+      const kind = kinds[i] || kinds[0];
+      const [x0, x1] = xIn(z0, z1);
+      const a0 = x0 + 0.3, a1 = x1 - 0.3, y0 = 0.4, y1 = Math.min(D1 - 4, 56);
+      if (kind === "fridge") {
+        const top = z1 - 1.5, split = z0 + (top - z0) * 0.36;
+        box("steel", a0, a1, 2, y1, z0 + 1, top, "تلاجة");
+        box("steel", a0, a1, -1.5, 2, split + 0.3, top, "تلاجة");
+        box("steel", a0, a1, -1.5, 2, z0 + 1, split - 0.3, "تلاجة");
+        box("chrome", a1 - 5, a1 - 3.6, -4.5, -1.5, split + 8, split + 58, "تلاجة");
+        box("chrome", a1 - 5, a1 - 3.6, -4.5, -1.5, split - 30, split - 5, "تلاجة");
+      } else if (kind === "oven" || kind === "microwave") {
+        const h = z1 - z0;
+        box("steel", a0, a1, y0 + 1, y1, z0 + 0.3, z1 - 0.3, kind === "oven" ? "فرن" : "ميكروويف");
+        box("glass", a0, a1, y0, y0 + 1, z0 + 0.3, z1 - Math.min(9, h * 0.22), kind === "oven" ? "فرن" : "ميكروويف");
+        box("steel", a0, a1, y0 - 0.2, y0 + 1, z1 - Math.min(9, h * 0.22), z1 - 0.3, "لوحة تحكم");
+        box("dark", a0 + (a1 - a0) * 0.42, a0 + (a1 - a0) * 0.58, y0 - 0.4, y0, z1 - Math.min(6.5, h * 0.17), z1 - Math.min(3.5, h * 0.09), "شاشة");
+        if (kind === "oven") cyl("chrome", 0.7, (a1 - a0) * 0.78, (a0 + a1) / 2, -2.2, z1 - Math.min(12, h * 0.28));
+        else box("chrome", a1 - 5, a1 - 3.8, -2.6, y0, z0 + 3, z1 - 10, "مقبض");
+      } else {
+        const h = Math.min(z1 - z0 - 1, 85), top = z0 + h;
+        box("white", a0 + 1, a1 - 1, y0 + 1, y1, z0 + 0.5, top, "غسالة");
+        box("white", a0 + 1, a1 - 1, y0, y0 + 1, z0 + 0.5, top, "غسالة");
+        box("dark", a0 + 3, a1 - 3, y0 - 0.3, y0, top - 9, top - 3, "لوحة تحكم");
+        const cx = (a0 + a1) / 2, cz = z0 + h * 0.44, rr = Math.min((a1 - a0) * 0.3, h * 0.3);
+        const ring = new THREE.Mesh(new THREE.TorusGeometry(rr, 2.2, 10, 32), apMat(THREE, "chrome"));
+        ring.position.set(cx, cz, 1.2); ring.userData.pname = "غسالة"; ring.userData.appl = true; out.push(ring);
+        const gl = new THREE.Mesh(new THREE.CircleGeometry(rr - 1, 32), apMat(THREE, "glass"));
+        gl.position.set(cx, cz, 1.1); gl.userData.pname = "غسالة"; gl.userData.appl = true; out.push(gl);
+      }
+    });
+  }
+  // on the counter: a hob on the hob unit, a basin and a tap in the sink cut-out
+  const ct = ms.filter((m) => m.mat === "countertop");
+  if (ct.length) {
+    const top = Math.max(...ct.map((m) => m.box.z1));
+    if (p.include_sink_cutout && ct.length >= 3) {
+      const fr = ct.find((m) => /أمامي/.test(m.name)), bk = ct.find((m) => /خلفي/.test(m.name)), lf = ct.find((m) => /شمال/.test(m.name)), rt = ct.find((m) => /يمين/.test(m.name));
+      if (fr && bk && lf && rt) {
+        const x0 = lf.box.x1, x1 = rt.box.x0, y0 = fr.box.y1, y1 = bk.box.y0, dz = 18;
+        box("basin", x0, x1, y0, y1, top - dz, top - dz + 0.8, "حوض");
+        box("basin", x0, x0 + 0.8, y0, y1, top - dz, top, "حوض"); box("basin", x1 - 0.8, x1, y0, y1, top - dz, top, "حوض");
+        box("basin", x0, x1, y0, y0 + 0.8, top - dz, top, "حوض"); box("basin", x0, x1, y1 - 0.8, y1, top - dz, top, "حوض");
+        box("basin", x0 - 1.5, x1 + 1.5, y0 - 1.5, y1 + 1.5, top, top + 0.3, "حوض");
+        const tx = (x0 + x1) / 2, ty = y1 + 5;
+        cyl("chrome", 1.6, 28, tx, ty, top + 14, "z");
+        cyl("chrome", 1.1, 20, tx, ty - 9, top + 27, "y");
+      }
+    } else if (/بوتجاز|مسطح|hob/i.test(label)) {
+      const x0 = W0 + 5, x1 = W1 - 5, y0 = 6, y1 = Math.min(54, D1 - 4);
+      box("glass", x0, x1, y0, y1, top, top + 0.6, "بوتجاز");
+      const n = x1 - x0 > 75 ? 5 : 4;
+      const pts = n === 5 ? [[0.2, 0.3], [0.2, 0.75], [0.5, 0.5], [0.8, 0.3], [0.8, 0.75]] : [[0.27, 0.3], [0.27, 0.72], [0.73, 0.3], [0.73, 0.72]];
+      for (const [fx, fy] of pts) {
+        const ring = new THREE.Mesh(new THREE.TorusGeometry(n === 5 && fx === 0.5 ? 6 : 4.5, 0.7, 8, 24), apMat(THREE, "dark"));
+        ring.rotation.x = Math.PI / 2;
+        ring.position.set(x0 + (x1 - x0) * fx, top + 0.9, -(y0 + (y1 - y0) * fy));
+        ring.userData.pname = "بوتجاز"; ring.userData.appl = true;
+        out.push(ring);
+      }
+    }
+  }
+  // a hood under the wall unit over the hob
+  if (p.unit_type === "wall" && /شفاط/.test(label)) {
+    const z0 = Math.min(...ms.map((m) => m.box.z0));
+    box("steel", W0 + 3, W1 - 3, 0, Math.min(32, D1), z0 - 7, z0, "شفاط");
+    box("dark", W0 + 6, W1 - 6, 3, Math.min(29, D1 - 3), z0 - 7.4, z0 - 7, "شفاط");
+  }
+  return out;
 }
 // a label lying on each free piece in 3D: a coloured frame per row + name + size, so they read from above
 const ROW_TINTS = ["#1f6e3d", "#b07c12", "#2f5f8a", "#8e3b3b", "#6a4c93", "#3d7f7a", "#a4733f", "#5d6670"];
@@ -3097,6 +3221,7 @@ const view = {
         minZ = Math.min(minZ, -b.y1); maxZ = Math.max(maxZ, -b.y0);
       }
     }
+    if (r.meshes && u.kind === "kitchen" && !vis && !state.xray && !ui.hideCls?.has("appl")) for (const m of applianceMeshes(THREE, u, r)) g.add(m);
     for (const [pi, pt] of (r.meshes ? [] : r.parts).entries()) {
       const vs = vis ? vis(pt.name, pt.role) : "done";
       if (vs === "hide" || this.hiddenPart(u, pt.name, pt.role)) continue;
