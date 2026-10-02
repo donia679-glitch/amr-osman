@@ -719,6 +719,7 @@ function renderChips() {
     }
     h += `<button class="chip tog ${ui.moveMode ? "on" : ""}" data-move>✋ ${ui.moveMode ? "بتحرّك الوحدات — دوس تاني للخروج" : "حرّك"}</button>`;
     h += `<span class="chip step zone"><span class="zl">لف</span><button data-rot="-90" aria-label="لف 90 شمال">↺90</button><button data-rot="-15" aria-label="لف 15 شمال">↺15</button><button data-rot="15" aria-label="لف 15 يمين">↻15</button><button data-rot="90" aria-label="لف 90 يمين">↻90</button></span>`;
+    h += `<span class="chip step zone"><span class="zl">↕ من الأرض</span><button data-lift="-5" aria-label="نزّل 5 سم">${ICON.minus}</button><b>${n1(+u.lift || 0)}</b><button data-lift="5" aria-label="ارفع 5 سم">${ICON.plus}</button></span>`;
     if (state.project.units.some((x) => x.pos)) h += `<button class="chip tog" data-autolay>رصّ تلقائي</button>`;
   }
   el.innerHTML = h;
@@ -753,6 +754,7 @@ $("#chips").addEventListener("click", (e) => {
   if (b.hasAttribute("data-final")) { if (ui.pt) closeFinal(); else { ui.pt = { quality: "high", size: "hd", denoise: true, phase: "setup" }; renderPt(); } renderChips(); return; }
   if (b.hasAttribute("data-shot")) { b.disabled = true; exportImage().catch(() => alertBar("ما قدرتش أحفظ الصورة.")).finally(() => { b.disabled = false; }); return; }
   if (b.hasAttribute("data-move")) { ui.moveMode = !ui.moveMode; renderMoveBar(); renderChips(); return; }
+  if (d.lift) { u.lift = Math.max(0, Math.round(((+u.lift || 0) + +d.lift) * 10) / 10); save(); renderChips(); renderProps(); view.update(); if (ui.planOn) plan.render(); return; }
   if (b.hasAttribute("data-autolay")) { for (const x of state.project.units) delete x.pos; save(); render(true); return; }
   if (d.mv || b.hasAttribute("data-rot")) {
     const poses = projectPoses(state.project);
@@ -896,6 +898,8 @@ function renderProps() {
     <div class="tplname"><span class="ucode">${esc(unitCode(u))}</span>${esc(r.label || (u.kind === "dressing" ? "دريسنج" : u.kind === "kitchen" ? "وحدة مطبخ" : ""))}</div>`;
   if (r.ok) h += `<div class="stats"><div><b>${r.pieces}</b><span>قطعة</span></div><div><b>${r.banding}</b><span>م شريط</span></div><div><b>${r.doors}</b><span>ضلفة</span></div><div><b>${r.drawers}</b><span>درج</span></div></div>`;
   if (ui.asm?.id === u.id) { el.innerHTML = asmProps(u); return; }
+  if (r.ok && wholeView()) h += `<div class="grid2"><label class="f"><span>↕ رفع الوحدة من الأرض (سم)</span><input type="number" inputmode="decimal" step="1" min="0" data-ulift value="${+u.lift || 0}"></label></div>
+    <p class="hint">زيادة على ارتفاعها العادي — مثلاً وحدة على قاعدة أو رف معلّق. الوحدات العلوية للمطبخ ارتفاعها من "التعليق من الأرض".</p>`;
   if (r.ok) h += summaryHtml(u);
   h += u.kind === "dressing" ? dressingProps(p) : u.kind === "kitchen" ? kitchenProps(p) : panelProps(p, r);
   h += `<details open><summary>الخامات</summary><div class="mats">`;
@@ -1156,6 +1160,7 @@ props.addEventListener("change", (e) => {
   const u = selUnit();
   if (!u || t.id === "unitName") return;
   const d = t.dataset;
+  if (d.ulift !== undefined) { u.lift = Math.max(0, +t.value || 0); save(); renderChips(); view.update(); if (ui.planOn) plan.render(); return; }
   if (d.num) setParams(u, (p) => setPath(p, d.num, t.value === "" ? 0 : +t.value));
   else if (d.auto) setParams(u, (p) => setPath(p, d.auto, t.value.trim() === "" ? "auto" : +t.value));
   else if (d.sel) setParams(u, (p) => setPath(p, d.sel, d.sel === "doors.layout" ? t.value : t.value));
@@ -1771,7 +1776,7 @@ const plan = {
       const flipX = ex[0] * seg.d[0] + ex[1] * seg.d[1] < 0;
       const a0 = along([L.x, L.z]);
       const X = (lx) => (flipX ? a0 - lx : a0 + lx);
-      const zLift = 0; // kitchen meshes already stand at their mounting height
+      const zLift = +u.lift || 0; // kitchen meshes already stand at their mounting height; this is the extra lift
       const boxes = r.meshes ? r.meshes.filter((m) => m.mat !== "hole" && m.mat !== "led").map((m) => ({ b: m.box, front: m.door || m.drawer })) : r.parts.filter((pt) => pt.box && pt.role !== "hole" && pt.role !== "led").map((pt) => ({ b: pt.box, front: pt.layer === "front" }));
       // draw back-to-front: carcass first, fronts on top
       boxes.sort((x, y) => x.front - y.front);
@@ -2389,7 +2394,7 @@ const view = {
       if (layout) {
         const L = layout.get(u.id);
         if (!L) continue;
-        ug.position.set(L.x, 0, L.z);
+        ug.position.set(L.x, +u.lift || 0, L.z);
         ug.rotation.y = L.rot;
       }
       g.add(ug);
@@ -2486,7 +2491,8 @@ const view = {
   highlight(id, on) {
     const ug = this.pickables?.find((o) => o.userData.unitId === id);
     if (!ug) return;
-    ug.position.y = on ? 1.5 : 0;
+    const lu = (ui.mode === "client" ? ui.sharedProject : state.project)?.units.find((x) => x.id === id);
+    ug.position.y = (+lu?.lift || 0) + (on ? 1.5 : 0);
     ug.traverse((o) => { if (o.isMesh && o.material?.emissive && !o.userData.led) { o.material.emissive.set(on ? 0x2a4d33 : 0x000000); o.material.emissiveIntensity = on ? 0.35 : 0; } });
     this.dirty = true;
   },
@@ -2562,7 +2568,7 @@ const view = {
   movePicked(id, pose) {
     const ug = this.pickables?.find((o) => o.userData.unitId === id);
     if (!ug) return;
-    ug.position.set(pose.x, 0, pose.z);
+    ug.position.set(pose.x, ug.position.y, pose.z);
     ug.rotation.y = pose.rot;
     this.dirty = true;
     if (this.selFoot) {
@@ -3848,7 +3854,7 @@ function sketchupData() {
   for (const u of project.units) {
     const r = R(u), L = poses.get(u.id);
     if (!r.ok || !L) continue;
-    out.units.push({ code: u.code, name: u.name, kind: u.kind, params: expanded(u), x: Room.r1(L.x), y: Room.r1(-L.z), rot_deg: Math.round(((L.rot * 180) / Math.PI) * 100) / 100 });
+    out.units.push({ code: u.code, name: u.name, kind: u.kind, params: expanded(u), x: Room.r1(L.x), y: Room.r1(-L.z), z: Room.r1(+u.lift || 0), rot_deg: Math.round(((L.rot * 180) / Math.PI) * 100) / 100 });
   }
   return out;
 }
