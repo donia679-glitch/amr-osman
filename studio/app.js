@@ -318,6 +318,7 @@ app.innerHTML = `
       <button id="fsBtn" class="fsbtn" aria-label="ملء الشاشة" title="ملء الشاشة">⛶</button>
       <div id="chips" class="chips"></div>
       <div id="scenep" class="scenep" hidden></div>
+      <div id="inspp" class="scenep" hidden></div>
       <div id="multibar" class="movebar multibar" hidden></div>
       <div id="movebar" class="movebar" hidden><span>وضع التحريك — اسحب الوحدة اللي عليها الإطار الدهبي. دوس على وحدة تانية عشان تختارها.</span><button data-moveoff>✕ خروج</button></div>
       <div id="view3d" class="view3d"><div id="fallback" class="fallback" hidden></div><div id="ptbar" class="ptbar" hidden></div>
@@ -439,10 +440,20 @@ $("#libBtn").addEventListener("click", () => { state.libOpen = !state.libOpen; r
       view.update();
       return;
     }
-    if (!down || !wholeView() || ui.mode !== "owner" || e.type !== "pointerup") { down = null; return; }
+    if (!down || ui.mode !== "owner" || e.type !== "pointerup" || (!wholeView() && !(ui.tapHide && ui.inspOpen))) { down = null; return; }
     const moved = Math.hypot(e.clientX - down[0], e.clientY - down[1]);
     down = null;
     if (moved > 6) return;
+    if (ui.tapHide && ui.inspOpen) {
+      const T = view.three, rc = view.ren.domElement.getBoundingClientRect(), ray = new T.Raycaster();
+      ray.setFromCamera(new T.Vector2(((e.clientX - rc.left) / rc.width) * 2 - 1, -((e.clientY - rc.top) / rc.height) * 2 + 1), view.cam);
+      const h = ray.intersectObjects(view.pickables || [], true).find((x) => x.object.isMesh && x.object.userData.pname);
+      if (h) {
+        let o = h.object; while (o && !o.userData.unitId) o = o.parent;
+        if (o) { ui.hidePart.add(o.userData.unitId + "|" + h.object.userData.pname); renderInsp(); view.update(); }
+      }
+      return;
+    }
     const hit = view.pickAny(e.clientX, e.clientY);
     if (hit?.kind === "unit") {
       if (ui.multi) { ui.multi.has(hit.id) ? ui.multi.delete(hit.id) : ui.multi.add(hit.id); renderMulti(); renderStrip(); view.update(); return; }
@@ -466,6 +477,46 @@ document.querySelector("#view3d .vctl").addEventListener("click", (e) => {
   if (b.dataset.vz) view.zoom(+b.dataset.vz);
   else if (b.dataset.vr) view.orbit(+b.dataset.vr);
   else if (b.dataset.vp) view.preset(b.dataset.vp);
+});
+// ---- inspect a unit: exploded view, cut it open, hide kinds of pieces or single pieces
+const PART_KINDS = { door: "الضلف", drawer: "وشوش الأدراج", drawerBox: "صناديق الأدراج", shelf: "الأرفف", side: "الأجناب", top: "الرأس", base: "القاعدة", back: "الظهر", divider: "القواطيع", counter: "الكونتر", plinth: "السكلو", handle: "المقابض", rail: "الشماعات", led: "الليد", filler: "الفيلرات", other: "باقي القطع" };
+function renderInsp() {
+  const el = $("#inspp");
+  const u = selUnit();
+  const on = !!(ui.inspOpen && u && state.tab === "design" && !ui.planOn);
+  el.hidden = !on;
+  if (!on) return;
+  const r = R(u);
+  const have = new Set((r.meshes || r.parts || []).filter((x) => x.role !== "hole" && x.mat !== "hole").map((x) => partClass(x.name, x.role)));
+  ui.hideCls ??= new Set(); ui.hidePart ??= new Set();
+  const hidden = [...ui.hidePart].filter((k) => k.startsWith(u.id + "|")).length;
+  el.innerHTML = `<div class="sph"><b>فك وشوف من جوه</b><button class="x" data-iclose aria-label="قفل">×</button></div>
+    <label class="sl"><span>تفكيك الوحدة <b class="num">${Math.round((ui.explode || 0) * 100)}%</b></span><input type="range" min="0" max="120" step="5" data-iexp value="${Math.round((ui.explode || 0) * 100)}"></label>
+    <h4>اقطعها وشوف جواها</h4>
+    <div class="seg">${[["", "من غير"], ["front", "من قدام"], ["top", "من فوق"], ["side", "من الجنب"]].map(([k, l]) => `<button data-icut="${k}" class="${(ui.cut || "") === k ? "on" : ""}">${l}</button>`).join("")}</div>
+    ${ui.cut ? `<label class="sl"><span>مكان القطع</span><input type="range" min="2" max="98" step="1" data-icutt value="${Math.round((ui.cutT ?? 0.5) * 100)}"></label>` : ""}
+    <h4>اخفي</h4>
+    <div class="stogs">${Object.entries(PART_KINDS).filter(([k]) => have.has(k)).map(([k, l]) => `<button class="chip tog ${ui.hideCls.has(k) ? "" : "on"}" data-ihide="${k}">${ui.hideCls.has(k) ? "◌" : "●"} ${l}</button>`).join("")}</div>
+    <button class="chip tog ${ui.tapHide ? "on" : ""}" data-itap>👆 ${ui.tapHide ? "دوس على أي قطعة في العرض تختفي…" : "اخفي قطعة بالضغط عليها"}</button>
+    ${hidden ? `<p class="hint">مخفي ${hidden} قطعة بالضغط.</p>` : ""}
+    <button class="add" data-ireset>رجّع كل حاجة زي ما كانت</button>`;
+}
+const inspUpdate = () => { clearTimeout(ui.inspT); ui.inspT = setTimeout(() => view.update(), 60); };
+$("#inspp").addEventListener("pointerdown", (e) => e.stopPropagation());
+$("#inspp").addEventListener("input", (e) => {
+  const t = e.target;
+  if (t.hasAttribute("data-iexp")) { ui.explode = +t.value / 100; const b = t.closest("label").querySelector("b"); if (b) b.textContent = t.value + "%"; inspUpdate(); }
+  if (t.hasAttribute("data-icutt")) { ui.cutT = +t.value / 100; inspUpdate(); }
+});
+$("#inspp").addEventListener("click", (e) => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  const d = b.dataset;
+  if (b.hasAttribute("data-iclose")) { ui.inspOpen = false; ui.tapHide = false; renderInsp(); renderChips(); return; }
+  if (d.icut !== undefined) { ui.cut = d.icut || null; if (!ui.cut) view.ren.localClippingEnabled = false; renderInsp(); view.update(); return; }
+  if (d.ihide) { ui.hideCls.has(d.ihide) ? ui.hideCls.delete(d.ihide) : ui.hideCls.add(d.ihide); renderInsp(); view.update(); return; }
+  if (b.hasAttribute("data-itap")) { ui.tapHide = !ui.tapHide; renderInsp(); return; }
+  if (b.hasAttribute("data-ireset")) { ui.explode = 0; ui.cut = null; ui.cutT = 0.5; ui.hideCls = new Set(); ui.hidePart = new Set(); ui.tapHide = false; view.ren.localClippingEnabled = false; renderInsp(); renderChips(); view.update(); }
 });
 // ---- scene & lighting panel, saved camera views, final (path-traced) render
 function renderScene() {
@@ -805,6 +856,7 @@ function renderChips() {
   v += `<button class="chip tog ${state.xray ? "on" : ""}" data-xray>${ICON.eye}شفاف</button>`;
   if (r.ok && (r.movers?.length || state.whole)) v += `<button class="chip tog ${ui.open ? "on" : ""}" data-open>${ui.open ? "اقفل الضلف" : "افتح الضلف"}</button>`;
   if (state.project.units.length > 1 || state.project.room) v += `<button class="chip tog ${state.whole ? "on" : ""}" data-whole>${ICON.lib}المشروع كله</button>`;
+  v += `<button class="chip tog ${ui.inspOpen || ui.explode || ui.cut || ui.hideCls?.size || ui.hidePart?.size ? "on" : ""}" data-insp>🔍 فك وشوف من جوه</button>`;
   v += `<button class="chip tog ${state.render ? "on" : ""}" data-render>✦ ريندر واقعي</button>`;
   if (state.render) v += `<button class="chip tog ${ui.sceneOpen ? "on" : ""}" data-scene>☀ المشهد والإضاءة</button><button class="chip tog ${ui.pt ? "on" : ""}" data-final>📸 ريندر نهائي</button>`;
   v += `<button class="chip tog" data-shot>احفظ صورة</button>`;
@@ -859,7 +911,8 @@ $("#chips").addEventListener("click", (e) => {
   if (b.hasAttribute("data-open")) { ui.open = !ui.open; renderChips(); view.setOpen(ui.open); return; }
   if (b.hasAttribute("data-whole")) { state.whole = !state.whole; save(); renderChips(); view.update(true); return; }
   if (b.hasAttribute("data-render")) { state.render = !state.render; if (!state.render) { ui.sceneOpen = false; closeFinal(); } save(); renderChips(); renderScene(); view.update(); return; }
-  if (b.hasAttribute("data-scene")) { ui.sceneOpen = !ui.sceneOpen; renderChips(); renderScene(); return; }
+  if (b.hasAttribute("data-insp")) { ui.inspOpen = !ui.inspOpen; ui.sceneOpen = false; renderScene(); renderInsp(); renderChips(); return; }
+  if (b.hasAttribute("data-scene")) { ui.inspOpen = false; renderInsp(); ui.sceneOpen = !ui.sceneOpen; renderChips(); renderScene(); return; }
   if (b.hasAttribute("data-final")) { if (ui.pt) closeFinal(); else { ui.pt = { quality: "high", size: "hd", denoise: true, phase: "setup" }; renderPt(); } renderChips(); return; }
   if (b.hasAttribute("data-shot")) { b.disabled = true; exportImage().catch(() => alertBar("ما قدرتش أحفظ الصورة.")).finally(() => { b.disabled = false; }); return; }
   if (b.hasAttribute("data-move")) { ui.moveMode = !ui.moveMode; renderMoveBar(); renderChips(); return; }
@@ -2580,6 +2633,36 @@ const view = {
       w.visible = (c.x - mid[0]) * n[0] + (c.z - mid[1]) * n[1] > -5;
     }
   },
+  /** hidden in "inspect": a whole kind of piece, or one piece tapped away */
+  hiddenPart(u, name, role) { return !!(ui.hideCls?.has(partClass(name, role)) || ui.hidePart?.has(u.id + "|" + name)); },
+  /** pull every piece away from the unit's middle (exploded view) */
+  explode(ug, k) {
+    if (!k) return;
+    const THREE = this.three;
+    ug.updateMatrixWorld(true);
+    const c = new THREE.Box3().setFromObject(ug).getCenter(new THREE.Vector3());
+    ug.traverse((o) => {
+      if (!o.geometry || !(o.isMesh || o.isLineSegments)) return;
+      o.geometry.computeBoundingBox();
+      const pc = o.geometry.boundingBox.getCenter(new THREE.Vector3()).add(o.position);
+      o.position.addScaledVector(pc.sub(c), k);
+    });
+  },
+  /** cut the unit open to look inside (front / top / side), with clipping on its own materials only */
+  cutUnit(ug, mode, t) {
+    const THREE = this.three;
+    if (!mode || !ug) return;
+    this.ren.localClippingEnabled = true;
+    ug.updateMatrixWorld(true);
+    const lb = new THREE.Box3();
+    ug.traverse((o) => { if (o.isMesh && o.geometry) { o.geometry.computeBoundingBox(); lb.union(o.geometry.boundingBox.clone().translate(o.position)); } });
+    const nLoc = mode === "front" ? new THREE.Vector3(0, 0, -1) : mode === "top" ? new THREE.Vector3(0, -1, 0) : new THREE.Vector3(1, 0, 0);
+    const pLoc = mode === "front" ? new THREE.Vector3(0, 0, lb.max.z - (lb.max.z - lb.min.z) * t) : mode === "top" ? new THREE.Vector3(0, lb.max.y - (lb.max.y - lb.min.y) * t, 0) : new THREE.Vector3(lb.min.x + (lb.max.x - lb.min.x) * t, 0, 0);
+    const n = nLoc.transformDirection(ug.matrixWorld), p = pLoc.applyMatrix4(ug.matrixWorld);
+    const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(n, p);
+    const seen = new Set();
+    ug.traverse((o) => { for (const m of [].concat(o.material || [])) if (m && !seen.has(m)) { seen.add(m); m.clippingPlanes = [plane]; m.clipShadows = true; } });
+  },
   buildUnit(g, u, r, edgeMat) {
     const THREE = this.three;
     const vis = asmVisibility(u);
@@ -2605,6 +2688,7 @@ const view = {
       const T = ([x, y, z]) => [x, z, -y];
       for (const m of r.meshes) {
         if ((m.mat === "hole" && !state.xray) || m.name === "كبة مفصلة" || m.name === "خرم مقبض") continue;
+        if (this.hiddenPart(u, m.name, null)) continue;
         const vs = vis ? vis(m.name, null) : "done";
         if (vs === "hide") continue;
         const front = m.door || m.drawer || m.layer === "Kitchen - Front";
@@ -2650,6 +2734,7 @@ const view = {
           const mesh = new THREE.Mesh(geo, vs === "cur" ? hiMat(mm) : mm);
           mesh.userData.led = key === "led";
           mesh.castShadow = mesh.receiveShadow = !!state.render;
+          mesh.userData.pname = m.name;
           (m.mover !== null ? this.moverGroup(g, r, m.mover) : g).add(mesh);
         }
         if (all.length && m.faces.length <= 16 && m.mat !== "led" && !state.render) {
@@ -2666,7 +2751,7 @@ const view = {
     }
     for (const [pi, pt] of (r.meshes ? [] : r.parts).entries()) {
       const vs = vis ? vis(pt.name, pt.role) : "done";
-      if (vs === "hide") continue;
+      if (vs === "hide" || this.hiddenPart(u, pt.name, pt.role)) continue;
       const mvI = r.partMover?.[pi] ?? null;
       const tgt = mvI !== null ? this.moverGroup(g, r, mvI) : g;
       if (pt.role === "hole" || pt.material === "__hole") continue;
@@ -2711,6 +2796,7 @@ const view = {
       if (ptx) Mat.planarUV(THREE, geo, ptx.tile);
       mesh.userData.led = led;
       mesh.castShadow = mesh.receiveShadow = !!state.render;
+      mesh.userData.pname = pt.name;
       tgt.add(mesh);
       if (!led && !s.type?.startsWith("cylinder") && !state.render) {
         const ln = new THREE.LineSegments(new THREE.EdgesGeometry(geo, 30), edgeMat);
@@ -2752,6 +2838,8 @@ const view = {
       const ug = new THREE.Group();
       ug.userData.unitId = u.id;
       this.buildUnit(ug, u, r, edgeMat);
+      const inspected = !whole || u.id === state.sel;
+      if (inspected && ui.explode) this.explode(ug, ui.explode);
       if (layout) {
         const L = layout.get(u.id);
         if (!L) continue;
@@ -2760,6 +2848,7 @@ const view = {
       }
       g.add(ug);
       this.pickables.push(ug);
+      if (inspected && ui.cut) { ug.updateMatrixWorld(true); this.cutUnit(ug, ui.cut, ui.cutT ?? 0.5); }
       if (whole && u.id === (ui.mode === "client" ? ui.clientUnit?.id : state.sel) && ui.mode === "owner") selBox = ug;
     }
     g.updateMatrixWorld(true);
@@ -3629,6 +3718,28 @@ function asmVisibility(u) {
 }
 // ---- where everything goes inside the unit (heights of shelves, drawer runners, doors, hinges, rails)
 const SLIDES = [25, 30, 35, 40, 45, 50, 55, 60, 65];
+/** what kind of piece a part is, from its name (and role when the engine gives one) */
+function partClass(name, role) {
+  const n = String(name || ""), tail = n.split(" - ").pop().trim();
+  const e = { role };
+  let cls = "other";
+  if (e.role === "led" || /ليد/.test(tail)) cls = "led";
+  else if (/مقبض/.test(tail) || e.role === "handle") cls = "handle";
+  else if (/وزرة|سكلو/.test(n) || e.role === "plinth") cls = "plinth";
+  else if (/كونتر/.test(n)) cls = "counter";
+  else if (/^درج \d+$/.test(tail) || e.role === "drawer_front" || (e.role === "door" && /درج/.test(tail))) cls = "drawer";
+  else if (/درج/.test(n) || e.role === "drawer_box" || e.role === "drawer_bottom") cls = "drawerBox";
+  else if (e.role === "door" || /^(ضلفة|باب)/.test(tail) || / - (ضلفة|باب)/.test(" - " + tail)) cls = /فريم|زجاج/.test(tail) ? "other" : "door";
+  else if (/شماعة/.test(tail) || e.role === "rail") cls = "rail";
+  else if (/ظهر|ضهر/.test(tail) || e.role === "back") cls = "back";
+  else if (/قاطوع|ضلع|فاصل/.test(tail) || e.role === "divider") cls = "divider";
+  else if (e.role === "shelf" || e.role === "fixed_shelf" || /^رف/.test(tail)) cls = "shelf";
+  else if (/^قاعدة$/.test(tail)) cls = "base";
+  else if (/^(رأس|راس|شريط)/.test(tail)) cls = "top";
+  else if (/^جنب/.test(tail) || e.role === "side") cls = "side";
+  else if (/فيلر/.test(tail)) cls = "filler";
+  return cls;
+}
 /** the unit's elements with their boxes (unit cm: x across, y depth (front = small y), z up) and a class */
 function unitElems(r) {
   const src = r.meshes ? r.meshes.map((m) => ({ name: m.name, role: null, box: m.box, drawer: m.drawer, door: m.door }))
@@ -3637,21 +3748,7 @@ function unitElems(r) {
   for (const e of src) {
     const n = String(e.name || ""), tail = n.split(" - ").pop().trim();
     if (e.role === "hole" || /كبة|خرم|ثقب|أليتا|دوبل|مينيفكس|فرش/.test(n)) continue;
-    let cls = "other";
-    if (/مقبض/.test(tail) || e.role === "handle") cls = "handle";
-    else if (/وزرة|سكلو/.test(n) || e.role === "plinth") cls = "plinth";
-    else if (/كونتر/.test(n)) cls = "counter";
-    else if (/^درج \d+$/.test(tail) || e.role === "drawer_front" || (e.role === "door" && /درج/.test(tail))) cls = "drawer";
-    else if (/درج/.test(n) || e.role === "drawer_box" || e.role === "drawer_bottom") cls = "drawerBox";
-    else if (e.role === "door" || /^(ضلفة|باب)/.test(tail) || / - (ضلفة|باب)/.test(" - " + tail)) cls = /فريم|زجاج/.test(tail) ? "other" : "door";
-    else if (/شماعة/.test(tail) || e.role === "rail") cls = "rail";
-    else if (/ظهر|ضهر/.test(tail) || e.role === "back") cls = "back";
-    else if (/قاطوع|ضلع|فاصل/.test(tail) || e.role === "divider") cls = "divider";
-    else if (e.role === "shelf" || e.role === "fixed_shelf" || /^رف/.test(tail)) cls = "shelf";
-    else if (/^قاعدة$/.test(tail)) cls = "base";
-    else if (/^(رأس|راس|شريط)/.test(tail)) cls = "top";
-    else if (/^جنب/.test(tail) || e.role === "side") cls = "side";
-    else if (/فيلر/.test(tail)) cls = "filler";
+    const cls = partClass(n, e.role);
     const b = e.box;
     out.push({ ...e, tail, cls, x0: b.x0, x1: b.x1, z0: b.z0, z1: b.z1, y0: b.y0, y1: b.y1, sec: n.includes(" - ") ? n.split(" - ")[0] : "" });
   }
@@ -4338,7 +4435,7 @@ function render(refit = false) {
   if (ui.mode !== "owner") return;
   if (state.tab === "design") {
     $("#view3d").hidden = !!ui.planOn;
-    renderStrip(); renderChips(); renderProps(); renderErrs(); renderMoveBar(); renderScene(); renderMulti();
+    renderStrip(); renderChips(); renderProps(); renderErrs(); renderMoveBar(); renderScene(); renderMulti(); renderInsp();
     plan.render();
     if (!ui.planOn) view.update(refit);
   }
