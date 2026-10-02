@@ -4,7 +4,7 @@ import { optimize } from "./engine/cut/cutOptimizer.js";
 self.onmessage = (e) => {
   const { id, groups, opts } = e.data;
   const out = groups.map((g) => {
-    const res = optimize(g.parts, { ...opts, timeCap: 6 });
+    const res = optimize(g.parts, { ...opts, remnants: g.remnants || [], timeCap: 6 });
     return { key: g.key, result: res };
   });
   self.postMessage({ id, out });

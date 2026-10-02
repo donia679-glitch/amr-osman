@@ -173,7 +173,7 @@ export class Dxf {
 }
 
 // ------------------------------------------------------------------ delivery
-const MIME = { pdf: "application/pdf", xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", csv: "text/csv", zip: "application/zip", png: "image/png", jpg: "image/jpeg", json: "application/json", svg: "image/svg+xml", html: "text/html", txt: "text/plain" };
+const MIME = { pdf: "application/pdf", xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", csv: "text/csv", zip: "application/zip", png: "image/png", jpg: "image/jpeg", json: "application/json", svg: "image/svg+xml", html: "text/html", txt: "text/plain", usdz: "model/vnd.usdz+zip", mp4: "video/mp4", webm: "video/webm" };
 /** hand a file to the viewer: the artifact download capability, else the share sheet, else a download link */
 export async function deliver(downloads, filename, data) {
   const ext = filename.split(".").pop().toLowerCase();

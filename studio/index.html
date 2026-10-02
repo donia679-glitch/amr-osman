@@ -7,7 +7,7 @@
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <style>html,body{margin:0;padding:0}body{min-height:100vh;min-height:100dvh}</style>
-<script>window.NOVERA_BUILD = "2026-10-02 22:55";</script>
+<script>window.NOVERA_BUILD = "2026-10-02 23:22";</script>
 </head>
 <body>
 <meta charset="utf-8">
@@ -203,6 +203,43 @@ summary { font-weight: 600; cursor: pointer; padding: 4px 0 8px; list-style-posi
 .finbox > summary { cursor: pointer; font-weight: 700; padding: 4px 0; }
 .finbox[open] { gap: 10px; }
 #lib [hidden] { display: none !important; }
+/* ---- pro features */
+.chip.gold { background: linear-gradient(135deg, #e8bd55, #d9a63a); color: #123f23; border-color: transparent; font-weight: 800; }
+.varlist { display: grid; gap: 8px; margin: 8px 0; }
+.varrow { display: grid; grid-template-columns: 1fr auto; gap: 6px 10px; align-items: center; border: 1px solid var(--line); border-radius: 12px; padding: 10px; }
+.varrow.on { border-color: var(--brand); box-shadow: 0 0 0 2px color-mix(in srgb, var(--brand) 25%, transparent); }
+.varrow input { font: inherit; font-weight: 700; border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; background: var(--panel); color: var(--ink); min-width: 0; }
+.varrow .vmeta { grid-column: 1 / -1; font-size: 13px; color: var(--muted); }
+.varrow .vbtns { display: flex; gap: 6px; align-items: center; }
+.vcomp { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; margin-top: 10px; }
+.vcomp figure { margin: 0; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--panel2); }
+.vcomp img { width: 100%; display: block; aspect-ratio: 16 / 10; object-fit: cover; }
+.vcomp figcaption { display: grid; gap: 2px; padding: 8px 10px; }
+.vcomp figcaption span { color: var(--brand); font-weight: 800; }
+.aklist { display: grid; gap: 8px; margin: 10px 0; }
+.akcard { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; align-items: center; border: 1px solid var(--line); border-radius: 12px; padding: 12px; }
+.akcard small { color: var(--muted); grid-column: 1; }
+.akcard .akprice { grid-column: 1; font-weight: 800; color: var(--brand); }
+.akcard button { grid-row: 1 / span 3; grid-column: 2; }
+.remlist { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.rem { display: inline-flex; align-items: center; gap: 2px; background: var(--panel2); border-radius: 8px; padding: 2px 6px; font-size: 12.5px; direction: ltr; }
+.rem button { border: 0; background: none; color: var(--err, #b42318); font-size: 15px; padding: 0 2px; }
+.remadd { display: inline-flex; gap: 3px; }
+.remadd input { width: 54px; font: inherit; font-size: 12.5px; padding: 4px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--ink); }
+.stbar { display: grid; grid-auto-flow: column; gap: 3px; margin: 6px 0 10px; }
+.stbar i { height: 8px; border-radius: 4px; background: var(--line); }
+.stbar i.on { background: var(--brand); }
+.stlist { display: grid; gap: 6px; }
+.strow { display: grid; grid-template-columns: 1fr 150px 120px; gap: 6px; align-items: center; }
+.strow input[type=date], .strow input:not([type]) { font: inherit; font-size: 13px; padding: 6px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--ink); min-width: 0; }
+.strow.on .f span { font-weight: 700; color: var(--brand); }
+@media (max-width: 640px) { .strow { grid-template-columns: 1fr 1fr; } .strow .f { grid-column: 1 / -1; } }
+.clstage { margin: 6px 0 10px; }
+.hstage { display: inline-block; font-size: 12px; font-weight: 700; color: var(--brand); margin-top: 2px; }
+.kv .profit { color: #1f8f4e; }
+.appbox { border: 1px solid var(--line); border-radius: 12px; padding: 8px 12px; margin: 6px 0 12px; }
+.appbox > summary { cursor: pointer; font-weight: 700; padding: 4px 0; }
+
 .libq { width: 100%; box-sizing: border-box; font: inherit; font-size: 15px; padding: 10px 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); margin: 4px 0 10px; }
 .softbox { border: 1px solid var(--line); border-radius: 12px; padding: 8px 12px; margin: 6px 0 12px; }
 .softbox > summary { cursor: pointer; font-weight: 700; padding: 4px 0; }

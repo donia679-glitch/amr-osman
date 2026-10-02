@@ -29,7 +29,7 @@ async function run(mode, make) {
 const lsAll = () => { try { return JSON.parse(localStorage.getItem(LS) || "{}"); } catch { return {}; } };
 const lsSave = (m) => { try { localStorage.setItem(LS, JSON.stringify(m)); } catch { /* full */ } };
 
-const summary = (r) => ({ id: r.id, name: r.name, updatedAt: r.updatedAt || "", units: r.project?.units?.length || 0, room: !!r.project?.room });
+const summary = (r) => ({ id: r.id, name: r.name, updatedAt: r.updatedAt || "", units: r.project?.units?.length || 0, room: !!r.project?.room, stages: r.project?.stages || null, variants: r.project?.variants?.length || 0 });
 
 /** newest first */
 export async function list() {
