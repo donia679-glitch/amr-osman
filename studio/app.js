@@ -4464,6 +4464,9 @@ async function boot() {
     view.init("#view3d");
     showHome();
   }
+  // the splash stays at least a moment so the logo is seen, then fades into the start screen
+  const sp = document.getElementById("splash");
+  if (sp) { const wait = Math.max(0, 1900 - performance.now()); setTimeout(() => { sp.classList.add("out"); setTimeout(() => sp.remove(), 600); }, wait); }
   setCloud("local");
   const [db, user, comments, downloads] = await Promise.all(["db", "user", "comments", "downloads"].map((n) => window.claude?.use?.(n) ?? Promise.resolve(null)));
   Object.assign(cloud, { db, user, comments, downloads });
