@@ -382,6 +382,7 @@ app.innerHTML = `
       <div id="movebar" class="movebar" hidden><span>وضع التحريك — اسحب الوحدة اللي عليها الإطار الدهبي. دوس على وحدة تانية عشان تختارها.</span><button data-moveoff>✕ خروج</button></div>
       <div id="view3d" class="view3d"><div id="fallback" class="fallback" hidden></div><div id="ptbar" class="ptbar" hidden></div>
         <div class="vctl" role="toolbar" aria-label="التحكم في العرض">
+          <span class="vmode" role="group" aria-label="اللمس بيحرّك إيه"><button data-vmode="scene" title="السحب بيلف المشهد كله">🌍 المشهد</button><button data-vmode="units" title="السحب بيحرّك الوحدة المختارة">✋ الوحدات</button></span>
           <button data-vz="0.8" aria-label="قرّب">+</button><button data-vz="1.25" aria-label="بعّد">−</button>
           <button data-vr="-25" aria-label="لف الكاميرا شمال">⟲</button><button data-vr="25" aria-label="لف الكاميرا يمين">⟳</button>
           <button data-vp="top" aria-label="من فوق">فوق</button><button data-vp="front" aria-label="من قدام">قدام</button><button data-vp="fit" aria-label="ملء الشاشة">⤢</button>
@@ -430,10 +431,11 @@ $("#libBtn").addEventListener("click", () => { state.libOpen = !state.libOpen; r
     view.highlight(id, true);
     try { host.setPointerCapture(e.pointerId); } catch { /* pointer gone */ }
   };
-  // orbiting never moves furniture: a unit moves only in "move" mode or after a long press on it
+  // orbiting never moves furniture: a unit moves only in "units" (move) mode
   // capture phase: runs before the orbit controls, so a move can claim the finger outright
   host.addEventListener("pointerdown", (e) => {
     if (e.target.closest(".vctl, .movebar") || view.final?.active) return;
+    if (!drag && !ptDrag) view.ctl.enabled = true;
     down = [e.clientX, e.clientY];
     clearTimeout(press);
     // move mode + a selected electrical/plumbing point under the finger: slide it over its wall
@@ -453,13 +455,7 @@ $("#libBtn").addEventListener("click", () => { state.libOpen = !state.libOpen; r
     const id = view.pickAt(e.clientX, e.clientY);
     if (!id || id !== state.sel) return; // only the outlined (selected) unit ever moves
     if (ui.moveMode) { e.stopPropagation(); startDrag(e, id); return; }
-    const ev = { clientX: e.clientX, clientY: e.clientY, pointerId: e.pointerId };
-    press = setTimeout(() => {
-      if (!down || Math.hypot(down[2] ?? 0, down[3] ?? 0) > 8) return;
-      view.ctl.enabled = false; view.ctl.enabled = true; // drop the orbit gesture that started
-      startDrag(ev, id);
-      navigator.vibrate?.(15);
-    }, 450);
+    // "scene" mode: nothing ever moves — a drag only turns the camera
   }, true);
   host.addEventListener("pointermove", (e) => {
     if (ptDrag) {
@@ -514,6 +510,7 @@ $("#libBtn").addEventListener("click", () => { state.libOpen = !state.libOpen; r
       return;
     }
     const hit = view.pickAny(e.clientX, e.clientY);
+    if (!hit && ui.moveMode) { sceneMode(); alertBar("رجعت للوضع العادي — السحب بيلف المشهد كله."); return; }
     if (hit?.kind === "unit") {
       if (ui.multi) { ui.multi.has(hit.id) ? ui.multi.delete(hit.id) : ui.multi.add(hit.id); renderMulti(); renderStrip(); view.update(); return; }
       ui.room3d = false; ui.planSel = null;
@@ -528,10 +525,12 @@ $("#libBtn").addEventListener("click", () => { state.libOpen = !state.libOpen; r
   };
   host.addEventListener("pointerup", end);
   host.addEventListener("pointercancel", end);
+  host.addEventListener("lostpointercapture", (e) => { if (drag || ptDrag) end(e); });
 }
 document.querySelector("#view3d .vctl").addEventListener("pointerdown", (e) => e.stopPropagation());
 document.querySelector("#view3d .vctl").addEventListener("click", (e) => {
   const b = e.target.closest("button");
+  if (b?.dataset.vmode) { if (b.dataset.vmode === "scene") sceneMode(); else { ui.moveMode = true; renderMoveBar(); renderChips(); if (!state.sel) alertBar("اختار وحدة الأول (دوس عليها) وبعدين اسحبها."); } return; }
   if (!b || !view.ready) return;
   if (b.dataset.vz) view.zoom(+b.dataset.vz);
   else if (b.dataset.vr) view.orbit(+b.dataset.vr);
@@ -713,8 +712,22 @@ $("#ptbar").addEventListener("click", async (e) => {
   }
 });
 // full-screen design view (the stage alone) and the phone's bottom sheet for the properties
-function renderMoveBar() { $("#movebar").hidden = !(ui.moveMode && wholeView() && !ui.planOn && state.tab === "design"); }
-$("#movebar").addEventListener("click", (e) => { if (e.target.closest("[data-moveoff]")) { ui.moveMode = false; renderMoveBar(); renderChips(); } });
+function renderMoveBar() {
+  $("#movebar").hidden = !(ui.moveMode && wholeView() && !ui.planOn && state.tab === "design");
+  const vm = document.querySelector("#view3d .vmode");
+  if (vm) {
+    vm.hidden = !wholeView() || ui.mode !== "owner";
+    for (const b of vm.querySelectorAll("button")) b.classList.toggle("on", (b.dataset.vmode === "units") === !!ui.moveMode);
+  }
+}
+/** back to the normal touch: every drag turns the whole scene, nothing moves */
+function sceneMode() {
+  ui.moveMode = false;
+  if (view.ready && !(view.final?.active && view.final.locked !== false)) view.ctl.enabled = true;
+  renderMoveBar(); renderChips();
+}
+addEventListener("keydown", (e) => { if (e.key === "Escape" && ui.moveMode && !e.target.closest?.("input,textarea,select")) sceneMode(); });
+$("#movebar").addEventListener("click", (e) => { if (e.target.closest("[data-moveoff]")) sceneMode(); });
 $("#fsBtn").addEventListener("click", () => {
   const on = !document.body.classList.contains("fs");
   document.body.classList.toggle("fs", on);
