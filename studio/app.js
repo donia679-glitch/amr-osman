@@ -718,7 +718,8 @@ $("#movebar").addEventListener("click", (e) => { if (e.target.closest("[data-mov
 $("#fsBtn").addEventListener("click", () => {
   const on = !document.body.classList.contains("fs");
   document.body.classList.toggle("fs", on);
-  $("#fsBtn").textContent = on ? "✕" : "⛶";
+  $("#fsBtn").textContent = on ? "✕ رجّع القوايم" : "⛶";
+  $("#fsBtn").classList.toggle("on", on);
   $("#fsBtn").setAttribute("aria-label", on ? "خروج من ملء الشاشة" : "ملء الشاشة");
   setTimeout(() => { view.resize(); plan.vb = null; plan.render(); }, 60);
 });

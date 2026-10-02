@@ -7,7 +7,7 @@
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <style>html,body{margin:0;padding:0}body{min-height:100vh;min-height:100dvh}</style>
-<script>window.NOVERA_BUILD = "2026-10-02 22:43";</script>
+<script>window.NOVERA_BUILD = "2026-10-02 22:50";</script>
 </head>
 <body>
 <meta charset="utf-8">
@@ -496,6 +496,16 @@ body.ptrun .ptbar { bottom: 10px; }
 /* full-screen stage */
 .fsbtn { position: absolute; top: 10px; inset-inline-end: 10px; z-index: 4; width: 44px; height: 44px; border-radius: 12px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); font-size: 20px; box-shadow: 0 3px 10px rgba(0,0,0,.15); }
 .stage .chips { inset-inline-end: 62px; }
+@media (min-width: 641px) and (max-width: 1320px) {
+  .bar .cloud, .bar .brand .studio { display: none; }
+  #projName { max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; vertical-align: middle; }
+  .bar .projbtn { padding-inline: 10px; }
+}
+@media (min-width: 641px) and (max-width: 1100px) {
+  .bar .tabs .tl { display: none; } .bar .tabs .ts { display: inline; }
+  .bar #expBtn span, .bar #saveBtn span { display: none; }
+}
+body.fs .fsbtn.on { width: auto; padding: 0 16px; font-size: 15px; font-weight: 700; background: var(--brand); color: #fff; border-color: transparent; top: calc(10px + env(safe-area-inset-top)); }
 body.fs .bar, body.fs #props, body.fs .units, body.fs #sheetBtn, body.fs .lib { display: none !important; }
 body.fs .design { grid-template-columns: 1fr !important; grid-template-rows: 1fr !important; }
 body.fs #views { position: fixed; inset: 0; z-index: 10; }
