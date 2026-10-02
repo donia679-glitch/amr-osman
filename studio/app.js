@@ -164,7 +164,7 @@ function setCloud(s) {
 // ------------------------------------------------------------------ engines adapter
 const cache = new Map();
 function R(u) {
-  const key = u.kind + JSON.stringify(u.params) + JSON.stringify(u.libs || {});
+  const key = u.kind + JSON.stringify(u.params) + JSON.stringify(u.libs || {}) + (u.org || "");
   if (cache.has(key)) return cache.get(key);
   if (cache.size > 80) cache.delete(cache.keys().next().value);
   const out = u.kind === "dressing" ? adaptDressing(u) : u.kind === "kitchen" ? adaptKitchen(u) : u.kind === "pieces" ? adaptPieces(u) : adaptPanel(u);
@@ -335,7 +335,9 @@ function adaptKitchen(u) {
   for (const [k, [, param]] of Object.entries(KU.K_MATS)) names[k] = String(r.params[param] || "").trim() || KU.K_DEFAULT_NAMES[k];
   const p = r.params;
   const kind = p.unit_category === "corner" ? `زاوية ${KU.K_CORNER[p.corner_style] || ""}` : KU.K_CATS[p.unit_category] || "وحدة مطبخ";
-  return { ...base, names, colors, hardware: r.hardware, pieces: r.parts.length, banding: bandM(r.parts), doors: r.stats.doors, drawers: r.stats.drawers,
+  const hw = { ...(r.hardware || {}) };
+  for (const [k, q] of Object.entries(orgHardware(u) || {})) hw[k] = (hw[k] || 0) + q;
+  return { ...base, names, colors, hardware: hw, pieces: r.parts.length, banding: bandM(r.parts), doors: r.stats.doors, drawers: r.stats.drawers,
     label: `${kind} · ${KU.K_TYPES[p.unit_type] || ""}`, libOf };
 }
 /** width × height × depth of any unit (kitchen corners use their own size fields) */
@@ -828,7 +830,7 @@ function renderLib() {
 `;
   const kg = {};
   for (const [key, s] of Object.entries(KU.KITCHEN)) (kg[kitchenGroup({ ...s, key })] ??= []).push([key, s]);
-  for (const g of ["🔌 أجهزة وتجاويف (تلاجة · فرن · ميكروويف · غسالة)", "مطابخ — سفلي", "مطابخ — علوي", "مطابخ — طويل", "مطابخ — زوايا", "مطابخ — إكسسوارات", "دواليب غرف النوم", ...Object.keys(kg)].filter((g, i, a) => kg[g] && a.indexOf(g) === i)) {
+  for (const g of ["🔌 أجهزة وتجاويف (تلاجة · فرن · ميكروويف · غسالة)", "مطابخ — سفلي", "مطابخ — علوي", "مطابخ — طويل", "مطابخ — زوايا", "مطابخ — ترولي ومنظمات", "مطابخ — إكسسوارات", "دواليب غرف النوم", ...Object.keys(kg)].filter((g, i, a) => kg[g] && a.indexOf(g) === i)) {
     h += `<h3>${esc(g)}</h3><div class="cards">`;
     for (const [key, s] of kg[g]) {
       const base = !s.params.unit_type || s.params.unit_type === "base";
@@ -868,7 +870,19 @@ $("#lib").addEventListener("click", (e) => {
   let u;
   if (c.dataset.kitchen) {
     const s = KU.KITCHEN[c.dataset.kitchen];
-    u = { id: uid(), kind: "kitchen", name: s ? s.label : "وحدة مطبخ", params: clone(s ? s.params : {}), libs: {} };
+    u = { id: uid(), kind: "kitchen", name: s ? s.label : "وحدة مطبخ", params: clone(s ? s.params : {}), libs: {}, ...(s?.org ? { org: s.org } : {}) };
+    if (s?.ins) {
+      const d0 = unitDrawers(u, R(u));
+      u.inserts = {};
+      for (const [i, k] of Object.entries(s.ins)) {
+        const d = d0.find((x) => x.i === +i);
+        if (!d) continue;
+        const { v, h } = insertLayout(k, d.W, d.D);
+        u.inserts[i] = k;
+        Object.assign(u.params, { [`drawer_insert_${i}`]: "custom", [`drawer_insert_v_${i}`]: v.join(","), [`drawer_insert_h_${i}`]: h.join(",") });
+      }
+      u.params.drawer_insert_height = Math.max(4, ...Object.values(u.inserts).map((k) => INSERTS[k]?.ht || 5));
+    }
   } else if (c.dataset.dress) {
     const s = DRESSING[c.dataset.dress];
     u = s ? { id: uid(), kind: "dressing", name: s.label, params: clone(s.params), libs: clone(s.libs || {}) } : { id: uid(), kind: "dressing", name: "دريسنج", params: {} };
@@ -1205,7 +1219,7 @@ function renderProps() {
   if (r.ok && wholeView()) h += `<div class="grid2"><label class="f"><span>↕ رفع الوحدة من الأرض (سم)</span><input type="number" inputmode="decimal" step="1" min="0" data-ulift value="${+u.lift || 0}"></label></div>
     <p class="hint">زيادة على ارتفاعها العادي — مثلاً وحدة على قاعدة أو رف معلّق. الوحدات العلوية للمطبخ ارتفاعها من "التعليق من الأرض".</p>`;
   if (u.kind === "pieces") { el.innerHTML = h + (r.ok ? summaryHtml(u) : "") + piecesProps(u); return; }
-  if (u.kind === "kitchen" && r.ok) h += applianceField(u, p);
+  if (u.kind === "kitchen" && r.ok) h += applianceField(u, p) + organizerField(u, r);
   if (r.ok) h += summaryHtml(u);
   h += u.kind === "dressing" ? dressingProps(p) : u.kind === "kitchen" ? kitchenProps(p) : panelProps(p, r);
   if (u.kind === "panel" && r.ok) h += softProps(u, r);
@@ -1511,6 +1525,13 @@ props.addEventListener("change", (e) => {
   const u = selUnit();
   if (!u || t.id === "unitName") return;
   const d = t.dataset;
+  if (d.insc || d.insr) {
+    const i = +(d.insc || d.insr);
+    u.insertOpts ??= {}; u.insertOpts[i] ??= {};
+    u.insertOpts[i][d.insc ? "cols" : "rows"] = Math.max(1, Math.min(8, Math.round(+t.value || 1)));
+    applyInsert(u, i, "grid");
+    return;
+  }
   if (d.appl) {
     u.appliance ??= {};
     if (t.value) u.appliance[d.appl] = t.value; else delete u.appliance[d.appl];
@@ -1543,6 +1564,8 @@ props.addEventListener("input", (e) => {
 props.addEventListener("click", (e) => {
   const rb = e.target.closest("button");
   const pu = selUnit();
+  if (pu && rb && rb.dataset.ins) { const [i, k] = rb.dataset.ins.split("|"); applyInsert(pu, +i, k); return; }
+  if (pu && rb && rb.dataset.org !== undefined) { applyOrg(pu, rb.dataset.org); return; }
   if (pu && rb && (rb.dataset.fabt || rb.dataset.fabc || rb.dataset.tuft || rb.dataset.bduvet || rb.dataset.bthrow)) {
     const same = targetUnits().filter((x) => x.kind === "panel");
     for (const x of same.length ? same : [pu]) {
@@ -1773,6 +1796,198 @@ function finMaterial(THREE, f, opts) {
   m.metalness = f.metal / 100;
   m.userData.refl = f.refl / 100;
   return m;
+}
+
+// ------------------------------------------------------------------ smart inner fittings
+// 1) drawer organisers: each one becomes the engine's own "custom" insert (dividers at measured positions),
+//    so the cut list, the labels and the SketchUp plugin all get the same pieces.
+const INSERTS = {
+  none: { label: "من غير", icon: "▢" },
+  cutlery: { label: "معالق وشوك وسكاكين", icon: "🍴", ht: 5 },
+  knives: { label: "سكاكين (شقوق)", icon: "🔪", ht: 6 },
+  spices: { label: "توابل وبرطمانات", icon: "🧂", ht: 4 },
+  wraps: { label: "فويل وأكياس ولفايف", icon: "🧻", ht: 6 },
+  utensils: { label: "أدوات طبخ (مغارف…)", icon: "🥄", ht: 6 },
+  pots: { label: "حلل وأغطية", icon: "🍲", ht: 10 },
+  plates: { label: "أطباق واقفة", icon: "🍽", ht: 9 },
+  tea: { label: "شاي وقهوة وأكياس", icon: "☕", ht: 6 },
+  grid: { label: "شبكة بمقاساتك", icon: "▦", ht: 5 },
+};
+const r1_ = (v) => Math.round(v * 10) / 10;
+function insertLayout(kind, W, D, o = {}) {
+  const v = [], h = [];
+  const steps = (len, step, from = step) => { const a = []; for (let x = from; x < len - step * 0.6; x += step) a.push(r1_(x)); return a; };
+  if (kind === "cutlery") {
+    let x = 0;
+    for (const w of [7.5, 9, 9, 7.5]) { if (x + w > W - 12) break; x += w; v.push(r1_(x)); }
+    if (D > 38) h.push(r1_(D - 12));
+  } else if (kind === "knives") {
+    const n = Math.min(14, Math.floor((W - 6) / 3.4));
+    for (let i = 1; i <= n; i++) v.push(r1_(i * 3.4));
+  } else if (kind === "spices") {
+    h.push(...steps(D, 8));
+    if (W > 50) v.push(r1_(W / 2));
+  } else if (kind === "wraps") {
+    h.push(...steps(D, Math.max(8, D / 4)));
+  } else if (kind === "utensils") {
+    v.push(r1_(W * 0.36));
+    if (D > 30) h.push(r1_(D * 0.5));
+  } else if (kind === "pots") {
+    if (W > 45) v.push(r1_(W * 0.72));
+  } else if (kind === "plates") {
+    for (let y = D * 0.22; y < D * 0.8; y += 3.6) h.push(r1_(y));
+  } else if (kind === "tea") {
+    v.push(...steps(W, W / Math.max(2, Math.round(W / 14))));
+    if (D > 36) h.push(r1_(D / 2));
+  } else if (kind === "grid") {
+    const c = Math.max(1, Math.min(8, +o.cols || 3)), rr = Math.max(1, Math.min(8, +o.rows || 2));
+    for (let i = 1; i < c; i++) v.push(r1_((W * i) / c));
+    for (let i = 1; i < rr; i++) h.push(r1_((D * i) / rr));
+  }
+  return { v, h };
+}
+/** the drawers of a kitchen unit with their inside sizes (cm), bottom drawer first */
+function unitDrawers(u, r) {
+  const p = r.params || {};
+  const clr = +p.drawer_box_side_clearance || 1.2, bt = +p.drawer_box_panel_thickness || 1.2;
+  const D = Math.max(10, (+p.drawer_box_depth || 45) - 2 * bt);
+  const out = [];
+  for (const m of r.meshes || []) {
+    const mm = /درج (\d+)$/.exec(m.name);
+    if (!mm || !(m.drawer || m.layer === "Kitchen - Front")) continue;
+    const i = +mm[1];
+    if (out.some((x) => x.i === i)) continue;
+    out.push({ i, W: r1_(m.box.x1 - m.box.x0 - 2 * (clr + bt)), D: r1_(D), H: r1_(m.box.z1 - m.box.z0) });
+  }
+  return out.sort((a, b) => a.i - b.i);
+}
+function insertSvg(W, D, v, h) {
+  const s = 120 / Math.max(W, D), w = W * s, d = D * s;
+  return `<svg class="insv" viewBox="-2 -2 ${w + 4} ${d + 4}" width="${w + 4}" height="${d + 4}" aria-hidden="true"><rect x="0" y="0" width="${w}" height="${d}" rx="2" class="ib"/>
+    ${v.map((x) => `<line x1="${x * s}" y1="0" x2="${x * s}" y2="${d}"/>`).join("")}${h.map((y) => `<line x1="0" y1="${d - y * s}" x2="${w}" y2="${d - y * s}"/>`).join("")}</svg>`;
+}
+// 2) pull-out fittings and corner systems: hardware the workshop buys (it goes into the hardware list and
+//    the price) and a picture inside the unit.
+const ORGS = {
+  oil: { label: "ترولي زيت وتوابل (سحب كامل)", fit: (p) => (!p.unit_type || p.unit_type === "base") && +p.width <= 35 && (p.unit_category || "standard") === "standard", set: { door_type: "drawers", drawer_count: 1, include_drawer_boxes: false, include_shelves: false }, hw: { "ترولي زيت 3 أدوار + مجرى فتح كامل": 1 }, levels: 3, bottles: true },
+  cargo: { label: "عمود ترولي طويل (كارجو / تاندم)", fit: (p) => p.unit_type === "tall" && (p.unit_category || "standard") === "standard" && +p.width <= 60, set: { door_type: "drawers", drawer_count: 1, include_drawer_boxes: false, include_shelves: false }, hw: { "طقم ترولي طويل 5 سلات (تاندم)": 1 }, levels: 5 },
+  baskets: { label: "سلال سحب داخلية (2)", fit: (p) => (!p.unit_type || p.unit_type === "base") && (p.unit_category || "standard") === "standard" && +p.width >= 40 && !String(p.door_type).includes("drawer"), set: { include_shelves: false }, hw: { "سلة سحب داخلية ستانلس": 2 }, levels: 2, inner: true },
+  bin: { label: "سلة زبالة سحب (صندوقين)", fit: (p) => (!p.unit_type || p.unit_type === "base") && +p.width >= 40, set: {}, hw: { "سلة زبالة سحب — صندوقين": 1 }, bins: 2 },
+  binsort: { label: "فرز زبالة (3 صناديق)", fit: (p) => (!p.unit_type || p.unit_type === "base") && +p.width >= 60, set: {}, hw: { "سلة فرز زبالة — 3 صناديق": 1 }, bins: 3 },
+  magic: { label: "ماجيك كورنر", fit: (p) => p.unit_category === "corner" && (p.corner_style || "blind") === "blind", set: {}, hw: { "ماجيك كورنر 4 سلات": 1 }, corner: "magic" },
+  lemans: { label: "لي مانز (رفين كلية بيلفّوا)", fit: (p) => p.unit_category === "corner" && (p.corner_style || "blind") === "blind", set: {}, hw: { "لي مانز — رفين": 1 }, corner: "lemans" },
+  carousel: { label: "كاروسيل دوّار 3/4", fit: (p) => p.unit_category === "corner" && p.corner_style === "l_shape", set: {}, hw: { "كاروسيل دوّار 3/4 — دورين": 1 }, corner: "carousel" },
+  plates: { label: "مصفاة أطباق وكوبايات ستانلس", fit: (p) => p.unit_type === "wall" && +p.width >= 50, set: { include_shelves: false }, hw: { "مصفاة أطباق ستانلس دورين": 1 }, rack: true },
+  lift: { label: "رف طالع ونازل (ليفت)", fit: (p) => p.unit_type === "wall" && +p.width >= 60, set: { include_shelves: false }, hw: { "ميكانيزم رف ليفت للعلوي": 1 }, levels: 2, inner: true },
+};
+function orgHardware(u) { return ORGS[u.org]?.hw || null; }
+function organizerField(u, r) {
+  const p = r.params || {};
+  let h = `<details open class="appbox orgbox"><summary>🧩 التقسيمات الداخلية</summary>`;
+  const drs = unitDrawers(u, r);
+  if (drs.length && !ORGS[u.org]?.set?.drawer_count) {
+    h += `<p class="hint">لكل درج: اختار التقسيمة والفواصل بتتحسب على مقاس الدرج من جوه، وبتنزل في الكت ليست والملصقات وفي البلجن.</p>`;
+    for (const d of drs) {
+      const cur = u.inserts?.[d.i] || (p[`drawer_insert_${d.i}`] && p[`drawer_insert_${d.i}`] !== "none" ? "eng" : "none");
+      const lay = cur !== "none" && cur !== "eng" ? insertLayout(cur, d.W, d.D, u.insertOpts?.[d.i]) : { v: [], h: [] };
+      h += `<div class="drw"><div class="drwh"><b>درج ${d.i}${d.i === 1 ? " (تحت)" : d.i === drs.length ? " (فوق)" : ""}</b><small>من جوه ${n1(d.W)}×${n1(d.D)} · ارتفاع الوش ${n1(d.H)}</small></div>
+        <div class="drwb">${insertSvg(d.W, d.D, lay.v, lay.h)}<div class="inschips">${Object.entries(INSERTS).map(([k, x]) => `<button class="chip ${cur === k ? "on" : ""}" data-ins="${d.i}|${k}">${x.icon} ${esc(x.label)}</button>`).join("")}</div></div>
+        ${cur === "grid" ? `<div class="grid2"><label class="f"><span>عدد الخانات بالعرض</span><input type="number" min="1" max="8" data-insc="${d.i}" value="${u.insertOpts?.[d.i]?.cols || 3}"></label><label class="f"><span>بالعمق</span><input type="number" min="1" max="8" data-insr="${d.i}" value="${u.insertOpts?.[d.i]?.rows || 2}"></label></div>` : ""}</div>`;
+    }
+  } else if (!drs.length && !ORGS[u.org]) h += `<p class="hint">الوحدة دي ملهاش أدراج. خلّي "الضلف" أدراج عشان تقسّمها، أو اختار منظّم سحب تحت.</p>`;
+  const fits = Object.entries(ORGS).filter(([, o]) => o.fit(p));
+  if (fits.length || u.org) {
+    h += `<h4>ترولي ومنظمات سحب</h4><div class="inschips"><button class="chip ${!u.org ? "on" : ""}" data-org="">من غير</button>${fits.map(([k, o]) => `<button class="chip ${u.org === k ? "on" : ""}" data-org="${k}">${esc(o.label)}</button>`).join("")}</div>`;
+    if (u.org && ORGS[u.org]) h += `<p class="hint">اتضاف للهاردوير: ${Object.entries(ORGS[u.org].hw).map(([k, q]) => `${esc(k)} × ${q}`).join("، ")}. حط سعره في الورشة والعميل.</p>`;
+  }
+  return h + `</details>`;
+}
+function applyInsert(u, i, kind) {
+  u.inserts ??= {};
+  if (kind === "none") delete u.inserts[i]; else u.inserts[i] = kind;
+  const r = R(u), d = unitDrawers(u, r).find((x) => x.i === i);
+  setParams(u, (p) => {
+    if (kind === "none" || !d) { p[`drawer_insert_${i}`] = "none"; p[`drawer_insert_v_${i}`] = ""; p[`drawer_insert_h_${i}`] = ""; return; }
+    p.include_drawer_boxes = true;
+    const { v, h } = insertLayout(kind, d.W, d.D, u.insertOpts?.[i]);
+    p[`drawer_insert_${i}`] = "custom";
+    p[`drawer_insert_v_${i}`] = v.join(",");
+    p[`drawer_insert_h_${i}`] = h.join(",");
+    const hts = Object.values(u.inserts).map((k) => INSERTS[k]?.ht || 5);
+    p.drawer_insert_height = Math.max(4, ...hts);
+  });
+}
+function applyOrg(u, key) {
+  const o = ORGS[key];
+  u.org = o ? key : null;
+  if (o && Object.keys(o.set).length) setParams(u, (p) => Object.assign(p, o.set)); else { save(); render(); }
+}
+/** pictures of the pull-out fittings inside a kitchen unit */
+function organizerMeshes(THREE, u, r, view_, g) {
+  const o = ORGS[u.org];
+  if (!o) return;
+  const ms = r.meshes;
+  const sides = ms.filter((m) => /^جنب/.test(m.name) && m.box.z1 - m.box.z0 > 20);
+  const W0 = Math.min(...ms.map((m) => m.box.x0)), W1 = Math.max(...ms.map((m) => m.box.x1));
+  const mid = (W0 + W1) / 2;
+  const x0 = Math.max(W0, ...sides.filter((m) => (m.box.x0 + m.box.x1) / 2 < mid).map((m) => m.box.x1)) + 1.5;
+  const x1 = Math.min(W1, ...sides.filter((m) => (m.box.x0 + m.box.x1) / 2 >= mid).map((m) => m.box.x0)) - 1.5;
+  const base = ms.find((m) => /^قاعدة/.test(m.name)), top = ms.find((m) => /^رأس/.test(m.name));
+  const z0 = (base ? base.box.z1 : Math.min(...sides.map((m) => m.box.z0))) + 2, z1 = (top ? top.box.z0 : Math.max(...sides.map((m) => m.box.z1))) - 3;
+  const y0 = 4, y1 = Math.max(...ms.filter((m) => m.mat === "back").map((m) => m.box.y0), 40) - 3;
+  const drawerFront = ms.find((m) => /درج 1$/.test(m.name) && m.mover != null);
+  const host = o.set.drawer_count && drawerFront ? view_.moverGroup(g, r, drawerFront.mover) : g;
+  const chrome = apMat(THREE, "chrome"), dark = apMat(THREE, "dark");
+  const add = (geo, mat, x, y, z, rot) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, z, -y); if (rot) m.rotation.set(...rot); m.castShadow = !!state.render; m.userData.pname = "منظّم"; m.userData.appl = true; host.add(m); return m; };
+  const rod = (len, x, y, z, axis) => add(new THREE.CylinderGeometry(0.35, 0.35, len, 8), chrome, x, y, z, axis === "x" ? [0, 0, Math.PI / 2] : axis === "y" ? [Math.PI / 2, 0, 0] : null);
+  const basket = (bx0, bx1, by0, by1, bz, hh) => {
+    add(new THREE.BoxGeometry(bx1 - bx0, 0.4, by1 - by0), dark, (bx0 + bx1) / 2, (by0 + by1) / 2, bz);
+    for (const zz of [bz + hh * 0.5, bz + hh]) {
+      rod(bx1 - bx0, (bx0 + bx1) / 2, by0, zz, "x"); rod(bx1 - bx0, (bx0 + bx1) / 2, by1, zz, "x");
+      rod(by1 - by0, bx0, (by0 + by1) / 2, zz, "y"); rod(by1 - by0, bx1, (by0 + by1) / 2, zz, "y");
+    }
+    for (const [xx, yy] of [[bx0, by0], [bx1, by0], [bx0, by1], [bx1, by1]]) rod(hh, xx, yy, bz + hh / 2, "z");
+  };
+  if (o.levels) {
+    const n = o.levels, span = (z1 - z0) / n;
+    for (let i = 0; i < n; i++) {
+      const bz = z0 + i * span + 1, hh = Math.min(12, span * 0.45);
+      basket(x0, x1, y0 + (o.inner ? 2 : 0), y1, bz, hh);
+      if (o.bottles) {
+        const cols = Math.max(1, Math.floor((x1 - x0) / 7)), rows = Math.max(1, Math.floor((y1 - y0) / 9));
+        const COLORS = [0x6b7f2a, 0x8a5a1c, 0x2d4f2f, 0xb88a2a];
+        for (let a = 0; a < cols; a++) for (let b = 0; b < Math.min(rows, 4); b++) {
+          const bh = Math.min(span * 0.8, 26 - i * 4), rr = 2.6;
+          const mat = new THREE.MeshPhysicalMaterial({ color: COLORS[(a + b + i) % 4], roughness: 0.15, transmission: 0.3, thickness: 1 });
+          add(new THREE.CylinderGeometry(rr, rr, bh, 14), mat, x0 + 3.5 + a * ((x1 - x0 - 7) / Math.max(1, cols - 1) || 0), y0 + 5 + b * 9, bz + bh / 2 + 0.4);
+        }
+      }
+    }
+  }
+  if (o.bins) {
+    const n = o.bins, w = (x1 - x0 - (n - 1) * 1) / n;
+    for (let i = 0; i < n; i++) add(new THREE.BoxGeometry(w, 30, y1 - y0 - 6), new THREE.MeshStandardMaterial({ color: [0x5a5f63, 0x3f6f4a, 0x2f5f8a][i % 3], roughness: 0.6 }), x0 + w / 2 + i * (w + 1), (y0 + y1) / 2, z0 + 15);
+  }
+  if (o.rack) {
+    for (const [zz, ny] of [[z0 + 6, 0.55], [z0 + (z1 - z0) * 0.55, 0.45]]) {
+      const yb = y0 + (y1 - y0) * ny;
+      for (let x = x0 + 2; x < x1 - 1; x += 2.5) rod(14, x, yb, zz + 7, "z");
+      rod(x1 - x0, (x0 + x1) / 2, yb - 4, zz, "x"); rod(x1 - x0, (x0 + x1) / 2, yb + 4, zz, "x");
+    }
+    add(new THREE.BoxGeometry(x1 - x0, 0.5, y1 - y0), dark, (x0 + x1) / 2, (y0 + y1) / 2, z0);
+  }
+  if (o.corner) {
+    const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, R0 = Math.min(x1 - x0, y1 - y0) * 0.42;
+    for (const zz of [z0 + 4, z0 + (z1 - z0) * 0.55]) {
+      if (o.corner === "magic") { basket(x0, cx - 1, y0, y1, zz, 9); basket(cx + 1, x1, y0, cy, zz, 9); }
+      else {
+        const seg = o.corner === "lemans" ? Math.PI * 1.1 : Math.PI * 1.5;
+        add(new THREE.CylinderGeometry(R0, R0, 0.8, 32, 1, false, 0, seg), dark, cx, cy, zz);
+        add(new THREE.TorusGeometry(R0, 0.4, 6, 32, seg), chrome, cx, cy, zz + 3, [Math.PI / 2, 0, 0]);
+      }
+    }
+    if (o.corner === "carousel") rod(z1 - z0, cx, cy, (z0 + z1) / 2, "z");
+  }
 }
 // ---- appliances drawn in their cavities (pictures only — never in the cut list)
 const APM = {};
@@ -3221,7 +3436,7 @@ const view = {
         minZ = Math.min(minZ, -b.y1); maxZ = Math.max(maxZ, -b.y0);
       }
     }
-    if (r.meshes && u.kind === "kitchen" && !vis && !state.xray && !ui.hideCls?.has("appl")) for (const m of applianceMeshes(THREE, u, r)) g.add(m);
+    if (r.meshes && u.kind === "kitchen" && !vis && !state.xray && !ui.hideCls?.has("appl")) { for (const m of applianceMeshes(THREE, u, r)) g.add(m); organizerMeshes(THREE, u, r, this, g); }
     for (const [pi, pt] of (r.meshes ? [] : r.parts).entries()) {
       const vs = vis ? vis(pt.name, pt.role) : "done";
       if (vs === "hide" || this.hiddenPart(u, pt.name, pt.role)) continue;
