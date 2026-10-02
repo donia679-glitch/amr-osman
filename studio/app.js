@@ -15,6 +15,7 @@ import * as Room from "./room.js";
 import * as Exp from "./export.js";
 import * as Mat from "./materials.js";
 import * as Render from "./render.js";
+import * as Lib from "./projects.js";
 
 const APP_URL = "https://claude.ai/artifact/EP8c8LmBNS8d3EqLcDioXi";
 const APP_VERSION = "1.0";
@@ -124,6 +125,7 @@ function loadLocal() {
 const cloud = { db: null, user: null, me: null, comments: null, downloads: null, saveT: 0, saving: false, dirty: false };
 function persist() {
   try { localStorage.setItem(STORE, JSON.stringify(state)); } catch { /* storage unavailable */ }
+  if (ui.mode === "owner" && state.project) Lib.put(state.project).then(() => { ui.savedAt = Date.now(); }).catch(() => {});
   if (!cloud.db || !cloud.me || ui.mode !== "owner") return;
   cloud.dirty = true;
   clearTimeout(cloud.saveT);
@@ -295,7 +297,9 @@ const app = $("#app");
 app.innerHTML = `
 <header class="bar">
   <div class="brand"><span class="mark" aria-hidden="true">N</span><b>NOVERA</b><span class="studio">Studio</span></div>
+  <button id="homeBtn" class="projbtn" aria-label="الشاشة الرئيسية" title="المشاريع">🏠</button>
   <button id="projBtn" class="projbtn">${ICON.folder}<span id="projName"></span></button>
+  <button id="saveBtn" class="projbtn savebtn" aria-label="حفظ">💾<span>حفظ</span></button>
   <button id="expBtn" class="projbtn">${ICON.share}<span>تصدير</span></button>
   <button id="lookBtn" class="projbtn" aria-label="الألوان والمظهر">🎨</button>
   <button id="aboutBtn" class="projbtn" aria-label="عن التطبيق">ⓘ</button>
@@ -338,7 +342,8 @@ app.innerHTML = `
   <section id="v-client" class="client" hidden></section>
   <section id="v-work" class="parts" hidden></section>
 </main>
-<div id="pop" class="pop" hidden></div>`;
+<div id="pop" class="pop" hidden></div>
+<div id="home" class="home" hidden></div>`;
 
 $(".tabs").addEventListener("click", (e) => {
   const b = e.target.closest("[data-tab]");
@@ -606,7 +611,41 @@ $("#sheetBtn").addEventListener("click", () => {
   setTimeout(() => view.resize(), 260);
 });
 document.body.dataset.sheet = "min";
-$("#projBtn").addEventListener("click", () => { ui.pop = "projects"; renderPop(); refreshProjects(); });
+$("#saveBtn").addEventListener("click", () => saveNow());
+$("#homeBtn").addEventListener("click", () => showHome());
+$("#home").addEventListener("click", async (e) => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  const d = b.dataset;
+  if (b.hasAttribute("data-hnew")) { await newProject($("#homeName").value); return; }
+  if (b.hasAttribute("data-hlast")) { closeHome(); render(true); return; }
+  if (b.hasAttribute("data-hlook")) { ui.pop = "look"; renderPop(); return; }
+  if (b.hasAttribute("data-habout")) { ui.pop = "about"; renderPop(); return; }
+  if (d.hopen) { await openProject(d.hopen); return; }
+  if (d.hdel) {
+    if (d.armed !== "1") { d.armed = "1"; b.classList.add("armed"); b.textContent = "أكّد المسح"; return; }
+    if (d.hdel === state.project.id) { alertBar("ده المشروع المفتوح — افتح مشروع تاني الأول عشان تمسحه."); return; }
+    await Lib.del(d.hdel);
+    if (cloud.db && cloud.me) { try { await cloud.db.doc(`data/users/${cloud.me}/p_${d.hdel}`).delete(); } catch { /* offline */ } }
+    showHome();
+  }
+});
+$("#home").addEventListener("keydown", (e) => { if (e.target.id === "homeName" && e.key === "Enter") newProject(e.target.value); });
+$("#home").addEventListener("change", async (e) => {
+  if (e.target.id !== "homeImp" || !e.target.files?.[0]) return;
+  try {
+    const d = JSON.parse(await e.target.files[0].text());
+    const p = d.project || d;
+    if (!Array.isArray(p.units)) throw new Error("bad");
+    await Lib.put(state.project).catch(() => {});
+    state.project = { ...p, id: uid(), name: (p.name || "مشروع") + " (مستورد)" };
+    for (const m of state.project.mats || []) Mat.register(m);
+    state.sel = state.project.units[0]?.id ?? null; state.tab = "design";
+    closeHome(); save(); render(true);
+    alertBar("اتفتح المشروع المستورد.");
+  } catch { alertBar("الملف ده مش نسخة مشروع من NOVERA Studio."); }
+});
+$("#projBtn").addEventListener("click", async () => { ui.pop = "projects"; renderPop(); ui.projects = (await allProjects()).map((x) => ({ id: x.id, name: x.name, updatedAt: x.updatedAt })); if (ui.pop === "projects") renderPop(); });
 $("#expBtn").addEventListener("click", () => { ui.pop = "export"; renderPop(); });
 $("#aboutBtn").addEventListener("click", () => { ui.pop = "about"; renderPop(); });
 $("#lookBtn").addEventListener("click", () => { ui.pop = "look"; renderPop(); });
@@ -788,7 +827,7 @@ function renderChips() {
   if (whole || state.project.room) { const n = designChecks().filter((c) => c.level !== "n").length; rm += `<button class="chip tog ${n ? "warnchip" : ""}" data-checks>فحص التصميم${n ? ` (${n})` : " ✓"}</button>`; }
   if (state.project.room) rm += `<p class="chiphint">في العرض 3D: دوس على حيطة أو بريزة أو عمود عشان تعدّله. البريزة تتسحب على الحيطة من "الترتيب ← حرّك".</p>`;
   const body = { unit: h, view: v, arr: a, room: rm }[ui.chipTab];
-  h = `<div class="ctabs" role="tablist">${tabs.map(([k, l]) => `<button role="tab" aria-selected="${ui.chipTab === k}" data-ctab="${k}">${l}</button>`).join("")}</div>` + body;
+  h = `<div class="ctabs" role="tablist">${tabs.map(([k, l]) => `<button role="tab" aria-selected="${ui.chipTab === k}" data-ctab="${k}">${l}</button>`).join("")}</div><div class="cbody">${body}</div>`;
   el.innerHTML = h;
 }
 const ZTYPES = ["doors", "drawers", "flap", "open"];
@@ -1490,9 +1529,9 @@ function renderPop() {
     const online = !!(cloud.db && cloud.me);
     h = `<div class="popbox" role="dialog" aria-label="مشاريعي"><div class="libhead"><h2>مشاريعي</h2><button class="x" data-close aria-label="قفل">×</button></div>
       <label class="f"><span>اسم المشروع الحالي</span><input id="pname" value="${esc(state.project.name)}"></label>
-      <p class="hint">${online ? "المشاريع محفوظة أونلاين على حسابك — تفتحها من الآيباد أو الموبايل أو الكمبيوتر." : "الحفظ الأونلاين مش متاح في الفتحة دي — المشروع محفوظ على الجهاز ده بس."}</p>
+      <p class="hint">${online ? "المشاريع محفوظة أونلاين على حسابك — تفتحها من الآيباد أو الموبايل أو الكمبيوتر." : "المشاريع محفوظة على الجهاز ده (مش متوصل بحساب أونلاين)."}</p>
       <button class="add" data-newproj>${ICON.plus}مشروع جديد</button><div class="plist">`;
-    const list = online ? ui.projects : [{ id: state.project.id, name: state.project.name, updatedAt: "" }];
+    const list = ui.projects?.length ? ui.projects : [{ id: state.project.id, name: state.project.name, updatedAt: "" }];
     for (const pr of list) {
       const cur = pr.id === state.project.id;
       h += `<div class="pitem ${cur ? "on" : ""}"><button data-openproj="${pr.id}"><b>${esc(pr.name)}</b><small>${cur ? "مفتوح دلوقتي" : pr.updatedAt ? new Date(pr.updatedAt).toLocaleString("ar-EG") : ""}</small></button>
@@ -1775,17 +1814,9 @@ $("#pop").addEventListener("click", async (e) => {
     return;
   }
   if (d.lib != null && ui.pop === "mat") { applyLib(d.lib); return; }
-  if (b.hasAttribute("data-newproj")) {
-    if (cloud.dirty) await cloudSave();
-    state.project = { id: uid(), name: "مشروع جديد", units: [] };
-    state.sel = null;
-    state.libOpen = true;
-    state.tab = "design";
-    ui.pop = null;
-    save();
-    render(true);
-    renderPop();
-  } else if (d.openproj && d.openproj !== state.project.id) {
+  if (b.hasAttribute("data-newproj")) { await newProject(""); return; }
+  else if (d.openproj && d.openproj !== state.project.id) { await openProject(d.openproj); return; }
+  else if (d.openproj === "__never") {
     if (cloud.dirty) await cloudSave();
     const snap = await cloud.db.doc(`data/users/${cloud.me}/p_${d.openproj}`).get();
     if (!snap.exists) return;
@@ -1799,10 +1830,82 @@ $("#pop").addEventListener("click", async (e) => {
     renderPop();
   } else if (d.delproj) {
     if (d.armed !== "1") { d.armed = "1"; b.classList.add("armed"); b.textContent = "أكّد"; return; }
-    await cloud.db.doc(`data/users/${cloud.me}/p_${d.delproj}`).delete();
-    await refreshProjects();
+    await Lib.del(d.delproj);
+    if (cloud.db && cloud.me) { try { await cloud.db.doc(`data/users/${cloud.me}/p_${d.delproj}`).delete(); } catch { /* offline */ } }
+    ui.projects = (await allProjects()).map((x) => ({ id: x.id, name: x.name, updatedAt: x.updatedAt }));
+    renderPop();
   }
 });
+/** save button: this device right away, and the account too when signed in */
+async function saveNow() {
+  clearTimeout(saveTimer);
+  try { localStorage.setItem(STORE, JSON.stringify(state)); } catch { /* storage unavailable */ }
+  try { await Lib.put(state.project); } catch { alertBar("ما قدرتش أحفظ على الجهاز."); return; }
+  if (cloud.db && cloud.me) await cloudSave();
+  const t = new Date().toLocaleTimeString("ar-EG", { hour: "numeric", minute: "2-digit" });
+  alertBar(`اتحفظ ✓ «${state.project.name}» — ${t}`);
+  const b = $("#saveBtn"); b.classList.add("ok"); setTimeout(() => b.classList.remove("ok"), 1500);
+}
+/** switch to another project (from this device, or the account when it is newer there) */
+async function openProject(id) {
+  if (id === state.project.id) { closeHome(); return; }
+  await Lib.put(state.project).catch(() => {});
+  if (cloud.dirty) await cloudSave();
+  let rec = await Lib.get(id).catch(() => null), p = rec?.project || null;
+  if (cloud.db && cloud.me) {
+    try {
+      const snap = await cloud.db.doc(`data/users/${cloud.me}/p_${id}`).get();
+      if (snap.exists && (!rec || (snap.data().updatedAt || "") > (rec.updatedAt || ""))) { const v = snap.data(); p = { id, name: v.name, units: v.units || [], ...(v.room ? { room: v.room } : {}), mats: v.mats || [] }; }
+    } catch { /* offline: keep the local copy */ }
+  }
+  if (!p) { alertBar("المشروع ده مش موجود."); return; }
+  state.project = p;
+  for (const m of state.project.mats || []) Mat.register(m);
+  state.sel = state.project.units[0]?.id ?? null;
+  state.tab = "design";
+  ui.planSel = null; ui.multi = null; ui.asm = null;
+  closeHome();
+  ui.pop = null; renderPop();
+  save(); render(true);
+}
+async function newProject(name) {
+  await Lib.put(state.project).catch(() => {});
+  if (cloud.dirty) await cloudSave();
+  state.project = { id: uid(), name: (name || "").trim() || "مشروع جديد", units: [] };
+  state.sel = null; state.libOpen = true; state.tab = "design";
+  ui.planSel = null; ui.multi = null; ui.asm = null;
+  closeHome();
+  ui.pop = null; renderPop();
+  save(); render(true);
+}
+function closeHome() { $("#home").hidden = true; document.body.classList.remove("athome"); setTimeout(() => view.resize?.(), 50); }
+async function allProjects() {
+  const local = await Lib.list().catch(() => []);
+  const map = new Map(local.map((x) => [x.id, { ...x, where: "device" }]));
+  if (cloud.db && cloud.me) {
+    await refreshProjects();
+    for (const c of ui.projects || []) { const l = map.get(c.id); if (!l) map.set(c.id, { ...c, units: null, where: "cloud" }); else if ((c.updatedAt || "") > l.updatedAt) map.set(c.id, { ...l, updatedAt: c.updatedAt, where: "both" }); else l.where = "both"; }
+  }
+  return [...map.values()].sort((a, b) => (b.updatedAt || "").localeCompare(a.updatedAt || ""));
+}
+async function showHome() {
+  const el = $("#home");
+  el.hidden = false;
+  document.body.classList.add("athome");
+  el.innerHTML = `<div class="homein"><div class="homehead"><span class="mark big">N</span><div><b>NOVERA Studio</b><small>تصميم وتصنيع المطابخ والأثاث</small></div></div><p class="hint">بيحمّل المشاريع…</p></div>`;
+  await Lib.put(state.project).catch(() => {});
+  const list = await allProjects();
+  const when = (t) => (t ? new Date(t).toLocaleString("ar-EG", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }) : "");
+  el.innerHTML = `<div class="homein">
+    <div class="homehead"><span class="mark big">N</span><div><b>NOVERA Studio</b><small>تصميم وتصنيع المطابخ والأثاث</small></div></div>
+    <div class="homenew"><input id="homeName" placeholder="اسم المشروع الجديد (مثلاً: مطبخ أ. محمد — التجمع)" aria-label="اسم المشروع الجديد"><button class="primary" data-hnew>＋ مشروع جديد</button></div>
+    <div class="homeacts"><button class="ghost2" data-hlast>↩ كمّل «${esc(state.project.name)}»</button><label class="ghost2 filebtn">📂 افتح ملف مشروع (JSON)<input type="file" id="homeImp" accept=".json,application/json" hidden></label><button class="ghost2" data-hlook>🎨 الألوان والمظهر</button><button class="ghost2" data-habout>ⓘ عن التطبيق</button></div>
+    <h3>المشاريع</h3>
+    <div class="homelist">${list.map((x) => `<div class="hcard ${x.id === state.project.id ? "cur" : ""}"><button class="hopen" data-hopen="${x.id}"><b>${esc(x.name)}</b>
+      <small>${x.units != null ? `${x.units} وحدة · ` : ""}${when(x.updatedAt)}${x.where === "cloud" ? " · أونلاين" : x.where === "both" ? " · على الجهاز وأونلاين" : ""}</small></button>
+      <button class="hdel danger sm" data-hdel="${x.id}" aria-label="امسح ${esc(x.name)}">${ICON.trash}</button></div>`).join("") || `<p class="hint">مفيش مشاريع لسه — ابدأ مشروع جديد.</p>`}</div>
+    <p class="hint">المشاريع بتتحفظ لوحدها وانت شغال، وتقدر تدوس 💾 حفظ في أي وقت. خد نسخة احتياطي من تصدير ← المشروع (JSON).</p></div>`;
+}
 async function refreshProjects() {
   if (!cloud.db || !cloud.me) return;
   try {
@@ -4262,6 +4365,7 @@ async function boot() {
     renderLib();
     render(true);
     view.init("#view3d");
+    showHome();
   }
   setCloud("local");
   const [db, user, comments, downloads] = await Promise.all(["db", "user", "comments", "downloads"].map((n) => window.claude?.use?.(n) ?? Promise.resolve(null)));
@@ -4306,7 +4410,8 @@ async function boot() {
     }
   } catch { setCloud("error"); }
   watchOwnerShared();
-  refreshProjects();
+  await refreshProjects();
+  if (!$("#home").hidden) showHome(); // the account's projects join the list once signed in
 }
 const _persist = persist;
 persist = function () { state.savedAt = new Date().toISOString(); _persist(); };

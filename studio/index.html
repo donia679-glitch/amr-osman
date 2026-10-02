@@ -7,7 +7,7 @@
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <style>html,body{margin:0;padding:0}body{min-height:100vh;min-height:100dvh}</style>
-<script>window.NOVERA_BUILD = "2026-10-02 21:14";</script>
+<script>window.NOVERA_BUILD = "2026-10-02 21:21";</script>
 </head>
 <body>
 <title>NOVERA Studio</title>
@@ -42,6 +42,28 @@
   --brand: #4caf72; --brand-ink: #08130c; --bar: #0b1d11; --bar-ink: #dcebe0; --gold: #d9a63a; --gold-soft: #2e2611;
   --err: #f08a8a; --err-soft: #2e1616; --warn: #e9b860; --warn-soft: #2b2312; --stage: #121915; color-scheme: dark }
 [hidden] { display: none !important; }
+.home { position: fixed; inset: 0; z-index: 50; background: var(--bg); overflow: auto; padding: max(24px, env(safe-area-inset-top)) 16px 32px; }
+.homein { max-width: 760px; margin: 0 auto; display: grid; gap: 16px; }
+.homehead { display: flex; align-items: center; gap: 14px; margin: 12px 0 6px; }
+.homehead b { display: block; font-size: 26px; }
+.homehead small { color: var(--muted); font-size: 14px; }
+.homehead .mark { background: #d9a63a; color: #123f23; display: grid; place-items: center; font-weight: 700; }
+.homehead .mark.big { width: 56px; height: 56px; font-size: 30px; border-radius: 16px; }
+.homenew { display: flex; gap: 8px; flex-wrap: wrap; }
+.homenew input { flex: 1; min-width: 220px; min-height: 48px; border: 1px solid var(--line); border-radius: 12px; padding: 0 14px; font: inherit; font-size: 15px; background: var(--panel); color: var(--ink); }
+.homenew .primary { min-height: 48px; padding: 0 20px; font-size: 15px; }
+.homeacts { display: flex; gap: 8px; flex-wrap: wrap; }
+.homeacts > * { min-height: 44px; display: inline-flex; align-items: center; padding: 0 14px; cursor: pointer; }
+.home h3 { margin: 8px 0 0; }
+.homelist { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; }
+.hcard { display: flex; align-items: stretch; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+.hcard.cur { border-color: var(--brand); box-shadow: 0 0 0 2px var(--brand) inset; }
+.hopen { flex: 1; text-align: start; border: 0; background: none; padding: 14px; color: var(--ink); font: inherit; display: grid; gap: 4px; }
+.hopen b { font-size: 15.5px; }
+.hopen small { color: var(--muted); }
+.hdel { border: 0; border-inline-start: 1px solid var(--line); background: none; padding: 0 12px; }
+.savebtn.ok { background: var(--brand); color: var(--brand-ink); }
+body.athome .bar, body.athome #views { visibility: hidden; }
 html, body { height: 100%; }
 body { background: var(--bg); color: var(--ink); font-family: var(--font); font-size: 14px; direction: rtl; -webkit-tap-highlight-color: transparent; }
 /* an app, not a page: no text selection or callouts on double tap / long press (inputs still work) */
@@ -89,6 +111,7 @@ button { cursor: pointer; }
 .arow { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; border: 1px solid var(--line); border-radius: 12px; padding: 8px 10px; }
 .aopts { display: flex; gap: 6px; flex-wrap: wrap; }
 .chips { position: absolute; top: 10px; inset-inline: 10px; z-index: 2; display: flex; flex-wrap: wrap; gap: 6px; pointer-events: none; }
+.cbody { display: contents; }
 .chip { pointer-events: auto; display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 12px; border-radius: 20px; border: 0; background: var(--bar); color: #fff; font-size: 13px; box-shadow: 0 3px 10px rgba(0,0,0,.18); }
 .chip b { color: #f1cf86; font-weight: 600; }
 .chip.tog { background: var(--panel); color: var(--ink); border: 1px solid var(--line); }
@@ -172,7 +195,7 @@ summary { font-weight: 600; cursor: pointer; padding: 4px 0 8px; list-style-posi
 .emptyp { padding: 30px 6px; }
 
 /* material popover */
-.pop { position: fixed; inset: 0; z-index: 20; background: rgba(10,16,12,.45); display: grid; place-items: center; padding: 16px; }
+.pop { position: fixed; inset: 0; z-index: 60; background: rgba(10,16,12,.45); display: grid; place-items: center; padding: 16px; }
 .popbox { background: var(--panel); border-radius: 16px; width: min(560px, 100%); max-height: 86%; overflow: auto; padding: 12px 16px 16px; }
 .popbox h3 { font-size: 13px; color: var(--muted); margin: 14px 0 6px; }
 .finbox { border: 1px solid var(--line); border-radius: 12px; padding: 8px 12px; margin: 6px 0 12px; display: grid; gap: 8px; }
@@ -406,6 +429,8 @@ body.guest .ghost { display: none; }
 body.ptrun #chips, body.ptrun #movebar, body.ptrun .vctl, body.ptrun #scenep { display: none; }
 body.ptrun .ptbar { bottom: 10px; }
 @media (max-width: 640px), (max-height: 520px) {
+  .savebtn span, #projBtn span { display: none; }
+
   .scenep { top: auto; bottom: 64px; inset-inline-start: 6px; inset-inline-end: 6px; width: auto; max-height: 55%; }
   .ptbar { bottom: 52px; }
 }
@@ -461,7 +486,13 @@ body.fs #views { position: fixed; inset: 0; z-index: 10; }
   .tabs button { padding: 0 7px; height: 34px; font-size: 12px; flex: none; }
   .design { display: block; }
   .stage { position: absolute; inset: 0 0 46px 0; }
-  .chips { flex-wrap: nowrap; overflow-x: auto; overscroll-behavior: contain; scrollbar-width: none; padding-bottom: 4px; top: 8px; inset-inline-start: 8px; }
+  .chips { flex-direction: column; flex-wrap: nowrap; align-items: stretch; top: 8px; inset-inline-start: 8px; }
+  .ctabs { width: auto; }
+  .ctabs button { padding: 0 9px; font-size: 12.5px; min-height: 34px; }
+  .cbody { display: flex; gap: 6px; flex-wrap: nowrap; overflow-x: auto; overscroll-behavior: contain; scrollbar-width: none; padding-bottom: 4px; pointer-events: auto; }
+  .cbody::-webkit-scrollbar { display: none; }
+  .cbody > * { flex: none; }
+  #lookBtn, #aboutBtn, #projBtn { display: none; }
   .chips::-webkit-scrollbar { display: none; }
   .chip { flex: none; min-height: 38px; font-size: 12.5px; padding: 0 10px; }
   .fsbtn { top: 8px; inset-inline-end: 8px; width: 40px; height: 40px; }
