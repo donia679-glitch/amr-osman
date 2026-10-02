@@ -7,7 +7,7 @@
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <style>html,body{margin:0;padding:0}body{min-height:100vh;min-height:100dvh}</style>
-<script>window.NOVERA_BUILD = "2026-10-02 22:08";</script>
+<script>window.NOVERA_BUILD = "2026-10-02 22:29";</script>
 </head>
 <body>
 <meta charset="utf-8">
@@ -202,6 +202,16 @@ summary { font-weight: 600; cursor: pointer; padding: 4px 0 8px; list-style-posi
 .finbox { border: 1px solid var(--line); border-radius: 12px; padding: 8px 12px; margin: 6px 0 12px; display: grid; gap: 8px; }
 .finbox > summary { cursor: pointer; font-weight: 700; padding: 4px 0; }
 .finbox[open] { gap: 10px; }
+.softbox { border: 1px solid var(--line); border-radius: 12px; padding: 8px 12px; margin: 6px 0 12px; }
+.softbox > summary { cursor: pointer; font-weight: 700; padding: 4px 0; }
+.softbox h4 { margin: 10px 0 6px; font-size: 13px; color: var(--muted); }
+.softbox .seg { flex-wrap: wrap; }
+.fabsw { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; }
+.fabsw button { width: 30px; height: 30px; border-radius: 50%; border: 2px solid var(--line); padding: 0; }
+.fabsw button.on { outline: 3px solid var(--brand); outline-offset: 2px; }
+.fabpick { width: 30px; height: 30px; border-radius: 50%; overflow: hidden; border: 2px dashed var(--line); display: inline-grid; place-items: center; }
+.fabpick input { width: 44px; height: 44px; border: 0; padding: 0; background: none; }
+.softchk { display: flex; gap: 8px; align-items: center; margin: 10px 0 4px; font-size: 14px; }
 .finpre { display: flex; flex-wrap: wrap; gap: 6px; }
 .swb.on { outline: 3px solid var(--brand); outline-offset: 1px; }
 .pcs { display: grid; gap: 10px; margin: 8px 0; }

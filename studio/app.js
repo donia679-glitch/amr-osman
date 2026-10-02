@@ -16,6 +16,7 @@ import * as Exp from "./export.js";
 import * as Mat from "./materials.js";
 import * as Render from "./render.js";
 import * as Lib from "./projects.js";
+import * as Decor from "./decor.js";
 
 const APP_URL = "https://claude.ai/artifact/EP8c8LmBNS8d3EqLcDioXi";
 const APP_VERSION = "1.0";
@@ -225,6 +226,9 @@ function adaptPieces(u) {
   const names = {}, colors = {}, libs = {};
   const parts = [];
   let x = 0, y = 0, rowD = 0;
+  // lay them out like on a workbench: rows about as wide as the whole lot is deep
+  const area = rows.reduce((a, r) => a + +r.l * +r.w * Math.min(500, Math.round(+r.qty)), 0);
+  const rowMax = Math.max(...rows.map((r) => +r.l), Math.sqrt(area) * 1.5, 120);
   rows.forEach((r, ri) => {
     const key = "m_" + (r.lib || "custom") + "_" + Math.round(+r.t * 10);
     const lib = r.lib && Catalog.LIB[r.lib] ? r.lib : null;
@@ -234,8 +238,8 @@ function adaptPieces(u) {
     const q = Math.min(500, Math.round(+r.qty));
     for (let i = 0; i < q; i++) {
       const L = +r.l, W = +r.w, T = +r.t;
-      if (x + L > 420 && x > 0) { x = 0; y += rowD + 6; rowD = 0; }
-      parts.push({ name: (r.name || `قطعة ${ri + 1}`) + (q > 1 ? ` (${i + 1}/${q})` : ""), material: key, cut_piece: true, role: "panel",
+      if (x + L > rowMax && x > 0) { x = 0; y += rowD + 6; rowD = 0; }
+      parts.push({ name: (r.name || `قطعة ${ri + 1}`) + (q > 1 ? ` (${i + 1}/${q})` : ""), material: key, cut_piece: true, role: "panel", row: ri,
         label: { w: L, h: W, t: T, banded: { bottom: !!r.band?.l1, top: !!r.band?.l2, left: !!r.band?.w1, right: !!r.band?.w2 }, grain: !!r.grain },
         box: { x0: x, x1: x + L, y0: y, y1: y + W, z0: 0, z1: T } });
       x += L + 6; rowD = Math.max(rowD, W);
@@ -581,6 +585,7 @@ function renderScene() {
     <div class="seg" role="group" aria-label="الوقت">${Object.entries(Render.TIMES).map(([k, t]) => `<button data-time="${k}" class="${sc.time === k ? "on" : ""}">${t.label}</button>`).join("")}</div>
     <label class="sl"><span>الإضاءة العامة</span><input type="range" min="0.4" max="2.2" step="0.05" data-sk="exposure" value="${sc.exposure}"></label>
     <label class="sl"><span>اتجاه الشمس</span><input type="range" min="0" max="360" step="5" data-sk="sunAz" value="${sc.sunAz}"></label>
+    <label class="sl"><span>شطف / كسر الحواف <b class="num">${sc.bevel} مم</b></span><input type="range" min="0" max="10" step="0.5" data-sk="bevel" value="${sc.bevel}"></label>
     <div class="stogs">${[["spots", "سبوتات السقف"], ["led", "الليد"], ["ao", "ضل الأركان"], ["bloom", "توهّج الليد"]].map(([k, l]) => `<button class="chip tog ${sc[k] ? "on" : ""}" data-stog="${k}">${l}</button>`).join("")}</div>
     <h4>الكادرات المحفوظة</h4>
     <div class="vlist">${views.map((v) => `<span class="vrow"><button data-vgo="${v.id}">${esc(v.name)}</button><button class="x" data-vdel="${v.id}" aria-label="امسح ${esc(v.name)}">×</button></span>`).join("") || `<small class="hint">لفّ الكاميرا لحد ما الكادر يعجبك واحفظه، وارجع له في أي وقت.</small>`}</div>
@@ -591,6 +596,13 @@ $("#scenep").addEventListener("input", (e) => {
   const k = e.target.dataset?.sk;
   if (!k) return;
   Render.sceneOf(state)[k] = +e.target.value;
+  if (k === "bevel") {
+    const lab = e.target.closest("label")?.querySelector("b");
+    if (lab) lab.textContent = `${+e.target.value} مم`;
+    clearTimeout(ui.bevT);
+    ui.bevT = setTimeout(() => { save(); view.update(); }, 220);
+    return;
+  }
   view.refreshScene();
   save();
 });
@@ -778,11 +790,11 @@ function renderLib() {
   }
   h += `</div>`;
   const groups = {};
-  for (const [key, pr] of Object.entries(PRESETS)) (groups[pr.group] ??= []).push([key, pr]);
+  for (const [key, pr] of Object.entries({ ...PRESETS, ...Decor.EXTRA_PRESETS })) (groups[pr.group] ??= []).push([key, pr]);
   for (const [g, items] of Object.entries(groups)) {
     h += `<h3>${esc(g)}</h3><div class="cards">`;
     for (const [key, pr] of items) {
-      const c = panelCompute({ preset: key }).material_colors || {};
+      const c = panelCompute(Decor.EXTRA_PRESETS[key] ? clone(pr.params) : { preset: key }).material_colors || {};
       h += `<button class="card" data-preset="${key}"><span class="sw">${swatches([c.front, c.carcass, c.accent, c.table_top, c.table_base])}</span><b>${esc(pr.label)}</b><small>${esc(pr.desc)}</small></button>`;
     }
     h += "</div>";
@@ -806,6 +818,7 @@ $("#lib").addEventListener("click", (e) => {
     const s = DRESSING[c.dataset.dress];
     u = s ? { id: uid(), kind: "dressing", name: s.label, params: clone(s.params), libs: clone(s.libs || {}) } : { id: uid(), kind: "dressing", name: "دريسنج", params: {} };
   } else if (c.dataset.pieces) u = { id: uid(), kind: "pieces", name: "قطع حرة", params: { pieces: [{ ...PIECE_DEF(), name: "قطعة 1" }] } };
+  else if (Decor.EXTRA_PRESETS[c.dataset.preset]) { const x = Decor.EXTRA_PRESETS[c.dataset.preset]; u = { id: uid(), kind: "panel", name: x.label, params: clone(x.params), fabric: clone(x.fabric || {}) }; }
   else if (c.dataset.preset) u = { id: uid(), kind: "panel", name: PRESETS[c.dataset.preset].label, params: { preset: c.dataset.preset } };
   else u = { id: uid(), kind: "panel", name: Schema.TEMPLATES[c.dataset.template].label, params: { template: c.dataset.template } };
   state.project.units.push(u);
@@ -937,7 +950,7 @@ function renderChips() {
     a += `<span class="chip step zone"><span class="zl">لف</span><button data-rot="-90" aria-label="لف 90 شمال">↺90</button><button data-rot="-15" aria-label="لف 15 شمال">↺15</button><button data-rot="15" aria-label="لف 15 يمين">↻15</button><button data-rot="90" aria-label="لف 90 يمين">↻90</button></span>`;
     if (state.project.units.some((x) => x.pos)) a += `<button class="chip tog" data-autolay>رصّ تلقائي</button>`;
   }
-  let rm = `<button class="chip tog" data-plan>المسقط والحيطان</button>`;
+  let rm = `<button class="chip tog" data-plan>المسقط والحيطان</button><button class="chip tog" data-roompop>📐 أوضة بالمقاسات · 📷 مسح بالكاميرا</button>`;
   if (whole || state.project.room) { const n = designChecks().filter((c) => c.level !== "n").length; rm += `<button class="chip tog ${n ? "warnchip" : ""}" data-checks>فحص التصميم${n ? ` (${n})` : " ✓"}</button>`; }
   if (state.project.room) rm += `<p class="chiphint">في العرض 3D: دوس على حيطة أو بريزة أو عمود عشان تعدّله. البريزة تتسحب على الحيطة من "الترتيب ← حرّك".</p>`;
   const body = { unit: h, view: v, arr: a, room: rm }[ui.chipTab];
@@ -1128,6 +1141,7 @@ function renderProps() {
   if (u.kind === "pieces") { el.innerHTML = h + (r.ok ? summaryHtml(u) : "") + piecesProps(u); return; }
   if (r.ok) h += summaryHtml(u);
   h += u.kind === "dressing" ? dressingProps(p) : u.kind === "kitchen" ? kitchenProps(p) : panelProps(p, r);
+  if (u.kind === "panel" && r.ok) h += softProps(u, r);
   h += `<details open><summary>الخامات</summary><div class="mats">`;
   const keys = u.kind === "dressing" ? Object.keys(D.MATERIAL_KEYS) : u.kind === "kitchen" ? Object.keys(KU.K_MATS) : Object.keys(PANEL_MATS);
   const used = new Set([...r.parts.map((x) => x.material), ...(r.meshes || []).map((m) => m.mat)]);
@@ -1140,6 +1154,25 @@ function renderProps() {
   el.innerHTML = h + `</div></details>`;
 }
 
+// ---- upholstery & bedding (pictures only — the cut list is not touched)
+function softProps(u, r) {
+  const bed = r.params?.template === "bed", uph = r.parts.some((x) => /تنجيد/.test(x.note || ""));
+  if (!bed && !uph) return "";
+  const f = { type: "linen", color: r.colors?.accent || "#b9b0a3", tuft: "none", ...(u.fabric || {}) };
+  const bd = { show: true, duvet: "#e9e4da", throw: "", ...(u.bedding || {}) };
+  const sw = (attr, list, cur) => `<div class="fabsw">${list.map((c) => `<button class="${c.toLowerCase() === String(cur).toLowerCase() ? "on" : ""}" ${attr}="${c}" style="background:${c}" aria-label="${c}"></button>`).join("")}<label class="fabpick" aria-label="لون تاني"><input type="color" ${attr}-pick value="${/^#[0-9a-f]{6}$/i.test(cur) ? cur : "#b9b0a3"}"></label></div>`;
+  let h = `<details class="softbox" open><summary>🛋 التنجيد والمفروشات</summary>`;
+  if (uph) {
+    h += `<h4>قماش الضهر المنجّد</h4><div class="seg">${Object.entries(Mat.FABRICS).map(([k, l]) => `<button data-fabt="${k}" class="${f.type === k ? "on" : ""}">${l}</button>`).join("")}</div>
+      ${sw("data-fabc", Mat.FABRIC_COLORS, f.color)}
+      <h4>شكل التنجيد</h4><div class="seg">${Object.entries(Decor.TUFTS).map(([k, l]) => `<button data-tuft="${k}" class="${f.tuft === k ? "on" : ""}">${l}</button>`).join("")}</div>`;
+  } else h += `<p class="hint">علشان يبان تنجيد حقيقي على الضهر فعّل "ضهر منجّد" فوق.</p>`;
+  if (bed) {
+    h += `<label class="softchk"><input type="checkbox" data-bshow ${bd.show !== false ? "checked" : ""}> مرتبة ومخدات ولحاف في المعاينة</label>`;
+    if (bd.show !== false) h += `<h4>لون اللحاف</h4>${sw("data-bduvet", Decor.BEDDING, bd.duvet)}<h4>لون البطانية على الرجلين</h4>${sw("data-bthrow", Decor.BEDDING, bd.throw || f.color)}`;
+  }
+  return h + `<p class="hint">ده للمعاينة والريندر بس — مش بيدخل في الكت ليست. القماش بيبان بملمسه في "ريندر واقعي".</p></details>`;
+}
 function panelProps(p, r) {
   const tpl = p.template;
   const spec = Schema.SPECIAL[tpl];
@@ -1398,6 +1431,15 @@ props.addEventListener("change", (e) => {
   const u = selUnit();
   if (!u || t.id === "unitName") return;
   const d = t.dataset;
+  if (d.bshow !== undefined || d.fabcPick !== undefined || d.bduvetPick !== undefined || d.bthrowPick !== undefined) {
+    u.fabric ??= {}; u.bedding ??= {};
+    if (d.bshow !== undefined) u.bedding.show = t.checked;
+    if (d.fabcPick !== undefined) u.fabric.color = t.value;
+    if (d.bduvetPick !== undefined) u.bedding.duvet = t.value;
+    if (d.bthrowPick !== undefined) u.bedding.throw = t.value;
+    save(); renderProps(); view.update();
+    return;
+  }
   if (d.ulift !== undefined) { u.lift = Math.max(0, +t.value || 0); save(); renderChips(); view.update(); if (ui.planOn) plan.render(); return; }
   if (d.num) setParams(u, (p) => setPath(p, d.num, t.value === "" ? 0 : +t.value));
   else if (d.auto) setParams(u, (p) => setPath(p, d.auto, t.value.trim() === "" ? "auto" : +t.value));
@@ -1414,6 +1456,19 @@ props.addEventListener("input", (e) => {
 props.addEventListener("click", (e) => {
   const rb = e.target.closest("button");
   const pu = selUnit();
+  if (pu && rb && (rb.dataset.fabt || rb.dataset.fabc || rb.dataset.tuft || rb.dataset.bduvet || rb.dataset.bthrow)) {
+    const same = targetUnits().filter((x) => x.kind === "panel");
+    for (const x of same.length ? same : [pu]) {
+      x.fabric ??= {}; x.bedding ??= {};
+      if (rb.dataset.fabt) x.fabric.type = rb.dataset.fabt;
+      if (rb.dataset.fabc) x.fabric.color = rb.dataset.fabc;
+      if (rb.dataset.tuft) x.fabric.tuft = rb.dataset.tuft;
+      if (rb.dataset.bduvet) x.bedding.duvet = rb.dataset.bduvet;
+      if (rb.dataset.bthrow) x.bedding.throw = rb.dataset.bthrow;
+    }
+    save(); renderProps(); view.update();
+    return;
+  }
   if (pu?.kind === "pieces" && rb && (rb.hasAttribute("data-padd") || rb.hasAttribute("data-pdup") || rb.dataset.pdel || rb.hasAttribute("data-ppaste"))) {
     const list = [...(pu.params.pieces || [])];
     if (rb.hasAttribute("data-padd")) list.push({ ...PIECE_DEF(), name: `قطعة ${list.length + 1}`, lib: list[list.length - 1]?.lib || "hpl_white", t: list[list.length - 1]?.t || 1.8 });
@@ -1629,6 +1684,55 @@ function finMaterial(THREE, f, opts) {
   m.userData.refl = f.refl / 100;
   return m;
 }
+// a label lying on each free piece in 3D: a coloured frame per row + name + size, so they read from above
+const ROW_TINTS = ["#1f6e3d", "#b07c12", "#2f5f8a", "#8e3b3b", "#6a4c93", "#3d7f7a", "#a4733f", "#5d6670"];
+function pieceTag(THREE, pt, ucode) {
+  const L = pt.box.x1 - pt.box.x0, W = pt.box.y1 - pt.box.y0;
+  const k = 6, cw = Math.max(64, Math.min(1024, Math.round(L * k))), ch = Math.max(48, Math.min(1024, Math.round(W * k)));
+  const c = document.createElement("canvas");
+  c.width = cw; c.height = ch;
+  const g = c.getContext("2d"), tint = ROW_TINTS[(pt.row || 0) % ROW_TINTS.length];
+  g.fillStyle = tint; g.globalAlpha = 0.16; g.fillRect(0, 0, cw, ch);
+  g.globalAlpha = 1; g.strokeStyle = tint; g.lineWidth = Math.max(3, Math.min(cw, ch) * 0.04); g.strokeRect(g.lineWidth / 2, g.lineWidth / 2, cw - g.lineWidth, ch - g.lineWidth);
+  const dims = `${n1(pt.label.w)}×${n1(pt.label.h)}`;
+  let fs = Math.min(ch / 3.6, cw / (Math.max(dims.length, 6) * 0.6));
+  g.fillStyle = "#14201a"; g.textAlign = "center"; g.textBaseline = "middle"; g.direction = "rtl";
+  g.font = `700 ${fs}px "IBM Plex Sans Arabic", system-ui, sans-serif`;
+  let nm = pt.name;
+  const fit = (cw * 0.9) / Math.max(1, g.measureText(nm).width);
+  if (fit < 1) { const f2 = Math.max(fs * 0.6, fs * fit); g.font = `700 ${f2}px "IBM Plex Sans Arabic", system-ui, sans-serif`; }
+  while (nm.length > 3 && g.measureText(nm).width > cw * 0.9) nm = nm.slice(0, -2) + "…";
+  g.fillText(nm, cw / 2, ch / 2 - fs * 0.6);
+  g.font = `500 ${fs * 0.9}px system-ui, sans-serif`; g.direction = "ltr";
+  g.fillText(dims, cw / 2, ch / 2 + fs * 0.65);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(L, W), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, toneMapped: false }));
+  m.rotation.x = -Math.PI / 2;
+  m.position.set((pt.box.x0 + pt.box.x1) / 2, pt.box.z1 + 0.06, -(pt.box.y0 + pt.box.y1) / 2);
+  m.userData.pname = pt.name;
+  m.userData.tag = true;
+  return m;
+}
+/** the rounded-edge (chamfer) size for a board whose thinnest side is `thin` cm, in render mode */
+function bevelFor(thin) {
+  if (!state.render || !view.RBox || thin < 0.5) return null;
+  const mm = +(state.scene?.bevel ?? Render.SCENE_DEF.bevel);
+  if (!(mm > 0)) return null;
+  const r = Math.min(mm / 10, thin * 0.45);
+  return { r, seg: r >= 0.4 ? 4 : r > 0.2 ? 3 : 2 };
+}
+/** relief from the material's own picture (wood grain, stone, weave) as a normal map */
+function addRelief(THREE, m, tex, rel) {
+  if (!(rel > 0) || !tex) return;
+  const n = Mat.normalFor(THREE, tex);
+  if (!n) return;
+  m.normalMap = n;
+  m.normalScale = new THREE.Vector2(1, 1).multiplyScalar((rel / 100) * 1.6);
+  m.needsUpdate = true;
+}
+addEventListener("novera-tex", () => { if (!state.render) return; clearTimeout(ui.texT); ui.texT = setTimeout(() => view.update(), 300); });
 function applyLib(lib) {
   const key = ui.matPick;
   const first = selUnit();
@@ -1662,10 +1766,11 @@ function renderPop() {
     const label = u?.kind === "dressing" ? D.MATERIAL_KEYS[ui.matPick]?.label : u?.kind === "kitchen" ? KU.K_MATS[ui.matPick]?.[0] : PANEL_MATS[ui.matPick];
     h = `<div class="popbox" role="dialog" aria-label="اختار خامة"><div class="libhead"><h2>${esc(label)}</h2><button class="x" data-close aria-label="قفل">×</button></div>`;
     const f = u?.fin?.[ui.matPick];
-    const fv = f || { gloss: 30, metal: 0, refl: 100, coat: 0 };
+    const fv = { gloss: 30, metal: 0, refl: 100, coat: 0, ...(f || {}) };
+    fv.relief ??= Mat.defaultRelief(u ? R(u).libOf?.(ui.matPick) : null);
     h += `<details class="finbox" ${f ? "open" : ""}><summary>✦ اللمعة والانعكاس${f ? " · متعدّلة" : ""}</summary>
       <div class="finpre">${Object.entries(FIN_PRESETS).map(([k, [l]]) => `<button class="chip" data-finpre="${k}">${l}</button>`).join("")}</div>
-      ${[["gloss", "اللمعة", 0, 100], ["refl", "قوة الانعكاس", 0, 200], ["metal", "معدني", 0, 100], ["coat", "ورنيش / لاكيه (طبقة لامعة فوق الخامة)", 0, 100]].map(([k, l, a, z]) => `<label class="sl"><span>${l} <b class="num">${fv[k]}${k === "refl" ? "%" : ""}</b></span><input type="range" min="${a}" max="${z}" step="1" data-fin="${k}" value="${fv[k]}"></label>`).join("")}
+      ${[["gloss", "اللمعة", 0, 100], ["refl", "قوة الانعكاس", 0, 200], ["metal", "معدني", 0, 100], ["coat", "ورنيش / لاكيه (طبقة لامعة فوق الخامة)", 0, 100], ["relief", "بروز الملمس (العروق والمسام)", 0, 100]].map(([k, l, a, z]) => `<label class="sl"><span>${l} <b class="num">${fv[k]}${k === "refl" ? "%" : ""}</b></span><input type="range" min="${a}" max="${z}" step="1" data-fin="${k}" value="${fv[k]}"></label>`).join("")}
       <div class="btnrow">${f ? `<button class="ghost2" data-finreset>رجّع الطبيعي</button>` : ""}<button class="ghost2" data-finall>طبّقها على نفس الخامة في كل الوحدات</button></div>
       <p class="hint">بتبان أكتر في "ريندر واقعي" و"الريندر النهائي".</p></details>`;
     h += `<h3>خاماتي (من الصور)</h3><div class="swgrid">${Mat.all().map((m) => `<span class="swwrap"><button class="swb" data-lib="${m.id}"><i style="background:url('${m.img}') center/cover"></i><span>${esc(m.name)}</span></button><button class="swedit" data-editmat="${m.id}" aria-label="عدّل ${esc(m.name)}">✎</button></span>`).join("")}
@@ -1794,6 +1899,7 @@ function renderPop() {
       ${state.project.room ? `<p class="hint">ده هيستبدل الحيطان الحالية.</p>` : ""}
       <div class="btnrow"><button class="primary" data-mkroom>اعمل الحيطان ورصّ الوحدات</button>${state.project.room ? `<button class="ghost2 danger" data-rmroom>امسح الحيطان</button>` : ""}</div>
       <h3>أو من مسح الأوضة بالكاميرا (LiDAR)</h3>
+      ${window.webkit?.messageHandlers?.noveraScan ? (window.noveraNative?.scan ? `<button class="primary" data-nscan>📷 امسح الأوضة بالكاميرا دلوقتي</button><p class="hint">لف بالجهاز ببطء على كل الحيطان والأبواب والشبابيك، وبعدين دوس «خلصت المسح» ← «استخدم المسح».</p>` : `<p class="hint">الجهاز ده مفيهوش حساس LiDAR، فالمسح المباشر مش متاح عليه — المسح محتاج آيباد برو أو آيفون برو. تقدر ترسم بالمقاسات فوق.</p>`) : ""}
       <p class="hint">لو عندك آيباد برو أو آيفون برو: امسح الأوضة بأي تطبيق بيصدّر RoomPlan بصيغة JSON، وبعدين افتح الملف هنا — الحيطان والأبواب والشبابيك بتتحط بمقاساتها، وتقدر تصلّح أي مقاس بإيدك بعدها. (في نسخة الـApp Store هيبقى فيه زرار مسح مباشر.)</p>
       <label class="add filebtn">${ICON.plus}افتح ملف مسح (RoomPlan JSON)<input type="file" id="roomScan" accept=".json,application/json" hidden></label></div>`;
   }
@@ -1856,7 +1962,7 @@ $("#pop").addEventListener("input", (e) => {
     const u = selUnit();
     if (!u) return;
     u.fin ??= {};
-    const cur = (u.fin[ui.matPick] ??= { gloss: 30, metal: 0, refl: 100, coat: 0 });
+    const cur = (u.fin[ui.matPick] ??= { gloss: 30, metal: 0, refl: 100, coat: 0, relief: Mat.defaultRelief(R(u).libOf?.(ui.matPick)) });
     cur[fk] = +e.target.value;
     for (const x of targetUnits()) if (x !== u && x.kind === u.kind) { x.fin ??= {}; x.fin[ui.matPick] = { ...cur }; }
     const lab = e.target.closest("label")?.querySelector("b");
@@ -1965,7 +2071,8 @@ $("#pop").addEventListener("click", async (e) => {
       state.whole = true; ui.planSel = null; plan.vb = null; ui.pop = null;
       renderPop(); save(); render(true); return;
     }
-    if (b.hasAttribute("data-rmroom")) { delete state.project.room; for (const u of state.project.units) delete u.pos; ui.pop = null; ui.planSel = null; plan.vb = null; renderPop(); save(); render(true); return; }
+    if (b.hasAttribute("data-nscan")) { window.webkit?.messageHandlers?.noveraScan?.postMessage({}); return; }
+  if (b.hasAttribute("data-rmroom")) { delete state.project.room; for (const u of state.project.units) delete u.pos; ui.pop = null; ui.planSel = null; plan.vb = null; renderPop(); save(); render(true); return; }
     return;
   }
   if (d.lib != null && ui.pop === "mat") { applyLib(d.lib); return; }
@@ -2033,6 +2140,18 @@ async function newProject(name) {
   ui.pop = null; renderPop();
   save(); render(true);
 }
+/** the iPad app's camera scan arrives here (RoomPlan CapturedRoom as JSON) */
+window.noveraRoomScan = (data) => {
+  try {
+    const room = Room.fromRoomPlan(data);
+    state.project.room = room;
+    for (const u of state.project.units) delete u.pos;
+    state.whole = true; ui.planOn = true; ui.planSel = null; plan.vb = null; ui.pop = null;
+    closeHome(); renderPop(); save(); render(true);
+    alertBar(`اتعملت ${room.walls.length} حيطة و${room.openings.length} باب/شباك من المسح — راجع المقاسات وعدّل أي حيطة بالضغط عليها.`);
+  } catch (err) { alertBar(err?.message?.length < 80 ? err.message : "ما قدرتش أقرا المسح — جرّب تمسح تاني ببطء."); }
+};
+window.noveraScanError = (msg) => alertBar(msg);
 function closeHome() { $("#home").hidden = true; document.body.classList.remove("athome"); setTimeout(() => view.resize?.(), 50); }
 async function allProjects() {
   const local = await Lib.list().catch(() => []);
@@ -2783,6 +2902,7 @@ const view = {
           transparent: see || glass, opacity: see ? 0.16 : glass ? 0.4 : 1, side: THREE.DoubleSide,
           emissive: new THREE.Color(led ? "#ffcf6a" : "#000000"), emissiveIntensity: led ? 0.9 : 0 });
         m.userData.tile = tx?.tile || 0;
+        if (tx && state.render) addRelief(THREE, m, tx.tex, finOf(u, key)?.relief ?? Mat.defaultRelief(lib));
         m.userData.glass = glass && !see;
         m.userData.mirror = key === "mirror";
         return (mats[id] = m);
@@ -2819,12 +2939,13 @@ const view = {
           }
         }
         const bx = m.box, bmin = Math.min(bx.x1 - bx.x0, bx.y1 - bx.y0, bx.z1 - bx.z0);
-        const rounded = state.render && this.RBox && m.faces.length === 6 && byMat.size === 1 && bmin >= 0.5;
+        const bev = bevelFor(bmin);
+        const rounded = bev && m.faces.length === 6 && byMat.size === 1;
         for (const [key, arr] of byMat) {
           if (!arr.length) continue;
           let geo;
           if (rounded) {
-            geo = new this.RBox(bx.x1 - bx.x0, bx.z1 - bx.z0, bx.y1 - bx.y0, 2, Math.min(0.2, bmin * 0.3));
+            geo = new this.RBox(bx.x1 - bx.x0, bx.z1 - bx.z0, bx.y1 - bx.y0, bev.seg, bev.r);
             geo.translate((bx.x0 + bx.x1) / 2, (bx.z0 + bx.z1) / 2, -(bx.y0 + bx.y1) / 2);
           } else {
             geo = new THREE.BufferGeometry();
@@ -2871,6 +2992,7 @@ const view = {
         emissive: new THREE.Color(led ? "#ffcf6a" : vs === "cur" ? "#d9a63a" : "#000000"), emissiveIntensity: led ? 0.9 : vs === "cur" ? 0.45 : 0 });
       mat.userData.glass = glassy && !see;
       mat.userData.mirror = pt.material === "mirror";
+      if (ptx && state.render) addRelief(THREE, mat, ptx.tex, finOf(u, pt.material)?.relief ?? Mat.defaultRelief(plib));
       const s = pt.shape || {};
       let geo, mesh;
       if ((s.type === "poly_z" || s.type === "profile_z") && s.points?.length > 2) {
@@ -2891,7 +3013,8 @@ const view = {
         mesh.position.set(s.cx, s.cz, -s.cy);
       } else {
         const sx = Math.max(b.x1 - b.x0, 0.05), sy = Math.max(b.z1 - b.z0, 0.05), sz = Math.max(b.y1 - b.y0, 0.05), mn = Math.min(sx, sy, sz);
-        geo = state.render && this.RBox && mn >= 0.5 ? new this.RBox(sx, sy, sz, 2, Math.min(0.2, mn * 0.3)) : new THREE.BoxGeometry(sx, sy, sz);
+        const bev = bevelFor(mn);
+        geo = bev ? new this.RBox(sx, sy, sz, bev.seg, bev.r) : new THREE.BoxGeometry(sx, sy, sz);
         mesh = new THREE.Mesh(geo, mat);
         mesh.position.set((b.x0 + b.x1) / 2, (b.z0 + b.z1) / 2, -(b.y0 + b.y1) / 2);
       }
@@ -2908,6 +3031,13 @@ const view = {
       }
       minX = Math.min(minX, b.x0); maxX = Math.max(maxX, b.x1); minY = Math.min(minY, b.z0); maxY = Math.max(maxY, b.z1);
       minZ = Math.min(minZ, -b.y1); maxZ = Math.max(maxZ, -b.y0);
+    }
+    if (u.kind === "pieces") for (const pt of r.parts) g.add(pieceTag(THREE, pt, unitCode(u)));
+    if (!r.meshes && !vis && !state.xray && !ui.hideCls?.has("soft")) {
+      for (const { mesh, partIndex } of Decor.softFor(THREE, Mat, u, r, { render: !!state.render, RBox: this.RBox, name: "مفروشات" })) {
+        const mvI = partIndex !== null ? r.partMover?.[partIndex] ?? null : null;
+        (mvI !== null ? this.moverGroup(g, r, mvI) : g).add(mesh);
+      }
     }
   },
   update(refit = false) {
@@ -3291,19 +3421,33 @@ function drawCut() {
   if (!groups.length && !outside.length) h += `<p class="hint">مفيش قطع للقص — ضيف وحدات في التصميم.</p>`;
   el.innerHTML = h;
 }
+/** the text inside one piece on a sheet: sized to fit, turned along long narrow pieces, never spilling out */
+function pieceLabel(pl, code, name, dims) {
+  const vert = pl.h > pl.w * 1.25;
+  const W = (vert ? pl.h : pl.w) * 0.9, H = (vert ? pl.w : pl.h) * 0.88;
+  const cx = pl.x + pl.w / 2, cy = pl.y + pl.h / 2;
+  const rot = vert ? ` transform="rotate(-90 ${cx} ${cy})"` : "";
+  const cw = 0.6; // average glyph width in em
+  const t = (y, fs, txt, cls = "") => `<text x="${cx}" y="${y}" font-size="${fs.toFixed(2)}" text-anchor="middle" dominant-baseline="middle"${cls ? ` class="${cls}"` : ""}${rot}>${esc(txt)}</text>`;
+  let fs = Math.min(6, W / (Math.max(code.length, dims.length, 6) * cw), H / 3.5);
+  if (fs >= 2.1) {
+    const maxCh = Math.max(3, Math.floor(W / (fs * cw)));
+    const nm = name.length > maxCh ? name.slice(0, maxCh - 1) + "…" : name;
+    return t(cy - fs * 1.15, fs * 1.05, code, "pcode") + t(cy, fs, nm) + t(cy + fs * 1.15, fs * 0.95, dims, "dim");
+  }
+  fs = Math.min(5, W / (Math.max(code.length, dims.length) * cw), H / 2.3);
+  if (fs >= 1.6) return t(cy - fs * 0.6, fs, code, "pcode") + t(cy + fs * 0.6, fs * 0.9, dims, "dim");
+  fs = Math.min(5, W / (Math.max(code.length, 2) * cw), H * 0.8);
+  return fs >= 1.3 ? t(cy, fs, code, "pcode") : "";
+}
 function sheetSvg(s, si, g) {
   let svg = `<svg viewBox="-2 -2 ${s.w + 4} ${s.h + 4}" role="img" aria-label="لوح ${si + 1}"><rect x="0" y="0" width="${s.w}" height="${s.h}" class="sh"/>`;
   for (const o of s.offcuts) svg += `<rect x="${o.x}" y="${o.y}" width="${o.w}" height="${o.h}" class="off"/>`;
   for (const pl of s.placements) {
-    const fs = Math.max(2.6, Math.min(5.5, Math.min(pl.w, pl.h) / 4.2));
     const label = pl.name.split(": ").pop();
     const code = g.parts[pl.index]?.code || "";
-    const maxCh = Math.max(3, Math.floor(pl.w / (fs * 0.62)));
-    const txt = label.length > maxCh ? label.slice(0, maxCh - 1) + "…" : label;
     svg += `<rect x="${pl.x}" y="${pl.y}" width="${pl.w}" height="${pl.h}" class="pc" style="fill:${g.color}"/>`;
-    const dims = `${n1(pl.rotated ? pl.orig_h : pl.orig_w)}×${n1(pl.rotated ? pl.orig_w : pl.orig_h)}`;
-    if (pl.w > 14 && pl.h > 10) svg += `<text x="${pl.x + pl.w / 2}" y="${pl.y + pl.h / 2 - fs * 1.1}" font-size="${fs * 1.1}" text-anchor="middle" dominant-baseline="middle" class="pcode">${esc(code)}</text><text x="${pl.x + pl.w / 2}" y="${pl.y + pl.h / 2 + fs * 0.1}" font-size="${fs}" text-anchor="middle" dominant-baseline="middle">${esc(txt)}<tspan x="${pl.x + pl.w / 2}" dy="${fs * 1.15}" class="dim">${dims}</tspan></text>`;
-    else if (pl.w > 8 && pl.h > 5) svg += `<text x="${pl.x + pl.w / 2}" y="${pl.y + pl.h / 2}" font-size="${Math.min(fs, pl.h / 2)}" text-anchor="middle" dominant-baseline="middle" class="pcode">${esc(code)}</text>`;
+    svg += pieceLabel(pl, code, label, `${n1(pl.rotated ? pl.orig_h : pl.orig_w)}×${n1(pl.rotated ? pl.orig_w : pl.orig_h)}`);
   }
   svg += "</svg>";
   const steps = s.cuts.slice(0, 40).map((c) => `<li><b>${c.dir === "h" ? "قصة بالعرض" : "قصة بالطول"}</b> ${n1(c.size)} سم <small>من جزء ${n1(c.from_w)}×${n1(c.from_h)}</small></li>`).join("");

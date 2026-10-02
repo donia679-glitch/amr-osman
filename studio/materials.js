@@ -108,7 +108,7 @@ export function textureFor(THREE, key, renderMode) {
   if (texCache.has(id)) return texCache.get(id);
   let tex = null, tile = 60, rot = 0;
   if (custom?.img) {
-    tex = new THREE.TextureLoader().load(custom.img);
+    tex = new THREE.TextureLoader().load(custom.img, () => { try { window.dispatchEvent(new Event("novera-tex")); } catch { /* no window */ } });
     tile = +custom.tile || 60; rot = ((+custom.rot || 0) * Math.PI) / 180;
   } else if (renderMode) {
     const e = Catalog.LIB[key];
@@ -216,4 +216,98 @@ export function wallUV(THREE, mesh, seg, tile) {
     uv[i * 2] = along / tile; uv[i * 2 + 1] = v.y / tile;
   }
   geo.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
+}
+
+// ------------------------------------------------------------------ relief (normal maps) and fabrics
+const nrmCache = new Map();
+/** a normal map made from the texture's own picture (bright = raised), so wood grain, stone and weave show relief */
+export function normalFor(THREE, tex) {
+  const img = tex?.image;
+  if (!img || !(img.width || img.naturalWidth)) return null;
+  if (img.complete === false) return null;
+  const key = tex.uuid;
+  if (nrmCache.has(key)) return nrmCache.get(key);
+  const S = 256, c = document.createElement("canvas");
+  c.width = c.height = S;
+  const g = c.getContext("2d", { willReadFrequently: true });
+  try { g.drawImage(img, 0, 0, S, S); } catch { nrmCache.set(key, null); return null; }
+  const src = g.getImageData(0, 0, S, S).data, out = g.createImageData(S, S), d = out.data;
+  const lum = new Float32Array(S * S);
+  for (let i = 0; i < S * S; i++) lum[i] = (src[i * 4] * 0.299 + src[i * 4 + 1] * 0.587 + src[i * 4 + 2] * 0.114) / 255;
+  const at = (x, y) => lum[((y + S) % S) * S + ((x + S) % S)];
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+    const dx = (at(x + 1, y - 1) + 2 * at(x + 1, y) + at(x + 1, y + 1)) - (at(x - 1, y - 1) + 2 * at(x - 1, y) + at(x - 1, y + 1));
+    const dy = (at(x - 1, y + 1) + 2 * at(x, y + 1) + at(x + 1, y + 1)) - (at(x - 1, y - 1) + 2 * at(x, y - 1) + at(x + 1, y - 1));
+    let nx = -dx * 2, ny = -dy * 2, nz = 1;
+    const l = Math.hypot(nx, ny, nz); nx /= l; ny /= l; nz /= l;
+    const i = (y * S + x) * 4;
+    d[i] = (nx * 0.5 + 0.5) * 255; d[i + 1] = (ny * 0.5 + 0.5) * 255; d[i + 2] = (nz * 0.5 + 0.5) * 255; d[i + 3] = 255;
+  }
+  g.putImageData(out, 0, 0);
+  const n = new THREE.CanvasTexture(c);
+  n.wrapS = n.wrapT = THREE.RepeatWrapping;
+  n.center.copy(tex.center); n.rotation = tex.rotation;
+  nrmCache.set(key, n);
+  return n;
+}
+/** how much relief a library key gets by default (0–100) */
+export function defaultRelief(key) {
+  if (!key) return 0;
+  if (get(key)) return get(key).kind === "fabric" ? 60 : get(key).kind === "stone" ? 25 : 35;
+  if (key.startsWith("wood_")) return 35;
+  if (/^(marble_|quartz_)/.test(key)) return 12;
+  if (/^(terrazzo|concrete_)/.test(key)) return 40;
+  return 0;
+}
+
+export const FABRICS = { linen: "كتان", chenille: "شانيل", velvet: "قطيفة", boucle: "بوكليه", leather: "جلد" };
+export const FABRIC_COLORS = ["#b9b0a3", "#d8d0c4", "#8f8a82", "#5d5a55", "#2f3136", "#2f4a3a", "#3b4a63", "#7a5b45", "#a4733f", "#c9b49a", "#8e3b3b", "#e9e4da"];
+const fabCache = new Map();
+/** a fabric picture: woven threads (linen), soft nap (velvet), loops (bouclé) or grain (leather) */
+function fabricCanvas(hex, type) {
+  const S = 512, c = document.createElement("canvas");
+  c.width = c.height = S;
+  const g = c.getContext("2d");
+  g.fillStyle = hex; g.fillRect(0, 0, S, S);
+  const r = rnd(type.length * 97 + 13);
+  if (type === "linen") {
+    for (let y = 0; y < S; y += 3) { g.fillStyle = shade(hex, 0.86 + r() * 0.2); g.globalAlpha = 0.55; g.fillRect(0, y, S, 1.6); }
+    for (let x = 0; x < S; x += 3) { g.fillStyle = shade(hex, 0.86 + r() * 0.2); g.globalAlpha = 0.45; g.fillRect(x, 0, 1.6, S); }
+    g.globalAlpha = 0.25;
+    for (let i = 0; i < 260; i++) { g.fillStyle = shade(hex, 0.75 + r() * 0.4); g.fillRect(r() * S, r() * S, 1 + r() * 30, 1.2); }
+  } else if (type === "chenille") {
+    for (let y = 0; y < S; y += 6) { g.globalAlpha = 0.5; g.fillStyle = shade(hex, 0.8 + r() * 0.12); g.fillRect(0, y, S, 2.4); g.fillStyle = shade(hex, 1.08 + r() * 0.08); g.fillRect(0, y + 3, S, 1.6); }
+    g.globalAlpha = 0.2;
+    for (let i = 0; i < 2200; i++) { g.fillStyle = shade(hex, 0.85 + r() * 0.35); g.fillRect(r() * S, r() * S, 2, 1.5); }
+  } else if (type === "velvet" || type === "cotton") {
+    g.globalAlpha = 0.18;
+    for (let i = 0; i < 3500; i++) { g.fillStyle = shade(hex, 0.85 + r() * 0.3); g.fillRect(r() * S, r() * S, 2, 2); }
+  } else if (type === "boucle") {
+    g.globalAlpha = 0.5;
+    for (let i = 0; i < 2600; i++) { g.strokeStyle = shade(hex, 0.7 + r() * 0.55); g.lineWidth = 1.4; g.beginPath(); g.arc(r() * S, r() * S, 1.5 + r() * 2.5, 0, Math.PI * 2); g.stroke(); }
+  } else {
+    g.globalAlpha = 0.35;
+    for (let i = 0; i < 1800; i++) { g.fillStyle = shade(hex, 0.8 + r() * 0.3); const x = r() * S, y = r() * S, w = 3 + r() * 9; g.beginPath(); g.ellipse(x, y, w, w * 0.6, r() * 3, 0, Math.PI * 2); g.fill(); }
+  }
+  g.globalAlpha = 1;
+  return c;
+}
+export function fabricMaterial(THREE, spec = {}) {
+  const type = FABRICS[spec.type] || spec.type === "cotton" ? spec.type : "linen", color = spec.color || "#b9b0a3";
+  const key = type + color;
+  if (fabCache.has(key)) return fabCache.get(key);
+  const tex = new THREE.CanvasTexture(fabricCanvas(color, type));
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
+  const nrm = normalFor(THREE, tex);
+  const m = new THREE.MeshPhysicalMaterial({ map: tex, normalMap: nrm, color: 0xffffff,
+    roughness: type === "leather" ? 0.42 : type === "velvet" ? 0.95 : 0.88,
+    sheen: type === "velvet" ? 1 : type === "cotton" ? 0.15 : type === "chenille" ? 0.7 : type === "leather" ? 0 : 0.35, sheenRoughness: type === "velvet" ? 0.35 : 0.8,
+    sheenColor: new THREE.Color(color).lerp(new THREE.Color(0xffffff), 0.35),
+    clearcoat: type === "leather" ? 0.25 : 0, clearcoatRoughness: 0.3 });
+  m.normalScale = new THREE.Vector2(1, 1).multiplyScalar(type === "boucle" ? 1.6 : type === "linen" ? 0.9 : type === "chenille" ? 1.1 : type === "leather" ? 0.5 : type === "cotton" ? 0.15 : 0.25);
+  m.userData.tile = type === "linen" ? 12 : type === "boucle" ? 18 : type === "chenille" ? 14 : 25;
+  fabCache.set(key, m);
+  return m;
 }

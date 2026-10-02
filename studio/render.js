@@ -5,7 +5,7 @@
 //    soft shadows, reflections and glass, and saves a big still image.
 // Scene units are centimetres (1 unit = 1 cm), so light intensities are scaled for that.
 
-export const SCENE_DEF = { time: "day", exposure: 1, spots: true, led: true, ao: true, bloom: true, sunAz: 0 };
+export const SCENE_DEF = { time: "day", exposure: 1, spots: true, led: true, ao: true, bloom: true, sunAz: 0, bevel: 2 };
 
 export const TIMES = {
   day: { label: "نهار", sun: 2.8, sunColor: 0xfff6ea, elev: 50, hemi: 0.18, env: 0.26, ptEnv: 0.5, bg: 0xe9ece6, bgDark: 0x1f2622, spot: 0.25, led: 2.2 },
