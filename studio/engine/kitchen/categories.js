@@ -136,6 +136,10 @@ export class WardrobeUnitBuilder extends StandardUnitBuilder {
             .filter((v) => v > 0)
             .sort((a, b) => a - b);
     }
+    /** how far the drawer fronts of a zone sit back from the front edge (0 = flush, like the doors) */
+    zoneDrawerSetback() {
+        return 0;
+    }
     buildZoneDrawers(e, x0, x1, z0, z1, count, labelPrefix) {
         const overlay = this.doorPosition() === "overlay";
         const gap = overlay ? this.doorGapOverlay() : this.doorGapInset();
@@ -149,8 +153,9 @@ export class WardrobeUnitBuilder extends StandardUnitBuilder {
         const eachH = (total - this.drawerGap() * (count - 1)) / count;
         if (eachH <= 0)
             return;
-        const fy0 = overlay ? -this.frontT() : 0;
-        const fy1 = overlay ? 0 : this.frontT();
+        const sb = this.zoneDrawerSetback();
+        const fy0 = (overlay && sb === 0 ? -this.frontT() : 0) + sb;
+        const fy1 = fy0 + this.frontT();
         let z = zz0;
         for (let i = 0; i < count; i++) {
             const dz0 = z;
@@ -369,6 +374,21 @@ export class DividedUnitBuilder extends CarcassBuilder {
         this.buildTopValancePanel(e, io.x0, io.x1);
         this.buildBottomValancePanel(e, io.x0, io.x1);
     }
+    /** v189: shelves stop at the vertical divider, and the side with drawers gets none
+     *  (they used to run the full width — through the divider and the drawer boxes) */
+    shelfColumns(x0, x1) {
+        const zone = this.activeZone();
+        const pct = rmin(rmax(toF(this.p["divider_position_pct"]), 1.0), 99.0) / 100.0;
+        const dx = zone.x0 + (zone.x1 - zone.x0) * pct;
+        const half = this.panelT() / 2.0;
+        const drawers = (v) => toS(v).includes("drawer");
+        const cols = [];
+        if (!drawers(this.p["left_door_type"]) && dx - half > x0)
+            cols.push([x0, dx - half]);
+        if (!drawers(this.p["right_door_type"]) && x1 > dx + half)
+            cols.push([dx + half, x1]);
+        return cols;
+    }
 }
 export class BlindCornerUnitBuilder extends CarcassBuilder {
     width() {
@@ -447,6 +467,19 @@ export class BedroomWardrobeBuilder extends WardrobeUnitBuilder {
     slidingDoors() {
         return toS(this.p["door_style"]) === "sliding";
     }
+    /** v189: behind sliding doors the inside starts after both door tracks (+0.5 cm), so shelves and
+     *  drawers never touch the doors — they used to sit in the same plane as the first door */
+    slidingDepth() {
+        if (this.doorPosition() === "overlay")
+            return cm(0.5);
+        return 2 * this.frontT() + cm(0.6) + cm(0.5);
+    }
+    interiorDepthStart() {
+        return this.slidingDoors() ? this.slidingDepth() : super.interiorDepthStart();
+    }
+    zoneDrawerSetback() {
+        return this.slidingDoors() ? this.slidingDepth() : 0;
+    }
     slidingPanelCount() {
         return Math.min(Math.max(toI(this.p["sliding_panel_count"]), 2), 4);
     }
@@ -469,7 +502,9 @@ export class BedroomWardrobeBuilder extends WardrobeUnitBuilder {
         for (let i = 0; i < n; i++) {
             const x0 = o.x0 + i * (pw - ov);
             const x1 = rmin(x0 + pw, o.x1 + (i === n - 1 ? 0 : ov));
-            const track = cm(0.6) * (i % 2);
+            // v189: every other panel runs in its own track, a full door thickness + 0.6 cm further back
+            // (they used to be 0.6 apart only, so two 1.8 cm doors shared the same space)
+            const track = (this.frontT() + cm(0.6)) * (i % 2);
             const fy0 = overlay ? -this.frontT() - track : track;
             const fy1 = fy0 + this.frontT();
             const name = `باب سحاب ${i + 1}`;

@@ -1291,13 +1291,15 @@ export class CarcassBuilder {
         const h = this.drawerInsertHeight();
         if (x1 - x0 <= 0 || y1 - y0 <= 0)
             return;
+        // v189: when dividers cross, both run the full length and are half-lapped into each other
+        const lap = vs.length && hs.length ? { note: "تعشيقة نص بنص: شق بعرض السمك ونص الارتفاع عند كل تقاطع" } : {};
         vs.forEach((pos, i) => {
             const x = x0 + cm(pos);
             if (!(x > x0 && x < x1))
                 return;
             const name = `فاصل مخصص رأسي ${i + 1}`;
             createBox(this.ctx, e, name, x - t / 2.0, y0, z0, x + t / 2.0, y1, z0 + h, this.carcassMaterial());
-            this.ctx.labels.add(this.unitId, this.unitGroupName(), name, y1 - y0, h, t, { banded: { ...NO_BAND }, material: this.carcassMaterialName() });
+            this.ctx.labels.add(this.unitId, this.unitGroupName(), name, y1 - y0, h, t, { banded: { ...NO_BAND }, material: this.carcassMaterialName(), ...lap });
         });
         hs.forEach((pos, i) => {
             const y = y0 + cm(pos);
@@ -1305,7 +1307,7 @@ export class CarcassBuilder {
                 return;
             const name = `فاصل مخصص أفقي ${i + 1}`;
             createBox(this.ctx, e, name, x0, y - t / 2.0, z0, x1, y + t / 2.0, z0 + h, this.carcassMaterial());
-            this.ctx.labels.add(this.unitId, this.unitGroupName(), name, x1 - x0, h, t, { banded: { ...NO_BAND }, material: this.carcassMaterialName() });
+            this.ctx.labels.add(this.unitId, this.unitGroupName(), name, x1 - x0, h, t, { banded: { ...NO_BAND }, material: this.carcassMaterialName(), ...lap });
         });
     }
     buildInsertCutlery(e, x0, x1, y0, y1, z0) {

@@ -127,8 +127,9 @@ export class DiagonalCornerUnitBuilder extends PlainBuilder {
         const inner = [new Point3d(t, t, 0), new Point3d(leg1 - t, t, 0), new Point3d(leg1 - t, leg2 - cut, 0), new Point3d(leg1 - cut, leg2 - t, 0), new Point3d(t, leg2 - t, 0)];
         createAngledPanel(this.ctx, e, "جنب حيطة أ", p1, p2, new Vector3d(0, 1, 0), t, z0, h, cmat);
         this.label("جنب حيطة أ", leg1, h - z0, t, { banded: nb(), material: cname });
-        createAngledPanel(this.ctx, e, "جنب حيطة ب", p1, p5, new Vector3d(1, 0, 0), t, z0, h, cmat);
-        this.label("جنب حيطة ب", leg2, h - z0, t, { banded: nb(), material: cname });
+        // v189: side B butts against side A at the wall corner (it used to run through it — 1.8 cm too long)
+        createAngledPanel(this.ctx, e, "جنب حيطة ب", new Point3d(0, t, 0), p5, new Vector3d(1, 0, 0), t, z0, h, cmat);
+        this.label("جنب حيطة ب", leg2 - t, h - z0, t, { banded: nb(), material: cname });
         const e1a = new Point3d(leg1, t, 0);
         const e1b = new Point3d(leg1, leg2 - cut, 0);
         if (e1b.distance(e1a) > 0) {
@@ -142,10 +143,11 @@ export class DiagonalCornerUnitBuilder extends PlainBuilder {
             this.label("جنب نهاية الرجل الثانية", e2b.distance(e2a), h - z0, t, { banded: nb(), material: cname });
         }
         const eb = this.edgeBandingEnabled();
+        // v189: the inner pentagon runs from t to leg − t, so the board is leg − 2t (was labelled leg − t)
         const base = createFlatSlab(this.ctx, e, "قاعدة", inner, z0, z0 + t, cmat);
-        this.label("قاعدة", leg1 - t, leg2 - t, t, { banded: { top: eb, bottom: eb, left: false, right: false }, material: cname });
+        this.label("قاعدة", leg1 - 2 * t, leg2 - 2 * t, t, { banded: { top: eb, bottom: eb, left: false, right: false }, material: cname });
         const top = createFlatSlab(this.ctx, e, "رأس", inner, h - t, h, cmat);
-        this.label("رأس", leg1 - t, leg2 - t, t, { banded: { top: eb, bottom: eb, left: false, right: false }, material: cname });
+        this.label("رأس", leg1 - 2 * t, leg2 - 2 * t, t, { banded: { top: eb, bottom: eb, left: false, right: false }, material: cname });
         if (eb) {
             bandEdges(this.ctx, base, [new Vector3d(1, 0, 0), new Vector3d(0, 1, 0)], this.edgeBandingMaterial());
             bandEdges(this.ctx, top, [new Vector3d(1, 0, 0), new Vector3d(0, 1, 0)], this.edgeBandingMaterial());
@@ -162,7 +164,7 @@ export class DiagonalCornerUnitBuilder extends PlainBuilder {
                         const sz = iz0 + step * (i + 1);
                         const name = `رف ${i + 1}`;
                         createFlatSlab(this.ctx, e, name, inner, sz - t / 2.0, sz + t / 2.0, cmat);
-                        this.label(name, leg1 - t, leg2 - t, t, { banded: nb(), material: cname });
+                        this.label(name, leg1 - 2 * t, leg2 - 2 * t, t, { banded: nb(), material: cname });
                     }
                 }
             }
@@ -256,7 +258,7 @@ export class OpenCornerUnitBuilder extends PlainBuilder {
             this.label("ضلفة أ", ay1 - ay0, dz1 - dz0, ft, { banded: { ...ALL }, material: materialLabelName(fc) });
         }
         const bx0 = gap;
-        const bx1 = leg1 - gap;
+        const bx1 = leg1 - ft - gap; // v189: stops at door A's face (the two doors used to overlap in the corner)
         if (bx1 > bx0) {
             const b = createBox(this.ctx, e, "ضلفة ب", bx0, leg2 - ft, dz0, bx1, leg2, dz1, fc);
             tagDoorHinge(b, bx0, leg2, bx1, leg2, 0.0, 1.0);
@@ -451,7 +453,8 @@ export class LShapeCornerUnitBuilder extends PlainBuilder {
                 const sz = iz0 + step * (i + 1);
                 const name = `رف ${i + 1}`;
                 createFlatSlab(this.ctx, shared, name, hexShelves, sz - t / 2.0, sz + t / 2.0, cm0);
-                this.label(name, leg1 - t, leg2 - t, t, { banded: { ...NO_BAND }, material: cname });
+                // v189: the shelf starts behind the two backs (back2, back1), so it is that much smaller than the base
+                this.label(name, leg1 - t - back2, leg2 - t - back1, t, { banded: { ...NO_BAND }, material: cname });
             }
         }
     }
@@ -478,7 +481,8 @@ export class LShapeCornerUnitBuilder extends PlainBuilder {
         const c = this.doorCommon(t, z0, h);
         if (c.dz1 <= c.dz0)
             return;
-        const ax0 = cd + c.inset;
+        // v189: door A stops in front of door B's face (they used to overlap 1.6 cm in the corner and hit each other)
+        const ax0 = cd + c.ft + c.inset;
         const ax1 = c.overlay ? leg1 - c.gap : leg1 - t - c.gap;
         if (!(ax1 > ax0))
             return;
@@ -608,7 +612,8 @@ export class AccessoryBuilder extends PlainBuilder {
             const pc = createBox(this.ctx, e, name, x - t / 2.0, 0, t, x + t / 2.0, d, h, this.carcassMaterial());
             if (eb)
                 bandEdge(this.ctx, pc, new Vector3d(0, -1, 0), this.edgeBandingMaterial());
-            this.label(name, d, h, t, { banded: { top: false, bottom: false, left: eb, right: false }, material: this.nm() });
+            // v189: the divider stands on the base, so it is h − t high (was labelled h)
+            this.label(name, d, h - t, t, { banded: { top: false, bottom: false, left: eb, right: false }, material: this.nm() });
         }
     }
     spiceRack(e) {
@@ -643,10 +648,11 @@ export class AccessoryBuilder extends PlainBuilder {
         this.label("جنب السلة شمال", d, h - t, t, { banded: nb(), material: mn });
         createBox(this.ctx, e, "جنب السلة يمين", w - t, 0, t, w, d, h, cm0);
         this.label("جنب السلة يمين", d, h - t, t, { banded: nb(), material: mn });
-        createBox(this.ctx, e, "جنب السلة أمامي", 0, 0, t, w, t, h, cm0);
-        this.label("جنب السلة أمامي", w, h - t, t, { banded: nb(), material: mn });
-        createBox(this.ctx, e, "جنب السلة خلفي", 0, d - t, t, w, d, h, cm0);
-        this.label("جنب السلة خلفي", w, h - t, t, { banded: nb(), material: mn });
+        // v189: front and back sit between the two sides (they used to run the full width through them)
+        createBox(this.ctx, e, "جنب السلة أمامي", t, 0, t, w - t, t, h, cm0);
+        this.label("جنب السلة أمامي", w - 2 * t, h - t, t, { banded: nb(), material: mn });
+        createBox(this.ctx, e, "جنب السلة خلفي", t, d - t, t, w - t, d, h, cm0);
+        this.label("جنب السلة خلفي", w - 2 * t, h - t, t, { banded: nb(), material: mn });
         createBox(this.ctx, e, "سكة شمال", -railT, 0, 0, 0, d, railT, COLORS.assembly);
         createBox(this.ctx, e, "سكة يمين", w, 0, 0, w + railT, d, railT, COLORS.assembly);
     }
@@ -699,19 +705,20 @@ export class AccessoryBuilder extends PlainBuilder {
         const cm0 = this.carcassMaterial();
         createBox(this.ctx, e, "قاعدة الدرج", 0, 0, 0, w, d, t, cm0);
         this.label("قاعدة الدرج", w, d, t, { banded: { ...NO_BAND }, material: mn });
+        const lap = cols > 1 && rows > 1 ? { note: "تعشيقة نص بنص: شق بعرض السمك ونص الارتفاع عند كل تقاطع" } : {};
         const cs = w / cols;
         for (let i = 1; i < cols; i++) {
             const x = cs * i;
             const name = `فاصل رأسي ${i}`;
             createBox(this.ctx, e, name, x - t / 2.0, 0, t, x + t / 2.0, d, h, cm0);
-            this.label(name, d, h - t, t, { banded: { ...NO_BAND }, material: mn });
+            this.label(name, d, h - t, t, { banded: { ...NO_BAND }, material: mn, ...lap });
         }
         const rs = d / rows;
         for (let i = 1; i < rows; i++) {
             const y = rs * i;
             const name = `فاصل أفقي ${i}`;
             createBox(this.ctx, e, name, 0, y - t / 2.0, t, w, y + t / 2.0, h, cm0);
-            this.label(name, w, h - t, t, { banded: { ...NO_BAND }, material: mn });
+            this.label(name, w, h - t, t, { banded: { ...NO_BAND }, material: mn, ...lap });
         }
     }
 }
@@ -794,7 +801,7 @@ export class CornerGlassDisplayUnitBuilder extends PlainBuilder {
         const dz1 = h - t - gap;
         if (dz1 <= dz0)
             return;
-        const ax0 = cd + gap;
+        const ax0 = cd + ft + gap; // v189: clear of the side door's face
         const ax1 = leg1 - t - gap;
         if (!(ax1 > ax0))
             return;

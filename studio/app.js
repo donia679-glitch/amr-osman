@@ -427,7 +427,7 @@ $("#libBtn").addEventListener("click", () => { state.libOpen = !state.libOpen; r
     if (!u || !L || !hit) return;
     const box = localBox(R(u));
     const c = Room.centerOf(L, box);
-    drag = { u, box, rot: L.rot, off: [c[0] - hit[0], c[1] - hit[1]], row: rowOf(u, R(u)), segs: roomSegs(state.project), pose: L,
+    drag = { pid: e.pointerId, t: performance.now(), xy: [e.clientX, e.clientY], start: L, u, box, rot: L.rot, off: [c[0] - hit[0], c[1] - hit[1]], row: rowOf(u, R(u)), segs: roomSegs(state.project), pose: L,
       others: projectItems(state.project).filter((it) => it.id !== id).map((it) => ({ box: it.box, row: it.row, pose: view.poses.get(it.id) })).filter((o) => o.pose) };
     view.ctl.enabled = false;
     view.highlight(id, true);
@@ -435,8 +435,17 @@ $("#libBtn").addEventListener("click", () => { state.libOpen = !state.libOpen; r
   };
   // orbiting never moves furniture: a unit moves only in "units" (move) mode
   // capture phase: runs before the orbit controls, so a move can claim the finger outright
+  /** stop a move half-way and put the unit back (a second finger, the app going to the background …) */
+  const cancelDrag = () => {
+    if (drag) { view.highlight(drag.u.id, false); view.movePicked(drag.u.id, drag.start); drag = null; }
+    ptDrag = null;
+    down = null;
+    clearTimeout(press);
+    if (view.ready && !(view.final?.active && view.final.locked !== false)) view.ctl.enabled = true;
+  };
   host.addEventListener("pointerdown", (e) => {
     if (e.target.closest(".vctl, .movebar") || view.final?.active) return;
+    if (drag && e.pointerId !== drag.pid) cancelDrag(); // a second finger means zoom / turn, never "move further"
     if (!drag && !ptDrag) view.ctl.enabled = true;
     down = [e.clientX, e.clientY];
     clearTimeout(press);
@@ -460,6 +469,15 @@ $("#libBtn").addEventListener("click", () => { state.libOpen = !state.libOpen; r
     // "scene" mode: nothing ever moves — a drag only turns the camera
   }, true);
   host.addEventListener("pointermove", (e) => {
+    if (drag && e.pointerId !== drag.pid) return;
+    if ((drag || ptDrag) && e.pointerType === "mouse" && e.buttons === 0) { end(e); return; }
+    if (drag) {
+      // after a slow frame the finger may already be far away: take the new place as the start, don't jump there
+      const now = performance.now(), jump = Math.hypot(e.clientX - drag.xy[0], e.clientY - drag.xy[1]);
+      const late = now - drag.t > 300 && jump > 90;
+      drag.t = now; drag.xy = [e.clientX, e.clientY];
+      if (late) { const hit = view.floorAt(e.clientX, e.clientY); const c = Room.centerOf(drag.pose, drag.box); if (hit) drag.off = [c[0] - hit[0], c[1] - hit[1]]; return; }
+    }
     if (ptDrag) {
       const T = view.three, { pt, seg } = ptDrag;
       const rc = view.ren.domElement.getBoundingClientRect();
@@ -528,6 +546,27 @@ $("#libBtn").addEventListener("click", () => { state.libOpen = !state.libOpen; r
   host.addEventListener("pointerup", end);
   host.addEventListener("pointercancel", end);
   host.addEventListener("lostpointercapture", (e) => { if (drag || ptDrag) end(e); });
+  // the orbit controls must never keep a finger that already lifted (a lift lost during a slow frame keeps the
+  // camera turning with every later touch): every finger that goes down on the 3D view is matched with its lift
+  const live = new Set();
+  const cv = () => view.ren?.domElement;
+  host.addEventListener("pointerdown", (e) => live.add(e.pointerId), true);
+  const release = (e) => {
+    if (!live.has(e.pointerId)) return;
+    live.delete(e.pointerId);
+    const c = cv();
+    if (c && e.target !== c && !c.contains(e.target)) c.dispatchEvent(new PointerEvent("pointerup", { pointerId: e.pointerId, pointerType: e.pointerType, clientX: e.clientX, clientY: e.clientY, bubbles: true }));
+  };
+  addEventListener("pointerup", release, true);
+  addEventListener("pointercancel", release, true);
+  const dropAll = () => {
+    cancelDrag();
+    const c = cv();
+    for (const id of live) c?.dispatchEvent(new PointerEvent("pointercancel", { pointerId: id, bubbles: true }));
+    live.clear();
+  };
+  addEventListener("blur", dropAll);
+  document.addEventListener("visibilitychange", () => { if (document.hidden) dropAll(); });
 }
 document.querySelector("#view3d .vctl").addEventListener("pointerdown", (e) => e.stopPropagation());
 document.querySelector("#view3d .vctl").addEventListener("click", (e) => {
@@ -3057,6 +3096,7 @@ const view = {
       this.cam = new THREE.PerspectiveCamera(35, 1, 1, 5000);
       this.ctl = new OrbitControls(this.cam, this.ren.domElement);
       this.ctl.enableDamping = true;
+      this.ctl.dampingFactor = 0.16; // a short glide: no long drift after the finger lifts (or after a slow frame)
       this.ctl.maxPolarAngle = Math.PI * 0.52;
       this.hemi = new THREE.HemisphereLight(0xffffff, 0x8a8f86, 1.6);
       this.scene.add(this.hemi);
@@ -3793,10 +3833,34 @@ function projectPieces(project) {
     for (const pt of r.parts) {
       if (!pt.cut_piece || !pt.label) continue;
       const key = `${u.code}-${String(++n).padStart(2, "0")}`;
-      out.push({ key, code: key, ucode: u.code, unit: u.name, unitIdx: ui_, pt, lb: pt.label, mname: r.names[pt.material] || pt.material,
-        color: r.colors?.[pt.material] || "#ccc", lib: r.libOf(pt.material) });
+      const base = { ucode: u.code, unit: u.name, unitIdx: ui_, mname: r.names[pt.material] || pt.material, color: r.colors?.[pt.material] || "#ccc", lib: r.libOf(pt.material) };
+      const parts = splitBack(pt);
+      if (parts.length === 1) { out.push({ ...base, key, code: key, pt, lb: pt.label }); continue; }
+      const plinth = pt.role === "plinth" || /سكلو|وزرة/.test(pt.name || "");
+      parts.forEach((lb, i) => out.push({ ...base, key: `${key}/${i + 1}`, code: `${key}/${i + 1}`, pt: { ...pt, name: `${pt.name} (جزء ${i + 1} من ${parts.length})`, note: plinth ? "السكلو متقسّم عشان يطلع من اللوح — الوصلة تيجي على رجل." : "الضهر متقسّم عشان يطلع من اللوح — الوصلة تيجي ورا رف ثابت أو قاطوع (أو على مرينة)." }, lb }));
     }
   });
+  return out;
+}
+/** a back panel bigger than a 244 × 183 sheet is cut in pieces (equal parts, joined behind a shelf or a rail) */
+const BACK_MAX = [242, 181];
+function splitBack(pt) {
+  const lb = pt.label;
+  const isBack = pt.role === "back" || /^ظهر|^ضهر/.test(pt.name || "");
+  const isPlinth = pt.role === "plinth" || /سكلو|وزرة/.test(pt.name || "");
+  if (isPlinth && Math.max(lb.w, lb.h) > BACK_MAX[0]) {
+    // a plinth longer than a board is two (or more) strips butted behind a leg
+    const along = lb.w >= lb.h ? "w" : "h", n = Math.ceil(lb[along] / BACK_MAX[0]);
+    return Array.from({ length: n }, () => ({ ...lb, [along]: Math.round((lb[along] / n) * 10) / 10 }));
+  }
+  if (!isBack) return [lb];
+  const L = Math.max(lb.w, lb.h), S = Math.min(lb.w, lb.h);
+  if (L <= BACK_MAX[0] && S <= BACK_MAX[1]) return [lb];
+  let nw = Math.ceil(lb.w / BACK_MAX[0]), nh = Math.ceil(lb.h / BACK_MAX[0]);
+  const fits = () => { const a = lb.w / nw, b = lb.h / nh; return Math.max(a, b) <= BACK_MAX[0] && Math.min(a, b) <= BACK_MAX[1]; };
+  while (!fits() && nw * nh < 12) { if (lb.w / nw >= lb.h / nh) nw++; else nh++; }
+  const out = [];
+  for (let i = 0; i < nw * nh; i++) out.push({ ...lb, w: Math.round((lb.w / nw) * 10) / 10, h: Math.round((lb.h / nh) * 10) / 10 });
   return out;
 }
 /** piece number of part `pt` of unit `u` (same numbering as projectPieces) */
@@ -3812,7 +3876,7 @@ function cutGroups(project) {
   const outside = [];
   for (const pc of projectPieces(project)) {
     const { lb } = pc;
-    if (STONE(pc.lib) || ["glass", "mirror"].includes(pc.pt.material)) { outside.push(pc); continue; }
+    if (STONE(pc.lib) || /^(alu_|stainless|copper)/.test(pc.lib || "") || ["glass", "mirror", "frame", "door_frame_alu", "rail"].includes(pc.pt.material) || /ألومنيوم|المونيوم|معدن/.test(pc.mname || "")) { outside.push(pc); continue; }
     const layers = thick.some((t) => Math.abs(t - lb.t) < 0.01) ? [lb.t] : Catalog.laminationFor(lb.t) || [lb.t];
     const wood = (pc.lib || "").startsWith("wood_");
     layers.forEach((t, li) => {
@@ -3825,6 +3889,19 @@ function cutGroups(project) {
   return { groups: [...groups.values()], outside };
 }
 
+const SHEETS = [[244, 122], [244, 183], [280, 207], [305, 122], [366, 183]];
+/** the sheet a material group is cut from: the user's choice, else the default — or the smallest standard
+ *  sheet every piece fits on when the default is too small */
+function groupSheet(g) {
+  const o = state.cutOpts, trim = 2 * (+o.trim || 0);
+  const pick = o.sheetFor?.[g.key];
+  if (pick) return { w: pick[0], h: pick[1], auto: false };
+  const fits = ([W, H]) => g.parts.every((p) => (p.w <= W - trim && p.h <= H - trim) || (p.rotate !== false && p.h <= W - trim && p.w <= H - trim));
+  const def = [+o.sheetW || 244, +o.sheetH || 122];
+  if (fits(def)) return { w: def[0], h: def[1], auto: false };
+  const s = SHEETS.find(fits);
+  return s ? { w: s[0], h: s[1], auto: true } : { w: def[0], h: def[1], auto: false };
+}
 let worker = null;
 try { worker = new Worker(new URL("./cutworker.js", import.meta.url), { type: "module" }); } catch { worker = null; }
 let cutReq = 0, cutData = null, cutKey = "";
@@ -3832,14 +3909,14 @@ function runCut(after) {
   const { groups, outside } = cutGroups(state.project);
   const o = state.cutOpts;
   const opts = { sheetW: +o.sheetW, sheetH: +o.sheetH, kerf: +o.kerf, trim: +o.trim };
-  for (const g of groups) g.remnants = o.useStock === false ? [] : (state.stock?.[g.key]?.remnants || []).map((r) => [+r.w, +r.h]);
-  const key = JSON.stringify([groups.map((g) => [g.key, g.parts, g.remnants]), opts]);
+  for (const g of groups) { g.remnants = o.useStock === false ? [] : (state.stock?.[g.key]?.remnants || []).map((r) => [+r.w, +r.h]); g.sheet = groupSheet(g); }
+  const key = JSON.stringify([groups.map((g) => [g.key, g.parts, g.remnants, g.sheet]), opts]);
   if (key === cutKey && cutData && !cutData.busy) { after ? after() : drawCut(); return; }
   cutKey = key;
   const id = ++cutReq;
   cutData = { busy: true, groups, outside, opts, results: null };
   if (!after) drawCut();
-  const plain = () => groups.map((g) => ({ key: g.key, result: optimize(g.parts.map(({ name, w, h, rotate }) => ({ name, w, h, rotate })), { ...opts, remnants: g.remnants, timeCap: 6 }) }));
+  const plain = () => groups.map((g) => ({ key: g.key, result: optimize(g.parts.map(({ name, w, h, rotate }) => ({ name, w, h, rotate })), { ...opts, sheetW: g.sheet.w, sheetH: g.sheet.h, remnants: g.remnants, timeCap: 6 }) }));
   const done = (out) => {
     if (id !== cutReq) return;
     cutData = { busy: false, groups, outside, opts, results: Object.fromEntries(out.map((x) => [x.key, x.result])) };
@@ -3848,7 +3925,7 @@ function runCut(after) {
   if (worker) {
     worker.onmessage = (e) => { if (e.data.id === id) done(e.data.out); };
     worker.onerror = () => { worker = null; setTimeout(() => done(plain()), 30); };
-    worker.postMessage({ id, groups: groups.map((g) => ({ key: g.key, remnants: g.remnants, parts: g.parts.map(({ name, w, h, rotate }) => ({ name, w, h, rotate })) })), opts });
+    worker.postMessage({ id, groups: groups.map((g) => ({ key: g.key, remnants: g.remnants, sheetW: g.sheet.w, sheetH: g.sheet.h, parts: g.parts.map(({ name, w, h, rotate }) => ({ name, w, h, rotate })) })), opts });
   } else setTimeout(() => done(plain()), 30);
 }
 /** piece key -> "لوح n — material" from the current cut plan */
@@ -3875,12 +3952,16 @@ function drawCut() {
   for (const g of groups) {
     const res = results[g.key];
     const st = res.stats;
-    h += `<section class="mgroup"><div class="mg-h"><i style="background:${g.color}"></i><h3>${esc(g.key)}</h3><span class="pill">${st.sheets} لوح</span><span class="pill">استغلال ${Math.round(st.utilization * 100)}%</span><span class="pill soft">${st.parts} قطعة</span></div>`;
-    if (res.oversized.length) h += `<p class="e">قطع أكبر من اللوح: ${res.oversized.map((x) => esc(x.name)).join("، ")}</p>`;
+    const sh = g.sheet || { w: o.sheetW, h: o.sheetH };
+    const pick = o.sheetFor?.[g.key];
+    h += `<section class="mgroup"><div class="mg-h"><i style="background:${g.color}"></i><h3>${esc(g.key)}</h3><span class="pill">${st.sheets} لوح ${sh.w}×${sh.h}</span><span class="pill">استغلال ${Math.round(st.utilization * 100)}%</span><span class="pill soft">${st.parts} قطعة</span>
+      <label class="sheetpick"><span>مقاس اللوح</span><select data-gsheet="${esc(g.key)}"><option value="">تلقائي${!pick ? ` (${sh.w}×${sh.h})` : ""}</option>${SHEETS.map(([w, hh]) => `<option value="${w}x${hh}" ${pick && pick[0] === w && pick[1] === hh ? "selected" : ""}>${w}×${hh}</option>`).join("")}</select></label></div>`;
+    if (sh.auto) h += `<p class="hint">اللوح اتظبط ${sh.w}×${sh.h} لوحده عشان فيه قطع أطول من ${o.sheetW}×${o.sheetH} — غيّره لو الخامة دي بتيجي بمقاس تاني.</p>`;
+    if (res.oversized.length) h += `<p class="e">⚠ قطع أكبر من أي لوح متاح — لازم تتقسم أو الوحدة تتقسم لوحدتين: ${res.oversized.map((x) => `${esc(x.name)} (${n1(x.w)}×${n1(x.h)})`).join("، ")}</p>`;
     h += `<div class="sheets">${res.sheets.map((s, si) => sheetSvg(s, si, g)).join("")}</div></section>`;
   }
   if (outside.length) {
-    h += `<section class="mgroup"><div class="mg-h"><h3>بتتطلب من المورّد (رخام / زجاج / مرايا)</h3></div><div class="tblwrap"><table class="tbl"><thead><tr><th>الرقم</th><th>الوحدة</th><th>القطعة</th><th>الخامة</th><th>المقاس</th></tr></thead><tbody>`;
+    h += `<section class="mgroup"><div class="mg-h"><h3>بتتطلب من المورّد (رخام / زجاج / مرايا / ألومنيوم)</h3></div><div class="tblwrap"><table class="tbl"><thead><tr><th>الرقم</th><th>الوحدة</th><th>القطعة</th><th>الخامة</th><th>المقاس</th></tr></thead><tbody>`;
     for (const x of outside) h += `<tr><td class="num"><b>${esc(x.key)}</b></td><td>${esc(x.unit)}</td><td>${esc(x.pt.name)}</td><td>${esc(x.mname)}</td><td class="num">${n1(x.lb.w)} × ${n1(x.lb.h)} × ${n1(x.lb.t)}</td></tr>`;
     h += `</tbody></table></div></section>`;
   }
@@ -3921,6 +4002,13 @@ function sheetSvg(s, si, g) {
     <details><summary>خطوات القص (${s.cuts.length})</summary><ol>${steps}</ol>${s.offcuts.length ? `<p class="hint">بواقي تتشال: ${s.offcuts.map((o) => `${o.w}×${o.h}`).join("، ")}</p>` : ""}</details></figure>`;
 }
 $("#v-cut").addEventListener("change", (e) => {
+  if (e.target.dataset.gsheet !== undefined) {
+    const o = state.cutOpts; o.sheetFor ??= {};
+    const v = e.target.value;
+    if (v) o.sheetFor[e.target.dataset.gsheet] = v.split("x").map(Number); else delete o.sheetFor[e.target.dataset.gsheet];
+    save(); runCut();
+    return;
+  }
   const k = e.target.dataset.co;
   if (!k) return;
   state.cutOpts[k] = +e.target.value;
@@ -4313,6 +4401,22 @@ function designChecks(project = state.project) {
   const label = (it) => `${it.u.code} ${it.u.name}`;
   // engine errors
   for (const u of project.units) { const r = R(u); if (!r.ok) add("e", `${u.code} ${u.name}: ${r.errors[0] || "فيها أخطاء"}`, u.id); }
+  // pieces the workshop can't cut: longer than the biggest board, or thinner than a strip the saw can hold
+  for (const u of project.units) {
+    const r = R(u);
+    if (!r.ok) continue;
+    const big = [], thin = [];
+    for (const pt of r.parts) {
+      if (!pt.cut_piece || !pt.label || ["glass", "mirror", "frame", "door_frame_alu", "rail"].includes(pt.material)) continue;
+      if (/^(alu_|stainless|copper)/.test(r.libOf?.(pt.material) || "")) continue;
+      const L = Math.max(pt.label.w, pt.label.h), S = Math.min(pt.label.w, pt.label.h);
+      const back = pt.role === "back" || /^ظهر|^ضهر/.test(pt.name);
+      if (!back && (L > 364 || S > 205 || (L > 278 && S > 181))) big.push(`${pt.name} ${n1(pt.label.w)}×${n1(pt.label.h)}`);
+      if (S < 1.5 && pt.label.t >= 1) thin.push(`${pt.name} (${n1(S)} سم)`);
+    }
+    if (big.length) add("e", `${u.code} ${u.name}: ${big.slice(0, 3).join("، ")} — أكبر من أي لوح (لحد 366×183 أو 280×207). قسّم الوحدة لوحدتين أو صغّر المقاس.`, u.id);
+    if (thin.length) add("w", `${u.code} ${u.name}: شرايح رفيعة قوي ${thin.slice(0, 2).join("، ")} — صعب تتقص على المنشار، الأحسن بروفايل أو تزوّد الفيلر.`, u.id);
+  }
   // overlaps (same height band)
   const band = (it) => (it.row === "upper" ? [140, 230] : it.row === "lower" ? [0, 90] : it.row === "free" ? [0, 80] : [0, 240]);
   for (let i = 0; i < items.length; i++) for (let j = i + 1; j < items.length; j++) {
@@ -5328,7 +5432,8 @@ function quickEstimate(units) {
   let mat = 0, missing = 0, sheets = 0;
   for (const g of groups) {
     const a = g.parts.reduce((s, x) => s + x.w * x.h, 0);
-    const n = Math.max(1, Math.ceil(a / (sheetA * 0.8)));
+    const gs = groupSheet(g);
+    const n = Math.max(1, Math.ceil(a / ((gs.w * gs.h || sheetA) * 0.8)));
     sheets += n;
     const pr = +P.sheets[g.key] || +P.defaultSheet || 0;
     if (!pr) missing++;
@@ -5512,28 +5617,7 @@ function autoKitchen(room, chain, tier) {
     const inc = chain[i], out = chain[i + 1];
     for (const cu of [cornerB, cornerU]) { const c = clone(cu); c.id = uid(); c.pos = { ...Room.poseInCorner(inc, out) }; delete c.pos.corner; units.push(c); }
   }
-  // the fridge (and in better kitchens a tall oven column) at the open end of the run
-  const last = runs[runs.length - 1], first = runs[0];
-  const tallList = [kitchenUnit(tier, { ...KU.KITCHEN.k_fridge.params }, "تجويف تلاجة")];
-  if (T.tall) tallList.push(kitchenUnit(tier, { ...More.KITCHEN.k_oven_only.params }, "عمود فرن"));
-  const tallW = tallList.map((u) => localBox(R(u)).x1 - localBox(R(u)).x0);
-  const endRun = last.free.length && last.free[last.free.length - 1][1] >= last.hi - 0.5 ? last : first;
-  const atEnd = endRun === last;
-  let need = tallW.reduce((a, b) => a + b, 0);
-  const span = atEnd ? endRun.free[endRun.free.length - 1] : endRun.free[0];
-  if (!span || span[1] - span[0] < need + 120) { tallList.splice(1); need = tallW[0]; }
-  if (span && span[1] - span[0] >= need + 60) {
-    let a = atEnd ? span[1] - need : span[0];
-    tallList.forEach((u, k) => {
-      const w = tallW[k];
-      const x = atEnd ? span[1] - tallW.slice(0, k + 1).reduce((p, q) => p + q, 0) : a;
-      pin(u, endRun.seg, x, w);
-      endRun.tall.push([x, x + w]);
-      if (!atEnd) a += w;
-    });
-    endRun.free = minus([endRun.lo, endRun.hi], [...endRun.bl.all, ...endRun.tall]);
-  }
-  // the sink: under a window when there is one, else a third of the way along the first wall
+  // the sink first: under a window when there is one, else a third of the way along the longest wall
   const sinkW = T.sink;
   let sinkRun = runs.find((r) => r.bl.windows.some((o) => r.free.some(([a, b]) => o.at + o.w / 2 - sinkW / 2 >= a && o.at + o.w / 2 + sinkW / 2 <= b))) || null;
   let sinkA;
@@ -5546,24 +5630,53 @@ function autoKitchen(room, chain, tier) {
   }
   sinkA = Math.round(sinkA * 2) / 2;
   pin(kitchenUnit(tier, { ...KU.KITCHEN.k_sink.params, width: sinkW, ...(sinkW >= 100 ? { sink_cutout_width: 86 } : {}), unit_label: "حوض" }, `وحدة حوض ${sinkW}`), sinkRun.seg, sinkA, sinkW);
-  sinkRun.free = minus([sinkRun.lo, sinkRun.hi], [...sinkRun.bl.all, ...sinkRun.tall, [sinkA, sinkA + sinkW]]);
-  // the hob: on another wall when there is one (the work triangle), at least 60 cm from the sink and 30 from a tall unit / end
-  const hobW = T.hob;
-  // candidates on every free span; keep the one whose work triangle (sink – hob – fridge) is closest to ~5.5 m
+  sinkRun.used = [[sinkA, sinkA + sinkW]];
   const at = (seg, x) => [seg.A[0] + seg.d[0] * x + seg.n[0] * 30, seg.A[1] + seg.d[1] * x + seg.n[1] * 30];
   const sinkC = at(sinkRun.seg, sinkA + sinkW / 2);
-  const frC = endRun.tall.length ? at(endRun.seg, (endRun.tall[0][0] + endRun.tall[0][1]) / 2) : null;
   const D = (p, q) => Math.hypot(p[0] - q[0], p[1] - q[1]);
+  // the fridge (and in better kitchens a tall oven column) at the open end of the run nearest the sink —
+  // never in front of a window
+  const last = runs[runs.length - 1], first = runs[0];
+  const tallList = [kitchenUnit(tier, { ...KU.KITCHEN.k_fridge.params }, "تجويف تلاجة")];
+  if (T.tall) tallList.push(kitchenUnit(tier, { ...More.KITCHEN.k_oven_only.params }, "عمود فرن"));
+  const tallW = tallList.map((u) => localBox(R(u)).x1 - localBox(R(u)).x0);
+  const tallFree = (r) => minus([r.lo, r.hi], [...r.bl.all, ...r.bl.upper, ...(r.used || [])]);
+  const ends = [];
+  const lf = tallFree(last), ff = tallFree(first);
+  if (lf.length && lf[lf.length - 1][1] >= last.hi - 0.5) ends.push({ r: last, span: lf[lf.length - 1], atEnd: true });
+  if (ff.length && ff[0][0] <= first.lo + 0.5 && !(first === last && ends.length && ends[0].span === ff[0] && runs.length === 1 && false)) ends.push({ r: first, span: ff[0], atEnd: false });
+  ends.sort((a, b) => D(at(a.r.seg, a.atEnd ? a.span[1] : a.span[0]), sinkC) - D(at(b.r.seg, b.atEnd ? b.span[1] : b.span[0]), sinkC));
+  let need = tallW.reduce((a, b) => a + b, 0);
+  let pick = ends.find((x) => x.span[1] - x.span[0] >= need + 60);
+  if (!pick || pick.span[1] - pick.span[0] < need + 120) { tallList.splice(1); need = tallW[0]; pick = ends.find((x) => x.span[1] - x.span[0] >= need + 60); }
+  if (pick) {
+    const endRun = pick.r, span = pick.span;
+    let a = pick.atEnd ? span[1] - need : span[0];
+    tallList.forEach((u, k) => {
+      const w = tallW[k];
+      const x = pick.atEnd ? span[1] - tallW.slice(0, k + 1).reduce((p, q) => p + q, 0) : a;
+      pin(u, endRun.seg, x, w);
+      endRun.tall.push([x, x + w]);
+      if (!pick.atEnd) a += w;
+    });
+  }
+  for (const r of runs) r.free = minus([r.lo, r.hi], [...r.bl.all, ...r.tall, ...(r.used || [])]);
+  const endRun = pick ? pick.r : first;
+  // the hob: on another wall when there is one (the work triangle), at least 60 cm from the sink and 30 from a tall unit / end
+  const hobW = T.hob;
+  // candidates on every free span (30 cm clear of tall units, walls and the sink); keep the one whose work
+  // triangle (sink – hob – fridge) is closest to ~5.5 m
+  const frC = endRun.tall.length ? at(endRun.seg, (endRun.tall[0][0] + endRun.tall[0][1]) / 2) : null;
   let hob = null, bestS = Infinity;
   for (const r of runs) for (const [a, b] of r.free) {
-    const lo = a + 20, hi = b - 20 - hobW;
+    const lo = a + 30, hi = b - 30 - hobW;
     if (hi < lo) continue;
     const xs = [lo, hi, (lo + hi) / 2, ...Array.from({ length: 5 }, (_, i) => lo + ((hi - lo) * (i + 1)) / 6)];
     for (const x of xs) {
       if (r === sinkRun) { const g = x + hobW <= sinkA ? sinkA - x - hobW : x - sinkA - sinkW; if (g < 30) continue; }
       const c = at(r.seg, x + hobW / 2);
       const tri = D(c, sinkC) + (frC ? D(c, frC) + D(frC, sinkC) : D(c, sinkC) + 200);
-      const score = Math.abs(tri - 550) + (r === sinkRun && chain.length > 1 ? 40 : 0);
+      const score = Math.abs(tri - 550) + (tri > 790 ? (tri - 790) * 3 : 0) + (r === sinkRun && chain.length > 1 ? 40 : 0);
       if (score < bestS) { bestS = score; hob = { r, a: Math.round(x * 2) / 2 }; }
     }
   }
