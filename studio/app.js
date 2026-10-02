@@ -1755,6 +1755,8 @@ function renderPop() {
         <li>عرض سعر للعميل، ومتابعة الورشة بالـQR.</li>
       </ul>
       <h3>المطوّر</h3><p class="dev"><b>${esc(D.name)}</b> — ${esc(D.company)}</p>
+      <p class="hint"><a href="https://donia679-glitch.github.io/amr-osman/studio/legal/privacy.html" target="_blank" rel="noopener">سياسة الخصوصية</a> · <a href="https://www.apple.com/legal/internet-services/itunes/dev/stdeula/" target="_blank" rel="noopener">شروط الاستخدام</a></p>
+      <details><summary>مكتبات مفتوحة المصدر</summary><p class="hint" dir="ltr" style="text-align:left">three.js (MIT) · three-gpu-pathtracer (MIT) · three-mesh-bvh (MIT) · qrcode-generator by Kazuhiko Arase (MIT) · IBM Plex Sans Arabic (SIL Open Font License 1.1)</p></details>
       ${contact ? `<div class="btnrow">${contact}</div>` : ""}
       <p class="hint">© ${new Date().getFullYear()} ${esc(D.company)}. كل الحقوق محفوظة. تصميماتك محفوظة على جهازك وعلى حسابك بس.</p></div>`;
   }
