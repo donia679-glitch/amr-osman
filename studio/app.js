@@ -17,6 +17,7 @@ import * as Mat from "./materials.js";
 import * as Render from "./render.js";
 import * as Lib from "./projects.js";
 import * as Decor from "./decor.js";
+import * as More from "./library.js";
 
 const APP_URL = "https://claude.ai/artifact/EP8c8LmBNS8d3EqLcDioXi";
 const APP_VERSION = "1.0";
@@ -97,6 +98,9 @@ const DRESSING = {
       { width: "auto", compartments: [DC({ content: "shelves", shelf_count: 5 })] },
     ] } },
 };
+
+Object.assign(DRESSING, More.DRESSING);
+Object.assign(KU.KITCHEN, More.KITCHEN);
 
 // ------------------------------------------------------------------ state
 const SAMPLE = () => ({
@@ -774,16 +778,50 @@ $("#lookBtn").addEventListener("click", () => { ui.pop = "look"; renderPop(); })
 function swatches(colors) {
   return colors.filter((v, i, a) => v && a.indexOf(v) === i).slice(0, 3).map((hex) => `<i style="background:${hex}"></i>`).join("");
 }
+function kitchenGroup(s) {
+  if (s.group) return s.group;
+  const p = s.params || {};
+  if (p.element_mode === "accessory") return "مطابخ — إكسسوارات";
+  if (p.unit_category === "bedroom_wardrobe") return "دواليب غرف النوم";
+  if (p.unit_category === "corner" || p.unit_category === "corner_glass_display") return "مطابخ — زوايا";
+  if (p.unit_type === "wall") return "مطابخ — علوي";
+  if (p.unit_type === "tall") return "مطابخ — طويل";
+  return "مطابخ — سفلي";
+}
+/** hide the library cards that don't match the search, and the headings left empty */
+function filterLib() {
+  const q = (ui.libQ || "").trim().replace(/[أإآ]/g, "ا").replace(/ة/g, "ه").replace(/ى/g, "ي");
+  const norm = (t) => t.replace(/[أإآ]/g, "ا").replace(/ة/g, "ه").replace(/ى/g, "ي");
+  const lib = $("#lib");
+  for (const c of lib.querySelectorAll(".card, .tpl")) c.hidden = !!q && !q.split(/\s+/).every((w) => norm(c.textContent).includes(w));
+  for (const h3 of lib.querySelectorAll("h3")) {
+    const box = h3.nextElementSibling;
+    const any = box && [...box.children].some((c) => !c.hidden);
+    h3.hidden = box.hidden = !any;
+  }
+  let none = lib.querySelector(".libnone");
+  if (q && ![...lib.querySelectorAll(".card, .tpl")].some((c) => !c.hidden)) {
+    if (!none) { none = document.createElement("p"); none.className = "hint libnone"; lib.querySelector(".libq").after(none); }
+    none.textContent = "مفيش حاجة بالاسم ده — جرّب كلمة تانية، أو ابدأ من قالب فاضي.";
+  } else none?.remove();
+}
 function renderLib() {
   let h = `<div class="libhead"><h2>المكتبة</h2><button class="x" data-close aria-label="قفل المكتبة">×</button></div>
     <p class="hint">دوس على أي تصميم يتضاف للمشروع وتعدّله براحتك.</p>
+    <input id="libq" class="libq" type="search" placeholder="🔍 دوّر: تسريحة، تموين، حوض، دولاب…" aria-label="دوّر في المكتبة" value="${esc(ui.libQ || "")}">
     <button class="card cutcard" data-pieces="1"><span class="sw" style="font-size:26px">✂</span><b>قطع حرة — كت ليست بمقاساتك</b><small>اكتب مقاسات القطع (أو الزقها من Excel) ويطلعلك خطة القص والملصقات بالباركود من غير تصميم.</small></button>
-    <h3>المطابخ</h3><div class="cards">`;
-  for (const [key, s] of Object.entries(KU.KITCHEN)) {
-    const base = !s.params.unit_type || s.params.unit_type === "base";
-    h += `<button class="card" data-kitchen="${key}"><span class="sw">${swatches([KU.K_DEFAULT_COLORS.front, KU.K_DEFAULT_COLORS.carcass, base ? KU.K_DEFAULT_COLORS.countertop : null])}</span><b>${esc(s.label)}</b><small>${esc(s.desc)}</small></button>`;
+`;
+  const kg = {};
+  for (const [key, s] of Object.entries(KU.KITCHEN)) (kg[kitchenGroup(s)] ??= []).push([key, s]);
+  for (const g of ["مطابخ — سفلي", "مطابخ — علوي", "مطابخ — طويل", "مطابخ — زوايا", "مطابخ — إكسسوارات", "دواليب غرف النوم", ...Object.keys(kg)].filter((g, i, a) => kg[g] && a.indexOf(g) === i)) {
+    h += `<h3>${esc(g)}</h3><div class="cards">`;
+    for (const [key, s] of kg[g]) {
+      const base = !s.params.unit_type || s.params.unit_type === "base";
+      h += `<button class="card" data-kitchen="${key}"><span class="sw">${swatches([KU.K_DEFAULT_COLORS.front, KU.K_DEFAULT_COLORS.carcass, base ? KU.K_DEFAULT_COLORS.countertop : null])}</span><b>${esc(s.label)}</b><small>${esc(s.desc)}</small></button>`;
+    }
+    h += `</div>`;
   }
-  h += `</div><h3>الدريسنج</h3><div class="cards">`;
+  h += `<h3>الدريسنج</h3><div class="cards">`;
   for (const [key, s] of Object.entries(DRESSING)) {
     const r = R({ kind: "dressing", name: s.label, params: s.params, libs: s.libs });
     h += `<button class="card" data-dress="${key}"><span class="sw">${swatches([r.colors?.door, r.colors?.carcass, r.colors?.glass])}</span><b>${esc(s.label)}</b><small>${esc(s.desc)}</small></button>`;
@@ -805,7 +843,9 @@ function renderLib() {
     h += `<button class="tpl" data-template="${key}">${esc(t.label)}<small>${esc(t.group)}</small></button>`;
   }
   $("#lib").innerHTML = h + "</div>";
+  filterLib();
 }
+$("#lib").addEventListener("input", (e) => { if (e.target.id !== "libq") return; ui.libQ = e.target.value; filterLib(); });
 $("#lib").addEventListener("click", (e) => {
   if (e.target.closest("[data-close]")) { state.libOpen = false; render(); return; }
   const c = e.target.closest("[data-preset],[data-template],[data-dress],[data-kitchen],[data-pieces]");
@@ -1196,7 +1236,19 @@ function panelProps(p, r) {
     for (const [path, label, type] of spec.fields) if (type === "bool") h += boolF(path, label, getPath(p, path));
     h += `</div></details>`;
   }
-  if (!hide.includes("fronts")) {
+  if (tpl === "free") {
+    const ROLE_AR = { side: "جنب", horizontal: "قاعدة/رأس", fixed_shelf: "رف ثابت", divider: "قاطوع", shelf: "رف", back: "ظهر", door: "ضلفة/غطا", plinth: "وزرة", other: "تاني" };
+    const mats = Object.fromEntries(Object.entries(PANEL_MATS).filter(([k]) => !k.startsWith("table")));
+    h += `<details open><summary>الألواح (${(p.panels || []).length})</summary><p class="hint">كل لوح: مكانه من الركن الشمال قدام تحت (س عرض، ص عمق، ع ارتفاع) ومقاسه. التعديل بيتحسب في الكت ليست على طول.</p>`;
+    (p.panels || []).forEach((q, i) => {
+      h += `<div class="zone-ed"><div class="zh">${textF(`panels.${i}.name`, `لوح ${i + 1}`, q.name)}<button data-fpdup="${i}" class="sm" aria-label="نسخة">${ICON.copy}</button><button data-fpdel="${i}" class="danger sm" aria-label="شيل اللوح">${ICON.trash}</button></div>
+        <div class="grid3">${numF(`panels.${i}.w`, "العرض", q.w)}${numF(`panels.${i}.d`, "العمق", q.d)}${numF(`panels.${i}.h`, "الارتفاع", q.h)}
+        ${numF(`panels.${i}.x`, "س", q.x)}${numF(`panels.${i}.y`, "ص", q.y)}${numF(`panels.${i}.z`, "ع", q.z)}</div>
+        <div class="grid2">${selF(`panels.${i}.material`, "الخامة", mats, q.material)}${selF(`panels.${i}.role`, "نوعه", ROLE_AR, q.role)}</div></div>`;
+    });
+    h += `<button class="add" data-fpadd>${ICON.plus}ضيف لوح</button></details>`;
+  }
+  if (!hide.includes("fronts") && tpl !== "free") {
     h += `<details open><summary>الواجهة (من تحت لفوق)</summary>`;
     (p.fronts || []).forEach((z, i) => {
       h += `<div class="zone-ed"><div class="zh"><b>جزء ${i + 1}</b><button data-zdel="${i}" class="danger sm" aria-label="شيل الجزء">${ICON.trash}</button></div><div class="grid2">
@@ -1579,6 +1631,9 @@ props.addEventListener("click", (e) => {
     save();
     render(true);
   } else if (d.zdel != null) setParams(u, (p) => p.fronts.splice(+d.zdel, 1));
+  else if (d.fpdel != null) setParams(u, (p) => p.panels.splice(+d.fpdel, 1));
+  else if (d.fpdup != null) setParams(u, (p) => { const q = clone(p.panels[+d.fpdup]); q.name += " (نسخة)"; q.x += q.w + 2; p.panels.splice(+d.fpdup + 1, 0, q); });
+  else if (b.hasAttribute("data-fpadd")) setParams(u, (p) => { (p.panels ??= []).push({ name: `لوح ${p.panels.length + 1}`, role: "other", material: "carcass", x: 0, y: 0, z: 0, w: 60, d: 40, h: 1.8 }); });
   else if (b.hasAttribute("data-zadd")) setParams(u, (p) => p.fronts.push({ type: "open", count: 1, height: "auto", shelves: 1, hinge: "left", led: false }));
   else if (d.secdel != null) setParams(u, (p) => { if (p.sections.length > 1) p.sections.splice(+d.secdel, 1); });
   else if (b.hasAttribute("data-secadd")) setParams(u, (p) => { p.sections.push({ width: "auto", kind: "normal", compartments: [DC({ content: "shelves", shelf_count: 4, door: "single_left" })] }); p.width += 50; });
