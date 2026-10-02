@@ -247,6 +247,9 @@ export class FinalRender {
     this.sig = (v.walls || []).map((w) => (w.visible ? 1 : 0)).join("");
     this.pt.setScene(v.scene, v.cam);
     this.target = PT_QUALITY[opts.quality]?.[1] || 500;
+    // the camera stays put while tracing — a touch on the screen must not throw the picture away
+    this.locked = true;
+    v.ctl.enabled = false;
     this.t0 = performance.now();
     this.active = true;
     this.paused = false;
@@ -293,10 +296,16 @@ export class FinalRender {
     this.pt.pausePathTracing = this.paused || this.pt.samples >= this.target;
     return url;
   }
+  /** unlock to re-frame (every camera move restarts the picture), lock again to keep it */
+  setLocked(on) {
+    this.locked = on;
+    this.view.ctl.enabled = !on;
+  }
   stop() {
     if (!this.active) return;
     const v = this.view, r = v.ren;
     this.active = false;
+    v.ctl.enabled = true;
     restoreAfterTrace(v, this.swap);
     v.scene.environment = this.keepEnv;
     r.setPixelRatio(this.keepSize?.pr || Math.min(devicePixelRatio, 2));

@@ -366,7 +366,7 @@ $("#libBtn").addEventListener("click", () => { state.libOpen = !state.libOpen; r
   // orbiting never moves furniture: a unit moves only in "move" mode or after a long press on it
   // capture phase: runs before the orbit controls, so a move can claim the finger outright
   host.addEventListener("pointerdown", (e) => {
-    if (e.target.closest(".vctl, .movebar")) return;
+    if (e.target.closest(".vctl, .movebar") || view.final?.active) return;
     down = [e.clientX, e.clientY];
     clearTimeout(press);
     if (!wholeView() || ui.mode !== "owner" || !view.ready || !e.isPrimary) return;
@@ -391,6 +391,7 @@ $("#libBtn").addEventListener("click", () => { state.libOpen = !state.libOpen; r
   });
   const end = (e) => {
     clearTimeout(press);
+    if (view.final?.active && !drag) { down = null; return; } // taps never change the selection while the final render runs
     if (drag) {
       view.highlight(drag.u.id, false);
       const p = drag.pose;
@@ -477,8 +478,9 @@ function renderPt() {
   if (!p) return;
   const opt = (key, table) => Object.entries(table).map(([k, [l]]) => `<button data-pt${key}="${k}" class="${p[key] === k ? "on" : ""}">${l}</button>`).join("");
   if (p.phase === "setup") {
+    el.dataset.sig = "";
     el.innerHTML = `<div class="pth"><b>📸 ريندر نهائي</b><button class="x" data-ptx aria-label="قفل">×</button></div>
-      <p class="hint">بيتتبّع مسار الضوء الحقيقي: ضل ناعم، انعكاسات، زجاج، وإضاءة الليد والسبوتات. كل ما يستنى أكتر الصورة تبقى أنضف. اختار الكادر الأول من الكاميرا.</p>
+      <p class="hint">بيتتبّع مسار الضوء الحقيقي: ضل ناعم، انعكاسات، زجاج، وإضاءة الليد والسبوتات. كل ما يستنى أكتر الصورة تبقى أنضف. ظبّط الكادر الأول — وانت بترندر الكاميرا بتتقفل، فلمس الشاشة مش هيبوّظ الصورة.</p>
       <div class="ptrow"><span>الجودة</span><div class="seg">${opt("quality", Render.PT_QUALITY)}</div></div>
       <div class="ptrow"><span>المقاس</span><div class="seg">${opt("size", Render.PT_SIZES)}</div></div>
       <div class="ptrow"><button class="chip tog ${p.denoise ? "on" : ""}" data-ptden>تنعيم النويز</button></div>
@@ -486,11 +488,21 @@ function renderPt() {
     return;
   }
   const pc = p.target ? Math.min(100, Math.round((100 * (p.samples || 0)) / p.target)) : 0;
+  const stat = `${p.samples || 0} / ${p.target || "…"} · ${fmtSecs(p.secs || 0)}${p.size ? ` · ${p.size[0]}×${p.size[1]}` : ""}`;
+  // while it runs only the counter and the bar change — rebuilding the buttons would swallow taps
+  const sig = p.phase + "|" + (p.samples ? 1 : 0) + "|" + (view.final?.locked === false ? 0 : 1);
+  if (el.dataset.sig === sig && el.querySelector(".ptprog")) {
+    el.querySelector(".pth .num").textContent = stat;
+    el.querySelector(".ptprog i").style.width = pc + "%";
+    return;
+  }
+  el.dataset.sig = sig;
   const msg = p.phase === "load" ? "بيحمّل محرك الريندر…" : p.phase === "build" ? "بيجهّز المشهد…" : p.phase === "done" ? "خلص ✓" : p.phase === "paused" ? "متوقف مؤقتاً" : "بيرندر…";
-  el.innerHTML = `<div class="pth"><b>${msg}</b><span class="num" dir="ltr">${p.samples || 0} / ${p.target || "…"} · ${fmtSecs(p.secs || 0)}${p.size ? ` · ${p.size[0]}×${p.size[1]}` : ""}</span></div>
+  el.innerHTML = `<div class="pth"><b>${msg}</b><span class="num" dir="ltr">${stat}</span></div>
     <div class="ptprog"><i style="width:${pc}%"></i></div>
     <div class="ptrow"><button class="primary" data-ptsave ${p.samples ? "" : "disabled"}>احفظ الصورة</button>
       ${p.phase === "done" ? "" : `<button class="ghost2" data-ptpause>${p.phase === "paused" ? "كمّل" : "وقّف مؤقتاً"}</button>`}
+      <button class="ghost2" data-ptcam>${view.final?.locked === false ? "🔒 ثبّت الكادر" : "🔓 حرّك الكادر"}</button>
       <button class="ghost2" data-ptx>خروج</button></div>`;
 }
 function closeFinal() {
@@ -507,6 +519,7 @@ $("#ptbar").addEventListener("click", async (e) => {
   if (d.ptquality) { p.quality = d.ptquality; renderPt(); return; }
   if (d.ptsize) { p.size = d.ptsize; renderPt(); return; }
   if (b.hasAttribute("data-ptden")) { p.denoise = !p.denoise; renderPt(); return; }
+  if (b.hasAttribute("data-ptcam")) { view.final.setLocked(view.final.locked === false); renderPt(); if (view.final.locked === false) alertBar("حرّك الكاميرا براحتك — الريندر هيبدأ من الأول مع كل حركة. دوس \"ثبّت الكادر\" لما تخلص."); return; }
   if (b.hasAttribute("data-ptpause")) { view.final.paused = !view.final.paused; p.phase = view.final.paused ? "paused" : "run"; renderPt(); return; }
   if (b.hasAttribute("data-ptgo")) {
     ui.sceneOpen = false; renderScene();
