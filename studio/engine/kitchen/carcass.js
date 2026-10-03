@@ -68,6 +68,8 @@ export class CarcassBuilder {
             this.buildVerticalDividers(e);
         if (this.baseUnit())
             this.buildCountertop(e);
+        if (this.ledPanelBelow())
+            this.buildLedPanel(e);
         if (this.wallCleatEnabled())
             this.buildWallCleat(e);
         if (this.endPanelEnabled())
@@ -474,6 +476,33 @@ export class CarcassBuilder {
         this.ctx.labels.add(this.unitId, this.unitGroupName(), name, this.depth(), this.height() - this.z0Carcass(), this.panelT(), {
             banded: all(bandedAll), groove: grooveRatio !== null, groove_axis: "vertical", groove_ratio: grooveRatio,
             led: ledRatio !== null, led_ratio: ledRatio, material: this.carcassMaterialName(),
+        });
+    }
+    // ---------------------------------------------------------------- LED board under a wall / ceiling unit
+    /** a horizontal board fixed under the unit, flush with the doors' face, with the LED strip in a groove
+     *  near its front edge (the board between the wall units and the units up to the ceiling) */
+    ledPanelBelow() {
+        return this.unitType() === "wall" && truthy(this.p["led_panel_below"]);
+    }
+    buildLedPanel(e) {
+        const t = this.panelT();
+        const overlay = this.doorPosition() === "overlay";
+        const y0 = (overlay ? -this.frontT() : 0) + rmax(pcm(this.p["led_panel_setback"] ?? 0), 0);
+        const y1 = this.depth();
+        if (y1 <= y0)
+            return;
+        const color = truthy(this.p["led_panel_front_color"] ?? true) ? this.frontColor() : this.carcassMaterial();
+        const pnl = createBox(this.ctx, e, "لوح ليد", 0, y0, -t, this.width(), y1, 0, color);
+        assignLayer(this.ctx, pnl, TAGS.carcass);
+        if (this.edgeBandingEnabled())
+            bandEdges(this.ctx, pnl, [new Vector3d(0, -1, 0), new Vector3d(-1, 0, 0), new Vector3d(1, 0, 0)], this.edgeBandingMaterial());
+        // the LED groove on its underside, behind the front edge
+        const ly0 = y0 + rmax(this.ledOffset(), 0), ly1 = rmin(ly0 + rmax(this.ledWidth(), cm(1)), y1);
+        if (ly1 > ly0)
+            addColoredMarkerFace(this.ctx, pnl, [new Point3d(cm(1), ly0, -t), new Point3d(this.width() - cm(1), ly0, -t), new Point3d(this.width() - cm(1), ly1, -t), new Point3d(cm(1), ly1, -t)], COLORS.led);
+        const b = this.edgeBandingEnabled();
+        this.ctx.labels.add(this.unitId, this.unitGroupName(), "لوح ليد", this.width(), y1 - y0, t, {
+            banded: { top: false, bottom: b, left: b, right: b }, led: true, led_ratio: rmin((ly0 + ly1) / 2 / rmax(y1 - y0, 0.001), 1), material: color === this.frontColor() ? this.frontMaterialName() : this.carcassMaterialName(),
         });
     }
     ledMarkerEnabled() {

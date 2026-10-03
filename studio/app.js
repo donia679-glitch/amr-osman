@@ -599,6 +599,26 @@ function pinOthers(id) {
   const poses = projectPoses(state.project);
   for (const u of state.project.units) { if (u.id === id || u.pos) continue; const L = poses.get(u.id); if (L?.wall) u.pos = { wall: L.wall, s: Math.round(L.s * 10) / 10 }; }
 }
+/** a unit up to the ceiling above a wall unit: same width and place, a LED board under it (the board sits on
+ *  top of the lower unit), its height = what is left to the ceiling */
+function addCeilingUnit(u) {
+  const P = R(u).params || u.params, poses = projectPoses(state.project), L = poses.get(u.id);
+  const seg = L?.wall ? Room.segments(state.project.room || { pts: [] }).find((g) => g.id === L.wall) : null;
+  const ceil = seg?.h || state.project.room?.walls?.[0]?.h || Room.WALL_H;
+  const t = +P.panel_thickness || 1.8, gap = 1; // 1 cm under the ceiling (uneven ceilings, fitting)
+  const z0 = (+P.wall_mount_height || 140) + (+P.height || 70) + t;
+  const h = Math.round((ceil - gap - z0) * 10) / 10;
+  if (h < 20) { alertBar(`مفيش مكان فوقها: السقف ${n1(ceil)} سم والوحدة طالعة لحد ${n1(z0 - t)} سم`); return; }
+  const c = clone(u);
+  c.id = uid(); delete c.code; c.name = `علوية سقف فوق ${u.code || u.name}`;
+  c.params = { ...c.params, unit_type: "wall", wall_mount_height: Math.round(z0 * 10) / 10, height: h, led_panel_below: true, shelf_count: h > 45 ? 1 : 0, include_shelves: h > 45, include_led_marker: false };
+  if (L?.wall) { u.pos = { wall: L.wall, s: Math.round(L.s * 10) / 10 }; c.pos = { ...u.pos }; }
+  else if (L) { u.pos = { x: L.x, z: L.z, rot: L.rot }; c.pos = { ...u.pos }; }
+  state.project.units.splice(state.project.units.indexOf(u) + 1, 0, c);
+  ensureCodes(state.project); state.sel = c.id; state.whole = true;
+  save(); render(true);
+  alertBar(`اتعملت ${c.name}: ارتفاع ${n1(h)} سم لحد السقف (${n1(ceil)})، وتحتها لوح ليد ${n1(t)} سم`);
+}
 /** a stored (Arabic) text shown inside an input: translated in English mode (input values aren't translated by the page layer) */
 const trv = (v) => (I18n.isEn() ? I18n.tr(v) : v);
 function adaptModel(u) {
@@ -809,6 +829,7 @@ function adaptKitchen(u) {
   const kind = p.unit_category === "corner" ? `زاوية ${KU.K_CORNER[p.corner_style] || ""}` : KU.K_CATS[p.unit_category] || "وحدة مطبخ";
   const hw = { ...(r.hardware || {}) };
   for (const [k, q] of Object.entries(orgHardware(u) || {})) hw[k] = (hw[k] || 0) + q;
+  if (p.unit_type === "wall" && (p.led_panel_below === true || p.led_panel_below === "true")) { const k = "شريط ليد (متر)"; hw[k] = Math.round(((hw[k] || 0) + (+p.width || 0) / 100) * 100) / 100; }
   doorSwing(r, p);
   let meshes = r.meshes, parts = r.parts, warnings = r.warnings;
   if (Obs.any(u.params)) {
@@ -2372,7 +2393,10 @@ function kitchenProps(p) {
   let h = `<details open><summary>الوحدة</summary><div class="grid2">${selF("unit_category", "النوع", KU.K_CATS, p.unit_category)}${selF("unit_type", "المكان", KU.K_TYPES, p.unit_type)}</div>
     <div class="grid2">${textF("unit_label", "اسم/تعليق للوحدة (بيظهر في الملصقات)", p.unit_label)}</div>
     <div class="grid3">${dims.map(([k, l]) => numF(k, l, p[k])).join("")}</div>
-    ${p.unit_type === "wall" ? `<div class="grid2">${numF("wall_mount_height", "التعليق من الأرض", p.wall_mount_height)}</div>` : ""}</details>`;
+    ${p.unit_type === "wall" ? `<div class="grid2">${numF("wall_mount_height", "التعليق من الأرض", p.wall_mount_height)}</div>
+      <div class="bools">${boolF("led_panel_below", "لوح ليد تحت الوحدة", p.led_panel_below)}${p.led_panel_below ? boolF("led_panel_front_color", "اللوح بلون الضلف", p.led_panel_front_color !== false) : ""}</div>
+      <div class="btnrow"><button class="ghost2" data-ceilunit>⬆ ضيف وحدة فوقها لحد السقف (بلوح ليد)</button></div>
+      <p class="hint">بتتحط فوق الوحدة دي بنفس العرض والمكان، ارتفاعها لحد السقف، وتحتها لوح ليد بلون الضلف ومجرى الليد قريب من الحرف الأمامي. شريط الليد بيتحسب في الهاردوير.</p>` : ""}</details>`;
   h += kickDrawerSection(p);
   const extra = KU.extraFields(p);
   if (extra.length) {
@@ -2799,6 +2823,7 @@ props.addEventListener("click", (e) => {
     return;
   }
   if (b.hasAttribute("data-mysave")) { ui.pop = "mysave"; ui.mysaveId = u.id; renderPop(); return; }
+  if (b.hasAttribute("data-ceilunit")) { addCeilingUnit(u); return; }
   if (b.hasAttribute("data-dup")) {
     const many = ui.multi?.size > 1 && ui.multi.has(u.id) ? targetUnits() : [u];
     const made = many.map((x) => { const c = { ...clone(x), id: uid(), name: x.name + " (نسخة)" }; delete c.code; delete c.pos; return c; });
@@ -6277,7 +6302,8 @@ function designChecks(project = state.project) {
   for (const it of items) if (it.pose.unplaced && room) add("w", `${label(it)}: مالقتش مكان على الحيطان (الحيطان مليانة أو قصيرة) — اتحطت في نص الأوضة. حرّكها لمكانها أو صغّر وحدات تانية.`, it.u.id);
   swingChecks(items, add, room, label);
   // overlaps (same height band)
-  const band = (it) => (it.row === "upper" ? [140, 230] : it.row === "lower" ? [0, 90] : it.row === "free" ? [0, 80] : [0, 240]);
+  // the real height band of a wall unit (a ceiling unit sits above the wall unit under it — that is no clash)
+  const band = (it) => { if (it.row === "upper") { const q = R(it.u).params || {}, z0 = +q.wall_mount_height || 140, lp = q.led_panel_below === true || q.led_panel_below === "true" ? +q.panel_thickness || 1.8 : 0; return [z0 - lp + 0.5, z0 + (+q.height || 70) - 0.5]; } return it.row === "lower" ? [0, 90] : it.row === "free" ? [0, 80] : [0, 240]; };
   for (let i = 0; i < items.length; i++) for (let j = i + 1; j < items.length; j++) {
     const A = items[i], B = items[j], [a0, a1] = band(A), [b0, b1] = band(B);
     if (Math.min(a1, b1) <= Math.max(a0, b0)) continue;

@@ -17,7 +17,7 @@ const TOOLS = [
   ["تعديل", [["move", "✥", "تحريك / نسخ"], ["rotate", "↻", "لف"], ["scale", "⇲", "تكبير / تصغير"]]],
   ["قياس", [["tape", "📏", "شريط قياس"], ["protractor", "∡", "منقلة"], ["dim", "↔", "أبعاد"], ["text", "T", "نص"], ["gpoint", "✚", "نقطة"]]],
   ["حوائط", [["wall", "🧱", "حيطة"], ["door", "🚪", "باب"], ["window", "🪟", "شباك"], ["mep", "🔌", "مرافق"]]],
-  ["تاني", [["paint", "🪣", "دهان"], ["eraser", "⌫", "ممحاة"]]],
+  ["تاني", [["paint", "🪣", "دهان"], ["eraser", "⌫", "ممحاة"], ["trim", "✂", "قص عند التقاطع"]]],
 ];
 const TOOLNAME = Object.fromEntries(TOOLS.flatMap(([, l]) => l.map(([k, , n]) => [k, n])));
 const HINT = {
@@ -35,6 +35,7 @@ const HINT = {
   tape: "دوس من نقطة لنقطة: بيقيس المسافة بس (الخط المساعد اختياري من الجنب)", protractor: "دوس المركز، البداية، وبعدين الزاوية: خط مساعد مايل",
   dim: "دوس نقطتين وبعدين مكان خط البعد", text: "دوس المكان واكتب النص في الخانة تحت", paint: "اختار الخامة من الجنب ودوس على اللوح",
   eraser: "دوس أو اسحب على اللي عايز تمسحه",
+  trim: "دوس على الجزء اللي عايز تشيله من خط أو دايرة: بيتقص لحد أقرب تقاطع من الناحيتين (Trim)",
   wall: "دوس على الأرض نقطة نقطة (الوش الداخلي للحيطة) · اكتب الطول · ارجع لأول نقطة تقفل الأوضة · دوس نفس النقطة تاني أو ↵ تخلّص",
   door: "دوس على الحيطة مكان الباب — المقاسات من الجنب", window: "دوس على الحيطة مكان الشباك — المقاسات والجلسة من الجنب",
   mep: "اختار النوع من الجنب (بريزة، مفتاح، تغذية، صرف، غاز…) ودوس على الحيطة مكانه",
@@ -567,7 +568,7 @@ function snapPoints() {
 }
 /** where two circles (or arcs) drawn on the same plane cross — exactly, from their centres and radii */
 function circleCrossings() {
-  const C = M.sketches.filter((k) => k.center && k.smooth && k.pts?.length > 2);
+  const C = M.sketches.filter((k) => k.center && k.smooth && k.closed && k.pts?.length > 2);
   const out = [];
   for (let i = 0; i < C.length; i++) for (let j = i + 1; j < C.length; j++) {
     const a = C[i], b = C[j];
@@ -729,6 +730,7 @@ function freePoint(P, pl, anchor, cx, cy, pr) {
     const axes = inPlaneAxes(pl);
     let best = null;
     for (const R of ui.recent || []) for (const i of axes) {
+      if (anchor && G.dist(R, anchor) < 0.05) continue; // lining up with the start point itself = a flat (zero) rectangle
       const q = [...P]; q[i] = R[i];
       const a = scr(q), d = Math.hypot(a[0] - cx, a[1] - cy);
       if (d < 9 * pr && (!best || d < best.d)) best = { q, R, d };
@@ -1019,15 +1021,17 @@ function twoClick(make, label) {
     wantsDown: () => !ui.st,
     click(xy) {
       const st = ui.st;
-      const inf = infer(...xy, st ? { anchor: st.a, plane: st.plane, axes: inPlaneAxes(st.plane) } : {});
+      const inf = infer(...xy, st ? { anchor: st.a, plane: st.plane, axes: ui.tool === "rect" ? [] : inPlaneAxes(st.plane) } : {});
       if (!st) { const pl = drawPlaneFor(inf); ui.st = { plane: pl, a: inf.p, a2: G.toPlane(pl, inf.p).slice(0, 2) }; return; }
       const b2 = G.toPlane(st.plane, inf.p).slice(0, 2);
       if (Math.hypot(b2[0] - st.a2[0], b2[1] - st.a2[1]) < 0.2) return;
-      commitShape(make(st.a2, b2), st.plane);
+      const sh = make(st.a2, b2);
+      if (!sh) { setMsg("الشكل طالع خط (عرضه أو طوله صفر) — دوس الركن التاني بعيد شوية، أو اكتب «العرض,الطول»"); return; } // keep the first corner
+      commitShape(sh, st.plane);
     },
     hover(xy) {
       const st = ui.st;
-      const inf = infer(...xy, st ? { anchor: st.a, plane: st.plane, axes: inPlaneAxes(st.plane) } : {});
+      const inf = infer(...xy, st ? { anchor: st.a, plane: st.plane, axes: ui.tool === "rect" ? [] : inPlaneAxes(st.plane) } : {});
       overlay(() => {
         oMarker(inf);
         if (!st) return;
@@ -1077,7 +1081,7 @@ TOOL.arc = {
   wantsDown: () => !ui.st,
   click(xy) {
     const st = ui.st;
-    const inf = infer(...xy, st ? { anchor: st.a, plane: st.plane, axes: inPlaneAxes(st.plane) } : {});
+    const inf = infer(...xy, st ? { anchor: st.a, plane: st.plane, axes: ui.tool === "rect" ? [] : inPlaneAxes(st.plane) } : {});
     if (!st) { const pl = drawPlaneFor(inf); ui.st = { plane: pl, a: inf.p, a2: G.toPlane(pl, inf.p).slice(0, 2) }; return; }
     const q = G.toPlane(st.plane, inf.p).slice(0, 2);
     if (!st.b2) { if (Math.hypot(q[0] - st.a2[0], q[1] - st.a2[1]) < 0.2) return; st.b2 = q; st.b = inf.p; return; }
@@ -1283,13 +1287,18 @@ TOOL.follow = {
       const q0 = G.toPlane(prof.plane, path[0]).slice(0, 2);
       profile = prof.pts.map(([a, b]) => [G.r2(a - q0[0]), G.r2(b - q0[1])]);
     }
+    // a flat path (on the floor or on a board's face): the profile stands ON it, never below it (under the grid)
+    const flat = path.every((q) => Math.abs(q[2] - path[0][2]) < 0.05);
+    const minY = Math.min(...profile.map((q) => q[1]));
+    let lifted = false;
+    if (flat && minY < -0.01) { profile = profile.map(([a, b]) => [a, G.r2(b - minY)]); lifted = true; }
     edit(() => {
       M.sweeps.push({ id: uid(), name: `بروفايل ${M.sweeps.length + 1}`, mat: ui.mat, profile, path, closed });
       M.sketches = M.sketches.filter((x) => x !== prof && (!sk || x !== sk || sk.closed));
       if (pa) M.paths = M.paths.filter((x) => x !== pa);
       ui.sel.clear();
     });
-    setMsg("اتعمل البروفايل ✓");
+    setMsg(lifted ? "اتعمل البروفايل ✓ — اترفع عشان يقف على المسار اللي اخترته (مش تحت الأرض)" : "اتعمل البروفايل ✓");
   },
 };
 // ---- fillet / chamfer
@@ -1641,6 +1650,83 @@ TOOL.dim = {
   },
 };
 function offsetFor(st, P) { const d = G.norm(G.sub(st.b, st.a)), v = G.sub(P, st.a); return G.sub(v, G.mul(d, G.dot(v, d))); }
+// ---- trim: take away the piece of a drawn line / circle between the crossings either side of the tap
+TOOL.trim = {
+  click(xy) {
+    const hit = pickSketchEdge(...xy);
+    const k = hit?.kid && M.sketches.find((x) => x.id === hit.kid);
+    if (!k) { setMsg("دوس على خط أو دايرة مرسومة (مش لوح) — الجزء اللي تحت صباعك بيتشال لحد التقاطعات"); return; }
+    const res = trimSketch(k, hit.p);
+    if (!res) { setMsg("مفيش تقاطع على الخط ده — لو عايز تشيله كله استعمل الممحاة"); return; }
+    edit(() => { M.sketches = M.sketches.filter((x) => x.id !== k.id); for (const n of res) M.sketches.push(n); ui.sel.clear(); });
+    setMsg("اتقص ✓ — ↶ لو عايز ترجّعه");
+    overlay();
+  },
+  hover(xy) {
+    const hit = pickSketchEdge(...xy), k = hit?.kid && M.sketches.find((x) => x.id === hit.kid);
+    overlay(() => {
+      if (!k) return;
+      const piece = trimSketch(k, hit.p, true);
+      if (piece) oLine(piece.map((q) => G.toWorld(k.plane, q)), 0xe0413a, false);
+    });
+  },
+};
+/** the drawn line nearest the finger on screen (its edges, not the filled face inside a closed shape) */
+function pickSketchEdge(cx, cy) {
+  let best = null;
+  for (const k of M.sketches) {
+    const W = k.pts.map((p) => G.toWorld(k.plane, p));
+    for (let i = 0; i + 1 < W.length + (k.closed ? 1 : 0); i++) {
+      const A = W[i], B = W[(i + 1) % W.length], d = segDist2([cx, cy], scr(A), scr(B));
+      if (d.d < (touchy ? 22 : 14) && (!best || d.d < best.d)) best = { kid: k.id, d: d.d, p: G.lerp(A, B, d.t) };
+    }
+  }
+  return best;
+}
+/** cut a sketch at every crossing (other drawings, board edges and guides on its plane, and itself); returns the
+ *  remaining pieces as new sketches, or (preview) the piece that would go; null when nothing crosses it */
+function trimSketch(k, tapW, preview = false) {
+  const P = k.pts.map((q) => [q[0], q[1]]), closed = !!k.closed, n = P.length;
+  const segs = []; for (let i = 0; i + 1 < n + (closed ? 1 : 0); i++) segs.push([P[i], P[(i + 1) % n]]);
+  const cum = [0]; for (const [a, b] of segs) cum.push(cum.at(-1) + Math.hypot(b[0] - a[0], b[1] - a[1]));
+  const total = cum.at(-1); if (total < 1e-6) return null;
+  // cutters on the same plane, in this sketch's 2D frame
+  const cutters = [];
+  const on = (W) => { const q = G.toPlane(k.plane, W); return Math.abs(q[2]) < 0.05 ? [q[0], q[1]] : null; };
+  for (const e of snapEdges()) { if (e.kid === k.id) continue; const a = on(e.a), b = on(e.b); if (a && b) cutters.push([a, b]); }
+  const X = (a, b, c, d) => { const r = [b[0] - a[0], b[1] - a[1]], q = [d[0] - c[0], d[1] - c[1]], den = r[0] * q[1] - r[1] * q[0]; if (Math.abs(den) < 1e-12) return null; const w = [c[0] - a[0], c[1] - a[1]], t = (w[0] * q[1] - w[1] * q[0]) / den, u = (w[0] * r[1] - w[1] * r[0]) / den; return t >= -1e-9 && t <= 1 + 1e-9 && u >= -1e-9 && u <= 1 + 1e-9 ? t : null; };
+  const cuts = [];
+  segs.forEach(([a, b], i) => {
+    const L = cum[i + 1] - cum[i];
+    for (const [c, d] of cutters) { const t = X(a, b, c, d); if (t != null) cuts.push(cum[i] + t * L); }
+    segs.forEach(([c, d], j) => { if (Math.abs(i - j) <= 1 || (closed && Math.abs(i - j) === segs.length - 1)) return; const t = X(a, b, c, d); if (t != null) cuts.push(cum[i] + t * L); });
+  });
+  // where the finger is along the line
+  const tp2 = G.toPlane(k.plane, tapW); let tp = 0, best = Infinity;
+  segs.forEach(([a, b], i) => { const dx = b[0] - a[0], dy = b[1] - a[1], l2 = dx * dx + dy * dy || 1, t = Math.max(0, Math.min(1, ((tp2[0] - a[0]) * dx + (tp2[1] - a[1]) * dy) / l2)), q = [a[0] + dx * t, a[1] + dy * t], d = Math.hypot(q[0] - tp2[0], q[1] - tp2[1]); if (d < best) { best = d; tp = cum[i] + t * Math.sqrt(l2); } });
+  const cs = [...new Set(cuts.map((c) => Math.round(c * 1000) / 1000))].filter((c) => c > 1e-3 && c < total - 1e-3).sort((a, b) => a - b);
+  if (closed ? cs.length < 2 : !cs.length) return null;
+  let lo, hi;
+  if (closed) { hi = cs.find((c) => c > tp); lo = [...cs].reverse().find((c) => c < tp); if (hi == null) hi = cs[0] + total; if (lo == null) lo = cs.at(-1) - total; }
+  else { lo = [...cs].reverse().find((c) => c < tp) ?? 0; hi = cs.find((c) => c > tp) ?? total; }
+  // the polyline between two distances along it (wrapping round a closed loop)
+  const at = (d) => { d = closed ? ((d % total) + total) % total : Math.max(0, Math.min(total, d)); let i = cum.findIndex((c, j) => j < segs.length && d <= cum[j + 1] + 1e-9); if (i < 0) i = segs.length - 1; const [a, b] = segs[i], L = cum[i + 1] - cum[i] || 1, t = (d - cum[i]) / L; return { i, p: [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t] }; };
+  const sub = (d0, d1) => {
+    if (d1 - d0 < 1e-3) return null;
+    const A = at(d0), out = [A.p];
+    let d = d0, i = A.i;
+    for (let guard = 0; guard < segs.length * 2 + 2; guard++) {
+      const end = (closed ? Math.floor(d / total) * total : 0) + cum[i + 1];
+      if (end >= d1 - 1e-9) break;
+      out.push(segs[i][1]); d = end; i = (i + 1) % segs.length;
+    }
+    out.push(at(d1).p);
+    return out.map((q) => [G.r2(q[0]), G.r2(q[1])]);
+  };
+  if (preview) return sub(lo, hi);
+  const keep = closed ? [sub(hi, lo + total)] : [sub(0, lo), sub(hi, total)];
+  return keep.filter((q) => q && q.length >= 2).map((pts) => ({ id: uid(), plane: k.plane, pts, closed: false, ...(k.smooth ? { smooth: true } : {}), ...(k.center ? { center: k.center } : {}) }));
+}
 // ---- a guide point: mark a spot (the crossing of two circles, a centre …) to draw from later
 TOOL.gpoint = {
   click(xy) {
@@ -1766,6 +1852,26 @@ function mirrorSel(ax) {
     }
   });
 }
+/** stand the selected board(s) up — facing the front, facing the side — or lay them flat, staying where they were
+ *  (same lowest corner), like turning a real board in your hands */
+function orientSel(kind) {
+  const ss = selSolids(); if (!ss.length) return;
+  const want = kind === "v" ? [0, 1, 0] : kind === "s" ? [1, 0, 0] : [0, 0, 1];
+  const n = G.norm(G.nOf(ss[0].plane));
+  if (Math.abs(Math.abs(G.dot(n, want)) - 1) < 1e-3) { setMsg(kind === "h" ? "هو نايم أصلاً" : "هو واقف كده أصلاً"); return; }
+  let axis = G.cross(n, want);
+  if (G.len(axis) < 1e-6) return;
+  axis = G.norm(axis);
+  const ang = Math.acos(Math.max(-1, Math.min(1, G.dot(n, want))));
+  const before = selBox(), c = selCenter();
+  edit(() => {
+    for (const r of selRefs()) xform(r, { p: (P) => G.rotP(P, c, axis, ang) });
+    const after = selBox(); if (!before || !after) return;
+    const dv = [before.x0 - after.x0, before.y0 - after.y0, before.z0 - after.z0];
+    for (const r of selRefs()) xform(r, { p: (P) => G.add(P, dv) });
+  });
+  setMsg(kind === "v" ? "اتوقّف رأسي ووشه لقدام" : kind === "s" ? "اتوقّف رأسي ووشه للجنب" : "اتنيّم");
+}
 function rotSel90(ax) { const c = selCenter(); edit(() => { for (const r of selRefs()) xform(r, { p: (P) => G.rotP(P, c, AX[ax], Math.PI / 2) }); }); }
 function dupSel() { edit(() => { const made = copyRefs(selRefs()); for (const r of made) xform(r, { p: (P) => G.add(P, [10, 10, 0]) }); ui.sel = new Set(made); }); }
 function groupSel() {
@@ -1875,6 +1981,7 @@ function sideHtml() {
       ${moreSelHtml(solids)}
       <div class="dsbtns"><button class="dsb" data-ds="dup">⧉ نسخة</button><button class="dsb" data-ds="del">🗑 امسح</button><button class="dsb" data-ds="hide">🙈 اخفي</button><button class="dsb" data-ds="isolate">👁 لوحده</button>
       ${solids.length > 1 && !grp ? `<button class="dsb" data-ds="group">▣ اعمل مجموعة</button>` : ""}${grp ? `<button class="dsb" data-ds="ungroup">▢ فك المجموعة</button><button class="dsb" data-ds="entergrp">ادخل جواها</button>` : ""}</div>
+      ${solids.length ? `<div class="dsrow dsorient"><span>وقّفه</span><span class="dsgrp"><button class="dsb" data-orient="v" title="رأسي — وشه لقدام (زي ضلفة أو ظهر)">▯ رأسي قدام</button><button class="dsb" data-orient="s" title="رأسي — وشه للجنب (زي جنب الدولاب)">◫ رأسي جنب</button><button class="dsb" data-orient="h" title="نايم (زي رف أو قاعدة)">▭ نايم</button></span></div>` : ""}
       <div class="dsrow"><span>لف 90°</span><span class="dsgrp"><button class="dsb ax0" data-rot90="0">X</button><button class="dsb ax1" data-rot90="1">Y</button><button class="dsb ax2" data-rot90="2">Z</button></span></div>
       <div class="dsrow"><span>اعكس</span><span class="dsgrp"><button class="dsb ax0" data-mirror="0">X</button><button class="dsb ax1" data-mirror="1">Y</button><button class="dsb ax2" data-mirror="2">Z</button></span></div></div>`;
   }
@@ -1915,6 +2022,7 @@ function onClick(e) {
   if (d.room) { roomAction(d.room, b); return; }
   if (d.mat) { ui.mat = d.mat; renderUI(); if (ui.sel.size) edit(() => selRefs().forEach((r) => { const x = ent(r); if (x && (r[0] === "s" || r[0] === "w")) x.mat = d.mat; })); return; }
   if (d.rot90 != null) { rotSel90(+d.rot90); return; }
+  if (d.orient) { orientSel(d.orient); return; }
   if (d.align != null) { alignSel(+el.querySelector("#dsAlAx").value, d.align); return; }
   if (d.mirror != null) { mirrorSel(+d.mirror); return; }
   if (d.pick) { ui.sel = new Set([d.pick]); ui.outline = true; rebuild(); renderUI(); return; }
