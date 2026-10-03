@@ -38,6 +38,8 @@ cd /home/claude/novera-app && python3 tools/build_pwa.py && python3 tools/build_
 - Kitchen units: base depth 58 includes the door (inset, face at y=0); corner units get their depth from `cornerFit()` in app.js unless set by hand.
 
 ## History (latest first)
+- v49: offcut wizard «♻️ أعمل إيه من الفضلات؟» (scrap*, SCRAP_CANDIDATES, pools by material+thickness from stock keys or typed rows with lib/thickness,
+  role→pool assignments tried via the cut worker with timeCap 0.08, results with plan text, thumbnails, add with the pools' materials via scrapWithPlan). cutworker.js honours opts.timeCap.
 - v48: NOVERA factory defaults. `NOVERA_DEFAULTS` + `seedDefaults()` (seeded once per install, flag `defaults.seeded`), per-type defaults `defaults.by.{base,wall,tall}`,
   rules `defaults.rules` (shelves per type, drawerBoxLikeCarcass, runner + runnerClr), applied by `applyTypeDefaults()` inside `withDefaults()` and by the «طبّق» button (force).
   Values: back_rear_offset 1.8 · doors overlay · base top = rails with front rail inset 2.5 · base door_handle_recess 4 · wall door_bottom_extension 2 · shelves base/wall 1, tall 4 (preset counts ≤3 are overridden) ·

@@ -1884,6 +1884,7 @@ function renderLib() {
     <p class="hint">دوس على أي تصميم تشوفه كبير وتلفّه قبل ما تضيفه — أو دوس ＋ يتضاف على طول.</p>
     <input id="libq" class="libq" type="search" placeholder="🔍 دوّر: تسريحة، تموين، حوض، دولاب…" aria-label="دوّر في المكتبة" value="${esc(ui.libQ || "")}">
     <button class="card cutcard" data-studio-new="1"><span class="sw" style="font-size:26px">✏️</span><b>ورشة الرسم — صمّم حاجتك من الصفر</b><small>رسم 3D حر: خطوط ومستطيلات ودواير وأقواس، اسحبها ألواح، فرّغ وقص واحفر، ولف وانسخ — وكل لوح يطلع في القص والـCNC بشكله.</small></button>
+    <button class="card cutcard" data-scrap-lib="1"><span class="sw" style="font-size:26px">♻️</span><b>أعمل إيه من الفضلات؟</b><small>اختار البواقي من المخزن أو اكتب مقاساتها، والبرنامج يرشّحلك وحدات صغيرة تطلع منها بالكامل.</small></button>
     <button class="card cutcard" data-pieces="1"><span class="sw" style="font-size:26px">✂</span><b>قطع حرة — كت ليست بمقاساتك</b><small>اكتب مقاسات القطع (أو الزقها من Excel) ويطلعلك خطة القص والملصقات بالباركود من غير تصميم.</small></button>
 `;
   h += myLibHtml();
@@ -1931,6 +1932,7 @@ $("#lib").addEventListener("click", (e) => {
   if (e.target.closest("[data-close]")) { state.libOpen = false; render(); return; }
   if (myLibClick(e)) return;
   if (e.target.closest("[data-studio-new]")) { state.libOpen = false; render(); openStudio(null); return; }
+  if (e.target.closest("[data-scrap-lib]")) { state.libOpen = false; render(); ui.pop = "scrap"; renderPop(); return; }
   const c = e.target.closest("[data-preset],[data-template],[data-dress],[data-kitchen],[data-pieces],[data-smart]");
   if (!c) return;
   // the small ＋ on a card adds it straight away; a tap on the card itself shows the preview first
@@ -4188,11 +4190,13 @@ function renderPop() {
   else if (ui.pop === "brand") h = brandPop();
   else if (ui.pop === "speak") h = speakPop();
   else if (ui.pop === "fincmp") h = fincmpPop();
+  else if (ui.pop === "scrap") h = scrapPop();
   else if (ui.pop === "menu") {
     const it = (k, ic, t, d) => `<button class="mitem" data-menu="${k}"><span class="mic">${ic}</span><span><b>${t}</b><small>${d}</small></span></button>`;
     h = `<div class="popbox menubox" role="dialog" aria-label="القائمة"><div class="libhead"><h2>القائمة</h2><button class="x" data-close aria-label="قفل">×</button></div>
       <h3>المشروع</h3>${it("projects", "📁", "مشاريعي", "افتح مشروع تاني أو ابدأ جديد")}${it("export", "⬆", "تصدير وطباعة", "الملصقات، خطة القص، CNC، عرض السعر، سكتش أب")}${it("survey", "📐", "رفع مقاسات", "شاشة الرفع في الموقع خطوة بخطوة")}${it("studio", "✏️", "ورشة الرسم", "صمّم أي قطعة أو وحدة من الصفر برسم 3D حر")}
       ${it("speak", "🗣", "اوصفلي المطبخ", "اكتب جملة والبرنامج يرسم الأوضة ويملاها وحدات")}
+      ${it("scrap", "♻️", "أعمل إيه من الفضلات؟", "اختار البواقي والبرنامج يرشّحلك وحدات تطلع منها بالكامل")}
       ${it("fincmp", "🎨", "لو الضلف خامة تانية؟", "نفس التصميم بأكتر من خامة جنب بعض مع فرق السعر")}
       ${it("present", "🖥", "وضع العرض للعميل", "شاشة نظيفة: الريندر، الألوان البديلة، السعر، والاعتماد بالتوقيع")}
       <h3>الإعدادات</h3>${it("brand", "🏷", "هوية المصنع", "اللوجو والاسم والتليفون والشروط على كل الأوراق")}${it("defaults", "⚙", "الإعدادات الافتراضية", "مقاسات الوحدات، التصنيع، التسعير، القص — مرة واحدة لكل المشاريع")}${it("look", "🎨", "الألوان والمظهر والكيبورد", "فاتح/غامق، لون التطبيق، كيبورد الأرقام")}
@@ -4260,6 +4264,15 @@ $("#pop").addEventListener("input", (e) => {
   if (pv && m.img) { pv.style.backgroundSize = `${Math.max(8, (260 * 60) / Math.max(5, m.tile))}px`; pv.style.filter = `brightness(${1 + m.bright / 100})`; }
 });
 $("#pop").addEventListener("change", async (e) => {
+  if (ui.pop === "scrap") {
+    const S = scrap(), t = e.target, d = t.dataset;
+    if (d.sckey) { if (t.checked) { if (!S.keys.includes(d.sckey)) S.keys.push(d.sckey); } else S.keys = S.keys.filter((k) => k !== d.sckey); return; }
+    if (d.scw != null) { S.manual[+d.scw].w = toNum(t.value); return; }
+    if (d.sch != null) { S.manual[+d.sch].h = toNum(t.value); return; }
+    if (d.scn != null) { S.manual[+d.scn].n = Math.max(1, Math.round(toNum(t.value) || 1)); return; }
+    if (d.sclib != null) { S.manual[+d.sclib].lib = t.value; return; }
+    if (d.sct != null) { S.manual[+d.sct].t = toNum(t.value) || 1.8; return; }
+  }
   if (ui.pop === "brand") {
     const t = e.target;
     if (t.hasAttribute("data-brandlogo")) { await brandLogo(t.files?.[0]); renderPop(); return; }
@@ -4371,6 +4384,15 @@ $("#pop").addEventListener("click", async (e) => {
   const d = b.dataset;
   if (b.hasAttribute("data-opendefs")) { ui.pop = "defaults"; renderPop(); return; }
   if (ui.pop === "brand" && b.hasAttribute("data-brandlogo-del")) { brandSet("logo", ""); renderPop(); return; }
+  if (ui.pop === "scrap") {
+    const S = scrap();
+    if (d.scsrc) { S.src = d.scsrc; renderPop(); return; }
+    if (b.hasAttribute("data-scadd")) { S.manual.push({ w: "", h: "", n: 1, t: 1.8, lib: "" }); renderPop(); $("#pop [data-scw]:last-of-type")?.focus(); return; }
+    if (d.scdel) { S.manual.splice(+d.scdel, 1); renderPop(); return; }
+    if (b.hasAttribute("data-scpaste")) { const t = prompt("اكتب المقاسات، كل قطعة في سطر أو مفصولة بفاصلة: 120×60، 80×45 ×2"); if (t) { for (const m of String(t).matchAll(/(\d+(?:[.,]\d+)?)\s*[×x\*]\s*(\d+(?:[.,]\d+)?)(?:\s*[×x\*]\s*(\d+))?/g)) S.manual.push({ w: +m[1].replace(",", "."), h: +m[2].replace(",", "."), n: +(m[3] || 1), t: 1.8, lib: "" }); renderPop(); } return; }
+    if (b.hasAttribute("data-scrun")) { scrapRun(); return; }
+    if (d.scadd2) { scrapAdd(d.scadd2); return; }
+  }
   if (ui.pop === "fincmp") {
     const F = fincmp();
     if (d.fclib) { if (F.libs.includes(d.fclib)) F.libs = F.libs.filter((x) => x !== d.fclib); else if (F.libs.length < 4) F.libs.push(d.fclib); else alertBar("4 خامات بالكتير — شيل واحدة الأول."); F.shots = null; renderPop(); return; }
@@ -6530,6 +6552,7 @@ $("#v-shop").addEventListener("click", async (e) => {
   const b = e.target.closest("button");
   if (!b) return;
   if (b.hasAttribute("data-scan")) { scanOpen(); return; }
+  if (b.hasAttribute("data-scrap")) { const S = scrap(); S.src = "stock"; S.keys = Object.entries(state.stock || {}).filter(([, v]) => (v.remnants || []).length).map(([k]) => k); ui.pop = "scrap"; renderPop(); return; }
   if (b.hasAttribute("data-sigok")) { signApprove(); return; }
   if (b.hasAttribute("data-sigwipe")) { const c = $("#v-shop #sigPad"); if (c) { c.getContext("2d").clearRect(0, 0, c.width, c.height); delete c.dataset.inked; } return; }
   if (b.hasAttribute("data-sigclear")) { state.project.approval = null; const st = stagesOf(); if (st.approve?.by && st.approve.by !== "العميل") st.approve = {}; save(); drawShop(); renderSteps(); return; }
@@ -8510,6 +8533,7 @@ function stockHtml() {
   const used = cutData.groups.reduce((s, g) => s + (cutData.results[g.key].stats.remnants_used || 0), 0);
   if (used) h += `<p class="okmsg">${ICON.check}خطة القص بتستخدم ${used} بواقي من المخزن.</p>`;
   h += hwStockHtml();
+  h += `<div class="btnrow"><button class="ghost2" data-scrap>♻️ أعمل إيه من الفضلات دي؟</button></div>`;
   h += `<label class="f"><span>رقم واتساب المورّد (اختياري)</span><input data-pricet="supplier" inputmode="tel" value="${esc(P.supplier || "")}" placeholder="2010xxxxxxxx"></label>
     <div class="btnrow"><button class="primary" data-buywa>🛒 طلب شرا على واتساب</button><button class="ghost2" data-stocktake>${state.project.stockTaken ? "↺ رجّع اللي اتخصم" : "✓ خصم من المخزن (بعد القص)"}</button></div>
     <p class="hint">الخصم بيشيل الألواح والبواقي اللي اتقصت، ويضيف البواقي الجديدة (أكبر من 30×30) للمخزن.</p></section>`;
@@ -9511,6 +9535,145 @@ function presentTell(id) {
   }
 }
 
+// ================================================================== v49 — "what can I make from these offcuts?"
+/** products worth making from scraps: library items and the widths they come in (small first) */
+const SCRAP_CANDIDATES = [
+  { ds: { kitchen: "k_acc_spice" }, tag: "إكسسوار" }, { ds: { kitchen: "k_acc_shelfdiv" }, tag: "إكسسوار" }, { ds: { kitchen: "k_acc_plates" }, tag: "إكسسوار" },
+  { ds: { kitchen: "k_base_open30" }, widths: [30, 40, 60], tag: "مطبخ" }, { ds: { kitchen: "k_wall_open60" }, widths: [40, 60, 80], tag: "مطبخ" },
+  { ds: { kitchen: "k_wall1_40" }, widths: [30, 40, 50], tag: "مطبخ" }, { ds: { kitchen: "k_wall_flip" }, widths: [40, 60, 80], tag: "مطبخ" }, { ds: { kitchen: "k_wall2" }, widths: [60, 80], tag: "مطبخ" },
+  { ds: { kitchen: "k_base_tray30" }, widths: [20, 30], tag: "مطبخ" }, { ds: { kitchen: "k_base1_45" }, widths: [30, 40, 45], tag: "مطبخ" }, { ds: { kitchen: "k_base_drawers4_40" }, widths: [30, 40], tag: "مطبخ" },
+  { ds: { kitchen: "k_base2" }, widths: [50, 60], tag: "مطبخ" }, { ds: { kitchen: "k_oil20" }, tag: "مطبخ" }, { ds: { kitchen: "k_wall_tall80" }, widths: [40, 60], tag: "مطبخ" },
+  { ds: { preset: "app_bath_over_wc" }, widths: [50, 60, 70], tag: "حمام" }, { ds: { preset: "app_vanity60" }, widths: [50, 60], tag: "حمام" }, { ds: { preset: "app_mirror90" }, widths: [60, 75, 90], tag: "حمام" },
+  { ds: { preset: "app_night_open" }, widths: [40, 45, 50], tag: "نوم" }, { ds: { preset: "app_night_3drawers" }, widths: [45, 50], tag: "نوم" },
+  { ds: { preset: "app_lowshelf" }, widths: [60, 90, 120], tag: "ريسبشن" }, { ds: { preset: "app_shoe_bench" }, widths: [60, 90], tag: "ريسبشن" }, { ds: { preset: "app_wall_flap" }, widths: [60, 90, 120], tag: "عام" },
+  { ds: { preset: "app_dresser_corner80" }, widths: [70, 80], tag: "نوم" }, { ds: { preset: "app_chest_double" }, widths: [60, 70], tag: "نوم" }, { ds: { preset: "app_shoe_tall" }, widths: [50, 60], tag: "ريسبشن" },
+];
+function scrap() { return (ui.scrap ??= { src: "stock", keys: [], manual: [], res: null, busy: false }); }
+/** a material + thickness pool of offcuts: { id, name, lib, t, rems: [[w, h]…] } — every offcut can be a different board */
+function scrapPools() {
+  const S = scrap(), pools = new Map();
+  const put = (name, lib, t, w, h) => { const id = `${name}|${t}`; let P = pools.get(id); if (!P) { P = { id, name, lib, t, rems: [] }; pools.set(id, P); } if (w > 5 && h > 5) P.rems.push([w, h]); };
+  const libOfName = (nm) => Object.keys(Catalog.LIB).find((k) => Catalog.libName(k) === nm || Catalog.LIB[k][0] === nm) || Mat.all().find((m) => m.name === nm)?.id || null;
+  if (S.src === "manual") {
+    for (const r of S.manual) { const t = +r.t || 1.8, lib = r.lib || "", name = lib ? (Catalog.LIB[lib]?.[0] || Mat.get(lib)?.name || lib) : "لوح"; for (let i = 0; i < Math.max(1, Math.min(50, +r.n || 1)); i++) put(name, lib || null, t, +r.w, +r.h); }
+  } else {
+    for (const k of S.keys) { const m = /^(.*?) — (\d+(?:\.\d+)?) مم$/.exec(k); const name = m ? m[1] : k, t = m ? +m[2] / 10 : 1.8; for (const r of state.stock?.[k]?.remnants || []) put(name, libOfName(name), t, +r.w, +r.h); }
+  }
+  return [...pools.values()].filter((P) => P.rems.length);
+}
+/** one candidate's unit at a width */
+function scrapUnit(c, w) {
+  const u = libUnit(c.ds);
+  if (w) { if (c.ds.kitchen) u.params.width = w; else { const p = expanded(u); p.width = w; u.params = p; } if (u.name && /\d{2,3}/.test(u.name)) u.name = u.name.replace(/\d{2,3}/, String(w)); else if (c.ds.kitchen) u.name += ` ${w}`; }
+  return u;
+}
+/** the unit's cut pieces grouped by role (carcass / front / shelf …) and thickness; thin backs are listed apart */
+function scrapGroups(u) {
+  const r = R(u); if (!r.ok) return null;
+  const groups = new Map(), thin = [];
+  for (const pt of r.parts) {
+    if (!pt.cut_piece || !pt.label) continue;
+    if (["glass", "mirror", "frame", "door_frame_alu", "rail", "led"].includes(pt.material) || STONE(r.libOf?.(pt.material))) continue;
+    if (pt.label.t < 1) { thin.push(pt); continue; }
+    const t = Math.round(pt.label.t * 10) / 10, key = `${pt.material}|${t}`;
+    let g = groups.get(key); if (!g) { g = { key, role: pt.material, t, parts: [], area: 0 }; groups.set(key, g); }
+    g.parts.push({ name: pt.name, w: pt.label.w, h: pt.label.h, rotate: !pt.label.grain }); g.area += pt.label.w * pt.label.h;
+  }
+  return { r, groups: [...groups.values()], thin };
+}
+let scrapWorker = null;
+async function scrapRun() {
+  const S = scrap(), pools = scrapPools();
+  if (!pools.length) { alertBar("ضيف فضلات الأول — من المخزن أو بالمقاسات."); return; }
+  S.busy = true; S.res = null; renderPop();
+  const poolArea = (P) => P.rems.reduce((a, [w, h]) => a + w * h, 0);
+  const totalArea = pools.reduce((a, P) => a + poolArea(P), 0);
+  const fitsPool = (g, P) => Math.abs(P.t - g.t) < 0.11 && g.area <= poolArea(P) * 1.02 && g.parts.every((p) => P.rems.some(([w, h]) => (p.w <= w + 0.01 && p.h <= h + 0.01) || (p.rotate && p.h <= w + 0.01 && p.w <= h + 0.01)));
+  // candidates × ways of giving each role a material pool (same pool for all roles first, then mixes — a few per candidate)
+  const jobs = [], cands = [];
+  for (const c of SCRAP_CANDIDATES) for (const w of c.widths || [null]) {
+    let u, G; try { u = scrapUnit(c, w); G = scrapGroups(u); } catch { continue; }
+    if (!G || !G.groups.length) continue;
+    const area = G.groups.reduce((a, g) => a + g.area, 0); if (area > totalArea * 1.05) continue;
+    const elig = G.groups.map((g) => pools.filter((P) => fitsPool(g, P)));
+    if (elig.some((l) => !l.length)) continue;
+    let combos = [[]];
+    for (const l of elig) combos = combos.flatMap((cb) => l.map((P) => [...cb, P]));
+    combos.sort((x, y) => new Set(x.map((P) => P.id)).size - new Set(y.map((P) => P.id)).size || 0);
+    const cand = { id: `${c.ds.kitchen || c.ds.preset}|${w || ""}`, c, w, u, G, area, combos: combos.slice(0, 6) };
+    cands.push(cand);
+    cand.combos.forEach((cb, ci) => { const byPool = new Map(); cb.forEach((P, gi) => { const e = byPool.get(P.id) || { P, parts: [] }; e.parts.push(...cand.G.groups[gi].parts); byPool.set(P.id, e); }); for (const e of byPool.values()) jobs.push({ key: `${cand.id}#${ci}#${e.P.id}`, remnants: e.P.rems, parts: e.parts }); });
+  }
+  const o = cutOptsSafe();
+  const groups = jobs.map((j) => ({ key: j.key, remnants: j.remnants, sheetW: +o.sheetW, sheetH: +o.sheetH, parts: j.parts }));
+  const opts = { kerf: +o.kerf, trim: +o.trim, timeCap: 0.08 };
+  let out;
+  try {
+    if (!scrapWorker) scrapWorker = new Worker(new URL("./cutworker.js", import.meta.url), { type: "module" });
+    out = await new Promise((res, rej) => { const id = "scrap" + Date.now(); scrapWorker.onmessage = (e) => { if (e.data.id === id) res(e.data.out); }; scrapWorker.onerror = rej; scrapWorker.postMessage({ id, groups, opts }); });
+  } catch { out = groups.map((g) => ({ key: g.key, result: optimize(g.parts, { ...opts, sheetW: g.sheetW, sheetH: g.sheetH, remnants: g.remnants }) })); }
+  const byKey = Object.fromEntries(out.map((x) => [x.key, x.result]));
+  const res = [];
+  for (const cand of cands) {
+    let best = null;
+    cand.combos.forEach((cb, ci) => {
+      const poolIds = [...new Set(cb.map((P) => P.id))];
+      let full = 0, used = 0, usedArea = 0, over = 0;
+      for (const pid of poolIds) { const r = byKey[`${cand.id}#${ci}#${pid}`]; if (!r) { full += 9; continue; } full += r.stats?.sheets ?? 0; const rem = r.sheets.filter((s) => s.stock === "remnant"); used += rem.length; usedArea += rem.reduce((a, s) => a + (s.util || 0) * s.w * s.h, 0); over += r.oversized?.length || 0; }
+      if (over) return;
+      const plan = cand.G.groups.map((g, gi) => ({ role: g.role, pool: cb[gi] }));
+      const sc = full * 1000 - usedArea / 10000 + poolIds.length * 0.5;
+      if (!best || sc < best.sc) best = { sc, full, used, usedArea, plan, pools: poolIds.length };
+    });
+    if (!best) continue;
+    res.push({ ...cand, full: best.full, remUsed: best.used, util: totalArea ? best.usedArea / totalArea : 0, plan: best.plan, pieces: cand.G.groups.reduce((a, g) => a + g.parts.length, 0), thin: cand.G.thin.length });
+  }
+  const ok = res.filter((x) => x.full === 0).sort((a, b) => b.area - a.area);
+  const near = res.filter((x) => x.full === 1).sort((a, b) => b.util - a.util).slice(0, 6);
+  S.res = { ok: ok.slice(0, 12), near, pool: pools.reduce((a, P) => a + P.rems.length, 0), pools: pools.length, poolArea: totalArea, tried: cands.length, jobs: jobs.length };
+  S.busy = false;
+  renderPop();
+  setTimeout(() => { for (const x of [...S.res.ok, ...S.res.near]) { const im = $(`[data-scthumb="${CSS.escape(x.id)}"]`); if (!im || im.src) continue; try { const sh = thumbs.shot([{ u: scrapWithPlan(x), at: 0 }], 240, 170); if (sh?.url) im.src = sh.url; } catch { /* no 3D yet */ } } }, 60);
+}
+const ROLE_AR = { carcass: "الهيكل", front: "الضلف", shelf: "الأرفف", back: "الظهر", accent: "الخامة المميزة", countertop: "الكونتر", drawer: "الأدراج", drawer_box: "صناديق الأدراج", plinth: "السكلو", top: "الرأس", side: "الجنب" };
+/** the candidate's unit with the materials of the pools its pieces come from */
+function scrapWithPlan(x) {
+  const u = clone(x.u);
+  for (const { role, pool } of x.plan || []) if (pool?.lib) { if (u.kind === "kitchen" && KU.K_MATS[role]) { u.libs ??= {}; u.libs[role] = pool.lib; u.params[KU.K_MATS[role][1]] = Catalog.LIB[pool.lib] ? Catalog.libName(pool.lib) : Mat.get(pool.lib)?.name || ""; if (role === "front" && Catalog.LIB[pool.lib]) u.params.door_color = Catalog.LIB[pool.lib][2]; } else if (u.kind === "panel") { const p = expanded(u); p.materials ??= {}; p.materials[role] = { lib: pool.lib }; u.params = p; } }
+  return u;
+}
+function scrapPop() {
+  const S = scrap();
+  const keys = Object.entries(state.stock || {}).filter(([, v]) => (v.remnants || []).length);
+  const libs = [...Object.entries(Catalog.LIB).filter(([k]) => !STONE(k) && !/^(glass_|mirror|alu_|stainless|copper)/.test(k)).map(([k, v]) => [k, v[0]]), ...Mat.all().map((m) => [m.id, m.name])];
+  let h = `<div class="popbox scrapbox" role="dialog" aria-label="اعمل حاجة من الفضلات"><div class="libhead"><h2>♻️ أعمل إيه من الفضلات؟</h2><button class="x" data-close aria-label="قفل">×</button></div>
+    <p class="hint">كل فضلة ممكن تكون من لوح مختلف — البرنامج بيجمّع الفضلات حسب الخامة والسمك، وبيجرّب كل وحدة صغيرة في المكتبة بكذا عرض وكذا توزيع: الهيكل من لوح والضلف من لوح تاني مثلاً. الظهور والقواعد 6 مم بتتحسب من لوح رفيع لوحدها.</p>
+    <div class="seg"><button data-scsrc="stock" class="${S.src === "stock" ? "on" : ""}">من المخزن</button><button data-scsrc="manual" class="${S.src === "manual" ? "on" : ""}">بالمقاسات</button></div>`;
+  if (S.src === "stock") {
+    h += keys.length ? `<div class="sckeys">${keys.map(([k, v]) => `<label class="f b"><input type="checkbox" data-sckey="${esc(k)}" ${S.keys.includes(k) ? "checked" : ""}><span>${esc(k)} <small>${v.remnants.length} قطعة: ${v.remnants.slice(0, 5).map((r) => `${n1(r.w)}×${n1(r.h)}`).join("، ")}${v.remnants.length > 5 ? "…" : ""}</small></span></label>`).join("")}</div>` : `<p class="hint">المخزن فاضي — سجّل البواقي من تاب الورشة ← المخزن، أو اكتبها هنا بالمقاسات.</p>`;
+  } else {
+    h += `<div class="scman">${S.manual.map((r, i) => `<div class="scrow"><input type="text" inputmode="decimal" data-numf data-scw="${i}" value="${r.w ?? ""}" placeholder="طول"><span>×</span><input type="text" inputmode="decimal" data-numf data-sch="${i}" value="${r.h ?? ""}" placeholder="عرض"><input type="text" inputmode="numeric" data-numf data-scn="${i}" value="${r.n ?? 1}" placeholder="عدد" title="العدد"><select data-sclib="${i}" title="الخامة"><option value="">لوح (أي خامة)</option>${libs.map(([k, l]) => `<option value="${k}" ${r.lib === k ? "selected" : ""}>${esc(l)}</option>`).join("")}</select><input type="text" inputmode="decimal" data-numf data-sct="${i}" value="${r.t ?? 1.8}" placeholder="سمك" title="السمك سم" class="sct"><button class="danger sm" data-scdel="${i}">${ICON.trash}</button></div>`).join("")}
+      <button class="add" data-scadd>+ قطعة</button><div class="btnrow"><button class="ghost2" data-scpaste>📋 لزق قايمة مقاسات</button></div><p class="hint">الطول × العرض × العدد، والخامة والسمك لكل سطر. اللزق بيقبل «120×60، 80×45 ×2».</p></div>`;
+  }
+  h += `<div class="btnrow"><button class="primary" data-scrun ${S.busy ? "disabled" : ""}>${S.busy ? "بيجرّب…" : "♻️ رشّحلي"}</button></div>`;
+  if (S.res) {
+    const R0 = S.res;
+    h += `<p class="hint">${R0.pool} قطعة فضلات من ${R0.pools} خامة (${n1(R0.poolArea / 10000)} م²) · اتجرّب ${R0.tried} وحدة في ${R0.jobs} توزيعة.</p>`;
+    const planTxt = (x) => { const by = new Map(); for (const { role, pool } of x.plan) { const l = by.get(pool.name) || []; l.push(ROLE_AR[role] || role); by.set(pool.name, l); } return [...by].map(([n, roles]) => `${roles.join(" و")} من ${n}`).join(" · "); };
+    const card = (x, extra) => `<div class="sccard"><img data-scthumb="${esc(x.id)}" alt=""><div class="scinfo"><b>${esc(x.u.name)}</b><small>${esc(x.c.tag)} · ${x.pieces} قطعة${x.thin ? ` + ${x.thin} ظهر/قاعدة 6 مم` : ""} · بيستخدم ${Math.round(x.util * 100)}% من الفضلات${x.remUsed ? ` (${x.remUsed} قطعة)` : ""}</small><small>${esc(planTxt(x))}</small>${extra}</div><div class="scbtns"><button class="primary sm" data-scadd2="${esc(x.id)}">➕ ضيفها للمشروع</button></div></div>`;
+    h += R0.ok.length ? `<h3>✅ بتطلع من الفضلات بالكامل</h3><div class="scgrid">${R0.ok.map((x) => card(x, "")).join("")}</div>` : `<p class="e">مفيش وحدة بتطلع من الفضلات دي بالكامل — جرّب فضلات أكتر أو شوف اللي محتاج لوح واحد.</p>`;
+    if (R0.near.length) h += `<h3>🟡 محتاجة لوح واحد زيادة</h3><div class="scgrid">${R0.near.map((x) => card(x, `<small class="warn">+ لوح واحد جديد</small>`)).join("")}</div>`;
+  }
+  return h + `</div>`;
+}
+function scrapAdd(id) {
+  const S = scrap(); const x = [...(S.res?.ok || []), ...(S.res?.near || [])].find((y) => y.id === id); if (!x) return;
+  const u = scrapWithPlan(x); u.id = uid(); delete u.pos;
+  state.project.units.push(u); state.sel = u.id; ensureCodes(state.project);
+  save(); ui.pop = null; renderPop(); render(true);
+  alertBar(`♻️ اتضافت «${u.name}» — ولما تقصها خليك على وضع «البواقي الأول» في خطة القص.`);
+}
+
 const EXPORTS = [
   ["ar", "شوفها في الأوضة (AR)", "على الآيباد/الآيفون: التصميم بيقف في الأوضة بمقاسه الحقيقي بالكاميرا — تلف حواليه مع العميل.", exportAR],
   ["video", "فيديو عرض التصميم", "فيديو 9 ثواني: الكاميرا بتلف حوالين التصميم والضلف بتتفتح، وفي الآخر لوجو المصنع — للعميل والسوشيال.", exportVideo],
@@ -9664,7 +9827,7 @@ function cmdItems() {
   const add = (grp, label, run, hint = "") => items.push({ grp, label, hint, run });
   for (const u of state.project.units) add("الوحدات", `${u.code || ""} ${u.name}`, () => { state.sel = u.id; ui.planOn = false; state.tab = "design"; render(true); }, "اختار");
   for (const [k, l] of STEPS) add("الشاشات", l, () => $(`#steps [data-step0="${k}"]`)?.click(), "روح");
-  const pops = [["speak", "🗣 اوصفلي المطبخ"], ["auto", "✨ صمملي المطبخ"], ["checks", "🔍 فحص التصميم"], ["fincmp", "🎨 لو الضلف خامة تانية؟"], ["brand", "🏷 هوية المصنع"], ["defaults", "⚙ الإعدادات الافتراضية"], ["variants", "🗂 النسخ"], ["look", "🎨 المظهر والكيبورد"], ["about", "ⓘ عن التطبيق"]];
+  const pops = [["scrap", "♻️ أعمل إيه من الفضلات؟"], ["speak", "🗣 اوصفلي المطبخ"], ["auto", "✨ صمملي المطبخ"], ["checks", "🔍 فحص التصميم"], ["fincmp", "🎨 لو الضلف خامة تانية؟"], ["brand", "🏷 هوية المصنع"], ["defaults", "⚙ الإعدادات الافتراضية"], ["variants", "🗂 النسخ"], ["look", "🎨 المظهر والكيبورد"], ["about", "ⓘ عن التطبيق"]];
   for (const [k, l] of pops) add("أدوات", l, () => { ui.pop = k; renderPop(); });
   add("أدوات", "🖥 وضع العرض للعميل", () => presentOn());
   add("أدوات", "✏️ ورشة الرسم", () => { const su = selUnit(); openStudio(su?.params?.model ? su : null); });
