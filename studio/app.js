@@ -888,6 +888,7 @@ app.innerHTML = `
       <div id="view3d" class="view3d"><div id="fallback" class="fallback" hidden></div><div id="ptbar" class="ptbar" hidden></div>
         <div class="vctl" role="toolbar" aria-label="التحكم في العرض">
           <span class="vmode" role="group" aria-label="اللمس بيحرّك إيه"><button data-vmode="scene" title="السحب بيلف المشهد كله">🌍 المشهد</button><button data-vmode="units" title="السحب بيحرّك الوحدة المختارة">✋ الوحدات</button></span>
+          <button data-vmulti class="vmulti" title="اختار أكتر من وحدة (أو دوس على وحدة ضغطة طويلة)">☑</button>
           <button data-vz="0.8" aria-label="قرّب">+</button><button data-vz="1.25" aria-label="بعّد">−</button>
           <button data-vr="-25" aria-label="لف الكاميرا شمال">⟲</button><button data-vr="25" aria-label="لف الكاميرا يمين">⟳</button>
           <button data-vp="fit" aria-label="شوف الكل">⤢</button>
@@ -1081,14 +1082,23 @@ $("#libBtn").addEventListener("click", () => { state.libOpen = !state.libOpen; r
   };
   host.addEventListener("pointerup", xend, true);
   host.addEventListener("pointercancel", (e) => { if (xdrag && e.pointerId === xdrag.pid) { for (const [o, p0] of xdrag.objs) o.position.copy(p0); xdrag = null; view.ctl.enabled = true; view.dirty = true; } }, true);
+  /** where a unit moving with the dragged one ends up: same shift, turned about the dragged unit if it turned */
+  const crewPose = (L, s0, dx, dz, dr) => {
+    if (!dr) return { x: L.x + dx, z: L.z + dz, rot: L.rot };
+    const rx = L.x - s0.x, rz = L.z - s0.z, c = Math.cos(dr), sn = Math.sin(dr);
+    return { x: s0.x + dx + rx * c + rz * sn, z: s0.z + dz - rx * sn + rz * c, rot: L.rot + dr };
+  };
   const startDrag = (e, id) => {
     if (id !== state.sel) { state.sel = id; save(); renderStrip(); renderChips(); renderProps(); }
     const u = selUnit(), L = view.poses?.get(id), hit = view.floorAt(e.clientX, e.clientY);
     if (!u || !L || !hit) return;
     const box = localBox(R(u));
     const c = Room.centerOf(L, box);
-    drag = { pid: e.pointerId, t: performance.now(), xy: [e.clientX, e.clientY], start: L, u, box, rot: L.rot, off: [c[0] - hit[0], c[1] - hit[1]], row: rowOf(u, R(u)), segs: roomSegs(state.project), pose: L,
-      others: projectItems(state.project).filter((it) => it.id !== id).map((it) => ({ box: it.box, row: it.row, pose: view.poses.get(it.id) })).filter((o) => o.pose) };
+    // several units ticked: they all move together, the same distance
+    const crew = ui.multi?.size > 1 && ui.multi.has(id) ? [...ui.multi].filter((x) => x !== id).map((x) => ({ u: state.project.units.find((y) => y.id === x), L: view.poses.get(x) })).filter((o) => o.u && o.L) : [];
+    const crewIds = new Set(crew.map((o) => o.u.id));
+    drag = { pid: e.pointerId, t: performance.now(), xy: [e.clientX, e.clientY], start: L, u, box, rot: L.rot, off: [c[0] - hit[0], c[1] - hit[1]], row: rowOf(u, R(u)), segs: roomSegs(state.project), pose: L, crew,
+      others: projectItems(state.project).filter((it) => it.id !== id && !crewIds.has(it.id)).map((it) => ({ box: it.box, row: it.row, pose: view.poses.get(it.id) })).filter((o) => o.pose) };
     view.ctl.enabled = false;
     view.highlight(id, true);
     try { host.setPointerCapture(e.pointerId); } catch { /* pointer gone */ }
@@ -1097,7 +1107,7 @@ $("#libBtn").addEventListener("click", () => { state.libOpen = !state.libOpen; r
   // capture phase: runs before the orbit controls, so a move can claim the finger outright
   /** stop a move half-way and put the unit back (a second finger, the app going to the background …) */
   const cancelDrag = () => {
-    if (drag) { view.highlight(drag.u.id, false); view.movePicked(drag.u.id, drag.start); drag = null; }
+    if (drag) { view.highlight(drag.u.id, false); view.movePicked(drag.u.id, drag.start); for (const o of drag.crew || []) view.movePicked(o.u.id, o.L); drag = null; }
     ptDrag = null;
     down = null;
     clearTimeout(press);
@@ -1124,7 +1134,8 @@ $("#libBtn").addEventListener("click", () => { state.libOpen = !state.libOpen; r
     }
     if (!wholeView() || ui.mode !== "owner" || !view.ready || !e.isPrimary) return;
     const id = view.pickAt(e.clientX, e.clientY);
-    if (!id || id !== state.sel) return; // only the outlined (selected) unit ever moves
+    if (id && !ui.moveMode) press = setTimeout(() => { if (down && Math.hypot(down[2] || 0, down[3] || 0) < 8) { down = null; if (!ui.multi?.has(id)) toggleMulti(id); } }, 550);
+    if (!id || (id !== state.sel && !(ui.multi?.size > 1 && ui.multi.has(id)))) return; // only the outlined (selected) units ever move
     if (ui.moveMode) { e.stopPropagation(); startDrag(e, id); return; }
     // "scene" mode: nothing ever moves — a drag only turns the camera
   }, true);
@@ -1158,6 +1169,7 @@ $("#libBtn").addEventListener("click", () => { state.libOpen = !state.libOpen; r
     if (!hit) return;
     drag.pose = Room.snapPose(drag.segs, drag.box, [hit[0] + drag.off[0], hit[1] + drag.off[1]], drag.rot, drag.others, drag.row);
     view.movePicked(drag.u.id, drag.pose);
+    if (drag.crew?.length) { const dx = drag.pose.x - drag.start.x, dz = drag.pose.z - drag.start.z, dr = drag.pose.rot - drag.start.rot; for (const o of drag.crew) view.movePicked(o.u.id, crewPose(o.L, drag.start, dx, dz, dr)); }
   });
   const end = (e) => {
     clearTimeout(press);
@@ -1165,8 +1177,15 @@ $("#libBtn").addEventListener("click", () => { state.libOpen = !state.libOpen; r
     if (view.final?.active && !drag) { down = null; return; } // taps never change the selection while the final render runs
     if (drag) {
       view.highlight(drag.u.id, false);
-      const p = drag.pose;
+      const p = drag.pose, s0 = drag.start;
       drag.u.pos = p.wall ? { wall: p.wall, s: p.s } : { x: p.x, z: p.z, rot: p.rot };
+      if (drag.crew?.length) {
+        const dx = p.x - s0.x, dz = p.z - s0.z, dr = p.rot - s0.rot, ds = p.wall && p.wall === s0.wall ? p.s - s0.s : null;
+        for (const o of drag.crew) {
+          if (ds != null && o.L.wall === p.wall) o.u.pos = { wall: o.L.wall, s: Math.max(0, Math.round((o.L.s + ds) * 10) / 10) };
+          else { const q = crewPose(o.L, s0, dx, dz, dr); o.u.pos = { x: Math.round(q.x * 10) / 10, z: Math.round(q.z * 10) / 10, rot: q.rot }; }
+        }
+      }
       drag = null;
       view.ctl.enabled = true;
       down = null;
@@ -1230,8 +1249,11 @@ $("#libBtn").addEventListener("click", () => { state.libOpen = !state.libOpen; r
   document.addEventListener("visibilitychange", () => { if (document.hidden) dropAll(); });
 }
 document.querySelector("#view3d .vctl").addEventListener("pointerdown", (e) => e.stopPropagation());
+document.querySelector("#view3d .vcube").addEventListener("pointerdown", (e) => e.stopPropagation());
+document.querySelector("#view3d .vcube").addEventListener("click", (e) => { const b = e.target.closest("button[data-vp]"); if (b && view.ready) view.preset(b.dataset.vp); });
 document.querySelector("#view3d .vctl").addEventListener("click", (e) => {
   const b = e.target.closest("button");
+  if (b?.hasAttribute("data-vmulti")) { toggleMulti(); return; }
   if (b?.dataset.vmode) { if (b.dataset.vmode === "scene") sceneMode(); else { ui.moveMode = true; renderMoveBar(); renderChips(); if (!state.sel) alertBar("اختار وحدة الأول (دوس عليها) وبعدين اسحبها."); } return; }
   if (!b || !view.ready) return;
   if (b.dataset.vz) view.zoom(+b.dataset.vz);
@@ -1858,7 +1880,7 @@ $("#chips").addEventListener("click", async (e) => {
   const d = b.dataset;
   if (d.ctab) { ui.chipTab = d.ctab; renderChips(); return; }
   if (b.hasAttribute("data-gotocut")) { state.tab = "cut"; save(); render(true); return; }
-  if (b.hasAttribute("data-multi")) { ui.multi = ui.multi ? null : new Set([state.sel].filter(Boolean)); renderMulti(); renderChips(); renderStrip(); view.update(); return; }
+  if (b.hasAttribute("data-multi")) { toggleMulti(); return; }
   if (b.hasAttribute("data-alignpop")) { ui.pop = "align"; renderPop(); return; }
   if (b.hasAttribute("data-plan")) { ui.planOn = !ui.planOn; ui.planView = "plan"; ui.planTool = "select"; plan.vb = null; if (!ui.planOn) { state.whole = state.whole || !!state.project.room; } render(true); return; }
   if (b.hasAttribute("data-roompop")) { ui.pop = "room"; renderPop(); return; }
@@ -2836,13 +2858,21 @@ function targetUnits() {
   const list = state.project.units.filter((x) => ui.multi.has(x.id));
   return u && !list.includes(u) ? [u, ...list] : list;
 }
+/** several units at once: tick them in the 3D view or the strip below, then move / copy / delete / paint them together */
+function toggleMulti(add) {
+  if (ui.multi && !add) ui.multi = null;
+  else { ui.multi ??= new Set([state.sel].filter(Boolean)); if (add) ui.multi.add(add); if (!state.whole && state.project.units.length > 1) state.whole = true; }
+  renderMulti(); renderChips(); renderStrip(); view.update();
+  if (ui.multi) alertBar("اختيار متعدد — دوس على الوحدات اللي عايزها (في العرض أو في الشريط اللي تحت)");
+}
 function renderMulti() {
   const el = $("#multibar");
+  document.querySelector("#view3d .vmulti")?.classList.toggle("on", !!ui.multi);
   if (!ui.multi || state.tab !== "design" || ui.planOn) { el.hidden = true; return; }
   const n = targetUnits().length;
   el.hidden = false;
   el.innerHTML = `<span>دوس على الوحدات (في العرض أو تحت) عشان تضيفها أو تشيلها · <b>مختار ${n}</b></span>
-    <button data-mm="mat">🎨 الخامات</button><button data-mm="up">↑ 5</button><button data-mm="down">↓ 5</button><button data-mm="all">الكل</button><button data-mm="off">✕ خلاص</button>`;
+    <button data-mm="move" class="${ui.moveMode ? "on" : ""}">✋ ${ui.moveMode ? "بتحرّكهم — اسحب أي واحدة" : "حرّكهم مع بعض"}</button><button data-mm="mat">🎨 الخامات</button><button data-mm="dup">⧉ نسخة</button><button data-mm="del">🗑 امسح</button><button data-mm="up">↑ 5</button><button data-mm="down">↓ 5</button><button data-mm="all">الكل</button><button data-mm="off">✕ خلاص</button>`;
 }
 $("#multibar").addEventListener("pointerdown", (e) => e.stopPropagation());
 $("#multibar").addEventListener("click", (e) => {
@@ -2853,6 +2883,22 @@ $("#multibar").addEventListener("click", (e) => {
   if (k === "all") { ui.multi = new Set(state.project.units.map((x) => x.id)); renderMulti(); renderStrip(); view.update(); return; }
   if (k === "up" || k === "down") { for (const x of targetUnits()) x.lift = Math.max(0, (+x.lift || 0) + (k === "up" ? 5 : -5)); save(); renderChips(); view.update(); return; }
   if (k === "mat") { ui.pop = "mkeys"; renderPop(); }
+  if (k === "move") { ui.moveMode = !ui.moveMode; if (ui.moveMode && !state.whole) state.whole = true; renderMulti(); renderMoveBar(); renderChips(); view.update(); return; }
+  if (k === "dup") {
+    const list = targetUnits(); if (!list.length) return;
+    const made = list.map((x) => { const c = JSON.parse(JSON.stringify(x)); c.id = uid(); delete c.code; delete c.pos; c.name = x.name; return c; });
+    state.project.units.push(...made); ensureCodes(state.project);
+    ui.multi = new Set(made.map((x) => x.id)); state.sel = made[0].id;
+    save(); render(true); alertBar(`اتعمل ${made.length} نسخة — اتحطّت جنب التصميم، حرّكهم لمكانهم`); return;
+  }
+  if (k === "del") {
+    const list = targetUnits(); if (!list.length) return;
+    const ids = new Set(list.map((x) => x.id));
+    state.project.units = state.project.units.filter((x) => !ids.has(x.id));
+    ui.multi = null; state.sel = state.project.units[0]?.id ?? null;
+    save(); render(true); alertBar(`اتمسح ${ids.size} وحدة — ↶ تراجع لو غلط`);
+    return;
+  }
 });
 /** line a unit up with another one: its left edges, centres or right edges (as you face the units) */
 function alignUnit(u, o, mode) {
@@ -4379,10 +4425,19 @@ const plan = {
         others: projectItems(state.project).filter((it) => it.id !== u.id).map((it) => ({ box: it.box, row: it.row, pose: projectPoses(state.project).get(it.id) })).filter((o) => o.pose) };
       after(true);
     } else if (d.wall) {
-      // tap selects the wall; dragging pushes it in or out (its neighbours stretch with it)
-      ui.planSel = { kind: "wall", id: d.wall };
       const segs = Room.segments(room());
       const sg = segs.find((g) => g.id === d.wall);
+      // a finger on the wall next to a socket / door / window means that thing (they are small to hit)
+      const tol = Math.max(12, plan.vb.w / 28);
+      const along = (p[0] - sg.A[0]) * sg.d[0] + (p[1] - sg.A[1]) * sg.d[1];
+      const ptNear = (room().points || []).filter((o) => o.wall === sg.id).map((o) => ({ o, dd: Math.abs(o.at - along) })).sort((x, y) => x.dd - y.dd)[0];
+      const opNear = (room().openings || []).find((o) => o.wall === sg.id && along >= o.at - tol / 2 && along <= o.at + o.w + tol / 2);
+      if (ptNear && ptNear.dd < tol) { const o = ptNear.o; ui.planSel = { kind: "pt", id: o.id }; plan.act = { kind: "mep", id: o.id, p0: p, at0: o.at }; after(true); return; }
+      if (opNear) { ui.planSel = { kind: "open", id: opNear.id }; plan.act = { kind: "open", id: opNear.id, p0: p, at0: opNear.at }; after(true); return; }
+      // the first tap only selects the wall; dragging a wall that is already selected pushes it in or out
+      const already = ui.planSel?.kind === "wall" && ui.planSel.id === d.wall;
+      ui.planSel = { kind: "wall", id: d.wall };
+      if (!already) { plan.act = { kind: "pan", c0: [e.clientX, e.clientY], vb: { ...plan.vb } }; after(true); return; }
       const n = room().pts.length;
       plan.act = { kind: "wall", sg, p0: p, i: sg.i, j: (sg.i + 1) % n, A0: [...sg.A], B0: [...sg.B] };
       after(true);

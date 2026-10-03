@@ -149,7 +149,7 @@ function build() {
     </header>
     <div class="dsmain">
       <nav class="dstools" aria-label="أدوات الرسم">${TOOLS.map(([g, l]) => `<div class="dstg"><small>${g}</small>${l.map(([k, ic, n]) => `<button class="dst" data-tool="${k}" title="${n}" aria-label="${n}"><span>${ic}</span><em>${n}</em></button>`).join("")}</div>`).join("")}</nav>
-      <div class="dsview" id="dsView"><div class="dslabels" id="dsLabels"></div><div class="dshandles" id="dsHandles"></div><div class="dsboxsel" id="dsBoxSel" hidden></div><canvas class="dsloupe" id="dsLoupe" width="240" height="240" hidden></canvas><div class="dsmsg" id="dsMsg"></div><div class="dssec" id="dsSec" hidden><input type="range" id="dsSecPos" min="-200" max="400" step="0.5" value="0"></div></div>
+      <div class="dsview" id="dsView"><div class="dslabels" id="dsLabels"></div><div class="dshandles" id="dsHandles"></div><div class="dsboxsel" id="dsBoxSel" hidden></div><canvas class="dsloupe" id="dsLoupe" width="240" height="240" hidden></canvas><div class="dsmsg" id="dsMsg"></div><div class="dsconfirm" id="dsConfirm" hidden></div><div class="dssec" id="dsSec" hidden><input type="range" id="dsSecPos" min="-200" max="400" step="0.5" value="0"></div></div>
       <aside class="dsside" id="dsSide"></aside>
     </div>
     <footer class="dsfoot">
@@ -501,7 +501,10 @@ function pickSketch(cx, cy) {
   return best;
 }
 function pickAny(cx, cy) {
-  const m = pickMesh(cx, cy), k = pickSketch(cx, cy);
+  let m = pickMesh(cx, cy);
+  // a tap on a wall near a socket / window / door means that thing, not the wall under it
+  if (m?.ref?.startsWith("W:")) { const near = roomNearPick(cx, cy); if (near) m = near; }
+  const k = pickSketch(cx, cy);
   if (k && (!m || k.dist == null || k.dist <= m.dist + 0.5 || k.d != null)) return k;
   if (m) return m;
   // guides / dims / texts near the pointer
@@ -710,6 +713,24 @@ function overlay(fn) {
   clear(overG); live = [];
   if (fn) fn();
   need();
+  renderConfirm();
+}
+/** while a line / wall is being drawn: big buttons to finish it, close it, take back a point or cancel */
+function renderConfirm() {
+  const box = el?.querySelector("#dsConfirm"); if (!box) return;
+  const st = ui.st, n = st?.wpts?.length || 0, on = (ui.tool === "line" || ui.tool === "wall") && n >= 1;
+  const key = on ? `${ui.tool}|${n}` : "";
+  if (box.dataset.k === key) return;
+  box.dataset.k = key; box.hidden = !on;
+  if (!on) { box.innerHTML = ""; return; }
+  box.innerHTML = `${n >= 2 ? `<button class="dsb primary" data-ds="cfdone">✓ تمام</button>` : `<span class="dscf-hint">دوس النقطة اللي بعدها</span>`}${n >= 3 ? `<button class="dsb" data-ds="cfclose">⬠ اقفل الشكل</button>` : ""}${n >= 2 ? `<button class="dsb" data-ds="cfback">↶ آخر نقطة</button>` : ""}<button class="dsb" data-ds="esc">✕ إلغاء</button>`;
+}
+function confirmAct(k) {
+  const st = ui.st; if (!st?.wpts) return;
+  const fin = ui.tool === "wall" ? finishWall : finishLine;
+  if (k === "done") fin(false);
+  else if (k === "close") { if (ui.tool === "wall") { st.wpts.push(st.from ? st.close : st.first); finishWall(true); } else finishLine(true); }
+  else if (k === "back") { st.wpts.pop(); st.last = st.wpts.at(-1); if (!st.wpts.length) ui.st = null; ui.tool === "wall" ? overlayWall() : overlayLine(); }
 }
 function oLine(pts, color = 0x1d211c, dashed = false, w = 1) {
   if (!dashed) { const l = fatLine(pts, color === 0x1d211c ? 0xd94b16 : color, 3.5, false, { depthTest: false, order: 11 }); overG.add(l); return l; }
@@ -748,7 +769,7 @@ const downs = new Map();
 let press = null, touchy = false, eraseDrag = false;
 function infoXY(e) { lastXY = [e.clientX, e.clientY]; return [e.clientX, e.clientY]; }
 function onDown(e) {
-  if (e.target.closest?.(".dsh, .dsloupe")) return; // the selection handles have their own drag
+  if (e.target.closest?.(".dsh, .dsloupe, .dsconfirm, .dshelp, .dssec, .dssnap")) return; // the selection handles have their own drag
   touchy = e.pointerType === "touch";
   downs.set(e.pointerId, [e.clientX, e.clientY]);
   if (downs.size > 1) { press = null; return; } // two fingers: the camera
@@ -1274,7 +1295,9 @@ TOOL.move = {
         const s = M.solids.find((x) => x.id === inf.sid);
         if (inf.kind === "end" && (inf.loop === s.outer || s.holes.includes(inf.loop))) { ui.st = { mode: "vertex", s, loopIdx: inf.loop === s.outer ? -1 : s.holes.indexOf(inf.loop), vi: inf.vi, a: inf.p }; return; }
       }
-      const rh = !ui.sel.size && pickAny(...xy);
+      const rh = pickAny(...xy);
+      if (rh?.ref && /^[WOE]:/.test(rh.ref)) ui.sel.clear(); // walls, doors, sockets move on their own
+      if (rh?.ref?.startsWith("W:") && ui.rsel?.ref !== rh.ref) { ui.rsel = { ref: rh.ref, kind: "W", id: rh.ref.slice(2) }; rebuild(); renderUI(); setMsg("اتختارت الحيطة — اسحبها تاني عشان تحرّكها. عشان تحرّك بريزة أو شباك دوس عليه هو نفسه"); return; }
       if (rh?.ref && /^[WOE]:/.test(rh.ref)) { ui.rsel = { ref: rh.ref, kind: rh.ref[0], id: rh.ref.slice(2) }; ui.st = { mode: "room", ref: rh.ref, a: inf.p, snap: JSON.stringify(M) }; rebuild(); renderUI(); return; }
       if (!ui.sel.size) {
         const hit = pickAny(...xy);
@@ -1823,6 +1846,9 @@ function onClick(e) {
     case "facepush": faceAction("push"); break;
     case "face2dsel": faceAction("2d"); break;
     case "snapmenu": snapMenu(); break;
+    case "cfdone": confirmAct("done"); break;
+    case "cfclose": confirmAct("close"); break;
+    case "cfback": confirmAct("back"); break;
     case "towall": solidToWall(selSolids()[0]); break;
     case "selnone": ui.sel.clear(); ui.editGroup = null; rebuild(); renderUI(); break;
     case "selinv": invertSel(); break;
@@ -2625,6 +2651,21 @@ TOOL.mep = {
     });
   },
 };
+/** the door / window / service point closest to the pointer on screen (within a finger's width) */
+function roomNearPick(cx, cy) {
+  const room = M?.room; if (!room) return null;
+  let best = null;
+  const tryP = (ref, P, r) => { const q = scr(P); if (q[2] > 1) return; const d = Math.hypot(q[0] - cx, q[1] - cy); if (d < r && (!best || d < best.d)) best = { ref, d, p: P }; };
+  for (const pt of room.points || []) { const w = Room.pointWorld(room, pt); if (w) tryP("E:" + pt.id, P3([w.x + w.n[0] * 1.5, w.z + w.n[1] * 1.5], pt.z), touchy ? 40 : 28); }
+  for (const o of room.openings || []) {
+    const sg = segById(o.wall); if (!sg) continue;
+    // inside the opening's outline on screen counts too
+    const z0 = +o.sill || 0, corners = [onWall(sg, o.at, z0), onWall(sg, o.at + o.w, z0), onWall(sg, o.at + o.w, z0 + o.h), onWall(sg, o.at, z0 + o.h)].map(scr);
+    const xs = corners.map((c) => c[0]), ys = corners.map((c) => c[1]);
+    if (cx > Math.min(...xs) - 10 && cx < Math.max(...xs) + 10 && cy > Math.min(...ys) - 10 && cy < Math.max(...ys) + 10) { const d = 1; if (!best || d < best.d) best = { ref: "O:" + o.id, d, p: onWall(sg, o.at + o.w / 2, z0 + o.h / 2) }; }
+  }
+  return best && { ref: best.ref, p: best.p, dist: 0 };
+}
 // ---- dragging walls / openings / points with «تحريك»
 function roomMove(ref, dv) {
   const r = M.room; if (!r) return null;

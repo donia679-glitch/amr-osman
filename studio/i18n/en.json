@@ -4111,5 +4111,16 @@
 "المناظير والمساقط": "Views and projections",
 "م": "m",
 "م²": "m²",
-"الساعة": "at"
+"الساعة": "at",
+"آخر نقطة": "Last point",
+"اتختارت الحيطة — اسحبها تاني عشان تحرّكها. عشان تحرّك بريزة أو شباك دوس عليه هو نفسه": "Wall selected — drag it again to move it. To move a socket or window, tap that item itself",
+"اتمسح": "Deleted",
+"اختار أكتر من وحدة (أو دوس على وحدة ضغطة طويلة)": "Select several units (or long-press a unit)",
+"اختيار متعدد — دوس على الوحدات اللي عايزها (في العرض أو في الشريط اللي تحت)": "Multi-select — tap the units you want (in the view or in the strip below)",
+"اقفل الشكل": "Close the shape",
+"بتحرّكهم — اسحب أي واحدة": "Moving them — drag any one",
+"تراجع لو غلط": "undo if it was a mistake",
+"حرّكهم مع بعض": "Move them together",
+"دوس النقطة اللي بعدها": "Tap the next point",
+"نسخة — اتحطّت جنب التصميم، حرّكهم لمكانهم": "copies — placed next to the design, move them into place"
 }

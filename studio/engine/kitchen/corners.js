@@ -88,6 +88,30 @@ class PlainBuilder {
             return getOrCreateNamedMaterial(this.ctx, name, COLORS.assembly);
         });
     }
+    /** the plinth (سكلو) under a corner unit: one apron behind each open front edge, set back like the straight
+     *  units' kick. edges: [[start, end, inward normal, entities?]] on the floor */
+    buildCornerKick(e, edges) {
+        const p = this.p;
+        if (!truthy(p["include_toe_kick"]) || toS(p["unit_type"]) === "wall")
+            return;
+        const kh = pcm(p["toe_kick_height"]);
+        if (kh <= 0)
+            return;
+        const sb = pcm(p["toe_kick_setback"]);
+        const t = pcm(p["panel_thickness"]);
+        const mat = this.carcassMaterial(), cname = materialLabelName(mat);
+        edges.forEach(([A, B, inward, ents], i) => {
+            const n = inward.clone().normalizeBang();
+            const a = A.offset(n, sb), b = B.offset(n, sb);
+            const L = a.distance(b);
+            if (L < cm(1))
+                return;
+            const name = edges.length > 1 ? `وزرة سكلو ${i + 1}` : "وزرة سكلو";
+            const k = createAngledPanel(this.ctx, ents || e, name, a, b, n, t, 0, kh, mat);
+            assignLayer(this.ctx, k, TAGS.kick);
+            this.label(name, L, kh, t, { banded: { ...NO_BAND, top: true }, material: cname });
+        });
+    }
     positive(keys) {
         for (const k of keys)
             if (toF(this.p[k]) <= 0)
@@ -191,6 +215,7 @@ export class DiagonalCornerUnitBuilder extends PlainBuilder {
             const ct = pcm(p["countertop_thickness"]);
             createFlatSlab(this.ctx, e, "كونتر", [p1, p2, p3, p4, p5], h, h + ct, this.countertopMaterial());
         }
+        this.buildCornerKick(e, [[p3, p4, new Vector3d(-1, -1, 0)]]);
         return this.finish(group, xOffsetCm);
     }
 }
@@ -229,6 +254,7 @@ export class OpenCornerUnitBuilder extends PlainBuilder {
             bandEdges(this.ctx, top, [new Vector3d(1, 0, 0), new Vector3d(0, 1, 0)], this.edgeBandingMaterial());
         }
         this.buildDoors(e, leg1, leg2, t, z0, h);
+        this.buildCornerKick(e, [[new Point3d(leg1, 0, 0), new Point3d(leg1, leg2, 0), new Vector3d(-1, 0, 0)], [new Point3d(leg1 - pcm(p["toe_kick_setback"]) - t, leg2, 0), new Point3d(0, leg2, 0), new Vector3d(0, -1, 0)]]);
         if (toS(p["unit_type"]) === "base") {
             const ct = pcm(p["countertop_thickness"]);
             createBox(this.ctx, e, "كونتر", 0, 0, h, leg1, leg2, h + ct, this.countertopMaterial());
@@ -322,6 +348,13 @@ export class LShapeCornerUnitBuilder extends PlainBuilder {
             this.buildShelves(shared.entities, leg1G.entities, leg2G.entities, hexShelves, leg1, leg2, cd, t, z0, h, back1, back2);
         this.buildDoorA(leg1G.entities, leg1, cd, t, z0, h);
         this.buildDoorB(leg2G.entities, leg2, cd, t, z0, h);
+        {
+            const sb = pcm(p["toe_kick_setback"]);
+            this.buildCornerKick(group.entities, [
+                [new Point3d(leg1, cd, 0), new Point3d(cd - sb - t, cd, 0), new Vector3d(0, -1, 0), leg1G.entities],
+                [new Point3d(cd, cd, 0), new Point3d(cd, leg2, 0), new Vector3d(-1, 0, 0), leg2G.entities],
+            ]);
+        }
         if (toS(p["unit_type"]) === "base") {
             const ct = pcm(p["countertop_thickness"]);
             const outer = [
@@ -768,6 +801,10 @@ export class CornerGlassDisplayUnitBuilder extends PlainBuilder {
             this.buildShelves(e, leg1, leg2, cd, t, z0, h);
         this.buildDoorFront(e, leg1, cd, t, z0, h);
         this.buildDoorSide(e, leg2, cd, t, z0, h);
+        {
+            const sb = pcm(p["toe_kick_setback"]);
+            this.buildCornerKick(e, [[new Point3d(leg1, cd, 0), new Point3d(cd - sb - t, cd, 0), new Vector3d(0, -1, 0)], [new Point3d(cd, cd, 0), new Point3d(cd, leg2, 0), new Vector3d(-1, 0, 0)]]);
+        }
         return this.finish(group, xOffsetCm);
     }
     buildShelves(e, leg1, leg2, cd, t, z0, h) {
