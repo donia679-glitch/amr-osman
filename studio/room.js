@@ -109,6 +109,68 @@ export function centerOf(pose, box) {
   return [(f[0][0] + f[2][0]) / 2, (f[0][1] + f[2][1]) / 2];
 }
 
+// ------------------------------------------------------------------ doors / windows keep-out zones
+/**
+ * The floor area in front of each door / window that units must leave free, as a 4-point polygon:
+ * a door keeps 100 cm clear for every row (swing + walking), a window 65 cm for wall and tall units
+ * (and for base units when its sill is below the counter). rows: which unit rows it blocks.
+ */
+export function keepouts(room) {
+  const out = [];
+  for (const o of room?.openings || []) {
+    const seg = segments(room).find((g) => g.id === o.wall);
+    if (!seg) continue;
+    const door = o.kind === "door";
+    const a = door ? o.at - 5 : o.at, b = o.at + o.w + (door ? 5 : 0), dep = door ? 100 : 65;
+    const P = (s, t) => [seg.A[0] + seg.d[0] * s + seg.n[0] * t, seg.A[1] + seg.d[1] * s + seg.n[1] * t];
+    const rows = door ? { lower: true, upper: true, tall: true } : { lower: (+o.sill || 0) < 88, upper: true, tall: true };
+    out.push({ o, seg, rows, poly: [P(a, 0), P(b, 0), P(b, dep), P(a, dep)] });
+  }
+  return out;
+}
+/** clip a polygon to t0 ≤ (p−A)·n ≤ t1 of a wall and return its span along the wall [s0, s1] (A-based) or null */
+function stripSpan(seg, poly, t0, t1) {
+  let pts = poly.map((p) => { const v = sub(p, seg.A); return [dot(v, seg.d), dot(v, seg.n)]; });
+  const clip = (keep, cut) => {
+    const r = [];
+    for (let i = 0; i < pts.length; i++) {
+      const p = pts[i], q = pts[(i + 1) % pts.length], ip = keep(p), iq = keep(q);
+      if (ip) r.push(p);
+      if (ip !== iq) { const t = cut(p, q); r.push([p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t]); }
+    }
+    pts = r;
+  };
+  clip((p) => p[1] >= t0, (p, q) => (t0 - p[1]) / (q[1] - p[1]));
+  if (pts.length) clip((p) => p[1] <= t1, (p, q) => (t1 - p[1]) / (q[1] - p[1]));
+  if (pts.length < 3) return null;
+  const s0 = Math.max(0, Math.min(...pts.map((p) => p[0]))), s1 = Math.min(seg.L, Math.max(...pts.map((p) => p[0])));
+  return s1 - s0 > 0.5 ? [s0, s1] : null;
+}
+/** stretches of `seg` (A-based) a row of units `depth` deep may not use because of doors / windows on
+ *  OTHER walls (an opening near a corner reaches across onto the next wall) */
+export function crossBlocks(room, seg, row, depth) {
+  const out = [];
+  for (const k of keepouts(room)) {
+    if (k.seg.id === seg.id || !k.rows[row]) continue;
+    const sp = stripSpan(seg, k.poly, 0.5, depth);
+    if (sp) out.push(sp);
+  }
+  return out;
+}
+/** does a unit's footprint stand in a keep-out zone? → the opening, else null */
+export function keepoutHit(room, poly, row) {
+  const inside = (pt, pg) => { let c = false; for (let i = 0, j = pg.length - 1; i < pg.length; j = i++) { const a = pg[i], b = pg[j]; if ((a[1] > pt[1]) !== (b[1] > pt[1]) && pt[0] < ((b[0] - a[0]) * (pt[1] - a[1])) / (b[1] - a[1]) + a[0]) c = !c; } return c; };
+  const shrink = (pg, k) => { const c = pg.reduce((s, p) => [s[0] + p[0] / pg.length, s[1] + p[1] / pg.length], [0, 0]); return pg.map((p) => [c[0] + (p[0] - c[0]) * k, c[1] + (p[1] - c[1]) * k]); };
+  const segX = (p1, p2, p3, p4) => { const d = (p2[0] - p1[0]) * (p4[1] - p3[1]) - (p2[1] - p1[1]) * (p4[0] - p3[0]); if (Math.abs(d) < 1e-9) return false; const u = ((p3[0] - p1[0]) * (p4[1] - p3[1]) - (p3[1] - p1[1]) * (p4[0] - p3[0])) / d, v = ((p3[0] - p1[0]) * (p2[1] - p1[1]) - (p3[1] - p1[1]) * (p2[0] - p1[0])) / d; return u > 0 && u < 1 && v > 0 && v < 1; };
+  const a = shrink(poly, 0.98);
+  for (const k of keepouts(room)) {
+    if (!k.rows[row === "free" ? "lower" : row]) continue;
+    const b = shrink(k.poly, 0.98);
+    if (a.some((p) => inside(p, b)) || b.some((p) => inside(p, a)) || a.some((p, i) => b.some((q, j) => segX(p, a[(i + 1) % 4], q, b[(j + 1) % 4])))) return k.o;
+  }
+  return null;
+}
+
 // ------------------------------------------------------------------ automatic arrangement
 /**
  * Stands every unit: pinned units where the user put them, the rest along the walls in order —
@@ -135,6 +197,13 @@ export function arrange(room, items) {
     const a = fromA ? o.at : seg.L - o.at - o.w, b = a + o.w;
     if (o.kind === "door") block(seg.id, "tall", a - 5, b + 5);
     else { used.get(seg.id).upper.push([a, b]); }
+  }
+  // a door / window on the next wall near the corner reaches onto this one
+  if (room) for (const seg of segs) {
+    const { S } = runStart(seg), fromA = S === seg.A;
+    const conv = ([a, b]) => (fromA ? [a, b] : [seg.L - b, seg.L - a]);
+    for (const iv of crossBlocks(room, seg, "lower", 62)) { const [a, b] = conv(iv); used.get(seg.id).lower.push([a, b]); }
+    for (const iv of crossBlocks(room, seg, "upper", 36)) { const [a, b] = conv(iv); used.get(seg.id).upper.push([a, b]); }
   }
   // columns standing against a wall block it for every row
   for (const cb of columnBlocks(room)) {

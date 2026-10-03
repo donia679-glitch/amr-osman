@@ -5651,6 +5651,13 @@ function designChecks(project = state.project) {
         void s; void w; void a0;
       }
     }
+    // in front of a door / window from another wall (near a corner) or a corner unit in one
+    for (const it of items) {
+      const o = Room.keepoutHit(room, Room.footprint(it.pose, it.box), it.row);
+      if (!o || o.wall === it.pose.wall) continue;
+      const sg = segs.find((g) => g.id === o.wall);
+      add(o.kind === "door" ? "e" : "w", `${label(it)} واقفة قدام ${o.kind === "door" ? "باب" : "شباك"} حيطة ${(sg?.i ?? 0) + 1} (جنب الركن) — ${o.kind === "door" ? "الباب مش هيفتح" : "هتقفل الشباك"}.`, it.id);
+    }
     // services next to the units that need them
     const pts = (room.points || []).map((p) => ({ ...p, w: Room.pointWorld(room, p) })).filter((p) => p.w);
     const near = (it, kinds, dist = 90) => pts.some((p) => kinds.includes(p.kind) && Math.hypot(p.w.x - Room.centerOf(it.pose, it.box)[0], p.w.z - Room.centerOf(it.pose, it.box)[1]) < dist);
@@ -6827,6 +6834,9 @@ function wallBlocks(room, seg) {
     else { upper.push([o.at, o.at + o.w]); windows.push(o); if ((+o.sill || 0) < 88) all.push([o.at, o.at + o.w]); }
   }
   for (const cb of Room.columnBlocks(room)) if (cb.wall === seg.id) all.push([cb.a, cb.b]);
+  // doors / windows on the next wall that reach onto this one near the corner
+  all.push(...Room.crossBlocks(room, seg, "lower", 62));
+  upper.push(...Room.crossBlocks(room, seg, "upper", 36), ...Room.crossBlocks(room, seg, "tall", 62));
   return { all, upper, windows };
 }
 const minus = (span, blocks) => {
@@ -6891,7 +6901,11 @@ function autoKitchen(room, chain, tier) {
   });
   for (let i = 0; i < chain.length - 1; i++) {
     const inc = chain[i], out = chain[i + 1];
-    for (const cu of [cornerB, cornerU]) { const c = clone(cu); c.id = uid(); c.pos = { ...Room.poseInCorner(inc, out) }; delete c.pos.corner; units.push(c); }
+    for (const [cu, cb, row] of [[cornerB, cbB, "lower"], [cornerU, cbU, "upper"]]) {
+      const pose = Room.poseInCorner(inc, out);
+      if (Room.keepoutHit(room, Room.footprint(pose, cb), row)) { if (row === "lower") return null; continue; } // a door / window in this corner: no base corner → no L here; a window over it → no wall corner
+      const c = clone(cu); c.id = uid(); c.pos = { ...pose }; delete c.pos.corner; units.push(c);
+    }
   }
   // the sink first: under a window when there is one, else a third of the way along the longest wall
   const sinkW = T.sink;
@@ -6991,26 +7005,36 @@ function autoKitchen(room, chain, tier) {
       }
     }
   }
-  return units.length > 3 ? units : null;
+  // last check: nothing may stand in front of a door, or a wall / tall unit in front of a window
+  const segById = new Map(Room.segments(room).map((g) => [g.id, g]));
+  const ok = units.filter((u) => {
+    const r = R(u), box = localBox(r), row = rowOf(u, r);
+    const pose = u.pos.wall ? Room.poseOnWall(segById.get(u.pos.wall), u.pos.s, box) : u.pos;
+    return !Room.keepoutHit(room, Room.footprint(pose, box), row);
+  });
+  return ok.length > 3 ? ok : null;
 }
 /** the proposals for this room: one per shape (one wall, L, U), best walls first */
 function kitchenProposals(tier) {
   const room = state.project.room;
   if (!room) return [];
   const usable = (seg) => minus([0, seg.L], wallBlocks(room, seg).all).reduce((s, [a, b]) => s + b - a, 0);
-  const best = {};
+  const cands = {};
   for (const ch of wallChains(room)) {
     const k = ch.length;
     const score = ch.reduce((s, g) => s + usable(g), 0) + (ch.some((g) => wallBlocks(room, g).windows.length) ? 60 : 0);
-    if (!best[k] || score > best[k].score) best[k] = { ch, score };
+    (cands[k] ??= []).push({ ch, score });
   }
   const NAMES = { 1: "خطي — حيطة واحدة", 2: "حرف L — حيطتين", 3: "حرف U — تلات حيطان" };
   const out = [];
   for (const k of [1, 2, 3]) {
-    if (!best[k]) continue;
-    const units = autoKitchen(room, best[k].ch, tier);
-    if (!units) continue;
-    out.push({ k, name: NAMES[k], walls: best[k].ch.map((g) => g.i + 1), units, q: quickEstimate(units) });
+    // best walls first; when a corner there is taken by a door, the next best walls
+    for (const c of (cands[k] || []).sort((a, b) => b.score - a.score)) {
+      const units = autoKitchen(room, c.ch, tier);
+      if (!units) continue;
+      out.push({ k, name: NAMES[k], walls: c.ch.map((g) => g.i + 1), units, q: quickEstimate(units) });
+      break;
+    }
   }
   return out;
 }
@@ -7400,4 +7424,4 @@ boot();
 if (location.hash === "#survey") { svFrom = "home"; SurveyUI.open("list"); }
 matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", () => { applyLook(); view.update(); });
 applyLook();
-window.__dbg = { view, plan, R, render: (x) => render(x), checks: () => designChecks(), merge: (a, b) => mergeInto(a, b), get ui() { return ui; }, layout: asmLayout, elev: (u) => unitElevSvg(u), get state() { return state; } };
+window.__dbg = { view, plan, R, render: (x) => render(x), ak: (t) => kitchenProposals(t), applyK: (u) => applyKitchen(u, null), checks: () => designChecks(), merge: (a, b) => mergeInto(a, b), get ui() { return ui; }, layout: asmLayout, elev: (u) => unitElevSvg(u), get state() { return state; } };
