@@ -22,6 +22,8 @@ import * as Obs from "./obstacles.js";
 import * as SurveyUI from "./survey_ui.js";
 import * as Media from "./media.js";
 import * as Keypad from "./keypad.js";
+import * as Studio from "./draw/studio.js";
+import * as DG from "./draw/geom.js";
 
 const APP_URL = "https://claude.ai/artifact/EP8c8LmBNS8d3EqLcDioXi";
 const APP_VERSION = "1.0";
@@ -225,7 +227,7 @@ function R(u) {
   const key = u.kind + JSON.stringify(u.params) + JSON.stringify(u.libs || {}) + (u.org || "") + (u.orgOpts ? JSON.stringify(u.orgOpts) : "") + (u.extra?.length ? JSON.stringify(u.extra) : "");
   if (cache.has(key)) return cache.get(key);
   if (cache.size > 80) cache.delete(cache.keys().next().value);
-  let out = u.kind === "dressing" ? adaptDressing(u) : u.kind === "kitchen" ? adaptKitchen(u) : u.kind === "pieces" ? adaptPieces(u) : adaptPanel(u);
+  let out = u.kind === "dressing" ? adaptDressing(u) : u.kind === "kitchen" ? adaptKitchen(u) : u.kind === "pieces" ? adaptPieces(u) : u.params?.model ? adaptModel(u) : adaptPanel(u);
   if (out.ok && (u.kind === "dressing" || u.kind === "panel") && Obs.any(u.params)) {
     const ob = Obs.applyParts(out, u.params, out.partMover || []);
     if (ob) out = { ...out, parts: ob.parts, partMover: out.partMover ? ob.partMover : undefined, warnings: [...(out.warnings || []), ...ob.warnings], obstacles: true,
@@ -571,6 +573,121 @@ function adaptPieces(u) {
   const ok = parts.length > 0;
   return { kind: "pieces", ok, errors: ok ? [] : ["ضيف قطعة واحدة على الأقل بمقاساتها."], warnings: [], notes: [], params: u.params || {}, parts, checks: [],
     movers: [], partMover: [], names, colors, hardware: {}, pieces: parts.length, banding: bandM(parts), doors: 0, drawers: 0, label: "قطع حرة (كت ليست)", libOf: (k) => libs[k] || null };
+}
+// ---- units drawn in the drawing studio: every flat solid → a board (free template: joints, banding, materials);
+// shaped boards keep their real outline, cut-outs and pockets for the 3D, the labels and the CNC files
+const axisOf = (v) => [0, 1, 2].find((i) => Math.abs(v[i]) > 0.999) ?? -1;
+function modelOffset(m) {
+  const lo = [Infinity, Infinity, Infinity];
+  for (const s of m.solids || []) { const b = DG.solidBox(s); lo[0] = Math.min(lo[0], b.x0); lo[1] = Math.min(lo[1], b.y0); lo[2] = Math.min(lo[2], b.z0); }
+  for (const w of m.sweeps || []) for (const P of w.path) for (let i = 0; i < 3; i++) lo[i] = Math.min(lo[i], P[i]);
+  return lo.map((v) => (isFinite(v) ? -v : 0));
+}
+function adaptModel(u) {
+  const m = u.params.model || {};
+  const fail = (e) => ({ kind: "panel", ok: false, errors: [e], warnings: [], notes: [], params: u.params, parts: [], checks: [] });
+  if (!(m.solids || []).length && !(m.sweeps || []).length) return fail("الرسمة فاضية — افتحها في ورشة الرسم وارسم ألواح.");
+  const off = modelOffset(m);
+  const S = (m.solids || []).map((s) => ({ ...s, plane: { ...s.plane, o: DG.add(s.plane.o, off) } }));
+  const panels = S.map((s, i) => {
+    const b = DG.solidBox(s), ax = axisOf(DG.nOf(s.plane));
+    const role = s.mat === "back" ? "back" : ax === 2 ? "horizontal" : ax === 0 ? "side" : ax === 1 && s.mat === "front" ? "door" : "other";
+    const ends = [["left", "right"], ["front", "back"], ["bottom", "top"]];
+    const band = s.band === false || s.mat === "back" ? [] : [0, 1, 2].filter((k) => k !== (ax >= 0 ? ax : 1)).flatMap((k) => ends[k]);
+    return { name: s.name || `لوح ${i + 1}`, role, material: s.mat || "carcass", x: b.x0, y: b.y0, z: b.z0, w: Math.max(0.1, b.x1 - b.x0), d: Math.max(0.1, b.y1 - b.y0), h: Math.max(0.1, b.z1 - b.z0), band };
+  });
+  let base;
+  if (panels.length) {
+    base = adaptPanel({ ...u, params: { template: "free", panels, materials: u.params.materials || {}, ...(u.params.joints ? { joints: u.params.joints } : {}) } });
+    if (!base.ok) return base;
+  } else base = { ...adaptPanel({ ...u, params: { template: "free", panels: [{ name: "x", role: "other", material: "carcass", x: 0, y: 0, z: 0, w: 1, d: 1, h: 1 }], materials: u.params.materials || {} } }), parts: [], pieces: 0, banding: 0 };
+  let ci = 0;
+  const parts = base.parts.map((pt) => {
+    if (pt.role === "hole" || !pt.cut_piece) return pt;
+    const s = S[ci++];
+    if (!s) return pt;
+    const aligned = axisOf(DG.nOf(s.plane)) >= 0 && axisOf(s.plane.u) >= 0;
+    const plain = aligned && DG.plainRect(s);
+    const out = { ...pt, label: { ...pt.label }, checks: [...(pt.checks || [])], model_sid: s.id };
+    if (!DG.isBoard(s)) out.checks.push(`⚠ ده مجسّم سمكه ${n1(s.depth)} سم — مش لوح بيتقص من الشيت`);
+    if (plain) return out;
+    out.shape = { type: "faces", faces: DG.solidFaces(s).map((f) => ({ n: f.n, outer: f.outer, holes: f.holes, mat: s.mat })) };
+    let toL;
+    if (aligned && pt.axes) {
+      const a0 = AXK.indexOf(pt.axes[0]), a1 = AXK.indexOf(pt.axes[1]), L0 = [pt.box.x0, pt.box.y0, pt.box.z0];
+      toL = (P) => [Math.round((P[a0] - L0[a0]) * 100) / 100, Math.round((P[a1] - L0[a1]) * 100) / 100];
+    } else {
+      const bs = DG.boardSize(s);
+      out.label.w = bs.w; out.label.h = bs.h; out.label.t = bs.t; out.holes = [];
+      out.checks.push("📐 لوح مايل — الأخرام والأليتا بتتعلّم في الورشة");
+      toL = (P) => { const q = DG.toPlane(s.plane, P); return bs.alongU ? [q[0] - bs.b[0], q[1] - bs.b[1]] : [q[1] - bs.b[1], q[0] - bs.b[0]]; };
+    }
+    const W = (l) => l.map((p) => toL(DG.toWorld(s.plane, p, 0)));
+    out.cnc = { outline: W(s.outer), holes: (s.holes || []).map(W), pockets: (s.pockets || []).map((pk) => ({ loop: W(pk.loop), depth: pk.depth, face: pk.face || "top" })) };
+    out.band_len = s.band === false ? 0 : Math.round(DG.perimeter(s.outer) * 10) / 10;
+    if (s.band !== false) out.label.banded = { left: true, right: true, top: true, bottom: true };
+    const notes = [];
+    if (DG.clean(s.outer).length > 4 || !aligned) notes.push("✂ قطعة مشكّلة — القص بالراوتر/CNC على شكلها");
+    if ((s.holes || []).length) notes.push(`⭕ ${s.holes.length} تفريغة`);
+    if ((s.pockets || []).length) notes.push(`⬚ ${s.pockets.length} حفر: ${s.pockets.map((pk) => `عمق ${n1(pk.depth)} سم ${pk.face === "bottom" ? "من الضهر" : "من الوش"}`).join("، ")}`);
+    out.checks.push(...notes);
+    return out;
+  });
+  const hardware = { ...(base.hardware || {}) };
+  (m.sweeps || []).forEach((w, i) => {
+    const path = w.path.map((P) => DG.add(P, off));
+    const faces = DG.sweepFaces(w.profile, path, w.closed);
+    const b = { x0: Infinity, y0: Infinity, z0: Infinity, x1: -Infinity, y1: -Infinity, z1: -Infinity };
+    for (const f of faces) for (const P of f.outer) { b.x0 = Math.min(b.x0, P[0]); b.y0 = Math.min(b.y0, P[1]); b.z0 = Math.min(b.z0, P[2]); b.x1 = Math.max(b.x1, P[0]); b.y1 = Math.max(b.y1, P[1]); b.z1 = Math.max(b.z1, P[2]); }
+    const L = DG.pathLength(path, w.closed);
+    parts.push({ id: 95000 + i, name: w.name || `بروفايل ${i + 1}`, role: "profile", material: w.mat || "accent", cut_piece: false, label: null, box: b, shape: { type: "faces", faces: faces.map((f) => ({ ...f, mat: w.mat })) }, holes: [], checks: [`➰ بروفايل طوله ${n1(L)} سم`] });
+    const key = `بروفايل «${w.name || i + 1}» (متر طولي)`;
+    hardware[key] = Math.round(((hardware[key] || 0) + L / 100) * 100) / 100;
+  });
+  return { ...base, parts, hardware, banding: bandM(parts), pieces: S.length, label: "تصميم من ورشة الرسم", params: { ...u.params, template: "free" }, model: true };
+}
+function modelProps(u, r) {
+  const m = u.params.model || {};
+  const shaped = r.parts?.filter((p) => p.cnc).length || 0;
+  return `<details open><summary>✏️ ورشة الرسم</summary>
+    <p class="hint">${(m.solids || []).length} لوح${(m.sweeps || []).length ? ` · ${m.sweeps.length} بروفايل` : ""}${shaped ? ` · ${shaped} قطعة مشكّلة (CNC)` : ""}. كل لوح بيدخل القص والملصقات والأليتا وملفات الـCNC بشكله.</p>
+    <div class="btnrow"><button class="primary" data-studio>✏️ افتح في ورشة الرسم</button></div></details>`;
+}
+function openStudio(u) {
+  const libs = (k) => panelLib(R(u).params || {}, k);
+  Studio.open(u?.params?.model || null, {
+    name: u?.name || "تصميم حر",
+    matColor: (k) => { const l = u && libs(k); return l && Catalog.LIB[l] ? Catalog.LIB[l][2] : null; },
+    matName: (k) => PANEL_MATS[k] || k,
+    onDone: (model, name) => {
+      if (u && state.project.units.includes(u)) { u.params = { ...u.params, model, template: "free" }; u.name = name || u.name; }
+      else { const nu = { id: uid(), kind: "panel", name: name || "تصميم حر", params: { template: "free", model, materials: {} } }; state.project.units.push(nu); state.sel = nu.id; }
+      state.libOpen = false; save(); render(true);
+      alertBar("اتحفظ التصميم ✓ — ألواحه في القص والملصقات وملفات الـCNC");
+    },
+    saveLib: (model, name) => {
+      const tmp = { id: uid(), kind: "panel", name: name || "تصميم حر", params: { template: "free", model, materials: u?.params?.materials || {} } };
+      state.myUnits ||= [];
+      state.myUnits.push(myUnitFrom(tmp, tmp.name, "من ورشة الرسم"));
+      save(); myLibPush?.();
+      alertBar("اتحفظ في مكتبتي ⭐");
+    },
+  });
+}
+/** any unit → a drawing you can edit freely (its boards as solids) */
+function unitToModel(u) {
+  const r = R(u);
+  const m = Studio.newModel();
+  const src = r.meshes ? r.meshes.filter((x) => x.box && x.mat !== "hole" && !/handle|hinge|leg|rail|led/i.test(x.mat || "")).map((x) => ({ name: x.name, box: x.box, material: /Front/.test(x.layer || "") ? "front" : x.mat === "countertop" ? "accent" : "carcass" }))
+    : (r.parts || []).filter((pt) => pt.cut_piece && pt.box && pt.role !== "hole");
+  for (const pt of src) {
+    const b = pt.box, d = [b.x1 - b.x0, b.y1 - b.y0, b.z1 - b.z0], ax = d.indexOf(Math.min(...d));
+    const pl = ax === 2 ? { o: [b.x0, b.y0, b.z0], u: [1, 0, 0], v: [0, 1, 0] } : ax === 0 ? { o: [b.x0, b.y0, b.z0], u: [0, 1, 0], v: [0, 0, 1] } : { o: [b.x0, b.y1, b.z0], u: [1, 0, 0], v: [0, 0, 1] };
+    const [w, h] = ax === 2 ? [d[0], d[1]] : ax === 0 ? [d[1], d[2]] : [d[0], d[2]];
+    const mat = ["carcass", "front", "shelf", "accent", "back"].includes(pt.material) ? pt.material : /door|front/.test(pt.material) ? "front" : pt.material === "back" ? "back" : "carcass";
+    m.solids.push({ id: Math.random().toString(36).slice(2, 9), name: pt.name, mat, plane: pl, outer: DG.rect(0, 0, w, h), holes: [], pockets: [], depth: Math.round(d[ax] * 100) / 100 });
+  }
+  return m;
 }
 function piecesProps(u) {
   const rows = (u.params.pieces ||= []);
@@ -1308,6 +1425,7 @@ $("#home").addEventListener("click", async (e) => {
   const d = b.dataset;
   if (b.hasAttribute("data-hnew")) { await newProject($("#homeName").value); return; }
   if (b.hasAttribute("data-hlast")) { closeHome(); render(true); return; }
+  if (b.hasAttribute("data-hstudio")) { closeHome(); render(true); openStudio(null); return; }
   if (b.hasAttribute("data-hcut")) {
     await newProject(($("#homeName").value || "").trim() || "كت ليست");
     const u = { id: uid(), kind: "pieces", name: "قطع حرة", params: { pieces: [{ ...PIECE_DEF(), name: "قطعة 1" }] } };
@@ -1495,6 +1613,7 @@ function renderLib() {
   let h = `<div class="libhead"><h2>المكتبة</h2><button class="x" data-close aria-label="قفل المكتبة">×</button></div>
     <p class="hint">دوس على أي تصميم يتضاف للمشروع وتعدّله براحتك.</p>
     <input id="libq" class="libq" type="search" placeholder="🔍 دوّر: تسريحة، تموين، حوض، دولاب…" aria-label="دوّر في المكتبة" value="${esc(ui.libQ || "")}">
+    <button class="card cutcard" data-studio-new="1"><span class="sw" style="font-size:26px">✏️</span><b>ورشة الرسم — صمّم حاجتك من الصفر</b><small>ارسم زي سكتش أب: خطوط ومستطيلات ودواير وأقواس، اسحبها ألواح، فرّغ وقص واحفر، ولف وانسخ — وكل لوح يطلع في القص والـCNC بشكله.</small></button>
     <button class="card cutcard" data-pieces="1"><span class="sw" style="font-size:26px">✂</span><b>قطع حرة — كت ليست بمقاساتك</b><small>اكتب مقاسات القطع (أو الزقها من Excel) ويطلعلك خطة القص والملصقات بالباركود من غير تصميم.</small></button>
 `;
   h += myLibHtml();
@@ -1536,6 +1655,7 @@ $("#lib").addEventListener("input", (e) => { if (e.target.id !== "libq") return;
 $("#lib").addEventListener("click", (e) => {
   if (e.target.closest("[data-close]")) { state.libOpen = false; render(); return; }
   if (myLibClick(e)) return;
+  if (e.target.closest("[data-studio-new]")) { state.libOpen = false; render(); openStudio(null); return; }
   const c = e.target.closest("[data-preset],[data-template],[data-dress],[data-kitchen],[data-pieces]");
   if (!c) return;
   let u;
@@ -1949,8 +2069,17 @@ function renderProps0() {
   if (r.ok && wholeView()) h += `<div class="grid2"><label class="f"><span>↕ رفع الوحدة من الأرض (سم)</span><input type="text" inputmode="decimal" data-numf step="1" min="0" data-ulift value="${+u.lift || 0}"></label></div>
     <p class="hint">زيادة على ارتفاعها العادي — مثلاً وحدة على قاعدة أو رف معلّق. الوحدات العلوية للمطبخ ارتفاعها من "التعليق من الأرض".</p>`;
   if (u.kind === "pieces") { el.innerHTML = h + (r.ok ? summaryHtml(u) : "") + piecesProps(u); return; }
+  if (u.params?.model) {
+    h += modelProps(u, r) + (r.ok ? summaryHtml(u) : `<p class="hint">${esc(r.errors?.[0] || "")}</p>`);
+    h += `<details open><summary>الخامات</summary><div class="mats">`;
+    const used = new Set((u.params.model.solids || []).map((x) => x.mat).concat((u.params.model.sweeps || []).map((x) => x.mat)));
+    for (const k of ["carcass", "front", "shelf", "accent", "back"].filter((k) => used.has(k))) h += `<button class="mrow" data-mat="${k}"><i style="background:${r.colors?.[k] || "#ccc"}"></i><span><b>${esc(PANEL_MATS[k])}</b><small>${esc(r.names?.[k] || "")}</small></span>${ICON.cycle}</button>`;
+    h += `</div></details>`;
+    el.innerHTML = h; return;
+  }
   if (u.kind === "kitchen" && r.ok) h += applianceField(u, p) + organizerField(u, r);
   if (r.ok) h += summaryHtml(u);
+  if (r.ok) h += `<div class="btnrow"><button class="ghost2" data-tostudio title="نسخة من الوحدة كألواح تعدّلها بحرية">✏️ عدّلها بحرية في ورشة الرسم</button></div>`;
   h += u.kind === "dressing" ? dressingProps(p) : u.kind === "kitchen" ? kitchenProps(p) : panelProps(p, r);
   if (u.kind === "panel" && r.ok) h += softProps(u, r);
   if (r.ok && (u.kind === "dressing" || u.kind === "panel") && r.params?.template !== "free") h += obstaclesProps(p);
@@ -2639,6 +2768,11 @@ props.addEventListener("click", (e) => {
   else if (d.rowdel != null) setParams(u, (p) => { if (p.doors.rows.length > 1) p.doors.rows.splice(+d.rowdel, 1); });
   else if (b.hasAttribute("data-rowadd")) setParams(u, (p) => p.doors.rows.push({ height: 40, type: "doors", leaves: 2 }));
   else if (d.mat) { ui.matPick = d.mat; ui.pop = "mat"; renderPop(); }
+  else if (b.hasAttribute("data-studio")) openStudio(u);
+  else if (b.hasAttribute("data-tostudio")) {
+    const nu = { id: uid(), kind: "panel", name: u.name + " (رسم حر)", params: { template: "free", model: unitToModel(u), materials: {} }, ...(u.pos ? { pos: clone(u.pos) } : {}) };
+    state.project.units.push(nu); state.sel = nu.id; save(); render(true); openStudio(nu);
+  }
 });
 
 // ------------------------------------------------------------------ popovers (materials, projects)
@@ -3175,7 +3309,7 @@ function applyLibTo(u, key, lib) {
   } else setParams(u, (p) => { p.materials ??= {}; p.materials[key] = lib ? { lib } : {}; });
 }
 // ---- the settings panel: "basic" shows only what most units need, search finds any field
-const BASIC_SECTIONS = ["درج الوزرة", "الحيطة الجاية بالمقاس", "الرسم بالقلم", "الأبواب والشبابيك", "المكان", "المقاسات", "المقاسات والنظام", "الوحدة", "الواجهة", "من جوه", "الخامات", "الأقسام (من الشمال لليمين)", "الواجهة (من تحت لفوق)", "الألواح", "اللون والتشطيب", "🧩 التقسيمات الداخلية", "الأوضة", "كل الحيطان"];
+const BASIC_SECTIONS = ["✏️ ورشة الرسم", "درج الوزرة", "الحيطة الجاية بالمقاس", "الرسم بالقلم", "الأبواب والشبابيك", "المكان", "المقاسات", "المقاسات والنظام", "الوحدة", "الواجهة", "من جوه", "الخامات", "الأقسام (من الشمال لليمين)", "الواجهة (من تحت لفوق)", "الألواح", "اللون والتشطيب", "🧩 التقسيمات الداخلية", "الأوضة", "كل الحيطان"];
 const normAr = (t) => String(t || "").toLowerCase().replace(/[أإآ]/g, "ا").replace(/ة/g, "ه").replace(/ى/g, "ي").replace(/[ًٌٍَُِّْـ]/g, "");
 function propsMode(el) {
   if (!el || !selUnit() || el.querySelector(".emptyp")) return;
@@ -3456,7 +3590,7 @@ function renderPop() {
   else if (ui.pop === "menu") {
     const it = (k, ic, t, d) => `<button class="mitem" data-menu="${k}"><span class="mic">${ic}</span><span><b>${t}</b><small>${d}</small></span></button>`;
     h = `<div class="popbox menubox" role="dialog" aria-label="القائمة"><div class="libhead"><h2>القائمة</h2><button class="x" data-close aria-label="قفل">×</button></div>
-      <h3>المشروع</h3>${it("projects", "📁", "مشاريعي", "افتح مشروع تاني أو ابدأ جديد")}${it("export", "⬆", "تصدير وطباعة", "الملصقات، خطة القص، CNC، عرض السعر، سكتش أب")}${it("survey", "📐", "رفع مقاسات", "شاشة الرفع في الموقع خطوة بخطوة")}
+      <h3>المشروع</h3>${it("projects", "📁", "مشاريعي", "افتح مشروع تاني أو ابدأ جديد")}${it("export", "⬆", "تصدير وطباعة", "الملصقات، خطة القص، CNC، عرض السعر، سكتش أب")}${it("survey", "📐", "رفع مقاسات", "شاشة الرفع في الموقع خطوة بخطوة")}${it("studio", "✏️", "ورشة الرسم", "صمّم أي قطعة أو وحدة من الصفر زي سكتش أب")}
       <h3>الإعدادات</h3>${it("defaults", "⚙", "الإعدادات الافتراضية", "مقاسات الوحدات، التصنيع، التسعير، القص — مرة واحدة لكل المشاريع")}${it("look", "🎨", "الألوان والمظهر والكيبورد", "فاتح/غامق، لون التطبيق، كيبورد الأرقام")}
       <h3>مساعدة</h3>${it("tour", "🧭", "الجولة التعريفية", "شرح سريع لكل جزء في الشاشة")}${it("about", "ⓘ", "عن التطبيق", "الإصدار والتواصل")}</div>`;
   }
@@ -3630,6 +3764,7 @@ $("#pop").addEventListener("click", async (e) => {
     if (m === "projects") { showHome(); return; }
     if (m === "export") { $("#expBtn").click(); return; }
     if (m === "survey") { svFrom = "design"; SurveyUI.open("steps"); return; }
+    if (m === "studio") { const su = selUnit(); openStudio(su?.params?.model ? su : null); return; }
     if (m === "tour") { state.tourDone = false; startTour(); return; }
     ui.pop = m; renderPop(); return;
   }
@@ -3850,7 +3985,7 @@ window.noveraRoomScan = (data) => {
   } catch (err) { alertBar(err?.message?.length < 80 ? err.message : "ما قدرتش أقرا المسح — جرّب تمسح تاني ببطء."); }
 };
 window.noveraScanError = (msg) => alertBar(msg);
-function closeHome() { $("#home").hidden = true; document.body.classList.remove("athome"); setTimeout(() => view.resize?.(), 50); renderSteps(); if (!state.tourDone && ui.mode === "owner") setTimeout(() => { if (!document.body.classList.contains("insurvey")) startTour(); }, 900); }
+function closeHome() { $("#home").hidden = true; document.body.classList.remove("athome"); setTimeout(() => view.resize?.(), 50); renderSteps(); if (!state.tourDone && ui.mode === "owner") setTimeout(() => { if (!document.body.classList.contains("insurvey") && !document.body.classList.contains("indraw")) startTour(); }, 900); }
 async function allProjects() {
   const local = await Lib.list().catch(() => []);
   const map = new Map(local.map((x) => [x.id, { ...x, where: "device" }]));
@@ -3877,6 +4012,7 @@ async function showHome() {
     <div class="htiles">
       <div class="htile main"><b>🎨 مشروع تصميم جديد</b><small>أوضة ← تصميم ← سعر ← قص ← ورشة</small><div class="homenew"><input id="homeName" placeholder="اسم المشروع (مثلاً: مطبخ أ. محمد — التجمع)" aria-label="اسم المشروع الجديد"><button class="primary" data-hnew>ابدأ ←</button></div></div>
       <button class="htile" data-hsurvey><b>📐 رفع مقاسات</b><small>في الموقع، خطوة بخطوة، والمصمم يستلم الأوضة جاهزة</small></button>
+      <button class="htile" data-hstudio><b>✏️ ورشة الرسم</b><small>ارسم وحدتك أو قطعتك من الصفر زي سكتش أب</small></button>
       <button class="htile" data-hcut><b>✂ كت ليست سريع</b><small>اكتب مقاسات القطع وخد خطة القص والملصقات</small></button>
     </div>
     <button class="hcont" data-hlast><span>↩</span><span><b>كمّل «${esc(state.project.name)}»</b><small>${state.project.units.length} وحدة · آخر حاجة كنت شغال عليها</small></span></button>
@@ -5397,8 +5533,13 @@ function pieceSvg(pc, size = 1) {
   const b = lb.banded;
   const all = pt.band_all_sides;
   let g = `<rect x="${x0}" y="${y0}" width="${w}" height="${hh}" fill="#f4f4f2" stroke="#111" stroke-width="0.8"/>`;
+  if (pt.cnc?.outline?.length) {
+    const path = (l) => "M" + l.map(([x, y]) => `${(x0 + x * s).toFixed(1)} ${(y0 + (lb.h - y) * s).toFixed(1)}`).join("L") + "Z";
+    g = `<rect x="${x0}" y="${y0}" width="${w}" height="${hh}" fill="none" stroke="#bbb" stroke-width="0.5" stroke-dasharray="2 2"/><path d="${path(pt.cnc.outline)}${(pt.cnc.holes || []).map(path).join("")}" fill="#f4f4f2" fill-rule="evenodd" stroke="#111" stroke-width="0.8"/>`;
+    for (const pk of pt.cnc.pockets || []) g += `<path d="${path(pk.loop)}" fill="#e3d6b8" stroke="#8a5a00" stroke-width="0.6" stroke-dasharray="2 1.5"/>`;
+  }
   const edge = (on, x1, y1, x2, y2) => (on || all ? `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#1f6d3d" stroke-width="3"/>` : "");
-  g += edge(b.left, x0, y0, x0, y0 + hh) + edge(b.right, x0 + w, y0, x0 + w, y0 + hh) + edge(b.bottom, x0, y0 + hh, x0 + w, y0 + hh) + edge(b.top, x0, y0, x0 + w, y0);
+  if (!pt.cnc) g += edge(b.left, x0, y0, x0, y0 + hh) + edge(b.right, x0 + w, y0, x0 + w, y0 + hh) + edge(b.bottom, x0, y0 + hh, x0 + w, y0 + hh) + edge(b.top, x0, y0, x0 + w, y0);
   if (lb.groove) {
     const gr = lb.groove, gi = grooveInfo(pc);
     g += gr.axis === "vertical" ? `<line x1="${x0 + gr.ratio * w}" y1="${y0}" x2="${x0 + gr.ratio * w}" y2="${y0 + hh}" stroke="#b07d12" stroke-width="1.4" stroke-dasharray="3 2"/>`
@@ -6780,8 +6921,14 @@ async function exportCnc() {
     const u = state.project.units[pc.unitIdx], p = R(u).params || {};
     const W = mm(lb.w), H = mm(lb.h), T = mm(lb.t);
     const d = new Exp.Dxf(4);
-    d.rect(0, 0, W, H, "OUTLINE");
     let nh = 0, nc = 0, ng = 0;
+    if (pt.cnc?.outline?.length) {
+      // a shaped board from the drawing studio: its real outline, cut-outs and pockets
+      const P = (l) => l.map(([x, y]) => [mm(x), mm(y)]);
+      d.poly(P(pt.cnc.outline), "OUTLINE");
+      for (const h of pt.cnc.holes || []) { d.poly(P(h), "CUTOUT"); ng++; }
+      for (const pk of pt.cnc.pockets || []) { d.poly(P(pk.loop), `POCKET_${pk.face === "bottom" ? "BACK" : "FRONT"}_Z${mm(pk.depth)}`); ng++; }
+    } else d.rect(0, 0, W, H, "OUTLINE");
     for (const ho of pt.holes || []) {
       const dia = mm(ho.d || (ho.kind === "cam" ? 1.5 : ho.kind === "pin" ? 0.5 : 0.8));
       const z = ho.kind === "cam" ? 13 : ho.kind === "pin" || dia <= 5 ? 10 : Math.min(12, Math.max(8, Math.round(T * 0.65)));
@@ -6826,7 +6973,7 @@ async function exportCnc() {
   files.push({ name: "عمليات CNC.csv", data: Exp.csv(rows) });
   files.push({ name: "اقراني.txt", data: "NOVERA Studio — ملفات CNC\r\n\r\nكل قطعة في ملف DXF لوحدها بالمليمتر، مقسومة فولدرات حسب الخامة والسمك.\r\n" +
     "الطبقات (Layers):\r\n  OUTLINE  حدود القطعة (الطول على X والعرض على Y زي الملصق)\r\n  DRILL_V_D8_Z12  خرم رأسي قطره 8 وعمقه 12 مم (الرقمين في اسم الطبقة)\r\n" +
-    "  DRILL_V_D35_Z13  كبة مفصلة\r\n  GROOVE_W7_Z8  مفحار عرضه 7 وعمقه 8 مم\r\n  POCKET_BACK_Z12  حفر مقبض بلت إن من ضهر الوش (العمق في الاسم بالمم)\r\n  TEXT  رقم القطعة (مش للتشغيل)\r\n\r\nفي برنامج المكنة: اربط كل طبقة بالعدة المناسبة مرة واحدة واحفظها كقالب.\r\n" });
+    "  DRILL_V_D35_Z13  كبة مفصلة\r\n  GROOVE_W7_Z8  مفحار عرضه 7 وعمقه 8 مم\r\n  POCKET_BACK_Z12  حفر مقبض بلت إن من ضهر الوش (العمق في الاسم بالمم)\r\n  POCKET_FRONT_Z8  حفر من وش القطعة بالعمق ده (من ورشة الرسم)\r\n  CUTOUT  تفريغة جوه القطعة (قص كامل)\r\n  TEXT  رقم القطعة (مش للتشغيل)\r\n\r\nفي برنامج المكنة: اربط كل طبقة بالعدة المناسبة مرة واحدة واحفظها كقالب.\r\n" });
   return Exp.deliver(cloud.downloads, `${fileBase()} — CNC.zip`, Exp.zip(files));
 }
 async function exportImage() {
