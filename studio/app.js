@@ -849,6 +849,7 @@ app.innerHTML = `
   <button id="projBtn" class="projbtn">${ICON.folder}<span id="projName"></span></button>
   <span class="undogrp"><button id="undoBtn" class="projbtn" aria-label="تراجع" title="تراجع (⌘Z)" disabled>↶</button><button id="redoBtn" class="projbtn" aria-label="إعادة" title="إعادة (⇧⌘Z)" disabled>↷</button></span>
   <button id="saveBtn" class="projbtn savebtn" aria-label="حفظ">💾<span>حفظ</span></button>
+  <button id="drawBtn" class="projbtn drawbtn" title="ورشة الرسم" aria-label="ورشة الرسم">✏️<span>ورشة الرسم</span></button>
   <button id="expBtn" class="projbtn">${ICON.share}<span>تصدير</span></button>
   <button id="menuBtn" class="projbtn" aria-label="القائمة">☰<span>القائمة</span></button>
   <span id="cloud" class="cloud"></span>
@@ -1477,6 +1478,7 @@ addEventListener("keydown", (e) => {
 $("#projBtn").addEventListener("click", async () => { ui.pop = "projects"; renderPop(); ui.projects = (await allProjects()).map((x) => ({ id: x.id, name: x.name, updatedAt: x.updatedAt })); if (ui.pop === "projects") renderPop(); });
 $("#expBtn").addEventListener("click", () => { ui.pop = "export"; renderPop(); });
 $("#menuBtn").addEventListener("click", () => { ui.pop = "menu"; renderPop(); });
+$("#drawBtn").addEventListener("click", () => { const su = selUnit(); openStudio(su?.params?.model ? su : null); });
 
 // ------------------------------------------------------------------ library
 function swatches(colors) {

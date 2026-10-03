@@ -7,7 +7,7 @@
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <style>html,body{margin:0;padding:0}body{min-height:100vh;min-height:100dvh}</style>
-<script>window.NOVERA_BUILD = "2026-10-03 18:38";</script>
+<script>window.NOVERA_BUILD = "2026-10-03 18:56";</script>
 </head>
 <body>
 <meta charset="utf-8">
@@ -936,6 +936,12 @@ html.lang-en .dsl.tip { transform: translate(10px, -150%); }
 .dssel.sm { height: 34px; max-width: 120px; }
 .filelike { cursor: pointer; }
 @media (pointer: coarse) { .dsh.rs { width: 22px; height: 22px; } .dsh.mv { width: 40px; height: 40px; } }
+
+.bar .drawbtn { background: #d9a63a; color: #123f23; border-color: transparent; font-weight: 700; }
+
+.dssnap { position: absolute; bottom: 10px; inset-inline-start: 10px; z-index: 4; width: min(320px, calc(100% - 20px)); background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 10px 12px; box-shadow: 0 10px 28px rgba(0,0,0,.22); display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+.dssnap .dschk i { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+.dsb.snapbtn { color: var(--muted); } .dsb.snapbtn.on { background: color-mix(in srgb, #d63aa0 14%, var(--panel2)); color: #a3226f; border-color: #d63aa0; }
 </style>
 <div id="splash" class="splash" aria-hidden="true">
   <div class="sp-in">

@@ -42,7 +42,8 @@ let raf = 0, alive = false;
 const objs = new Map(); // entity ref → three object(s), for picking and ghosts
 const ui = { tool: "select", sel: new Set(), st: null, axis: null, plane: "auto", copy: false, xray: false, section: null, secPos: 0, ortho: false, mat: "carcass",
   segs: 32, sides: 6, filletR: 5, chamferD: 2, editGroup: null, face2d: null, info: null, addSel: false, lastPush: null, lastMove: null, thick: 1.8, panel: true, outline: false, msg: "",
-  step: 0, boxSel: false, dimEdit: null, clip: null, arr: { n: 3, d: 40, ax: 0, pn: 6, pa: 360, px: 0, py: 0 }, alignAx: 0 };
+  step: 1, boxSel: false, recent: [], face: null,
+  snap: { on: true, end: true, mid: true, center: true, edge: true, face: true, axis: true, par: true, align: true, angle: true, strength: 1.3 }, dimEdit: null, clip: null, arr: { n: 3, d: 40, ax: 0, pn: 6, pa: 360, px: 0, py: 0 }, alignAx: 0 };
 const hist = { u: [], r: [] };
 
 export const newModel = () => ({ v: 1, solids: [], sketches: [], paths: [], sweeps: [], guides: [], dims: [], texts: [], groups: [] });
@@ -51,6 +52,45 @@ const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "
 const f1 = (v) => (Math.round(v * 10) / 10).toLocaleString("en-US");
 const T3 = (p) => new THREE.Vector3(p[0], p[2], -p[1]);
 const W3 = (v) => [v.x, -v.z, v.y];
+// ---- thick lines (WebGL draws every line 1 px wide): screen-space quads, `width` in CSS pixels
+const fatMats = new Set();
+function fatLine(pts, color, width = 3, closed = false, opts = {}) {
+  const P = pts.map((p) => (p.isVector3 ? p : T3(p)));
+  if (closed && P.length > 2) P.push(P[0]);
+  const A = [], B = [], side = [], end = [];
+  for (let i = 0; i + 1 < P.length; i++) {
+    const a = P[i], b = P[i + 1];
+    for (const [e, sd] of [[0, -1], [0, 1], [1, 1], [0, -1], [1, 1], [1, -1]]) { A.push(a.x, a.y, a.z); B.push(b.x, b.y, b.z); side.push(sd); end.push(e); }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(A, 3));
+  g.setAttribute("pB", new THREE.Float32BufferAttribute(B, 3));
+  g.setAttribute("side", new THREE.Float32BufferAttribute(side, 1));
+  g.setAttribute("endp", new THREE.Float32BufferAttribute(end, 1));
+  const v = ren?.domElement;
+  const m = new THREE.ShaderMaterial({
+    uniforms: { color: { value: new THREE.Color(color) }, opacity: { value: opts.opacity ?? 1 }, width: { value: width }, res: { value: new THREE.Vector2(v?.clientWidth || 800, v?.clientHeight || 600) } },
+    vertexShader: `attribute vec3 pB; attribute float side; attribute float endp; uniform vec2 res; uniform float width;
+      void main() {
+        vec4 a = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        vec4 b = projectionMatrix * modelViewMatrix * vec4(pB, 1.0);
+        vec4 cur = endp < 0.5 ? a : b;
+        vec2 sa = a.xy / max(a.w, 1e-4) * res, sb = b.xy / max(b.w, 1e-4) * res;
+        vec2 dir = sb - sa; float l = length(dir); dir = l > 1e-6 ? dir / l : vec2(1.0, 0.0);
+        vec2 nrm = vec2(-dir.y, dir.x);
+        cur.xy += nrm * side * width / res * cur.w;
+        gl_Position = cur;
+      }`,
+    fragmentShader: `uniform vec3 color; uniform float opacity; void main() { gl_FragColor = vec4(color, opacity); }`,
+    transparent: (opts.opacity ?? 1) < 1, depthTest: opts.depthTest ?? true, depthWrite: false, side: THREE.DoubleSide,
+  });
+  fatMats.add(m);
+  const mesh = new THREE.Mesh(g, m);
+  mesh.frustumCulled = false;
+  mesh.renderOrder = opts.order ?? 5;
+  mesh.onBeforeRender = () => { const c = ren.domElement; m.uniforms.res.value.set(c.clientWidth, c.clientHeight); };
+  return mesh;
+}
 const matColor = (k) => ctx.matColor?.(k) || MCOL[k] || "#cccccc";
 const matName = (k) => ctx.matName?.(k) || MATS[k] || k;
 
@@ -78,7 +118,7 @@ export function close() {
   cancelAnimationFrame(raf);
 }
 export const isOpen = () => !!el && !el.hidden;
-if (typeof window !== "undefined" && location.protocol === "http:" && /^(localhost|127\.0\.0\.1)$/.test(location.hostname)) window.__ds = { M: () => M, ui, scr: (P) => scr(P), setTool: (t) => setTool(t), G };
+if (typeof window !== "undefined" && location.protocol === "http:" && /^(localhost|127\.0\.0\.1)$/.test(location.hostname)) window.__ds = { M: () => M, ui, scr: (P) => scr(P), setTool: (t) => setTool(t), G, pick: (x, y) => { const h = pickAny(x, y); return h && { ref: h.ref, kind: h.face?.kind, sid: h.sid }; } };
 function normalize(m) {
   for (const k of ["solids", "sketches", "paths", "sweeps", "guides", "dims", "texts", "groups"]) if (!Array.isArray(m[k])) m[k] = [];
   for (const s of m.solids) { s.id ||= uid(); s.holes ||= []; s.pockets ||= []; s.mat ||= "carcass"; s.name ||= "لوح"; s.outer = G.ccw(s.outer); }
@@ -105,6 +145,7 @@ function build() {
     <footer class="dsfoot">
       <span class="dsgrp dsaxes"><button class="dsb ax0" data-axis="0" title="اقفل على المحور الأحمر (العرض)">X</button><button class="dsb ax1" data-axis="1" title="اقفل على المحور الأخضر (العمق)">Y</button><button class="dsb ax2" data-axis="2" title="اقفل على المحور الأزرق (الارتفاع)">Z</button></span>
       <select id="dsPlane" class="dssel" aria-label="سطح الرسم"><option value="auto">الرسم: على الوش اللي تحت صباعك</option><option value="ground">على الأرض</option><option value="front">حيطة قدام</option><option value="side">حيطة جنب</option></select>
+      <button class="dsb snapbtn on" data-ds="snapmenu" title="المغناطيس (Snap)">🧲 مغناطيس</button>
       <select id="dsStep" class="dssel" aria-label="الشبكة"><option value="0">شبكة: من غير</option><option value="0.1">شبكة 1 مم</option><option value="0.5">شبكة 5 مم</option><option value="1">شبكة 1 سم</option><option value="5">شبكة 5 سم</option><option value="10">شبكة 10 سم</option></select>
       <span class="dshint" id="dsHint"></span>
       <label class="dsvcb"><span id="dsVcbL">المقاس</span><input id="dsVcb" data-keypad data-kpsolo autocomplete="off" placeholder="—"></label>
@@ -129,7 +170,7 @@ function build() {
   world = new THREE.Group(); scene.add(world);
   solidsG = new THREE.Group(); sketchG = new THREE.Group(); extraG = new THREE.Group(); overG = new THREE.Group();
   world.add(solidsG, sketchG, extraG); scene.add(overG);
-  grid = new THREE.GridHelper(1000, 100, 0xb9bdb3, 0xd8dbd3); grid.material.transparent = true; grid.material.opacity = 0.6; scene.add(grid);
+  grid = new THREE.GridHelper(1000, 100, 0xc9ccc3, 0xe2e4dd); grid.material.transparent = true; grid.material.opacity = 0.45; grid.material.depthWrite = false; grid.renderOrder = -1; scene.add(grid);
   const axl = (d, c) => { const g = new THREE.BufferGeometry().setFromPoints([T3([0, 0, 0]), T3(G.mul(d, 600))]); return new THREE.Line(g, new THREE.LineBasicMaterial({ color: c })); };
   scene.add(axl([1, 0, 0], AXC[0]), axl([0, 1, 0], AXC[1]), axl([0, 0, 1], AXC[2]));
   import("three/addons/controls/OrbitControls.js").then(({ OrbitControls }) => {
@@ -205,7 +246,7 @@ function applyControls() {
 function modelBox() {
   const b = new THREE.Box3();
   for (const o of [solidsG, sketchG, extraG]) b.expandByObject(o);
-  if (b.isEmpty()) b.set(new THREE.Vector3(-60, 0, -60), new THREE.Vector3(60, 80, 60));
+  if (b.isEmpty()) b.set(new THREE.Vector3(-30, 0, -60), new THREE.Vector3(90, 15, 20));
   return b;
 }
 function setView(kind, distHint) {
@@ -244,7 +285,9 @@ function lookAtFace(s, face) {
   ui.face2d = { sid: s.id, kind: face.kind, plane: pl };
   ui.plane = "face2d";
   if (!ui.ortho) { ui.ortho = true; swapCam(); }
-  const b = G.bbox2(s.outer), c = G.toWorld(pl, [(b[0] + b[2]) / 2, face.kind === "bottom" ? -(b[1] + b[3]) / 2 : (b[1] + b[3]) / 2], 0);
+  const fo = face.outer || G.solidFaces(s).find((f) => f.kind === face.kind)?.outer || [];
+  const fl = fo.map((P) => G.toPlane(pl, P).slice(0, 2)), b = G.bbox2(fl.length ? fl : s.outer);
+  const c = G.toWorld(pl, [(b[0] + b[2]) / 2, (b[1] + b[3]) / 2], 0);
   const r = Math.max(b[2] - b[0], b[3] - b[1], 30) * 1.7;
   ctl.target.copy(T3(c));
   cam.position.copy(T3(G.add(c, G.mul(n, r))));
@@ -314,7 +357,7 @@ function rebuild() {
     const ref = "k:" + k.id, sel = selected(ref);
     const pts = k.pts.map((p) => T3(G.toWorld(k.plane, p)));
     if (k.closed) pts.push(pts[0].clone());
-    const ln = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: sel ? 0x2f6fdf : 0x1d211c }));
+    const ln = fatLine(pts, sel ? 0x2f6fdf : 0x111511, sel ? 3.5 : 2.5, false, { order: 6 });
     sketchG.add(ln);
     const list = [ln];
     if (k.closed && k.pts.length >= 3) {
@@ -331,7 +374,7 @@ function rebuild() {
   for (const pa of M.paths) {
     const ref = "p:" + pa.id, sel = selected(ref);
     const pts = pa.pts.map(T3); if (pa.closed) pts.push(pts[0].clone());
-    const ln = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: sel ? 0x2f6fdf : 0x1d211c }));
+    const ln = fatLine(pts, sel ? 0x2f6fdf : 0x111511, sel ? 3.5 : 2.5, false, { order: 6 });
     ln.userData = { ref }; sketchG.add(ln); objs.set(ref, [ln]);
   }
   // guides, dimensions
@@ -353,6 +396,13 @@ function rebuild() {
     const A = G.add(d.a, d.o), B = G.add(d.b, d.o);
     const o = new THREE.LineSegments(segGeo([[d.a, A], [d.b, B], [A, B]]), new THREE.LineBasicMaterial({ color: sel ? 0x2f6fdf : 0x3b4038 }));
     o.userData = { ref }; extraG.add(o); objs.set(ref, [o]);
+  }
+  const fsel = faceOf(ui.face);
+  if (fsel) {
+    const { geo } = triFaces([fsel.f]);
+    const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0xffc233, transparent: true, opacity: 0.55, side: THREE.DoubleSide, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
+    m.renderOrder = 4; extraG.add(m);
+    extraG.add(fatLine([...fsel.f.outer, fsel.f.outer[0]], 0xd98b00, 3, false, { order: 7 }));
   }
   grid.visible = !ui.face2d;
   need();
@@ -415,7 +465,7 @@ function pickMesh(cx, cy) {
 }
 function pickSketch(cx, cy) {
   rayAt(cx, cy);
-  const fills = sketchG.children.filter((o) => o.isMesh);
+  const fills = sketchG.children.filter((o) => o.isMesh && !o.material.isShaderMaterial);
   const h = ray.intersectObjects(fills, false)[0];
   if (h) return { ref: h.object.userData.ref, kid: h.object.userData.sketch, p: W3(h.point), dist: h.distance };
   // an open sketch: near its line on screen
@@ -498,9 +548,19 @@ const KLABEL = { end: "طرف", mid: "منتصف", center: "مركز", guide: "�
  * opts: { anchor, plane (stick to this plane), axes: allowed axis indices, noFace }
  */
 function infer(cx, cy, opts = {}) {
-  const pr = touchy ? 1.35 : 1;
+  const r0 = inferCore(cx, cy, opts);
+  if (r0 && /end|mid|center/.test(r0.kind)) { // remembered for "in line with a point" inference
+    ui.recent = [r0.p, ...(ui.recent || []).filter((q) => G.dist(q, r0.p) > 0.05)].slice(0, 5);
+  }
+  return r0;
+}
+const SN = () => ui.snap;
+function inferCore(cx, cy, opts = {}) {
+  const sn = SN();
+  const pr = (touchy ? 1.35 : 1) * (sn.on ? sn.strength : 0.0001);
   let best = null;
-  for (const q of snapPoints()) {
+  for (const q of sn.on ? snapPoints() : []) {
+    if ((q.kind === "end" && !sn.end) || (q.kind === "mid" && !sn.mid) || (q.kind === "center" && !sn.center)) continue;
     const s = scr(q.p);
     if (s[2] > 1) continue;
     const d = Math.hypot(s[0] - cx, s[1] - cy);
@@ -510,7 +570,7 @@ function infer(cx, cy, opts = {}) {
   let res = null;
   if (best && (!opts.plane || Math.abs(G.toPlane(opts.plane, best.p)[2]) < 0.6)) res = { p: [...best.p], kind: best.kind, sid: best.sid, kid: best.kid, vi: best.vi, loop: best.loop, w: best.w, seg: best.seg };
   // an axis direction from the anchor
-  if (opts.anchor && !res?.kind?.match(/end|center/)) {
+  if (opts.anchor && !res?.kind?.match(/end|center/) && (sn.on && sn.axis || ui.axis != null)) {
     const axes = ui.axis != null ? [ui.axis] : opts.axes || [0, 1, 2];
     let ab = null;
     for (const i of axes) {
@@ -521,14 +581,35 @@ function infer(cx, cy, opts = {}) {
     }
     if (ab && opts.plane) { const q = G.toPlane(opts.plane, ab.p); if (Math.abs(q[2]) > 0.05) ab = ui.axis != null ? { ...ab, p: G.toWorld(opts.plane, [q[0], q[1]]) } : null; }
     if (ab) {
+      // the axis line meets the line through a remembered point (finishing a rectangle, lining up with a corner)
+      if (sn.on && sn.align) for (const R of ui.recent || []) {
+        const t = R[ab.axis] - opts.anchor[ab.axis];
+        const P = G.add(opts.anchor, G.mul(AX[ab.axis], t)), q = scr(P), q0 = scr(ab.p);
+        if (Math.abs(t) > 0.05 && Math.hypot(q[0] - q0[0], q[1] - q0[1]) < 12 * pr && G.dist(R, P) > 0.05) return { p: P, kind: "axis", axis: ab.axis, label: `على المحور ${AXN[ab.axis]} · على استقامة نقطة`, lines: [[R, P, 0xb05bd6]] };
+      }
       if (ui.step > 0) { const tt = G.dot(G.sub(ab.p, opts.anchor), AX[ab.axis]); ab.p = G.add(opts.anchor, G.mul(AX[ab.axis], Math.round(tt / ui.step) * ui.step)); }
-      return { p: ab.p, kind: "axis", axis: ab.axis, label: `على المحور ${AXN[ab.axis]}` };
+      return { p: ab.p, kind: "axis", axis: ab.axis, label: `على المحور ${AXN[ab.axis]}`, lines: [[opts.anchor, ab.p, [0xe0413a, 0x2f9e44, 0x2f6fdf][ab.axis]]] };
+    }
+    // parallel to an edge that is already drawn, or square to the last segment
+    if (sn.on && sn.par && !res) {
+      const dirs = [];
+      const prev = ui.st?.wpts?.length >= 2 ? G.norm(G.sub(ui.st.wpts.at(-1), ui.st.wpts.at(-2))) : null;
+      for (const e of snapEdges()) { if (e.guide) continue; const d = G.norm(G.sub(e.b, e.a)); if (AX.some((a) => Math.abs(Math.abs(G.dot(a, d)) - 1) < 1e-3)) continue; if (dirs.length < 80 && !dirs.some((x) => Math.abs(Math.abs(G.dot(x.d, d)) - 1) < 1e-3)) dirs.push({ d, e, kind: "par" }); }
+      if (prev && opts.plane) { const n = G.nOf(opts.plane), pd = G.norm(G.cross(n, prev)); if (G.len(pd) > 0.5) dirs.push({ d: pd, kind: "perp" }); }
+      let pb = null;
+      for (const x of dirs) {
+        if (opts.plane && Math.abs(G.dot(x.d, G.nOf(opts.plane))) > 1e-3) continue;
+        const c = closestOnLine(opts.anchor, x.d, cx, cy); if (!c) continue;
+        const q = scr(c.p), d = Math.hypot(q[0] - cx, q[1] - cy);
+        if (d < 10 * pr && (!pb || d < pb.d)) pb = { ...x, p: c.p, d };
+      }
+      if (pb) return { p: pb.p, kind: "par", label: pb.kind === "perp" ? "عمودي على اللي قبله" : "موازي للحرف", lines: [[opts.anchor, pb.p, 0xd63aa0], ...(pb.e ? [[pb.e.a, pb.e.b, 0xd63aa0]] : [])] };
     }
   }
   if (res) return { ...res, label: KLABEL[res.kind] };
   // edges
   let eb = null;
-  for (const e of snapEdges()) {
+  for (const e of sn.on && sn.edge ? snapEdges() : []) {
     const a = scr(e.a), b = scr(e.b);
     if (a[2] > 1 && b[2] > 1) continue;
     const sd = segDist2([cx, cy], a, b);
@@ -544,9 +625,9 @@ function infer(cx, cy, opts = {}) {
   }
   if (opts.plane) {
     const { o, d } = rayAt(cx, cy), t = G.rayPlane(o, d, opts.plane) ?? G.rayPlane(o, d, { ...opts.plane, u: opts.plane.v, v: opts.plane.u });
-    if (t != null) return { p: stepIn(G.add(o, G.mul(d, t)), opts.plane), kind: "plane", label: "" };
+    if (t != null) return freePoint(stepIn(G.add(o, G.mul(d, t)), opts.plane), opts.plane, opts.anchor, cx, cy, pr);
   }
-  if (!opts.noFace) {
+  if (!opts.noFace && sn.on && sn.face) {
     const m = pickMesh(cx, cy);
     if (m && m.face && m.sid) return { p: m.p, kind: "face", label: KLABEL.face, sid: m.sid, face: m.face, faceRef: m };
   }
@@ -555,7 +636,33 @@ function infer(cx, cy, opts = {}) {
   let t = G.rayPlane(o, d, pl);
   if (t == null) { const alt = { o: pl.o, u: pl.u, v: pl.v }; t = G.rayPlane(o, d, { ...alt, v: G.mul(alt.v, -1) }); }
   if (t == null) t = 300;
-  return { p: stepIn(G.add(o, G.mul(d, t)), pl), kind: "plane", label: "" };
+  return freePoint(stepIn(G.add(o, G.mul(d, t)), pl), pl, opts.anchor, cx, cy, pr);
+}
+/** a point on the drawing plane: lined up with a remembered point, or at a round angle from the anchor */
+function freePoint(P, pl, anchor, cx, cy, pr) {
+  const sn = SN();
+  if (!sn.on) return { p: P, kind: "plane", label: "" };
+  if (sn.align) {
+    const axes = inPlaneAxes(pl);
+    let best = null;
+    for (const R of ui.recent || []) for (const i of axes) {
+      const q = [...P]; q[i] = R[i];
+      const a = scr(q), d = Math.hypot(a[0] - cx, a[1] - cy);
+      if (d < 9 * pr && (!best || d < best.d)) best = { q, R, d };
+    }
+    if (best) return { p: best.q, kind: "align", label: "على استقامة نقطة", lines: [[best.R, best.q, 0xb05bd6]] };
+  }
+  if (sn.angle && anchor) {
+    const q = G.toPlane(pl, P), a0 = G.toPlane(pl, anchor), dx = q[0] - a0[0], dy = q[1] - a0[1], L = Math.hypot(dx, dy);
+    if (L > 1) {
+      const ang = Math.atan2(dy, dx), st = Math.PI / 12, sa = Math.round(ang / st) * st;
+      if (Math.abs(ang - sa) < 0.035 * Math.max(1, pr)) {
+        const R = G.toWorld(pl, [a0[0] + Math.cos(sa) * L, a0[1] + Math.sin(sa) * L], q[2]);
+        return { p: R, kind: "angle", label: `زاوية ${Math.round((Math.abs(sa) * 180) / Math.PI)}°`, lines: [[anchor, R, 0x8a6d1f]] };
+      }
+    }
+  }
+  return { p: P, kind: "plane", label: "" };
 }
 function basePlane(anchor) {
   const at = anchor || [0, 0, 0];
@@ -589,6 +696,7 @@ function overlay(fn) {
   need();
 }
 function oLine(pts, color = 0x1d211c, dashed = false, w = 1) {
+  if (!dashed) { const l = fatLine(pts, color === 0x1d211c ? 0xd94b16 : color, 3.5, false, { depthTest: false, order: 11 }); overG.add(l); return l; }
   const g = new THREE.BufferGeometry().setFromPoints(pts.map(T3));
   const m = dashed ? new THREE.LineDashedMaterial({ color, dashSize: 2.5, gapSize: 1.6, depthTest: false }) : new THREE.LineBasicMaterial({ color, depthTest: false, linewidth: w });
   const l = new THREE.Line(g, m); if (dashed) l.computeLineDistances(); l.renderOrder = 10; overG.add(l); return l;
@@ -609,7 +717,8 @@ function oGhost(faces, color = 0x2f6fdf) {
 }
 function oMarker(inf) {
   if (!inf) return;
-  const col = inf.kind === "end" ? 0x2f9e44 : inf.kind === "mid" ? 0x22a6b3 : inf.kind === "center" ? 0x9b59b6 : inf.kind === "edge" ? 0xe0413a : inf.kind === "face" ? 0x2f6fdf : inf.kind === "axis" ? [0xe0413a, 0x2f9e44, 0x2f6fdf][inf.axis] : 0x555555;
+  for (const [a, b, c] of inf.lines || []) if (G.dist(a, b) > 0.05) oLine([a, b], c, true);
+  const col = inf.kind === "end" ? 0x2f9e44 : inf.kind === "mid" ? 0x22a6b3 : inf.kind === "center" ? 0x9b59b6 : inf.kind === "edge" ? 0xe0413a : inf.kind === "face" ? 0x2f6fdf : inf.kind === "axis" ? [0xe0413a, 0x2f9e44, 0x2f6fdf][inf.axis] : inf.kind === "par" ? 0xd63aa0 : inf.kind === "align" ? 0xb05bd6 : inf.kind === "angle" ? 0x8a6d1f : 0x555555;
   const s = new THREE.Mesh(new THREE.SphereGeometry(1, 10, 8), new THREE.MeshBasicMaterial({ color: col, depthTest: false }));
   const dpx = camDistAt(inf.p) * (touchy ? 0.012 : 0.008);
   s.scale.setScalar(dpx); s.position.copy(T3(inf.p)); s.renderOrder = 12; overG.add(s);
@@ -683,6 +792,12 @@ TOOL.select = {
     let ref = hit?.ref || null;
     if (ref?.startsWith("s:") && !ui.editGroup) { const s = M.solids.find((x) => "s:" + x.id === ref); if (s?.group) ref = "G:" + s.group; }
     if (ref?.startsWith("s:") && ui.editGroup) { const s = M.solids.find((x) => "s:" + x.id === ref); if (s?.group !== ui.editGroup) { ui.editGroup = null; if (s?.group) ref = "G:" + s.group; } }
+    const prevFace = ui.face; ui.face = null;
+    if (ref?.startsWith("s:") && hit.face && ui.sel.size === 1 && ui.sel.has(ref) && !ui.addSel) {
+      // a second tap on the selected board: that one face
+      const same = prevFace && prevFace.sid === hit.sid && prevFace.kind === hit.face.kind && JSON.stringify(prevFace.ref) === JSON.stringify(hit.face.ref);
+      if (!same) { ui.face = { sid: hit.sid, kind: hit.face.kind, ref: hit.face.ref }; rebuild(); renderUI(); setMsg("اتختار الوش ده لوحده — من الجنب: إزاحة، سحب/زق، أو ارسم عليه"); return; }
+    }
     if (!ref) { if (!ui.addSel) ui.sel.clear(); }
     else if (ui.addSel) { ui.sel.has(ref) ? ui.sel.delete(ref) : ui.sel.add(ref); }
     else if (ui.sel.size === 1 && ui.sel.has(ref) && ref.startsWith("G:")) { ui.editGroup = ref.slice(2); ui.sel.clear(); ui.sel.add(hit.ref); setMsg("جوه المجموعة — دوس برّه عشان تخرج"); }
@@ -979,7 +1094,11 @@ function cutThrough(s, loop) {
   const grown = G.offset(loop, 0.05); // a loop touching the edge is a notch, not a hole
   if (grown.every((p) => G.inside(p, s.outer)) && !s.holes.some((h) => loop.some((p) => G.inside(p, G.ccw(h))))) { s.holes.push(G.cw(loop)); return; }
   const r = G.boolean(s.outer, G.offset(loop, 0.02), "diff");
-  r.outers = r.outers.map((o) => G.clean(o.map(([x, y]) => [G.r2(x), G.r2(y)])));
+  // the cutter was grown a hair to cross clean: put its edges back on its own lines
+  const xs = loop.map((p) => p[0]), ys = loop.map((p) => p[1]);
+  const back = (v, list) => { for (const q of list) if (Math.abs(v - q) < 0.035) return q; return v; };
+  r.outers = r.outers.map((o) => G.clean(o.map(([x, y]) => [G.r2(back(x, xs)), G.r2(back(y, ys))])));
+  r.holes = r.holes.map((o) => o.map(([x, y]) => [G.r2(back(x, xs)), G.r2(back(y, ys))]));
   if (!r.outers.length) { M.solids = M.solids.filter((x) => x !== s); setMsg("اللوح اتشال كله"); return; }
   const [first, ...rest] = r.outers;
   const keepHoles = (o) => [...s.holes.filter((h) => G.inside(h[0], o)), ...r.holes.filter((h) => G.inside(h[0], o))];
@@ -1000,7 +1119,7 @@ TOOL.offset = {
       const k = pickSketch(...xy), m = pickMesh(...xy);
       const sk = k && M.sketches.find((x) => x.id === k.kid);
       if (sk?.closed) { ui.st = { plane: sk.plane, loop: sk.pts, a: k.p, src: "k:" + sk.id }; return; }
-      if (m?.sid && m.face && ["top", "bottom"].includes(m.face.kind)) { const s = M.solids.find((x) => x.id === m.sid), fp = G.facePlane(s, m.face); ui.st = { plane: fp, loop: s.outer.map((p) => G.toPlane(fp, G.toWorld(s.plane, p, m.face.kind === "top" ? s.depth : 0)).slice(0, 2)), a: m.p }; return; }
+      if (m?.sid && m.face) { const s = M.solids.find((x) => x.id === m.sid), fp = G.facePlane(s, m.face); ui.st = { plane: fp, loop: G.ccw(m.face.outer.map((P) => G.toPlane(fp, P).slice(0, 2))), a: m.p }; return; }
       setMsg("دوس على شكل مقفول أو على وش لوح"); return;
     }
     if (st.d == null) return;
@@ -1527,6 +1646,7 @@ function renderUI() {
   el.querySelector("#dsSec").hidden = ui.section == null;
   el.querySelector("#dsPlane").value = ui.face2d ? "auto" : ui.plane;
   el.querySelector("#dsStep").value = String(ui.step);
+  el.querySelector('[data-ds="snapmenu"]').classList.toggle("on", !!ui.snap.on);
   el.querySelector("#dsHint").textContent = (ui.face2d ? "✏️ رسم 2D على وش القطعة · " : "") + (HINT[ui.tool] || "");
   const nm = el.querySelector("#dsName"); if (document.activeElement !== nm) nm.value = mname;
   el.classList.toggle("noside", !ui.panel);
@@ -1536,6 +1656,7 @@ function sideHtml() {
   let h = "";
   if (ui.face2d) h += `<div class="dsbox on2d"><b>✏️ بترسم شكل القطعة 2D</b><p class="hint">ارسم خطوط وأقواس ودواير على وشها، وبعدين بـ«سحب/زق» زق الشكل لجوه: تفريغ أو قصة من الحرف أو حفر. «تدوير ركن» و«شطف ركن» على أركانها.</p><button class="dsb" data-ds="exit2d">↩ رجوع للـ3D</button></div>`;
   const refs = selRefs(), solids = refs.filter((r) => r[0] === "s").map(ent).filter(Boolean);
+  h += faceHtml();
   const pal = Object.keys(MATS).map((k) => `<button class="dsmat ${ui.mat === k ? "on" : ""}" data-mat="${k}" title="${esc(matName(k))}"><i style="background:${matColor(k)}"></i><span>${esc(matName(k))}</span></button>`).join("");
   h += `<div class="dsbox"><div class="dsrow"><b>الاختيار</b><label class="dschk"><input type="checkbox" data-ds="addsel" ${ui.addSel ? "checked" : ""}> + اختيار متعدد</label></div>
     <div class="dsrow"><label class="dschk"><input type="checkbox" data-ds="copy" ${ui.copy ? "checked" : ""}> نسخة (مع التحريك واللف)</label></div>
@@ -1656,6 +1777,11 @@ function onClick(e) {
     case "qbox": addBox(+el.querySelector("#qxW").value || 60, +el.querySelector("#qxH").value || 72, +el.querySelector("#qxD").value || 58, ui.thick, el.querySelector("#qxB").checked); break;
     case "mylib": ctx.saveLib?.(G.clone(M), mname); break;
     case "selall": selectAll(); break;
+    case "facex": faceAction("x"); break;
+    case "faceoff": faceAction("off"); break;
+    case "facepush": faceAction("push"); break;
+    case "face2dsel": faceAction("2d"); break;
+    case "snapmenu": snapMenu(); break;
     case "selnone": ui.sel.clear(); ui.editGroup = null; rebuild(); renderUI(); break;
     case "selinv": invertSel(); break;
     case "selmat": selSameMat(); break;
@@ -1678,6 +1804,7 @@ function showHelp() {
 function onChange(e) {
   const t = e.target, d = t.dataset;
   if (t.id === "dsStep") { ui.step = +t.value || 0; return; }
+  if (t.dataset.snap) { const k = t.dataset.snap; ui.snap[k] = k === "strength" ? +t.value : t.checked; renderUI(); return; }
   if (t.id === "dsDxf" && t.files?.[0]) { importDxf(t.files[0]); t.value = ""; return; }
   if (t.dataset.ds === "boxsel") { ui.boxSel = t.checked; setMsg(ui.boxSel ? "اسحب في الفاضي: من الشمال لليمين = اللي جوه المربع كله · من اليمين للشمال = أي حاجة بيلمسها" : ""); return; }
   if (t.id === "dsStep") return;
@@ -1747,13 +1874,15 @@ function placeHandles() {
   // move arrows: a fixed distance on screen from the centre, along each axis as it looks on screen
   const sc = S(c), atPx = (x, y, cls, data, txt, title) => `<button class="dsh ${cls}" ${data} style="left:${x.toFixed(0)}px;top:${y.toFixed(0)}px" title="${title}">${txt}</button>`;
   if (sc[2] <= 1 && sc[2] >= -1) {
+    let red = [1, 0];
     for (const a of [0, 1, 2]) {
       const P = [...c]; P[a] += span * 0.5;
       const q = S(P); let dx = q[0] - sc[0], dy = q[1] - sc[1]; const l = Math.hypot(dx, dy) || 1;
       dx /= l; dy /= l;
+      if (a === 0) red = [dx, dy];
       h += atPx(sc[0] + dx * 62, sc[1] + dy * 62, `mv ax${a}`, `data-hmv="${a}"`, ["⇆", "⤢", "⇅"][a], `اسحب تحرّك على المحور ${AXN[a]}`);
     }
-    h += atPx(sc[0], sc[1], "rt", `data-hrt="2"`, "↻", "لف 90° حوالين الأزرق");
+    h += atPx(sc[0] - red[0] * 62, sc[1] - red[1] * 62, "rt", `data-hrt="2"`, "↻", "لف 90° حوالين الأزرق");
   }
   // stretch squares on the six faces
   for (const a of [0, 1, 2]) for (const sd of [0, 1]) {
@@ -1801,6 +1930,12 @@ function handleDown(e) {
     window.removeEventListener("pointermove", mv); window.removeEventListener("pointerup", up); window.removeEventListener("pointercancel", up);
     const st = hdrag; hdrag = null; live = [];
     if (st.d) { hist.u.push(st.snap); hist.r = []; } else M = JSON.parse(st.snap);
+    // a tap (no drag) on a stretch square of one board picks that face
+    if (!st.d && st.kind === "size" && st.refs.length === 1 && st.refs[0][0] === "s") {
+      const sld = ent(st.refs[0]), want = G.mul(AX[st.ax], st.side ? 1 : -1);
+      const f = sld && G.solidFaces(sld).filter((q) => q.kind === "top" || q.kind === "bottom" || q.kind === "side").sort((p2, q2) => G.dot(G.norm(q2.n), want) - G.dot(G.norm(p2.n), want))[0];
+      if (f && G.dot(G.norm(f.n), want) > 0.9) { ui.face = { sid: sld.id, kind: f.kind, ref: f.ref }; setMsg("اتختار الوش ده لوحده — من الجنب: إزاحة، سحب/زق، أو ارسم عليه"); }
+    }
     rebuild(); renderUI();
   };
   window.addEventListener("pointermove", mv); window.addEventListener("pointerup", up); window.addEventListener("pointercancel", up);
@@ -2127,4 +2262,58 @@ function drawLoupe() {
   g.strokeStyle = "#2f6fdf"; g.lineWidth = 2; g.beginPath(); g.moveTo(120, 96); g.lineTo(120, 144); g.moveTo(96, 120); g.lineTo(144, 120); g.stroke();
   g.restore();
   g.strokeStyle = "rgba(0,0,0,.35)"; g.lineWidth = 3; g.beginPath(); g.arc(120, 120, 117, 0, Math.PI * 2); g.stroke();
+}
+
+
+// ---- one face of a board on its own
+function faceOf(fs) {
+  if (!fs) return null;
+  const s = M.solids.find((x) => x.id === fs.sid);
+  if (!s) return null;
+  const f = G.solidFaces(s).find((q) => q.kind === fs.kind && JSON.stringify(q.ref) === JSON.stringify(fs.ref));
+  return f ? { s, f } : null;
+}
+function faceHtml() {
+  const fs = faceOf(ui.face);
+  if (!fs) return "";
+  const pl = G.facePlane(fs.s, fs.f), loop = fs.f.outer.map((P) => G.toPlane(pl, P).slice(0, 2)), b = G.bbox2(loop);
+  const KN = { top: "الوش اللي فوق", bottom: "الوش اللي تحت", side: "حرف / جنب", pfloor: "قاع حفرة", pwall: "جنب حفرة" };
+  return `<div class="dsbox on2d"><div class="dsrow"><b>🟨 ${KN[fs.f.kind] || "وش"}</b><button class="dsb" data-ds="facex">✕</button></div>
+    <div class="dsrow"><span>المقاس</span><b dir="ltr">${f1(b[2] - b[0])} × ${f1(b[3] - b[1])}</b><span>المساحة</span><b>${(Math.round(Math.abs(G.area(loop)) / 100) / 100).toLocaleString("en-US")} م²</b></div>
+    <div class="dsgrid"><label><span>إزاحة (+ لبره)</span><input type="text" inputmode="decimal" data-numf id="fcOff" value="-2"></label><label><span>سحب / زق</span><input type="text" inputmode="decimal" data-numf id="fcPush" value="1"></label></div>
+    <div class="dsbtns"><button class="dsb" data-ds="faceoff">⧈ اعمل إزاحة للوش ده</button><button class="dsb" data-ds="facepush">⇕ اسحب / زق الوش</button><button class="dsb" data-ds="face2dsel">✏️ ارسم عليه 2D</button></div>
+    <p class="hint">الإزاحة بتعمل شكل جوه الوش (أو حواليه) — بعدها «سحب / زق» تحفر بيه أو تطلّع منه. دوس تاني على وش تاني في نفس اللوح تختاره.</p></div>`;
+}
+function faceAction(kind) {
+  const fs = faceOf(ui.face); if (!fs) return;
+  if (kind === "x") { ui.face = null; rebuild(); renderUI(); return; }
+  if (kind === "2d") { lookAtFace(fs.s, fs.f); return; }
+  if (kind === "off") {
+    const d = +String(el.querySelector("#fcOff").value).replace(/[^\d.\-]/g, "");
+    if (!d) return;
+    const pl = G.facePlane(fs.s, fs.f), loop = G.ccw(fs.f.outer.map((P) => G.toPlane(pl, P).slice(0, 2)));
+    edit(() => addSketch({ plane: pl, pts: G.offset(loop, d), closed: true }));
+    setMsg("اتعمل شكل الإزاحة على الوش — اختار «سحب / زق» ودوس عليه تحفر أو تطلّع");
+    return;
+  }
+  if (kind === "push") {
+    const d = +String(el.querySelector("#fcPush").value).replace(/[^\d.\-]/g, "");
+    if (!d) return;
+    edit(() => { if (!pushFace(fs.s, fs.f, d)) setMsg("مش هينفع بالمسافة دي"); });
+    ui.face = null; rebuild(); renderUI();
+  }
+}
+
+// ---- the snap (magnet) menu
+function snapMenu() {
+  let p = el.querySelector(".dssnap");
+  if (p) { p.remove(); return; }
+  p = document.createElement("div"); p.className = "dssnap";
+  const sn = ui.snap, ck = (k, l, c) => `<label class="dschk"><input type="checkbox" data-snap="${k}" ${sn[k] ? "checked" : ""}><i style="background:${c}"></i> ${l}</label>`;
+  p.innerHTML = `<div class="dsrow"><b>🧲 المغناطيس (Snap)</b><label class="dschk"><input type="checkbox" data-snap="on" ${sn.on ? "checked" : ""}> شغّال</label></div>
+    ${ck("end", "أطراف الخطوط والأركان", "#2f9e44")}${ck("mid", "منتصف الخطوط", "#22a6b3")}${ck("center", "مراكز الدواير", "#9b59b6")}${ck("edge", "على الحروف", "#e0413a")}${ck("face", "على الوشوش", "#2f6fdf")}
+    ${ck("axis", "اتجاه المحاور (أحمر · أخضر · أزرق)", "#888")}${ck("par", "موازي / عمودي على اللي مرسوم", "#d63aa0")}${ck("align", "على استقامة نقطة لمستها قبل كده", "#b05bd6")}${ck("angle", "زوايا كل 15°", "#8a6d1f")}
+    <label class="dsf"><span>قوة الجذب</span><select data-snap="strength"><option value="0.8" ${sn.strength < 1 ? "selected" : ""}>خفيف</option><option value="1.3" ${sn.strength >= 1 && sn.strength < 1.8 ? "selected" : ""}>عادي</option><option value="2" ${sn.strength >= 1.8 ? "selected" : ""}>قوي (للصوابع)</option></select></label>
+    <p class="hint">المس ركن أو منتصف أي خط الأول، وبعدين اتحرك: هيظهر خط بنفسجي لما تبقى على استقامته. الشبكة تحت بتخلي النقط الحرة تمشي بالسم.</p>`;
+  el.querySelector("#dsView").appendChild(p);
 }
