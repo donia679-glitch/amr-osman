@@ -730,8 +730,7 @@ app.innerHTML = `
   <span class="undogrp"><button id="undoBtn" class="projbtn" aria-label="تراجع" title="تراجع (⌘Z)" disabled>↶</button><button id="redoBtn" class="projbtn" aria-label="إعادة" title="إعادة (⇧⌘Z)" disabled>↷</button></span>
   <button id="saveBtn" class="projbtn savebtn" aria-label="حفظ">💾<span>حفظ</span></button>
   <button id="expBtn" class="projbtn">${ICON.share}<span>تصدير</span></button>
-  <button id="lookBtn" class="projbtn" aria-label="الألوان والمظهر">🎨</button>
-  <button id="aboutBtn" class="projbtn" aria-label="عن التطبيق">ⓘ</button>
+  <button id="menuBtn" class="projbtn" aria-label="القائمة">☰<span>القائمة</span></button>
   <span id="cloud" class="cloud"></span>
   <nav class="tabs" role="tablist">
     <button data-tab="design" role="tab"><span class="tl">التصميم</span><span class="ts">تصميم</span></button>
@@ -787,12 +786,12 @@ $(".tabs").addEventListener("click", (e) => {
 });
 // ---- first-run tour: a few cards pointing at the real buttons
 const TOUR = [
-  ["#steps", "أهلاً بيك في NOVERA Studio 👋", "الشغل كله 6 خطوات فوق: الأوضة ← التصميم ← الخامات ← السعر ← العميل ← الورشة. دوس على أي خطوة توديك عليها، والعلامة ✓ معناها إنها خلصت."],
-  ['#steps [data-step0="room"]', "① ابدأ بالأوضة", "ارسم الحيطان بصباعك، أو اختار أوضة جاهزة بالمقاسات، أو امسحها بكاميرا الآيباد. الأبواب والشبابيك والأعمدة بتتحط عليها."],
-  ["#libBtn", "② صمّم", "من المكتبة ضيف أي وحدة جاهزة — أو من الأوضة دوس \"✨ صمّملي المطبخ\" ويطلعلك 3 اقتراحات بأسعارها في ثانية."],
-  ["#view3d", "✋ عدّل بصباعك", "دوس على الوحدة: هتلاقي مقاساتها جنبها في الـ3D — دوس على أي رقم وغيّره، أو اسحب الدايرة ⇔ تعرّضها. وفي الإعدادات خانة بحث تلاقي بيها أي حاجة."],
-  [".undogrp", "↶ غلطت؟ ولا يهمك", "زرار التراجع بيرجّع أي خطوة — أو المس الشاشة بصباعين مرة واحدة. وبتلات صوابع ترجّع الخطوة تاني."],
-  ['#steps [data-step0="price"]', "④ السعر ⑥ الورشة", "عرض السعر ومكسبك بيتحسب لوحده، وبعدها خطة القص والملصقات بالباركود للورشة. بالتوفيق! 🎉"],
+  ["#steps", "أهلاً بيك في NOVERA Studio 👋", "الشريط ده هو خريطة الشغل كله بالترتيب: الأوضة ← التصميم ← الخامات ← القص ← القطع ← السعر ← العميل ← الورشة. دوس على أي خطوة توديك عليها، و✓ معناها إنها خلصت."],
+  ['#steps [data-step0="room"]', "① الأوضة", "ارسم الحيطان، أو اختار أوضة جاهزة بالمقاسات، أو امسحها بالكاميرا. الأبواب والشبابيك والأعمدة بتتحط عليها."],
+  ["#libBtn", "② التصميم", "من «المكتبة» ضيف أي وحدة جاهزة — أو من الأوضة دوس «✨ صمّملي المطبخ»."],
+  ["#view3d", "✋ عدّل بصباعك", "دوس على الوحدة: مقاساتها بتظهر جنبها — دوس على أي رقم وغيّره. وكل الإعدادات في اللوحة اللي على الجنب (أساسي / كل الإعدادات + بحث)."],
+  [".undogrp", "↶ غلطت؟ ولا يهمك", "التراجع بيرجّع أي خطوة — أو المس الشاشة بصباعين."],
+  ["#menuBtn", "☰ القائمة", "كل الباقي هنا: مشاريعي، التصدير، رفع المقاسات، الإعدادات الافتراضية، والمظهر. وتقدر ترجع للجولة دي من هنا."],
 ];
 function startTour(i = 0) {
   let el = $("#tour");
@@ -815,9 +814,10 @@ function startTour(i = 0) {
 }
 document.addEventListener("click", (e) => { if (e.target.closest("[data-tour]")) { ui.pop = null; renderPop(); startTour(0); } });
 // ---- the job, step by step: ① room ② design ③ materials ④ price ⑤ client ⑥ workshop
-const STEPS = [["room", "الأوضة"], ["design", "التصميم"], ["mats", "الخامات"], ["price", "السعر"], ["client", "العميل"], ["shop", "الورشة"]];
+const STEPS = [["room", "📐 الأوضة"], ["design", "🎨 التصميم"], ["mats", "🪵 الخامات"], ["cut", "✂ القص"], ["parts", "📋 القطع"], ["price", "💰 السعر"], ["client", "🤝 العميل"], ["shop", "🏭 الورشة"]];
 function stepNow() {
-  if (state.tab === "cut" || state.tab === "parts") return "shop";
+  if (state.tab === "cut") return "cut";
+  if (state.tab === "parts") return "parts";
   if (state.tab === "shop") return ui.stepAt === "client" ? "client" : ui.stepAt === "shop" ? "shop" : "price";
   if (ui.planOn) return "room";
   return ui.stepAt === "mats" ? "mats" : "design";
@@ -829,6 +829,7 @@ function stepDone(k) {
   if (k === "mats") return p.units.some((u) => Object.keys(u.libs || {}).length);
   if (k === "price") return !!(state.prices && Object.keys(state.prices.sheets || {}).length);
   if (k === "client") return !!(ui.sharedAt || p.sharedAt || p.approval);
+  if (k === "cut" || k === "parts") return !!p.stockTaken || !!p.stages?.cut?.done;
   return !!p.stockTaken || (p.stages && Object.keys(p.stages).length > 1);
 }
 function renderSteps() {
@@ -837,6 +838,8 @@ function renderSteps() {
   el.hidden = ui.mode !== "owner";
   const now = stepNow();
   el.innerHTML = STEPS.map(([k, l], i) => `<button data-step0="${k}" class="${k === now ? "on" : ""} ${stepDone(k) ? "done" : ""}"><b>${stepDone(k) && k !== now ? "✓" : i + 1}</b><span>${l}</span></button>`).join('<i aria-hidden="true"></i>');
+  const on = el.querySelector(".on");
+  if (on && el.scrollWidth > el.clientWidth) { const r = on.getBoundingClientRect(), b = el.getBoundingClientRect(); if (r.left < b.left || r.right > b.right) on.scrollIntoView({ inline: "center", block: "nearest" }); }
 }
 $("#steps").addEventListener("click", (e) => {
   const b = e.target.closest("[data-step0]");
@@ -860,7 +863,9 @@ $("#steps").addEventListener("click", (e) => {
   }
   else if (k === "price") { state.tab = "shop"; scrollTo("#v-shop", "الأسعار"); }
   else if (k === "client") { state.tab = "shop"; scrollTo("#v-shop", "العميل"); }
-  else { state.tab = "cut"; }
+  else if (k === "cut") state.tab = "cut";
+  else if (k === "parts") state.tab = "parts";
+  else { state.tab = "shop"; scrollTo("#v-shop", "الورشة"); }
   save(); render(true);
 });
 $("#libBtn").addEventListener("click", () => { state.libOpen = !state.libOpen; render(); });
@@ -1312,6 +1317,7 @@ $("#home").addEventListener("click", async (e) => {
   if (b.hasAttribute("data-hsurvey")) { svFrom = "home"; SurveyUI.open("list"); return; }
   if (d.hsv) { svFrom = "home"; await openProject(d.hsv, true); SurveyUI.open("steps"); return; }
   if (b.hasAttribute("data-hdefs")) { ui.pop = "defaults"; renderPop(); return; }
+  if (d.hf) { ui.homeF = d.hf; showHome(); return; }
   if (b.hasAttribute("data-hlook")) { ui.pop = "look"; renderPop(); return; }
   if (b.hasAttribute("data-habout")) { ui.pop = "about"; renderPop(); return; }
   if (d.hopen) { await openProject(d.hopen); return; }
@@ -1323,6 +1329,7 @@ $("#home").addEventListener("click", async (e) => {
     showHome();
   }
 });
+$("#home").addEventListener("input", (e) => { if (e.target.id !== "homeQ") return; ui.homeQ = e.target.value; clearTimeout(ui.hqT); ui.hqT = setTimeout(async () => { const at = e.target.selectionStart; await showHome(); const q = $("#homeQ"); if (q) { q.focus(); try { q.setSelectionRange(at, at); } catch { /* */ } } }, 350); });
 $("#home").addEventListener("keydown", (e) => { if (e.target.id === "homeName" && e.key === "Enter") newProject(e.target.value); });
 $("#home").addEventListener("change", async (e) => {
   if (e.target.id !== "homeImp" || !e.target.files?.[0]) return;
@@ -1347,8 +1354,7 @@ addEventListener("keydown", (e) => {
 });
 $("#projBtn").addEventListener("click", async () => { ui.pop = "projects"; renderPop(); ui.projects = (await allProjects()).map((x) => ({ id: x.id, name: x.name, updatedAt: x.updatedAt })); if (ui.pop === "projects") renderPop(); });
 $("#expBtn").addEventListener("click", () => { ui.pop = "export"; renderPop(); });
-$("#aboutBtn").addEventListener("click", () => { ui.pop = "about"; renderPop(); });
-$("#lookBtn").addEventListener("click", () => { ui.pop = "look"; renderPop(); });
+$("#menuBtn").addEventListener("click", () => { ui.pop = "menu"; renderPop(); });
 
 // ------------------------------------------------------------------ library
 function swatches(colors) {
@@ -3447,6 +3453,13 @@ function renderPop() {
       <p class="hint">بيراجع التداخل، والخلوص بين الحيطان، والأبواب والشبابيك، ونقط الكهربا والمياه والغاز جنب الوحدات اللي محتاجاها. دوس على أي ملاحظة عشان تروح للوحدة.</p><div class="chklist">${checksHtml(list)}</div></div>`;
   }
   else if (ui.pop === "defaults") h = defaultsPop();
+  else if (ui.pop === "menu") {
+    const it = (k, ic, t, d) => `<button class="mitem" data-menu="${k}"><span class="mic">${ic}</span><span><b>${t}</b><small>${d}</small></span></button>`;
+    h = `<div class="popbox menubox" role="dialog" aria-label="القائمة"><div class="libhead"><h2>القائمة</h2><button class="x" data-close aria-label="قفل">×</button></div>
+      <h3>المشروع</h3>${it("projects", "📁", "مشاريعي", "افتح مشروع تاني أو ابدأ جديد")}${it("export", "⬆", "تصدير وطباعة", "الملصقات، خطة القص، CNC، عرض السعر، سكتش أب")}${it("survey", "📐", "رفع مقاسات", "شاشة الرفع في الموقع خطوة بخطوة")}
+      <h3>الإعدادات</h3>${it("defaults", "⚙", "الإعدادات الافتراضية", "مقاسات الوحدات، التصنيع، التسعير، القص — مرة واحدة لكل المشاريع")}${it("look", "🎨", "الألوان والمظهر والكيبورد", "فاتح/غامق، لون التطبيق، كيبورد الأرقام")}
+      <h3>مساعدة</h3>${it("tour", "🧭", "الجولة التعريفية", "شرح سريع لكل جزء في الشاشة")}${it("about", "ⓘ", "عن التطبيق", "الإصدار والتواصل")}</div>`;
+  }
   else if (ui.pop === "ar") {
     const f = ui.arFile || {};
     const direct = f.ar && !f.standalone && !f.framed;
@@ -3600,6 +3613,15 @@ $("#pop").addEventListener("click", async (e) => {
   if (!b) return;
   const d = b.dataset;
   if (b.hasAttribute("data-opendefs")) { ui.pop = "defaults"; renderPop(); return; }
+  if (ui.pop === "menu" && d.menu) {
+    const m = d.menu;
+    ui.pop = null; renderPop();
+    if (m === "projects") { showHome(); return; }
+    if (m === "export") { $("#expBtn").click(); return; }
+    if (m === "survey") { svFrom = "design"; SurveyUI.open("steps"); return; }
+    if (m === "tour") { state.tourDone = false; startTour(); return; }
+    ui.pop = m; renderPop(); return;
+  }
   if (ui.pop === "look" && d.lkpad) { state.kpad = d.lkpad === "on"; save(); renderPop(); return; }
   if (ui.pop === "look" && (d.lmode || d.laccent || d.lstage !== undefined)) {
     const L = (state.look ??= { mode: "auto", accent: "green", stage: "" });
@@ -3835,16 +3857,27 @@ async function showHome() {
   await Lib.put(state.project).catch(() => {});
   const list = await allProjects();
   const when = (t) => (t ? new Date(t).toLocaleString("ar-EG", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }) : "");
+  const waiting = list.filter((x) => x.srv === "measured" && !x.stages?.design?.done).length;
+  const f = ui.homeF || "all", q = (ui.homeQ || "").trim();
+  const shown = list.filter((x) => (f === "all" || (f === "wait" ? x.srv === "measured" && !x.stages?.design?.done : f === "srv" ? x.srv === "measuring" : true)) && (!q || String(x.name).includes(q)));
   el.innerHTML = `<div class="homein">
     <div class="homehead"><span class="mark big">N</span><div><b>NOVERA Studio</b><small>تصميم وتصنيع المطابخ والأثاث</small></div></div>
-    <div class="homenew"><input id="homeName" placeholder="اسم المشروع الجديد (مثلاً: مطبخ أ. محمد — التجمع)" aria-label="اسم المشروع الجديد"><button class="primary" data-hnew>＋ مشروع جديد</button></div>
-    <div class="homeacts"><button class="primary" data-hsurvey>📐 رفع مقاسات</button><button class="ghost2" data-hlast>↩ كمّل «${esc(state.project.name)}»</button><label class="ghost2 filebtn">📂 افتح ملف مشروع (JSON)<input type="file" id="homeImp" accept=".json,application/json" hidden></label><button class="ghost2" data-hcut>✂ كت ليست بمقاساتك</button><button class="ghost2" data-hdefs>⚙ الإعدادات الافتراضية</button><button class="ghost2" data-hlook>🎨 الألوان والمظهر</button><button class="ghost2" data-habout>ⓘ عن التطبيق</button></div>
-    <h3>المشاريع${list.filter((x) => x.srv === "measured" && !x.stages?.design?.done).length ? ` <span class="hstage svwait">📐 ${list.filter((x) => x.srv === "measured" && !x.stages?.design?.done).length} مستني تصميم</span>` : ""}</h3>
-    <div class="homelist">${list.map((x) => `<div class="hcard ${x.id === state.project.id ? "cur" : ""}"><button class="hopen" data-hopen="${x.id}"><b>${esc(x.name)}</b>
+    <h3 class="hsec">ابدأ</h3>
+    <div class="htiles">
+      <div class="htile main"><b>🎨 مشروع تصميم جديد</b><small>أوضة ← تصميم ← سعر ← قص ← ورشة</small><div class="homenew"><input id="homeName" placeholder="اسم المشروع (مثلاً: مطبخ أ. محمد — التجمع)" aria-label="اسم المشروع الجديد"><button class="primary" data-hnew>ابدأ ←</button></div></div>
+      <button class="htile" data-hsurvey><b>📐 رفع مقاسات</b><small>في الموقع، خطوة بخطوة، والمصمم يستلم الأوضة جاهزة</small></button>
+      <button class="htile" data-hcut><b>✂ كت ليست سريع</b><small>اكتب مقاسات القطع وخد خطة القص والملصقات</small></button>
+    </div>
+    <button class="hcont" data-hlast><span>↩</span><span><b>كمّل «${esc(state.project.name)}»</b><small>${state.project.units.length} وحدة · آخر حاجة كنت شغال عليها</small></span></button>
+    <div class="hprojhead"><h3 class="hsec">مشاريعي</h3><input id="homeQ" class="libq" placeholder="🔍 دوّر باسم المشروع" value="${esc(ui.homeQ || "")}">
+      <div class="seg hfilt">${[["all", "الكل"], ["wait", `📐 مستني تصميم${waiting ? ` (${waiting})` : ""}`], ["srv", "بيترفع"]].map(([k, l]) => `<button data-hf="${k}" class="${f === k ? "on" : ""}">${l}</button>`).join("")}</div></div>
+    <div class="homelist">${shown.map((x) => `<div class="hcard ${x.id === state.project.id ? "cur" : ""}"><button class="hopen" data-hopen="${x.id}"><b>${esc(x.name)}</b>
       ${x.srv === "measured" && !x.stages?.design?.done ? `<span class="hstage svwait">📐 اترفع — مستني تصميم</span>` : x.srv === "measuring" ? `<span class="hstage">📐 الرفع لسه شغال</span>` : x.stages && Object.values(x.stages).some((v) => v?.done) ? `<span class="hstage">🧭 ${esc(stageNow({ stages: x.stages }).cur)}</span>` : ""}
       <small>${x.units != null ? `${x.units} وحدة · ` : ""}${x.variants > 1 ? `${x.variants} نسخ · ` : ""}${when(x.updatedAt)}${x.where === "cloud" ? " · أونلاين" : x.where === "both" ? " · على الجهاز وأونلاين" : ""}</small></button>
-      ${x.srv ? `<button class="hdel sm" data-hsv="${x.id}" title="شاشة الرفع" aria-label="شاشة الرفع">📐</button>` : ""}<button class="hdel danger sm" data-hdel="${x.id}" aria-label="امسح ${esc(x.name)}">${ICON.trash}</button></div>`).join("") || `<p class="hint">مفيش مشاريع لسه — ابدأ مشروع جديد.</p>`}</div>
-    <p class="hint">المشاريع بتتحفظ لوحدها وانت شغال، وتقدر تدوس 💾 حفظ في أي وقت. خد نسخة احتياطي من تصدير ← المشروع (JSON).</p></div>`;
+      ${x.srv ? `<button class="hdel sm" data-hsv="${x.id}" title="شاشة الرفع" aria-label="شاشة الرفع">📐</button>` : ""}<button class="hdel danger sm" data-hdel="${x.id}" aria-label="امسح ${esc(x.name)}">${ICON.trash}</button></div>`).join("") || `<p class="hint">${q || f !== "all" ? "مفيش مشاريع بالبحث ده." : "مفيش مشاريع لسه — ابدأ مشروع جديد."}</p>`}</div>
+    <h3 class="hsec">أدوات</h3>
+    <div class="homeacts"><label class="ghost2 filebtn">📂 افتح ملف مشروع<input type="file" id="homeImp" accept=".json,application/json" hidden></label><button class="ghost2" data-hdefs>⚙ الإعدادات الافتراضية</button><button class="ghost2" data-hlook>🎨 المظهر والكيبورد</button><button class="ghost2" data-habout>ⓘ عن التطبيق</button></div>
+    <p class="hint">المشاريع بتتحفظ لوحدها وانت شغال. خد نسخة احتياطي من ☰ ← تصدير ← نسخة من المشروع.</p></div>`;
 }
 async function refreshProjects() {
   if (!cloud.db || !cloud.me) return;
