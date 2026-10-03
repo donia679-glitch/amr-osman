@@ -1311,6 +1311,7 @@ $("#home").addEventListener("click", async (e) => {
   }
   if (b.hasAttribute("data-hsurvey")) { svFrom = "home"; SurveyUI.open("list"); return; }
   if (d.hsv) { svFrom = "home"; await openProject(d.hsv, true); SurveyUI.open("steps"); return; }
+  if (b.hasAttribute("data-hdefs")) { ui.pop = "defaults"; renderPop(); return; }
   if (b.hasAttribute("data-hlook")) { ui.pop = "look"; renderPop(); return; }
   if (b.hasAttribute("data-habout")) { ui.pop = "about"; renderPop(); return; }
   if (d.hopen) { await openProject(d.hopen); return; }
@@ -1534,7 +1535,7 @@ $("#lib").addEventListener("click", (e) => {
   let u;
   if (c.dataset.kitchen) {
     const s = KU.KITCHEN[c.dataset.kitchen];
-    u = { id: uid(), kind: "kitchen", name: s ? s.label : "وحدة مطبخ", params: clone(s ? s.params : {}), libs: {}, ...(s?.org ? { org: s.org } : {}), ...(s?.orgOpts ? { orgOpts: clone(s.orgOpts) } : {}) };
+    u = { id: uid(), kind: "kitchen", name: s ? s.label : "وحدة مطبخ", params: withDefaults(clone(s ? s.params : {})), libs: {}, ...(s?.org ? { org: s.org } : {}), ...(s?.orgOpts ? { orgOpts: clone(s.orgOpts) } : {}) };
     if (s?.ins) {
       const d0 = unitDrawers(u, R(u));
       u.inserts = {};
@@ -2044,6 +2045,82 @@ function panelAdvanced(p, shown) {
   return h + "</details>";
 }
 
+// ---- default settings (الإعدادات الافتراضية): what every NEW unit / room / quote starts from
+const DEF_DIMS = { base: { height: 72, depth: 58 }, wall: { height: 70, depth: 32, wall_mount_height: 140 }, tall: { height: 220, depth: 58 } };
+const DEF_KEYS = [ // construction settings a new kitchen unit takes (the unit's own preset still wins where it sets them)
+  ["panel_thickness", "سمك خشب الهيكل (سم)", "n"], ["back_panel_thickness", "سمك الظهر (سم)", "n"], ["back_groove_depth", "دخول الظهر في المفحار (سم)", "n"],
+  ["countertop_thickness", "سمك الكونتر (سم)", "n"], ["door_position", "تركيب الضلف", "s", { overlay: "خارجية (أوفرلاي)", inset: "داخلية (إنسيت)" }],
+  ["door_gap_overlay", "خلوص الضلف الخارجية (سم)", "n"], ["door_gap_inset", "خلوص الضلف الداخلية (سم)", "n"], ["drawer_gap", "الفاصل بين الأدراج (سم)", "n"],
+  ["door_handle_recess", "خلوص المقبض البلت إن (سم)", "n"], ["toe_kick_height", "ارتفاع السكلو (سم)", "n"], ["toe_kick_setback", "رجوع السكلو (سم)", "n"],
+  ["toe_kick_style", "شكل السكلو", "s", { apron: "وزرة قطعة واحدة", segments: "قطع منفصلة" }], ["drawer_box_depth", "عمق صناديق الأدراج (سم)", "n"],
+  ["include_edge_banding", "شريط حواف", "b"], ["include_assembly_holes", "أليتا (كام لوك)", "b"], ["include_hinge_cups", "كبب المفصلات", "b"], ["include_drawer_boxes", "صناديق الأدراج", "b"],
+];
+const userDefs = () => (state.defaults ??= { k: {}, dims: {}, handle: "", room: {} });
+/** a new kitchen unit's params with the user's defaults under the preset (dims only where the preset kept the standard) */
+function withDefaults(params) {
+  const D0 = userDefs(), out = { ...D0.k, ...params };
+  if (D0.handle && !params.kud_handles) out.kud_handles = { type: D0.handle };
+  const ut = params.unit_type || "base", std = DEF_DIMS[ut], mine = D0.dims[ut] || {};
+  if (std) for (const k of Object.keys(std)) if (mine[k] && (params[k] == null || +params[k] === std[k])) out[k] = +mine[k];
+  return out;
+}
+function defaultsPop() {
+  const D0 = userDefs(), P = priceDefaults(), o = state.cutOpts || {};
+  const dv = (k) => D0.k[k];
+  const nf = (attr, label, v, ph = "") => `<label class="f"><span>${esc(label)}</span><input type="text" inputmode="decimal" data-numf data-def="${attr}" value="${v ?? ""}" placeholder="${esc(String(ph))}"></label>`;
+  let h = `<div class="popbox defbox" role="dialog" aria-label="الإعدادات الافتراضية"><div class="libhead"><h2>⚙ الإعدادات الافتراضية</h2><button class="x" data-close aria-label="قفل">×</button></div>
+    <p class="hint">اللي تكتبه هنا بيبقى البداية لأي وحدة أو أوضة أو عرض سعر جديد — مش هتحتاج تدخله كل مرة. الخانة الفاضية = إعداد البرنامج العادي (الرقم الباهت).</p>
+    <details open><summary>🍳 مقاسات وحدات المطبخ</summary><div class="grid3">
+      ${nf("dims.base.height", "ارتفاع السفلي", D0.dims.base?.height, 72)}${nf("dims.base.depth", "عمق السفلي", D0.dims.base?.depth, 58)}<span></span>
+      ${nf("dims.wall.height", "ارتفاع العلوي", D0.dims.wall?.height, 70)}${nf("dims.wall.depth", "عمق العلوي", D0.dims.wall?.depth, 32)}${nf("dims.wall.wall_mount_height", "تعليق العلوي من الأرض", D0.dims.wall?.wall_mount_height, 140)}
+      ${nf("dims.tall.height", "ارتفاع الطويل", D0.dims.tall?.height, 220)}${nf("dims.tall.depth", "عمق الطويل", D0.dims.tall?.depth, 58)}</div></details>
+    <details open><summary>🔩 التصنيع والتجميع</summary><div class="grid2">${DEF_KEYS.filter((x) => x[2] !== "b").map(([k, l, t, ch]) => t === "s"
+      ? `<label class="f"><span>${esc(l)}</span><select data-def="k.${k}"><option value="">— زي البرنامج —</option>${Object.entries(ch).map(([v, lb]) => `<option value="${v}" ${dv(k) === v ? "selected" : ""}>${esc(lb)}</option>`).join("")}</select></label>`
+      : nf(`k.${k}`, l, dv(k), DEF_PH[k] ?? "")).join("")}
+      <label class="f"><span>نوع المقبض</span><select data-def="handle"><option value="">— زي البرنامج —</option>${Object.entries(HANDLE_TYPES_UI).map(([v, lb]) => `<option value="${v}" ${D0.handle === v ? "selected" : ""}>${esc(lb)}</option>`).join("")}</select></label></div>
+      <div class="bools">${DEF_KEYS.filter((x) => x[2] === "b").map(([k, l]) => `<label class="f b"><input type="checkbox" data-defb="k.${k}" ${dv(k) === true ? "checked" : ""} ${dv(k) === undefined ? 'data-unset="1"' : ""}><span>${esc(l)}${dv(k) === undefined ? " <small>(زي البرنامج)</small>" : ""}</span></label>`).join("")}</div>
+      <div class="btnrow"><button class="ghost2" data-defapply>طبّقها على وحدات المطبخ في المشروع ده</button></div></details>
+    <details><summary>🧱 الأوضة والحيطان</summary><div class="grid2">${nf("room.t", "سمك الحيطة", D0.room.t, Room.WALL_T)}${nf("room.h", "ارتفاع السقف", D0.room.h, Room.WALL_H)}</div></details>
+    <details><summary>💰 التسعير</summary><div class="grid2">${nf("price.defaultSheet", "سعر اللوح (أي خامة ملهاش سعر)", P.defaultSheet)}${nf("price.band", "سعر متر الشريط", P.band)}
+      ${nf("price.laborUnit", "مصنعية الوحدة", P.laborUnit)}${nf("price.laborM2", "مصنعية المتر المربع", P.laborM2)}${nf("price.install", "التركيب للمشروع", P.install)}${nf("price.margin", "نسبة المكسب %", P.margin)}
+      ${nf("price.validity", "صلاحية عرض السعر (يوم)", P.validity)}<label class="f"><span>مدة التنفيذ</span><input data-deft="price.delivery" value="${esc(P.delivery || "")}"></label>
+      <label class="f full"><span>الضمان</span><input data-deft="price.warranty" value="${esc(P.warranty || "")}"></label><label class="f full"><span>شروط ثابتة في كل عرض سعر</span><input data-deft="price.notes" value="${esc(P.notes || "")}"></label></div>
+      <p class="hint">أسعار كل خامة وكل بند هاردوير بتتظبط من «الورشة والعميل» وبتفضل محفوظة لكل المشاريع.</p></details>
+    <details><summary>✂ القص والملصقات</summary><div class="grid2">${nf("cut.sheetW", "طول اللوح", o.sheetW, 244)}${nf("cut.sheetH", "عرض اللوح", o.sheetH, 122)}${nf("cut.kerf", "سلاح المنشار", o.kerf, 0.4)}${nf("cut.trim", "تشذيب الحرف", o.trim, 1)}${nf("cut.leftMin", "أقل باقي يتحسب", o.leftMin, 30)}
+      <label class="f"><span>مقاس الملصقات</span><select data-def="labelFmt"><option value="a4" ${state.labelFmt !== "roll" ? "selected" : ""}>A4 — 21 ملصق</option><option value="roll" ${state.labelFmt === "roll" ? "selected" : ""}>رول 60×40 مم</option></select></label></div></details>
+    <p class="hint">الإعدادات دي محفوظة على الجهاز${cloud.db && cloud.me ? " ومع حسابك (بتوصل لأي جهاز تفتح منه)" : ""}، ومش بتغيّر المشاريع القديمة غير لو دوست «طبّقها».</p></div>`;
+  return h;
+}
+const HANDLE_TYPES_UI = { bar: "مقبض بخرمين", knob: "زرار", edge_pull: "مقبض حرف (تاب)", profile: "بروفايل ألومنيوم", builtin_routed: "بلت إن محفور (CNC)", builtin_strip: "شريحة خشب بلت إن", gola: "جولا", push: "بوش (تكة ضغط)" };
+const DEF_PH = { panel_thickness: 1.8, back_panel_thickness: 0.6, back_groove_depth: 0.8, countertop_thickness: 3.8, door_gap_overlay: 0.3, door_gap_inset: 0.2, drawer_gap: 0.3, door_handle_recess: 0, toe_kick_height: 10, toe_kick_setback: 3, drawer_box_depth: 45 };
+/** the defaults, prices and cut settings follow the account (one small document) */
+let setT = 0;
+function settingsPush() {
+  if (!cloud.db || !cloud.me) return;
+  clearTimeout(setT);
+  setT = setTimeout(() => { cloud.db.doc(`data/users/${cloud.me}/settings`).set({ defaults: state.defaults || null, prices: state.prices || null, cutOpts: state.cutOpts || null, labelFmt: state.labelFmt || "a4", at: new Date().toISOString() }).catch(() => {}); }, 800);
+}
+async function settingsPull() {
+  if (!cloud.db || !cloud.me) return;
+  try {
+    const sn = await cloud.db.doc(`data/users/${cloud.me}/settings`).get();
+    if (!sn.exists) { if (state.defaults || state.prices) settingsPush(); return; }
+    const v = sn.data();
+    if ((v.at || "") > (state.settingsAt || "")) { if (v.defaults) state.defaults = v.defaults; if (v.prices) state.prices = v.prices; if (v.cutOpts) state.cutOpts = v.cutOpts; if (v.labelFmt) state.labelFmt = v.labelFmt; state.settingsAt = v.at; save(); }
+  } catch { /* offline */ }
+}
+function setDefault(path, v) {
+  state.settingsAt = new Date().toISOString();
+  const D0 = userDefs(), [a, ...rest] = path.split(".");
+  if (a === "price") { const P = priceDefaults(); P[rest[0]] = v; return; }
+  if (a === "cut") { state.cutOpts ??= {}; if (v === "" || v == null) delete state.cutOpts[rest[0]]; else state.cutOpts[rest[0]] = v; cutKey = ""; return; }
+  if (a === "labelFmt") { state.labelFmt = v; return; }
+  if (a === "handle") { D0.handle = v; return; }
+  let o = D0;
+  const ks = [a, ...rest];
+  for (const k of ks.slice(0, -1)) o = o[k] ??= {};
+  if (v === "" || v == null) delete o[ks[ks.length - 1]]; else o[ks[ks.length - 1]] = v;
+}
 /** the plinth drawer's front height from the unit's settings (kick height − floor gap − gaps) */
 function kickFrontOf(p) {
   const ov = p.door_position === "overlay", eg = +(ov ? p.door_gap_overlay : p.door_gap_inset) || 0;
@@ -3311,6 +3388,7 @@ function renderPop() {
       <h3>خلفية شاشة التصميم</h3><div class="swgrid">${Object.entries(STAGE_BGS).map(([k, l]) => `<button class="swb ${L.stage === k ? "on" : ""}" data-lstage="${k}"><i style="background:${k || "var(--stage)"}"></i><span>${l}</span></button>`).join("")}
         <label class="swb"><i style="background:${L.stage || "#cccccc"}"></i><span>لون تاني</span><input type="color" id="lookColor" value="${L.stage || "#cccccc"}" style="width:100%;height:28px;border:0;background:none"></label></div>
       <p class="hint">الخلفية دي بتبان ورا التصميم في العرض العادي والريندر.</p>
+      <div class="btnrow"><button class="primary" data-opendefs>⚙ الإعدادات الافتراضية (الوحدات · التسعير · القص)</button></div>
       <h3>كيبورد الأرقام</h3><div class="seg"><button data-lkpad="on" class="${state.kpad !== false ? "on" : ""}">🔢 كيبورد NOVERA</button><button data-lkpad="off" class="${state.kpad === false ? "on" : ""}">⌨ كيبورد الجهاز</button></div>
       <p class="hint">على الآيباد والموبايل، خانات الأرقام بتفتح لوحة أرقام كبيرة خاصة بالتطبيق (فيها + و− والتالي) بدل كيبورد الجهاز. الكتابة العادية (الأسماء والملاحظات) بتفضل بكيبورد الجهاز.</p></div>`;
   }
@@ -3368,6 +3446,7 @@ function renderPop() {
     h = `<div class="popbox" role="dialog" aria-label="فحص التصميم"><div class="libhead"><h2>فحص التصميم</h2><button class="x" data-close aria-label="قفل">×</button></div>
       <p class="hint">بيراجع التداخل، والخلوص بين الحيطان، والأبواب والشبابيك، ونقط الكهربا والمياه والغاز جنب الوحدات اللي محتاجاها. دوس على أي ملاحظة عشان تروح للوحدة.</p><div class="chklist">${checksHtml(list)}</div></div>`;
   }
+  else if (ui.pop === "defaults") h = defaultsPop();
   else if (ui.pop === "ar") {
     const f = ui.arFile || {};
     const direct = f.ar && !f.standalone && !f.framed;
@@ -3401,8 +3480,8 @@ function renderPop() {
       <p class="hint">المقاسات من جوه (من وش الحيطة لوش الحيطة) بالسنتيمتر — تقدر تعدّل أي حيطة بعد كده أو تسحب أركانها.</p>
       <div class="roomkinds">${Object.entries(Room.PRESETS).map(([key, v]) => `<button class="rk ${key === k ? "on" : ""}" data-rk="${key}">${roomIcon(key)}<span>${esc(v.label)}</span></button>`).join("")}</div>
       <div class="grid2">${pr.fields.map(([f, l, dv]) => `<label class="f"><span>${esc(l)}</span><input type="text" inputmode="decimal" data-numf data-rf="${f}" value="${ui.roomDims?.[f] ?? dv}"></label>`).join("")}
-      <label class="f"><span>سمك الحيطة</span><input type="text" inputmode="decimal" data-numf data-rf="t" value="${ui.roomDims?.t ?? Room.WALL_T}"></label>
-      <label class="f"><span>ارتفاع الحيطة</span><input type="text" inputmode="decimal" data-numf data-rf="h" value="${ui.roomDims?.h ?? Room.WALL_H}"></label></div>
+      <label class="f"><span>سمك الحيطة</span><input type="text" inputmode="decimal" data-numf data-rf="t" value="${ui.roomDims?.t ?? (+userDefs().room.t || Room.WALL_T)}"></label>
+      <label class="f"><span>ارتفاع الحيطة</span><input type="text" inputmode="decimal" data-numf data-rf="h" value="${ui.roomDims?.h ?? (+userDefs().room.h || Room.WALL_H)}"></label></div>
       ${state.project.room ? `<p class="hint">ده هيستبدل الحيطان الحالية.</p>` : ""}
       <div class="btnrow"><button class="primary" data-mkroom>اعمل الحيطان ورصّ الوحدات</button>${state.project.room ? `<button class="ghost2 danger" data-rmroom>امسح الحيطان</button>` : ""}</div>
       <h3>أو من مسح الأوضة بالكاميرا (LiDAR)</h3>
@@ -3430,6 +3509,14 @@ $("#pop").addEventListener("input", (e) => {
   if (pv && m.img) { pv.style.backgroundSize = `${Math.max(8, (260 * 60) / Math.max(5, m.tile))}px`; pv.style.filter = `brightness(${1 + m.bright / 100})`; }
 });
 $("#pop").addEventListener("change", async (e) => {
+  if (ui.pop === "defaults") {
+    const t = e.target, d = t.dataset;
+    if (d.def) { const num = t.tagName === "INPUT"; setDefault(d.def, num ? (t.value.trim() === "" ? "" : toNum(t.value)) : t.value); }
+    else if (d.deft) setDefault(d.deft, t.value);
+    else if (d.defb) setDefault(d.defb, t.checked);
+    else return;
+    save(); settingsPush(); return;
+  }
   if (e.target.id === "roomScan" && e.target.files?.[0]) {
     try {
       const room = Room.fromRoomPlan(JSON.parse(await e.target.files[0].text()));
@@ -3512,6 +3599,7 @@ $("#pop").addEventListener("click", async (e) => {
   const b = e.target.closest("button");
   if (!b) return;
   const d = b.dataset;
+  if (b.hasAttribute("data-opendefs")) { ui.pop = "defaults"; renderPop(); return; }
   if (ui.pop === "look" && d.lkpad) { state.kpad = d.lkpad === "on"; save(); renderPop(); return; }
   if (ui.pop === "look" && (d.lmode || d.laccent || d.lstage !== undefined)) {
     const L = (state.look ??= { mode: "auto", accent: "green", stage: "" });
@@ -3601,6 +3689,12 @@ $("#pop").addEventListener("click", async (e) => {
       return;
     }
     return;
+  }
+  if (ui.pop === "defaults" && b.hasAttribute("data-defapply")) {
+    const D0 = userDefs();
+    let n = 0;
+    for (const u of state.project.units) if (u.kind === "kitchen") { const p = expanded(u); Object.assign(p, D0.k); if (D0.handle) p.kud_handles = { ...(p.kud_handles || {}), type: D0.handle }; u.params = p; n++; }
+    save(); render(true); alertBar(`اتطبّقت الإعدادات على ${n} وحدة مطبخ (المقاسات زي ما هي).`); return;
   }
   if (ui.pop === "ar" && b.hasAttribute("data-arsave")) {
     const f = ui.arFile; if (!f) return;
@@ -3744,7 +3838,7 @@ async function showHome() {
   el.innerHTML = `<div class="homein">
     <div class="homehead"><span class="mark big">N</span><div><b>NOVERA Studio</b><small>تصميم وتصنيع المطابخ والأثاث</small></div></div>
     <div class="homenew"><input id="homeName" placeholder="اسم المشروع الجديد (مثلاً: مطبخ أ. محمد — التجمع)" aria-label="اسم المشروع الجديد"><button class="primary" data-hnew>＋ مشروع جديد</button></div>
-    <div class="homeacts"><button class="primary" data-hsurvey>📐 رفع مقاسات</button><button class="ghost2" data-hlast>↩ كمّل «${esc(state.project.name)}»</button><label class="ghost2 filebtn">📂 افتح ملف مشروع (JSON)<input type="file" id="homeImp" accept=".json,application/json" hidden></label><button class="ghost2" data-hcut>✂ كت ليست بمقاساتك</button><button class="ghost2" data-hlook>🎨 الألوان والمظهر</button><button class="ghost2" data-habout>ⓘ عن التطبيق</button></div>
+    <div class="homeacts"><button class="primary" data-hsurvey>📐 رفع مقاسات</button><button class="ghost2" data-hlast>↩ كمّل «${esc(state.project.name)}»</button><label class="ghost2 filebtn">📂 افتح ملف مشروع (JSON)<input type="file" id="homeImp" accept=".json,application/json" hidden></label><button class="ghost2" data-hcut>✂ كت ليست بمقاساتك</button><button class="ghost2" data-hdefs>⚙ الإعدادات الافتراضية</button><button class="ghost2" data-hlook>🎨 الألوان والمظهر</button><button class="ghost2" data-habout>ⓘ عن التطبيق</button></div>
     <h3>المشاريع${list.filter((x) => x.srv === "measured" && !x.stages?.design?.done).length ? ` <span class="hstage svwait">📐 ${list.filter((x) => x.srv === "measured" && !x.stages?.design?.done).length} مستني تصميم</span>` : ""}</h3>
     <div class="homelist">${list.map((x) => `<div class="hcard ${x.id === state.project.id ? "cur" : ""}"><button class="hopen" data-hopen="${x.id}"><b>${esc(x.name)}</b>
       ${x.srv === "measured" && !x.stages?.design?.done ? `<span class="hstage svwait">📐 اترفع — مستني تصميم</span>` : x.srv === "measuring" ? `<span class="hstage">📐 الرفع لسه شغال</span>` : x.stages && Object.values(x.stages).some((v) => v?.done) ? `<span class="hstage">🧭 ${esc(stageNow({ stages: x.stages }).cur)}</span>` : ""}
@@ -5216,7 +5310,8 @@ function drawParts() {
       const lb = pt.label, b = lb.banded;
       const band = pt.band_all_sides ? "كل الحروف" : ["left", "right", "bottom", "top"].filter((k) => b[k]).length + " حرف";
       const chk = pt.checks?.[0];
-      h += `<tr><td class="num"><b>${esc(codes.get(pt) || "")}</b></td><td>${esc(pt.name)}${chk ? `<small class="w">${esc(chk)}</small>` : ""}</td><td>${esc(r.names[pt.material] || pt.material)}</td><td class="num">${n1(lb.w)}</td><td class="num">${n1(lb.h)}</td><td class="num">${n1(lb.t)}</td><td class="nw">${band}</td><td class="num">${pt.holes?.length || ""}</td></tr>`;
+      const gi = grooveInfo({ lb, pt, unitIdx: state.project.units.indexOf(u) });
+      h += `<tr><td class="num"><b>${esc(codes.get(pt) || "")}</b></td><td>${esc(pt.name)}${gi ? `<small class="blk" style="color:#8a5a00">${esc(gi.text)}</small>` : ""}${chk ? `<small class="w">${esc(chk)}</small>` : ""}</td><td>${esc(r.names[pt.material] || pt.material)}</td><td class="num">${n1(lb.w)}</td><td class="num">${n1(lb.h)}</td><td class="num">${n1(lb.t)}</td><td class="nw">${band}</td><td class="num">${pt.holes?.length || ""}</td></tr>`;
     }
     h += `</tbody></table></div>`;
     const notes = [...r.warnings.map((t) => `<p class="w">${esc(t)}</p>`), ...r.notes.map((t) => `<p class="n">${esc(t)}</p>`)];
@@ -5229,6 +5324,27 @@ function drawParts() {
 }
 
 // ------------------------------------------------------------------ labels
+/** a piece's groove (مفحار) in workshop terms: its length, which edge it is measured from and how far,
+ *  and its width × depth (the board that slides in + 1 mm). null when the piece has none */
+function grooveInfo(pc) {
+  const lb = pc.lb, g = lb?.groove;
+  if (!g || g.ratio == null) return null;
+  const u = state.project.units[pc.unitIdx], p = (u && R(u).params) || {};
+  const drawer = /درج/.test(pc.pt.name || "");
+  const board = drawer ? +p.drawer_box_base_thickness || 0.6 : +p.back_panel_thickness || +p.back?.thickness || 0.6;
+  const gw = Math.round((board * 10 + 1) * 10) / 10;
+  const gz = Math.round((drawer ? +p.drawer_box_base_groove || 0.8 : +p.back_groove_depth || +p.back?.groove_depth || 0.8) * 100) / 10;
+  const vert = g.axis === "vertical";
+  const len = vert ? lb.h : lb.w, across = vert ? lb.w : lb.h;
+  const a = g.ratio * across, b = across - a, near = a <= b;
+  const from = vert ? (near ? "الشمال" : "اليمين") : near ? "تحت" : "فوق";
+  // measured to the groove's near side (the saw/router fence), not its centre
+  const dist = Math.max(0, Math.round(((near ? a : b) - gw / 20) * 10) / 10);
+  const where = dist < 0.05 ? `على الحرف ${from} (رابيت)` : `على ${n1(dist)} سم من ${from}`;
+  return { len: Math.round(len * 10) / 10, dist, from, gw, gz, vert,
+    text: `مفحار بطول ${n1(len)} سم · ${where} · ${gw}×${gz} مم`,
+    short: `مفحار ${n1(len)} · ${dist < 0.05 ? `على حرف ${from}` : `${n1(dist)} من ${from}`} · ${gw}×${gz}مم` };
+}
 function pieceSvg(pc, size = 1) {
   const { lb, pt } = pc;
   const W = 120, H = 70;
@@ -5240,9 +5356,14 @@ function pieceSvg(pc, size = 1) {
   const edge = (on, x1, y1, x2, y2) => (on || all ? `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#1f6d3d" stroke-width="3"/>` : "");
   g += edge(b.left, x0, y0, x0, y0 + hh) + edge(b.right, x0 + w, y0, x0 + w, y0 + hh) + edge(b.bottom, x0, y0 + hh, x0 + w, y0 + hh) + edge(b.top, x0, y0, x0 + w, y0);
   if (lb.groove) {
-    const gr = lb.groove;
-    g += gr.axis === "vertical" ? `<line x1="${x0 + gr.ratio * w}" y1="${y0}" x2="${x0 + gr.ratio * w}" y2="${y0 + hh}" stroke="#b07d12" stroke-width="1" stroke-dasharray="3 2"/>`
-      : `<line x1="${x0}" y1="${y0 + (1 - gr.ratio) * hh}" x2="${x0 + w}" y2="${y0 + (1 - gr.ratio) * hh}" stroke="#b07d12" stroke-width="1" stroke-dasharray="3 2"/>`;
+    const gr = lb.groove, gi = grooveInfo(pc);
+    g += gr.axis === "vertical" ? `<line x1="${x0 + gr.ratio * w}" y1="${y0}" x2="${x0 + gr.ratio * w}" y2="${y0 + hh}" stroke="#b07d12" stroke-width="1.4" stroke-dasharray="3 2"/>`
+      : `<line x1="${x0}" y1="${y0 + (1 - gr.ratio) * hh}" x2="${x0 + w}" y2="${y0 + (1 - gr.ratio) * hh}" stroke="#b07d12" stroke-width="1.4" stroke-dasharray="3 2"/>`;
+    if (gi) {
+      const gx = gr.axis === "vertical" ? x0 + gr.ratio * w : x0 + w / 2, gy = gr.axis === "vertical" ? y0 + hh / 2 : y0 + (1 - gr.ratio) * hh;
+      const tx = gr.axis === "vertical" ? gx + (gr.ratio < 0.5 ? 5 : -5) : gx, ty = gr.axis === "vertical" ? gy : gy + (gr.ratio < 0.5 ? -3 : 7);
+      g += `<text x="${tx}" y="${ty}" font-size="7" font-weight="700" fill="#8a5a00" text-anchor="middle" ${gr.axis === "vertical" ? `transform="rotate(-90 ${tx} ${ty})"` : ""} font-family="Arial, sans-serif" paint-order="stroke" stroke="#fff" stroke-width="2">${n1(gi.len)}</text>`;
+    }
   }
   for (const ho of pt.holes || []) {
     const cx = x0 + ho.w * w, cy = y0 + (1 - ho.h) * hh;
@@ -5381,6 +5502,7 @@ function drawShop() {
   for (const pc of pieces.slice(0, 24)) {
     const st = prog[pc.key] || 0;
     h += `<div class="labcard"><div class="lt"><span class="ucode">${esc(pc.key)}</span><b>${esc(pc.pt.name)}</b><span class="num">${n1(pc.lb.w)}×${n1(pc.lb.h)}</span></div><div class="lm">${pieceSvg(pc, 1)}<span class="qr">${qrSvg(pieceUrl(pid, pc.key), 56)}</span></div>
+      ${(() => { const gi = grooveInfo(pc); return gi ? `<div class="lgr">${esc(gi.short)}</div>` : ""; })()}
       <div class="lb"><span>${esc(pc.unit)}</span><span>${esc(sheets[pc.key] || pc.mname)}</span></div><div class="stg">${STAGES.map((s, i) => `<i class="${i < st ? "on" : ""}">${s}</i>`).join("")}</div></div>`;
   }
   if (pieces.length > 24) h += `<p class="hint">… و${pieces.length - 24} ملصق تاني في الملف.</p>`;
@@ -5389,6 +5511,7 @@ function drawShop() {
 const linkBox = (url) => `<div class="linkbox"><input readonly value="${esc(url)}" aria-label="اللينك"><button class="ghost2" data-copy="${esc(url)}">انسخ</button></div>`;
 
 $("#v-shop").addEventListener("change", (e) => {
+  setTimeout(settingsPush, 0); // prices are account settings too
   const t = e.target;
   if (t.id === "labelFmt") { state.labelFmt = t.value; save(); return; }
   if (t.id === "useStock") { state.cutOpts.useStock = t.checked; save(); runCut(() => drawShop()); return; }
@@ -5604,7 +5727,7 @@ function drawWork() {
       <section class="mgroup"><div class="mg-h"><h3>${esc(pc.pt.name)}</h3><span class="pill">${n1(pc.lb.w)} × ${n1(pc.lb.h)}</span></div>
       <div class="kv"><span>الوحدة</span><b>${esc(pc.unit)}</b><span>الخامة</span><b>${esc(pc.mname)}</b><span>السمك</span><b>${n1(pc.lb.t * 10)} مم</b>
       <span>الشريط</span><b>${pc.pt.band_all_sides ? "كل الحروف" : ["left", "right", "bottom", "top"].filter((k) => b[k]).map((k) => ({ left: "شمال", right: "يمين", bottom: "تحت", top: "فوق" })[k]).join("، ") || "من غير"}</b>
-      <span>الأخرام</span><b>${(pc.pt.holes || []).length}</b><span>الكود</span><b class="num">${esc(pc.key)}</b></div>
+      <span>الأخرام</span><b>${(pc.pt.holes || []).length}</b>${(() => { const gi = grooveInfo(pc); return gi ? `<span>المفحار</span><b>${esc(gi.text.replace(/^مفحار /, ""))}</b>` : ""; })()}<span>الكود</span><b class="num">${esc(pc.key)}</b></div>
       <div class="wk-dia">${pieceSvg(pc, 2.6)}</div>${pc.pt.note ? `<p class="n">${esc(pc.pt.note)}</p>` : ""}</section>
       <div class="stages">${STAGES.map((s, i) => `<button class="stage-b ${i < st ? "done" : i === st ? "cur" : ""}" data-stage="${i + 1}" ${canWrite ? "" : "disabled"}>${i < st ? ICON.check : ""}${s}</button>`).join("")}</div>
       ${canWrite ? "" : `<p class="hint">تعليم المراحل محتاج صلاحية "مساهم" على اللينك.</p>`}</div>`;
@@ -6365,7 +6488,8 @@ function cutRows() {
   const sheets = sheetIndex();
   const rows = [["رقم القطعة", "كود الوحدة", "الوحدة", "القطعة", "الخامة", "الطول (سم)", "العرض (سم)", "السمك (سم)", "الشريط", "أخرام", "اللوح", "ملاحظة"]];
   for (const pc of projectPieces(state.project)) {
-    rows.push([pc.key, pc.ucode, pc.unit, pc.pt.name, pc.mname, +n1(pc.lb.h), +n1(pc.lb.w), +n1(pc.lb.t), edgesText(pc.pt), (pc.pt.holes || []).length || "", sheets[pc.key] || "", pc.pt.checks?.[0] || ""]);
+    const gi = grooveInfo(pc);
+    rows.push([pc.key, pc.ucode, pc.unit, pc.pt.name, pc.mname, +n1(pc.lb.h), +n1(pc.lb.w), +n1(pc.lb.t), edgesText(pc.pt), (pc.pt.holes || []).length || "", sheets[pc.key] || "", [gi?.text, pc.pt.checks?.[0]].filter(Boolean).join(" | ")]);
   }
   return rows;
 }
@@ -6498,7 +6622,7 @@ async function exportLabelsPdf() {
       <text x="${W - 2 * s - 10.5 * s}" y="${6.6 * s}" font-size="${4.2 * s}" font-weight="800" fill="#fff" text-anchor="middle" direction="ltr">${esc(pc.key)}</text>
       <text x="${W - 25 * s}" y="${6.4 * s}" font-size="${2.9 * s}" font-weight="700" text-anchor="end">${esc(pc.pt.name.length > 15 ? pc.pt.name.slice(0, 14) + "…" : pc.pt.name)}</text>
       <text x="${2 * s}" y="${12 * s}" font-size="${3.1 * s}" font-weight="700" direction="ltr">${n1(pc.lb.h)} × ${n1(pc.lb.w)} × ${n1(pc.lb.t)}</text>
-      ${nest(dia, 3 * s, 13 * s, 36 * s, 17 * s)}
+      ${(() => { const gi = grooveInfo(pc); return gi ? `${nest(dia, 3 * s, 13 * s, 36 * s, 14.5 * s)}<text x="${W - 2 * s}" y="${29.6 * s}" font-size="${2.35 * s}" font-weight="800" fill="#8a5a00" text-anchor="end">${esc(gi.short)}</text>` : nest(dia, 3 * s, 13 * s, 36 * s, 17 * s); })()}
       ${qr ? nest(qr, W - 19 * s, 10 * s, 16 * s, 16 * s) : ""}
       ${nest(barcodeSvg(pc.key, 38, 5), 11 * s, 30.5 * s, 38 * s, 4.5 * s)}
       <text x="${W - 2 * s}" y="${38.2 * s}" font-size="${2.2 * s}" text-anchor="end" fill="#333">${esc(`${pc.ucode} ${pc.unit} · ${pc.mname}${sheets[pc.key] ? " · " + sheets[pc.key].split(" · ")[0] : ""}`.slice(0, 52))}</text></g>`;
@@ -6631,7 +6755,7 @@ async function exportCnc() {
       }
     }
     if (lb.groove) {
-      const gw = Math.round(((+p.back_panel_thickness || 0.6) * 10 + 1) * 10) / 10, gz = Math.round((+p.back_groove_depth || 0.8) * 10 * 10) / 10;
+      const gi = grooveInfo(pc), gw = gi ? gi.gw : Math.round(((+p.back_panel_thickness || 0.6) * 10 + 1) * 10) / 10, gz = gi ? gi.gz : Math.round((+p.back_groove_depth || 0.8) * 10 * 10) / 10;
       const g = lb.groove;
       if (g.axis === "vertical") { const x = g.ratio * W; d.rect(Math.round((x - gw / 2) * 10) / 10, 0, gw, H, `GROOVE_W${gw}_Z${gz}`); }
       else { const y = g.ratio * H; d.rect(0, Math.round((y - gw / 2) * 10) / 10, W, gw, `GROOVE_W${gw}_Z${gz}`); }
@@ -7023,7 +7147,7 @@ function fillWidths(len, max = 90) {
 }
 function kitchenUnit(tier, params, name, libs = {}) {
   const T = AK_TIERS[tier];
-  const p = { ...params, kud_handles: { type: T.handle } };
+  const p = withDefaults({ ...params, kud_handles: { type: T.handle } });
   const u = { id: uid(), kind: "kitchen", name, params: p, libs: {} };
   const L = { front: T.front, carcass: T.carcass, ...(p.unit_type !== "wall" && p.unit_type !== "tall" ? { countertop: T.counter } : {}), ...libs };
   for (const [k, lib] of Object.entries(L)) {
@@ -7542,6 +7666,7 @@ async function boot() {
   }
   if (!db || !cloud.me) { setCloud("local"); return; }
   myLibPull();
+  settingsPull();
   // owner: pull the newest copy of this project from the cloud, else upload the local one
   try {
     const ref = db.doc(`data/users/${cloud.me}/p_${state.project.id}`);
