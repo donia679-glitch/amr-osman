@@ -23,6 +23,9 @@ import * as SurveyUI from "./survey_ui.js";
 import * as Media from "./media.js";
 import * as Keypad from "./keypad.js";
 import * as Studio from "./draw/studio.js";
+import * as I18n from "./i18n.js";
+await I18n.init();
+if (I18n.isEn()) Exp.setTranslator(I18n.tr, I18n.trMarkup);
 import * as DG from "./draw/geom.js";
 
 const APP_URL = "https://claude.ai/artifact/EP8c8LmBNS8d3EqLcDioXi";
@@ -656,7 +659,7 @@ function modelProps(u, r) {
 function openStudio(u) {
   const libs = (k) => panelLib(R(u).params || {}, k);
   Studio.open(u?.params?.model || null, {
-    name: u?.name || "تصميم حر",
+    name: u?.name || I18n.tr("تصميم حر"),
     matColor: (k) => { const l = u && libs(k); return l && Catalog.LIB[l] ? Catalog.LIB[l][2] : null; },
     matName: (k) => PANEL_MATS[k] || k,
     onDone: (model, name) => {
@@ -1425,6 +1428,7 @@ $("#home").addEventListener("click", async (e) => {
   const d = b.dataset;
   if (b.hasAttribute("data-hnew")) { await newProject($("#homeName").value); return; }
   if (b.hasAttribute("data-hlast")) { closeHome(); render(true); return; }
+  if (b.hasAttribute("data-hlang")) { I18n.setLang(I18n.lang === "en" ? "ar" : "en"); return; }
   if (b.hasAttribute("data-hstudio")) { closeHome(); render(true); openStudio(null); return; }
   if (b.hasAttribute("data-hcut")) {
     await newProject(($("#homeName").value || "").trim() || "كت ليست");
@@ -1613,7 +1617,7 @@ function renderLib() {
   let h = `<div class="libhead"><h2>المكتبة</h2><button class="x" data-close aria-label="قفل المكتبة">×</button></div>
     <p class="hint">دوس على أي تصميم يتضاف للمشروع وتعدّله براحتك.</p>
     <input id="libq" class="libq" type="search" placeholder="🔍 دوّر: تسريحة، تموين، حوض، دولاب…" aria-label="دوّر في المكتبة" value="${esc(ui.libQ || "")}">
-    <button class="card cutcard" data-studio-new="1"><span class="sw" style="font-size:26px">✏️</span><b>ورشة الرسم — صمّم حاجتك من الصفر</b><small>ارسم زي سكتش أب: خطوط ومستطيلات ودواير وأقواس، اسحبها ألواح، فرّغ وقص واحفر، ولف وانسخ — وكل لوح يطلع في القص والـCNC بشكله.</small></button>
+    <button class="card cutcard" data-studio-new="1"><span class="sw" style="font-size:26px">✏️</span><b>ورشة الرسم — صمّم حاجتك من الصفر</b><small>رسم 3D حر: خطوط ومستطيلات ودواير وأقواس، اسحبها ألواح، فرّغ وقص واحفر، ولف وانسخ — وكل لوح يطلع في القص والـCNC بشكله.</small></button>
     <button class="card cutcard" data-pieces="1"><span class="sw" style="font-size:26px">✂</span><b>قطع حرة — كت ليست بمقاساتك</b><small>اكتب مقاسات القطع (أو الزقها من Excel) ويطلعلك خطة القص والملصقات بالباركود من غير تصميم.</small></button>
 `;
   h += myLibHtml();
@@ -2216,7 +2220,7 @@ function defaultsPop() {
       <div class="bools">${DEF_KEYS.filter((x) => x[2] === "b").map(([k, l]) => `<label class="f b"><input type="checkbox" data-defb="k.${k}" ${dv(k) === true ? "checked" : ""} ${dv(k) === undefined ? 'data-unset="1"' : ""}><span>${esc(l)}${dv(k) === undefined ? " <small>(زي البرنامج)</small>" : ""}</span></label>`).join("")}</div>
       <div class="btnrow"><button class="ghost2" data-defapply>طبّقها على وحدات المطبخ في المشروع ده</button></div></details>
     <details><summary>🧱 الأوضة والحيطان</summary><div class="grid2">${nf("room.t", "سمك الحيطة", D0.room.t, Room.WALL_T)}${nf("room.h", "ارتفاع السقف", D0.room.h, Room.WALL_H)}</div></details>
-    <details><summary>💰 التسعير</summary><div class="grid2">${nf("price.defaultSheet", "سعر اللوح (أي خامة ملهاش سعر)", P.defaultSheet)}${nf("price.band", "سعر متر الشريط", P.band)}
+    <details><summary>💰 التسعير</summary><div class="grid2"><label class="f"><span>حساب الخامة</span><select data-def="price.mode"><option value="area" ${P.mode === "area" ? "selected" : ""}>بمسطح القطع (م²) لكل وحدة</option><option value="sheets" ${P.mode !== "area" ? "selected" : ""}>بعدد الألواح من خطة القص</option></select></label>${nf("price.waste", "نسبة الهالك % (بالمسطح)", P.waste)}${nf("price.defaultSheet", "سعر اللوح (أي خامة ملهاش سعر)", P.defaultSheet)}${nf("price.band", "سعر متر الشريط", P.band)}
       ${nf("price.laborUnit", "مصنعية الوحدة", P.laborUnit)}${nf("price.laborM2", "مصنعية المتر المربع", P.laborM2)}${nf("price.install", "التركيب للمشروع", P.install)}${nf("price.margin", "نسبة المكسب %", P.margin)}
       ${nf("price.validity", "صلاحية عرض السعر (يوم)", P.validity)}<label class="f"><span>مدة التنفيذ</span><input data-deft="price.delivery" value="${esc(P.delivery || "")}"></label>
       <label class="f full"><span>الضمان</span><input data-deft="price.warranty" value="${esc(P.warranty || "")}"></label><label class="f full"><span>شروط ثابتة في كل عرض سعر</span><input data-deft="price.notes" value="${esc(P.notes || "")}"></label></div>
@@ -3253,7 +3257,7 @@ function pieceTag(THREE, pt, ucode) {
   const fit = (cw * 0.9) / Math.max(1, g.measureText(nm).width);
   if (fit < 1) { const f2 = Math.max(fs * 0.6, fs * fit); g.font = `700 ${f2}px "IBM Plex Sans Arabic", system-ui, sans-serif`; }
   while (nm.length > 3 && g.measureText(nm).width > cw * 0.9) nm = nm.slice(0, -2) + "…";
-  g.fillText(nm, cw / 2, ch / 2 - fs * 0.6);
+  g.fillText(I18n.tr(nm), cw / 2, ch / 2 - fs * 0.6);
   g.font = `500 ${fs * 0.9}px system-ui, sans-serif`; g.direction = "ltr";
   g.fillText(dims, cw / 2, ch / 2 + fs * 0.65);
   const tex = new THREE.CanvasTexture(c);
@@ -3590,9 +3594,9 @@ function renderPop() {
   else if (ui.pop === "menu") {
     const it = (k, ic, t, d) => `<button class="mitem" data-menu="${k}"><span class="mic">${ic}</span><span><b>${t}</b><small>${d}</small></span></button>`;
     h = `<div class="popbox menubox" role="dialog" aria-label="القائمة"><div class="libhead"><h2>القائمة</h2><button class="x" data-close aria-label="قفل">×</button></div>
-      <h3>المشروع</h3>${it("projects", "📁", "مشاريعي", "افتح مشروع تاني أو ابدأ جديد")}${it("export", "⬆", "تصدير وطباعة", "الملصقات، خطة القص، CNC، عرض السعر، سكتش أب")}${it("survey", "📐", "رفع مقاسات", "شاشة الرفع في الموقع خطوة بخطوة")}${it("studio", "✏️", "ورشة الرسم", "صمّم أي قطعة أو وحدة من الصفر زي سكتش أب")}
+      <h3>المشروع</h3>${it("projects", "📁", "مشاريعي", "افتح مشروع تاني أو ابدأ جديد")}${it("export", "⬆", "تصدير وطباعة", "الملصقات، خطة القص، CNC، عرض السعر، سكتش أب")}${it("survey", "📐", "رفع مقاسات", "شاشة الرفع في الموقع خطوة بخطوة")}${it("studio", "✏️", "ورشة الرسم", "صمّم أي قطعة أو وحدة من الصفر برسم 3D حر")}
       <h3>الإعدادات</h3>${it("defaults", "⚙", "الإعدادات الافتراضية", "مقاسات الوحدات، التصنيع، التسعير، القص — مرة واحدة لكل المشاريع")}${it("look", "🎨", "الألوان والمظهر والكيبورد", "فاتح/غامق، لون التطبيق، كيبورد الأرقام")}
-      <h3>مساعدة</h3>${it("tour", "🧭", "الجولة التعريفية", "شرح سريع لكل جزء في الشاشة")}${it("about", "ⓘ", "عن التطبيق", "الإصدار والتواصل")}</div>`;
+      <h3>مساعدة</h3>${it("lang", "🌐", I18n.lang === "en" ? "اللغة: عربي" : "Language: English", I18n.lang === "en" ? "التطبيق كله بالعربي" : "Switch the whole app to English")}${it("tour", "🧭", "الجولة التعريفية", "شرح سريع لكل جزء في الشاشة")}${it("about", "ⓘ", "عن التطبيق", "الإصدار والتواصل")}</div>`;
   }
   else if (ui.pop === "ar") {
     const f = ui.arFile || {};
@@ -3766,6 +3770,7 @@ $("#pop").addEventListener("click", async (e) => {
     if (m === "survey") { svFrom = "design"; SurveyUI.open("steps"); return; }
     if (m === "studio") { const su = selUnit(); openStudio(su?.params?.model ? su : null); return; }
     if (m === "tour") { state.tourDone = false; startTour(); return; }
+    if (m === "lang") { await Lib.put(state.project).catch(() => {}); I18n.setLang(I18n.lang === "en" ? "ar" : "en"); return; }
     ui.pop = m; renderPop(); return;
   }
   if (ui.pop === "look" && d.lkpad) { state.kpad = d.lkpad === "on"; save(); renderPop(); return; }
@@ -4012,7 +4017,7 @@ async function showHome() {
     <div class="htiles">
       <div class="htile main"><b>🎨 مشروع تصميم جديد</b><small>أوضة ← تصميم ← سعر ← قص ← ورشة</small><div class="homenew"><input id="homeName" placeholder="اسم المشروع (مثلاً: مطبخ أ. محمد — التجمع)" aria-label="اسم المشروع الجديد"><button class="primary" data-hnew>ابدأ ←</button></div></div>
       <button class="htile" data-hsurvey><b>📐 رفع مقاسات</b><small>في الموقع، خطوة بخطوة، والمصمم يستلم الأوضة جاهزة</small></button>
-      <button class="htile" data-hstudio><b>✏️ ورشة الرسم</b><small>ارسم وحدتك أو قطعتك من الصفر زي سكتش أب</small></button>
+      <button class="htile" data-hstudio><b>✏️ ورشة الرسم</b><small>ارسم وحدتك أو قطعتك من الصفر برسم 3D حر</small></button>
       <button class="htile" data-hcut><b>✂ كت ليست سريع</b><small>اكتب مقاسات القطع وخد خطة القص والملصقات</small></button>
     </div>
     <button class="hcont" data-hlast><span>↩</span><span><b>كمّل «${esc(state.project.name)}»</b><small>${state.project.units.length} وحدة · آخر حاجة كنت شغال عليها</small></span></button>
@@ -4023,7 +4028,7 @@ async function showHome() {
       <small>${x.units != null ? `${x.units} وحدة · ` : ""}${x.variants > 1 ? `${x.variants} نسخ · ` : ""}${when(x.updatedAt)}${x.where === "cloud" ? " · أونلاين" : x.where === "both" ? " · على الجهاز وأونلاين" : ""}</small></button>
       ${x.srv ? `<button class="hdel sm" data-hsv="${x.id}" title="شاشة الرفع" aria-label="شاشة الرفع">📐</button>` : ""}<button class="hdel danger sm" data-hdel="${x.id}" aria-label="امسح ${esc(x.name)}">${ICON.trash}</button></div>`).join("") || `<p class="hint">${q || f !== "all" ? "مفيش مشاريع بالبحث ده." : "مفيش مشاريع لسه — ابدأ مشروع جديد."}</p>`}</div>
     <h3 class="hsec">أدوات</h3>
-    <div class="homeacts"><label class="ghost2 filebtn">📂 افتح ملف مشروع<input type="file" id="homeImp" accept=".json,application/json" hidden></label><button class="ghost2" data-hdefs>⚙ الإعدادات الافتراضية</button><button class="ghost2" data-hlook>🎨 المظهر والكيبورد</button><button class="ghost2" data-habout>ⓘ عن التطبيق</button></div>
+    <div class="homeacts"><label class="ghost2 filebtn">📂 افتح ملف مشروع<input type="file" id="homeImp" accept=".json,application/json" hidden></label><button class="ghost2" data-hdefs>⚙ الإعدادات الافتراضية</button><button class="ghost2" data-hlook>🎨 المظهر والكيبورد</button><button class="ghost2" data-habout>ⓘ عن التطبيق</button><button class="ghost2" data-hlang data-noi18n>🌐 ${I18n.lang === "en" ? "عربي" : "English"}</button></div>
     <p class="hint">المشاريع بتتحفظ لوحدها وانت شغال. خد نسخة احتياطي من ☰ ← تصدير ← نسخة من المشروع.</p></div>`;
 }
 async function refreshProjects() {
@@ -5668,7 +5673,7 @@ function drawShop() {
       <p class="hint">بيتبعت نسخة من التصميم دلوقتي. لو عدّلت بعد كده دوس "حدّث النسخة المبعوتة".</p>
       ${clientOptsHtml(appr)}
       ${online ? `<div class="btnrow"><button class="primary" data-publish="client">${ICON.share}${ui.sharedAt ? "حدّث النسخة المبعوتة" : "جهّز لينك العميل"}</button></div>
-      ${ui.sharedAt ? linkBox(`${APP_URL}#c-${pid}`) : ""}` : `<p class="e">لينك العميل واختيار اللون بالسعر شغالين من نسخة NOVERA أونلاين بس (عشان العميل يفتح نفس التصميم من موبايله). افتحها من هنا وانت مسجّل دخول، وانقل المشروع بـ«تصدير ← نسخة من المشروع» لو مش موجود هناك.</p><div class="btnrow"><a class="primary" style="text-decoration:none" href="${APP_URL}" target="_blank" rel="noopener">افتح NOVERA أونلاين</a></div>`}
+      ${ui.sharedAt ? linkBox(`${APP_URL}#c-${pid}`) : ""}` : `<p class="e">لينك العميل واختيار اللون بالسعر شغالين من نسخة NOVERA أونلاين بس (عشان العميل يفتح نفس التصميم من موبايله). افتحها من هنا وانت مسجّل دخول، وانقل المشروع بـ«تصدير ← نسخة من المشروع» لو مش موجود هناك.</p>${window.noveraNative ? "" : `<div class="btnrow"><a class="primary" style="text-decoration:none" href="${APP_URL}" target="_blank" rel="noopener">افتح NOVERA أونلاين</a></div>`}`}
     </section>
     <section class="mgroup"><div class="mg-h"><h3>الورشة</h3><span class="pill soft">${doneN} / ${pieces.length} قطعة خلصت</span></div>
       <p class="hint">كل ملصق عليه QR. العامل يصوّره بكاميرا الموبايل، تفتحله القطعة ويعلّم المرحلة اللي خلصها.</p>
@@ -5728,6 +5733,7 @@ $("#v-shop").addEventListener("change", (e) => {
 $("#v-shop").addEventListener("click", async (e) => {
   const b = e.target.closest("button");
   if (!b) return;
+  if (b.dataset.pmode) { priceDefaults().mode = b.dataset.pmode; save(); settingsPush(); drawShop(); return; }
   if (b.dataset.remadd) {
     const k = b.dataset.remadd, w = +document.querySelector(`[data-remw="${CSS.escape(k)}"]`)?.value, hh = +document.querySelector(`[data-remh="${CSS.escape(k)}"]`)?.value;
     if (w > 5 && hh > 5) { stockOf(k).remnants.push({ id: uid(), w, h: hh }); save(); runCut(() => drawShop()); }
@@ -6567,18 +6573,44 @@ async function exportAssemblyPdf(units = state.project.units) {
 const money = (v) => Math.round(v).toLocaleString("ar-EG");
 function priceDefaults() {
   state.prices ??= { sheets: {}, band: 0, hw: {}, laborUnit: 0, laborM2: 0, install: 0, margin: 35, client: "", validity: 15, delivery: "4 أسابيع", warranty: "سنتين على الهيكل والهاردوير", notes: "" };
+  state.prices.mode ??= "area"; state.prices.waste ??= 10; state.prices.m2 ??= {};
   return state.prices;
 }
 /** costs of the current project from the cut plan, hardware and labour; null until the cut plan is ready */
+/** price of one m² of a material group: typed, else its sheet price over the sheet's area */
+function m2Price(g, P = priceDefaults()) {
+  if (+P.m2?.[g.key] > 0) return +P.m2[g.key];
+  const sh = g.sheet || groupSheet(g), sp = +P.sheets[g.key] || +P.defaultSheet || 0;
+  return sp ? sp / ((sh.w * sh.h) / 10000) : 0;
+}
 function quoteCalc() {
   if (!cutData?.results) return null;
   const P = priceDefaults();
+  const byArea = P.mode === "area", wf = 1 + (+P.waste || 0) / 100;
   const lines = [];
   let mat = 0;
+  // material per unit (area mode): every piece's own surface × its material's m² price (+ waste)
+  ensureCodes(state.project);
+  const codeOf = new Map(state.project.units.map((u) => [u.code, u.id]));
+  const unitMat = new Map();
   for (const g of cutData.groups) {
-    const n = cutData.results[g.key].sheets.filter((s) => s.stock !== "remnant").length, pr = +P.sheets[g.key] || +P.defaultSheet || 0;
-    lines.push({ k: "sheet", key: g.key, label: `ألواح ${g.key}`, qty: n, unit: "لوح", price: pr, total: n * pr });
-    mat += n * pr;
+    if (byArea) {
+      const pm = m2Price(g, P);
+      let a = 0;
+      for (const p of g.parts) {
+        const pa = (p.w * p.h) / 10000;
+        a += pa;
+        const uid0 = codeOf.get(String(p.key).split("-")[0]);
+        if (uid0) unitMat.set(uid0, (unitMat.get(uid0) || 0) + pa * wf * pm);
+      }
+      const q = Math.round(a * wf * 100) / 100;
+      lines.push({ k: "m2", key: g.key, label: `${g.key} (${n1(a)} م² + ${+P.waste || 0}% هالك)`, qty: q, unit: "م²", price: Math.round(pm), total: q * pm });
+      mat += q * pm;
+    } else {
+      const n = cutData.results[g.key].sheets.filter((s) => s.stock !== "remnant").length, pr = +P.sheets[g.key] || +P.defaultSheet || 0;
+      lines.push({ k: "sheet", key: g.key, label: `ألواح ${g.key}`, qty: n, unit: "لوح", price: pr, total: n * pr });
+      mat += n * pr;
+    }
   }
   let bandM = 0, area = 0;
   const unitArea = new Map();
@@ -6603,23 +6635,39 @@ function quoteCalc() {
   let usedA = 0, sheetA = 0;
   for (const g of cutData.groups) for (const sh of cutData.results[g.key].sheets) { sheetA += sh.w * sh.h; usedA += (sh.util || 0) * sh.w * sh.h; }
   const waste = sheetA ? Math.round((1 - usedA / sheetA) * 100) : null;
-  // the client sees one price per unit: the total shared out by each unit's board area
-  const perUnit = state.project.units.filter((u) => unitArea.has(u.id)).map((u) => ({ u, price: area ? (total * unitArea.get(u.id)) / area : total / Math.max(1, units) }));
-  return { lines, mat, band, hwT, labor, cost, total, perUnit, area, waste };
+  // the client sees one price per unit
+  let perUnit;
+  if (byArea) {
+    // each unit from its own pieces: their surface, its banding, its hardware, its labour (+ its share of the install by area)
+    perUnit = state.project.units.filter((u) => unitArea.has(u.id)).map((u) => {
+      const r = R(u);
+      let hwU = 0;
+      for (const [k, q] of Object.entries(r.hardware || {})) hwU += q * (+P.hw[k] || 0);
+      const a = unitArea.get(u.id) || 0;
+      const c = (unitMat.get(u.id) || 0) + r.banding * (+P.band || 0) + hwU + (+P.laborUnit || 0) + a * (+P.laborM2 || 0) + (area ? ((+P.install || 0) * a) / area : 0);
+      return { u, price: c * (1 + (+P.margin || 0) / 100), cost: c, area: a };
+    });
+  } else perUnit = state.project.units.filter((u) => unitArea.has(u.id)).map((u) => ({ u, price: area ? (total * unitArea.get(u.id)) / area : total / Math.max(1, units), area: unitArea.get(u.id) }));
+  return { lines, mat, band, hwT, labor, cost, total, perUnit, area, waste, byArea };
 }
 function quoteHtml() {
   const P = priceDefaults(), Q = quoteCalc();
   if (!Q) return `<section class="mgroup"><div class="mg-h"><h3>الأسعار وعرض السعر</h3></div><div class="busy"><span class="spin" aria-hidden="true"></span>بيحسب الألواح…</div></section>`;
   const pin = (k, v, label, step = 1) => `<label class="f"><span>${esc(label)}</span><input type="text" inputmode="decimal" data-numf step="${step}" data-price="${esc(k)}" value="${v ?? ""}"></label>`;
   let h = `<section class="mgroup"><div class="mg-h"><h3>الأسعار وعرض السعر</h3><span class="pill">${money(Q.total)} ج.م</span></div>
-    <p class="hint">اكتب أسعارك مرة واحدة وهتتحفظ لكل المشاريع. عدد الألواح من خطة القص، والشريط والهاردوير من التصميم.</p>
+    <div class="seg pmode"><button data-pmode="area" class="${Q.byArea ? "on" : ""}">📐 بمسطح القطع (م²)</button><button data-pmode="sheets" class="${Q.byArea ? "" : "on"}">🪵 بعدد الألواح</button></div>
+    <p class="hint">${Q.byArea ? "كل وحدة بتتسعّر من مسطح قطعها هي: طول × عرض كل قطعة × سعر المتر من خامتها + نسبة الهالك، وشريطها وهاردويرها ومصنعيتها. سعر المتر = سعر اللوح ÷ مساحته، أو اكتبه بنفسك." : "الخامة بعدد الألواح الكاملة من خطة القص، والإجمالي بيتوزّع على الوحدات حسب مسطح كل وحدة."} الأسعار بتتحفظ لكل المشاريع.</p>
+    ${Q.byArea ? `<div class="grid3">${pin("waste", P.waste, "نسبة الهالك %")}</div>` : ""}
     <div class="tblwrap"><table class="tbl"><thead><tr><th>البند</th><th>الكمية</th><th>سعر الوحدة</th><th>الإجمالي</th></tr></thead><tbody>`;
   for (const L of Q.lines) {
-    const k = L.k === "sheet" ? `sheets.${L.key}` : L.k === "hw" ? `hw.${L.key}` : "band";
-    h += `<tr><td>${esc(L.label)}</td><td class="num">${L.qty} ${L.unit}</td><td><input class="pin" type="text" inputmode="decimal" data-numf data-price="${esc(k)}" value="${L.price || ""}" placeholder="0"></td><td class="num">${money(L.total)}</td></tr>`;
+    const k = L.k === "sheet" ? `sheets.${L.key}` : L.k === "m2" ? `m2.${L.key}` : L.k === "hw" ? `hw.${L.key}` : "band";
+    const typed = L.k === "m2" ? +P.m2?.[L.key] > 0 : true;
+    h += `<tr><td>${esc(L.label)}${L.k === "m2" ? `<br><small class="hint">سعر اللوح <input class="pin sm" type="text" inputmode="decimal" data-numf data-price="sheets.${esc(L.key)}" value="${P.sheets[L.key] || ""}" placeholder="${P.defaultSheet || 0}"></small>` : ""}</td><td class="num">${L.qty} ${L.unit}</td><td><input class="pin" type="text" inputmode="decimal" data-numf data-price="${esc(k)}" value="${typed ? L.price || "" : ""}" placeholder="${L.k === "m2" ? L.price || 0 : 0}"></td><td class="num">${money(L.total)}</td></tr>`;
   }
   h += `</tbody></table></div><div class="grid3">${pin("laborUnit", P.laborUnit, "مصنعية لكل وحدة")}${pin("laborM2", P.laborM2, "مصنعية لكل م² خشب")}${pin("install", P.install, "تركيب ونقل (مقطوعية)")}</div>
     <div class="kv"><span>خامات</span><b>${money(Q.mat + Q.band)}</b><span>هاردوير</span><b>${money(Q.hwT)}</b><span>مصنعية وتركيب</span><b>${money(Q.labor)}</b><span>التكلفة</span><b>${money(Q.cost)}</b><span>سعر البيع</span><b>${money(Q.total)}</b><span>مكسبك</span><b class="profit">${money(Q.total - Q.cost)}${Q.total ? ` (${Math.round(((Q.total - Q.cost) / Q.total) * 100)}%)` : ""}</b>${Q.waste != null ? `<span>هالك الألواح</span><b>${Q.waste}%</b>` : ""}</div>
+    <details ${Q.byArea ? "open" : ""}><summary>سعر كل وحدة${Q.byArea ? " (من مسطح قطعها)" : ""}</summary><div class="tblwrap"><table class="tbl"><thead><tr><th>الوحدة</th><th>المسطح</th>${Q.byArea ? "<th>التكلفة</th>" : ""}<th>السعر</th><th>سعر المتر</th></tr></thead><tbody>
+      ${Q.perUnit.map(({ u, price, cost, area }) => `<tr><td><b>${esc(u.code || "")}</b> ${esc(u.name)}</td><td class="num">${n1(area || 0)} م²</td>${Q.byArea ? `<td class="num">${money(cost)}</td>` : ""}<td class="num"><b>${money(price)}</b></td><td class="num">${area ? money(price / area) : "—"}</td></tr>`).join("")}</tbody></table></div></details>
     <div class="grid3">${pin("defaultSheet", P.defaultSheet, "سعر اللوح لأي خامة مش متسعّرة")}<label class="f"><span>اسم المصنع (في العروض والفيديو والضمان)</span><input data-pricet="factory" value="${esc(P.factory || "")}" placeholder="NOVERA"></label><label class="f"><span>رقم التليفون / واتساب</span><input data-pricet="phone" inputmode="tel" value="${esc(P.phone || "")}" placeholder="010xxxxxxxx"></label></div>
     <div class="grid3">${pin("margin", P.margin, "هامش الربح %")}<label class="f"><span>اسم العميل</span><input data-pricet="client" value="${esc(P.client)}"></label>${pin("validity", P.validity, "العرض ساري (يوم)")}</div>
     <div class="grid2"><label class="f"><span>مدة التنفيذ</span><input data-pricet="delivery" value="${esc(P.delivery)}"></label><label class="f"><span>الضمان</span><input data-pricet="warranty" value="${esc(P.warranty)}"></label></div>
@@ -7910,4 +7958,5 @@ boot();
 if (location.hash === "#survey") { svFrom = "home"; SurveyUI.open("list"); }
 matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", () => { applyLook(); view.update(); });
 applyLook();
-window.__dbg = { view, plan, R, render: (x) => render(x), ak: (t) => kitchenProposals(t), applyK: (u) => applyKitchen(u, null), checks: () => designChecks(), merge: (a, b) => mergeInto(a, b), get ui() { return ui; }, layout: asmLayout, elev: (u) => unitElevSvg(u), get state() { return state; } };
+const DEV = location.protocol === "http:" && /^(localhost|127\.0\.0\.1)$/.test(location.hostname);
+if (DEV) window.__dbg = { view, plan, R, render: (x) => render(x), ak: (t) => kitchenProposals(t), applyK: (u) => applyKitchen(u, null), checks: () => designChecks(), merge: (a, b) => mergeInto(a, b), get ui() { return ui; }, layout: asmLayout, elev: (u) => unitElevSvg(u), get state() { return state; } };

@@ -77,7 +77,7 @@ export function close() {
   cancelAnimationFrame(raf);
 }
 export const isOpen = () => !!el && !el.hidden;
-if (typeof window !== "undefined") window.__ds = { M: () => M, ui, scr: (P) => scr(P), setTool: (t) => setTool(t), G };
+if (typeof window !== "undefined" && location.protocol === "http:" && /^(localhost|127\.0\.0\.1)$/.test(location.hostname)) window.__ds = { M: () => M, ui, scr: (P) => scr(P), setTool: (t) => setTool(t), G };
 function normalize(m) {
   for (const k of ["solids", "sketches", "paths", "sweeps", "guides", "dims", "texts", "groups"]) if (!Array.isArray(m[k])) m[k] = [];
   for (const s of m.solids) { s.id ||= uid(); s.holes ||= []; s.pockets ||= []; s.mat ||= "carcass"; s.name ||= "لوح"; s.outer = G.ccw(s.outer); }

@@ -22,6 +22,9 @@ function concat(parts) {
 
 // ------------------------------------------------------------------ ZIP (store)
 /** files: [{name, data: string|Uint8Array}] → Uint8Array */
+// the app's language for what we write (set by i18n when English is on)
+let T = (x) => x, TM = (x) => x, LTR = false;
+export function setTranslator(t, tm) { T = t; TM = tm; LTR = true; }
 export function zip(files) {
   const local = [], central = [];
   let offset = 0;
@@ -64,13 +67,13 @@ export function xlsx(sheets) {
       const ref = colName(ci) + (ri + 1), st = ri === 0 ? ' s="1"' : "";
       if (typeof v === "number" && isFinite(v)) return `<c r="${ref}"${st}><v>${v}</v></c>`;
       if (v == null || v === "") return `<c r="${ref}"${st}/>`;
-      return `<c r="${ref}" t="inlineStr"${st}><is><t xml:space="preserve">${xe(v)}</t></is></c>`;
+      return `<c r="${ref}" t="inlineStr"${st}><is><t xml:space="preserve">${xe(T(v))}</t></is></c>`;
     }).join("")}</row>`).join("");
     files.push({ name: `xl/worksheets/sheet${si + 1}.xml`, data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0" rightToLeft="1"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>${cols ? `<cols>${cols}</cols>` : ""}<sheetData>${rows}</sheetData>${sh.rows.length > 1 ? `<autoFilter ref="A1:${colName(Math.max(0, (sh.rows[0] || []).length - 1))}${sh.rows.length}"/>` : ""}</worksheet>` });
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0" rightToLeft="${LTR ? 0 : 1}"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>${cols ? `<cols>${cols}</cols>` : ""}<sheetData>${rows}</sheetData>${sh.rows.length > 1 ? `<autoFilter ref="A1:${colName(Math.max(0, (sh.rows[0] || []).length - 1))}${sh.rows.length}"/>` : ""}</worksheet>` });
     return sh;
   });
-  const names = ws.map((sh, i) => xe(String(sh.name).replace(/[\\/?*[\]:]/g, " ").slice(0, 31)) || `Sheet${i + 1}`);
+  const names = ws.map((sh, i) => xe(String(T(sh.name)).replace(/[\\/?*[\]:]/g, " ").slice(0, 31)) || `Sheet${i + 1}`);
   files.push(
     { name: "[Content_Types].xml", data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>${ws.map((_, i) => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join("")}</Types>` },
     { name: "_rels/.rels", data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>` },
@@ -83,7 +86,7 @@ export function xlsx(sheets) {
 
 // ------------------------------------------------------------------ CSV (UTF-8 with BOM so Excel reads Arabic)
 export function csv(rows) {
-  const q = (v) => { const s = v == null ? "" : String(v); return /[",\n;]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+  const q = (v) => { const s = v == null ? "" : String(T(v)); return /[",\n;]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
   return "﻿" + rows.map((r) => r.map(q).join(",")).join("\r\n");
 }
 
@@ -152,7 +155,7 @@ export async function pdfFromSvgPages(svgs, { landscape = false, title, scale = 
   const pages = [];
   for (const s of svgs) {
     const w = Math.round(vw * scale), h = Math.round(vh * scale);
-    pages.push({ jpeg: await svgToJpeg(s, w, h), w, h, pw, ph });
+    pages.push({ jpeg: await svgToJpeg(TM(s), w, h), w, h, pw, ph });
   }
   return pdfFromJpegs(pages, title);
 }
@@ -166,7 +169,7 @@ export class Dxf {
   rect(x, y, w, h, l = "0") { this.line(x, y, x + w, y, l); this.line(x + w, y, x + w, y + h, l); this.line(x + w, y + h, x, y + h, l); this.line(x, y + h, x, y, l); }
   poly(pts, l = "0", closed = true) { for (let i = 0; i < pts.length - (closed ? 0 : 1); i++) { const a = pts[i], b = pts[(i + 1) % pts.length]; this.line(a[0], a[1], b[0], b[1], l); } }
   circle(x, y, r, l = "0") { this.layer(l); this.ents.push(`0\nCIRCLE\n8\n${l}\n10\n${x}\n20\n${y}\n30\n0\n40\n${r}`); }
-  text(x, y, h, s, l = "0") { this.layer(l); this.ents.push(`0\nTEXT\n8\n${l}\n10\n${x}\n20\n${y}\n30\n0\n40\n${h}\n1\n${String(s).replace(/\n/g, " ")}`); }
+  text(x, y, h, s, l = "0") { this.layer(l); this.ents.push(`0\nTEXT\n8\n${l}\n10\n${x}\n20\n${y}\n30\n0\n40\n${h}\n1\n${String(T(s)).replace(/\n/g, " ")}`); }
   toString() {
     const lay = [...this.layers].map((l, i) => `0\nLAYER\n2\n${l}\n70\n0\n62\n${(i % 7) + 1}\n6\nCONTINUOUS`).join("\n");
     return `0\nSECTION\n2\nHEADER\n9\n$ACADVER\n1\nAC1009\n9\n$INSUNITS\n70\n${this.units}\n0\nENDSEC\n0\nSECTION\n2\nTABLES\n0\nTABLE\n2\nLAYER\n70\n${this.layers.size}\n${lay}\n0\nENDTAB\n0\nENDSEC\n0\nSECTION\n2\nENTITIES\n${this.ents.join("\n")}\n0\nENDSEC\n0\nEOF\n`;
@@ -177,6 +180,7 @@ export class Dxf {
 const MIME = { pdf: "application/pdf", xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", csv: "text/csv", zip: "application/zip", png: "image/png", jpg: "image/jpeg", json: "application/json", svg: "image/svg+xml", html: "text/html", txt: "text/plain", usdz: "model/vnd.usdz+zip", mp4: "video/mp4", webm: "video/webm" };
 /** hand a file to the viewer: the artifact download capability, else the share sheet, else a download link */
 export async function deliver(downloads, filename, data) {
+  filename = T(filename);
   const ext = filename.split(".").pop().toLowerCase();
   const blob = data instanceof Blob ? data : new Blob([u8(data)], { type: MIME[ext] || "application/octet-stream" });
   if (downloads) {
