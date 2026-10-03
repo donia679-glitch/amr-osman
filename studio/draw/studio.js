@@ -41,7 +41,8 @@ let M = null, mname = "";
 let raf = 0, alive = false;
 const objs = new Map(); // entity ref → three object(s), for picking and ghosts
 const ui = { tool: "select", sel: new Set(), st: null, axis: null, plane: "auto", copy: false, xray: false, section: null, secPos: 0, ortho: false, mat: "carcass",
-  segs: 32, sides: 6, filletR: 5, chamferD: 2, editGroup: null, face2d: null, info: null, addSel: false, lastPush: null, lastMove: null, thick: 1.8, panel: true, outline: false, msg: "" };
+  segs: 32, sides: 6, filletR: 5, chamferD: 2, editGroup: null, face2d: null, info: null, addSel: false, lastPush: null, lastMove: null, thick: 1.8, panel: true, outline: false, msg: "",
+  step: 0, boxSel: false, dimEdit: null, clip: null, arr: { n: 3, d: 40, ax: 0, pn: 6, pa: 360, px: 0, py: 0 }, alignAx: 0 };
 const hist = { u: [], r: [] };
 
 export const newModel = () => ({ v: 1, solids: [], sketches: [], paths: [], sweeps: [], guides: [], dims: [], texts: [], groups: [] });
@@ -98,12 +99,13 @@ function build() {
     </header>
     <div class="dsmain">
       <nav class="dstools" aria-label="أدوات الرسم">${TOOLS.map(([g, l]) => `<div class="dstg"><small>${g}</small>${l.map(([k, ic, n]) => `<button class="dst" data-tool="${k}" title="${n}" aria-label="${n}"><span>${ic}</span><em>${n}</em></button>`).join("")}</div>`).join("")}</nav>
-      <div class="dsview" id="dsView"><div class="dslabels" id="dsLabels"></div><div class="dsmsg" id="dsMsg"></div><div class="dssec" id="dsSec" hidden><input type="range" id="dsSecPos" min="-200" max="400" step="0.5" value="0"></div></div>
+      <div class="dsview" id="dsView"><div class="dslabels" id="dsLabels"></div><div class="dshandles" id="dsHandles"></div><div class="dsboxsel" id="dsBoxSel" hidden></div><canvas class="dsloupe" id="dsLoupe" width="240" height="240" hidden></canvas><div class="dsmsg" id="dsMsg"></div><div class="dssec" id="dsSec" hidden><input type="range" id="dsSecPos" min="-200" max="400" step="0.5" value="0"></div></div>
       <aside class="dsside" id="dsSide"></aside>
     </div>
     <footer class="dsfoot">
       <span class="dsgrp dsaxes"><button class="dsb ax0" data-axis="0" title="اقفل على المحور الأحمر (العرض)">X</button><button class="dsb ax1" data-axis="1" title="اقفل على المحور الأخضر (العمق)">Y</button><button class="dsb ax2" data-axis="2" title="اقفل على المحور الأزرق (الارتفاع)">Z</button></span>
       <select id="dsPlane" class="dssel" aria-label="سطح الرسم"><option value="auto">الرسم: على الوش اللي تحت صباعك</option><option value="ground">على الأرض</option><option value="front">حيطة قدام</option><option value="side">حيطة جنب</option></select>
+      <select id="dsStep" class="dssel" aria-label="الشبكة"><option value="0">شبكة: من غير</option><option value="0.1">شبكة 1 مم</option><option value="0.5">شبكة 5 مم</option><option value="1">شبكة 1 سم</option><option value="5">شبكة 5 سم</option><option value="10">شبكة 10 سم</option></select>
       <span class="dshint" id="dsHint"></span>
       <label class="dsvcb"><span id="dsVcbL">المقاس</span><input id="dsVcb" data-keypad data-kpsolo autocomplete="off" placeholder="—"></label>
       <span class="dsgrp dskeys"><button class="dsb" data-vk=",">,</button><button class="dsb" data-vk="x">x</button><button class="dsb" data-vk="/">/</button><button class="dsb" data-vk="s">s</button><button class="dsb primary" data-vk="enter">↵</button><button class="dsb" data-ds="esc" title="الغي الخطوة">✕</button></span>
@@ -139,6 +141,7 @@ function build() {
   });
   // our own pointer handling runs first (capture on the view) so the tool decides before the orbit does
   view.addEventListener("pointerdown", onDown, true);
+  el.querySelector("#dsHandles").addEventListener("pointerdown", handleDown);
   view.addEventListener("pointermove", onMove);
   view.addEventListener("pointerup", onUp);
   view.addEventListener("pointercancel", () => { downs.clear(); press = null; });
@@ -158,6 +161,11 @@ function build() {
     if ((e.metaKey || e.ctrlKey) && k === "z") { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
     if (k === "escape") { cancelStep(); return; }
     if (k === "enter") { TOOL[ui.tool]?.enter?.(); return; }
+    if ((e.metaKey || e.ctrlKey) && k === "c") { copySel(); e.preventDefault(); return; }
+    if ((e.metaKey || e.ctrlKey) && k === "x") { copySel(); delSel(); e.preventDefault(); return; }
+    if ((e.metaKey || e.ctrlKey) && k === "v") { pasteClip(e.shiftKey); e.preventDefault(); return; }
+    if ((e.metaKey || e.ctrlKey) && k === "a") { selectAll(); e.preventDefault(); return; }
+    if ((e.metaKey || e.ctrlKey) && k === "d") { dupSel(); e.preventDefault(); return; }
     if (k === "delete" || k === "backspace") { delSel(); return; }
     if (k === "arrowright") { lockAxis(0); return; } if (k === "arrowleft") { lockAxis(1); return; } if (k === "arrowup") { lockAxis(2); return; }
     const keys = { " ": "select", l: "line", r: "rect", c: "circle", a: "arc", p: "pushpull", m: "move", q: "rotate", s: "scale", f: "offset", t: "tape", e: "eraser", b: "paint", o: "orbit", h: "pan" };
@@ -181,6 +189,7 @@ function loop() {
   if (!dirty) return;
   dirty = false;
   ren.render(scene, cam);
+  drawLoupe();
   placeLabels();
 }
 
@@ -377,6 +386,7 @@ function placeLabels() {
     html += `<span class="dsl ${L.cls || ""} ${L.ref && ui.sel.has(L.ref) ? "on" : ""}" style="left:${x.toFixed(0)}px;top:${y.toFixed(0)}px">${esc(L.t)}</span>`;
   }
   labelsEl.innerHTML = html;
+  placeHandles();
 }
 
 // ================================================================== picking & inference
@@ -510,7 +520,10 @@ function infer(cx, cy, opts = {}) {
       if ((ui.axis != null || d < AXIS_R * pr) && (!ab || d < ab.d)) ab = { p: c.p, d, axis: i };
     }
     if (ab && opts.plane) { const q = G.toPlane(opts.plane, ab.p); if (Math.abs(q[2]) > 0.05) ab = ui.axis != null ? { ...ab, p: G.toWorld(opts.plane, [q[0], q[1]]) } : null; }
-    if (ab) return { p: ab.p, kind: "axis", axis: ab.axis, label: `على المحور ${AXN[ab.axis]}` };
+    if (ab) {
+      if (ui.step > 0) { const tt = G.dot(G.sub(ab.p, opts.anchor), AX[ab.axis]); ab.p = G.add(opts.anchor, G.mul(AX[ab.axis], Math.round(tt / ui.step) * ui.step)); }
+      return { p: ab.p, kind: "axis", axis: ab.axis, label: `على المحور ${AXN[ab.axis]}` };
+    }
   }
   if (res) return { ...res, label: KLABEL[res.kind] };
   // edges
@@ -531,7 +544,7 @@ function infer(cx, cy, opts = {}) {
   }
   if (opts.plane) {
     const { o, d } = rayAt(cx, cy), t = G.rayPlane(o, d, opts.plane) ?? G.rayPlane(o, d, { ...opts.plane, u: opts.plane.v, v: opts.plane.u });
-    if (t != null) return { p: G.add(o, G.mul(d, t)), kind: "plane", label: "" };
+    if (t != null) return { p: stepIn(G.add(o, G.mul(d, t)), opts.plane), kind: "plane", label: "" };
   }
   if (!opts.noFace) {
     const m = pickMesh(cx, cy);
@@ -542,7 +555,7 @@ function infer(cx, cy, opts = {}) {
   let t = G.rayPlane(o, d, pl);
   if (t == null) { const alt = { o: pl.o, u: pl.u, v: pl.v }; t = G.rayPlane(o, d, { ...alt, v: G.mul(alt.v, -1) }); }
   if (t == null) t = 300;
-  return { p: G.add(o, G.mul(d, t)), kind: "plane", label: "" };
+  return { p: stepIn(G.add(o, G.mul(d, t)), pl), kind: "plane", label: "" };
 }
 function basePlane(anchor) {
   const at = anchor || [0, 0, 0];
@@ -610,6 +623,7 @@ const downs = new Map();
 let press = null, touchy = false, eraseDrag = false;
 function infoXY(e) { lastXY = [e.clientX, e.clientY]; return [e.clientX, e.clientY]; }
 function onDown(e) {
+  if (e.target.closest?.(".dsh, .dsloupe")) return; // the selection handles have their own drag
   touchy = e.pointerType === "touch";
   downs.set(e.pointerId, [e.clientX, e.clientY]);
   if (downs.size > 1) { press = null; return; } // two fingers: the camera
@@ -619,6 +633,7 @@ function onDown(e) {
   // select tool on empty space → the orbit takes this drag
   if (ui.tool === "select") {
     const hit = pickAny(...xy);
+    if (!hit && ui.boxSel) { if (ctl) { ctl.touches.ONE = -1; ctl.mouseButtons.LEFT = -1; } press = { xy, box: true }; return; }
     if (!hit && ctl) { ctl.touches.ONE = THREE.TOUCH.ROTATE; ctl.mouseButtons.LEFT = THREE.MOUSE.ROTATE; press = { xy, orbit: true }; return; }
     if (ctl) { ctl.touches.ONE = -1; ctl.mouseButtons.LEFT = -1; }
   }
@@ -636,6 +651,8 @@ function onMove(e) {
   const xy = infoXY(e);
   if (press && !press.orbit && Math.hypot(xy[0] - press.xy[0], xy[1] - press.xy[1]) > 8) press.moved = true;
   if (press?.orbit) return;
+  if (press?.box) { boxDraw(press.xy, xy); return; }
+  if (touchy && press && !["select", "orbit", "pan", "eraser", "paint"].includes(ui.tool)) { loupe = xy; need(); } else loupe = null;
   if (press?.pending && press.moved) { const t0 = TOOL[ui.tool]; t0?.click(press.pending); press.pending = null; press.consumed = true; }
   if (ui.tool === "eraser") { if (eraseDrag && press) eraseAt(...xy); else hoverErase(...xy); return; }
   if (e.pointerType === "touch" && !press) return;
@@ -643,7 +660,8 @@ function onMove(e) {
 }
 function onUp(e) {
   downs.delete(e.pointerId);
-  const p = press; press = null; eraseDrag = false;
+  const p = press; press = null; eraseDrag = false; if (loupe) { loupe = null; need(); }
+  if (p?.box) { boxFinish(p.xy, [e.clientX, e.clientY]); return; }
   if (ui.tool === "select" && ctl) { ctl.touches.ONE = -1; ctl.mouseButtons.LEFT = -1; }
   if (!p || p.orbit) { if (p?.orbit && ui.tool === "select" && Math.hypot(e.clientX - p.xy[0], e.clientY - p.xy[1]) < 6) { ui.sel.clear(); ui.editGroup = null; rebuild(); renderUI(); } return; }
   const xy = infoXY(e);
@@ -1417,6 +1435,7 @@ function vcbEnter() {
   const v = G.parseVcb(txt);
   i.value = ""; i.blur();
   const t = TOOL[ui.tool];
+  if (ui.dimEdit != null && v?.v > 0) { setSize(ui.dimEdit, v.v); ui.dimEdit = null; vcbSet("", "المقاس"); return; }
   if (!v) { if (txt.trim()) setMsg("مش فاهم المقاس ده — اكتب رقم بالسم (أو 600mm أو 1.2m)"); else t?.enter?.(); return; }
   if (t?.vcb) t.vcb(v);
   else if (t?.enter) t.enter();
@@ -1507,6 +1526,7 @@ function renderUI() {
   el.querySelector('[data-ds="redo"]').disabled = !hist.r.length;
   el.querySelector("#dsSec").hidden = ui.section == null;
   el.querySelector("#dsPlane").value = ui.face2d ? "auto" : ui.plane;
+  el.querySelector("#dsStep").value = String(ui.step);
   el.querySelector("#dsHint").textContent = (ui.face2d ? "✏️ رسم 2D على وش القطعة · " : "") + (HINT[ui.tool] || "");
   const nm = el.querySelector("#dsName"); if (document.activeElement !== nm) nm.value = mname;
   el.classList.toggle("noside", !ui.panel);
@@ -1518,7 +1538,10 @@ function sideHtml() {
   const refs = selRefs(), solids = refs.filter((r) => r[0] === "s").map(ent).filter(Boolean);
   const pal = Object.keys(MATS).map((k) => `<button class="dsmat ${ui.mat === k ? "on" : ""}" data-mat="${k}" title="${esc(matName(k))}"><i style="background:${matColor(k)}"></i><span>${esc(matName(k))}</span></button>`).join("");
   h += `<div class="dsbox"><div class="dsrow"><b>الاختيار</b><label class="dschk"><input type="checkbox" data-ds="addsel" ${ui.addSel ? "checked" : ""}> + اختيار متعدد</label></div>
-    <div class="dsrow"><label class="dschk"><input type="checkbox" data-ds="copy" ${ui.copy ? "checked" : ""}> نسخة (مع التحريك واللف)</label></div></div>`;
+    <div class="dsrow"><label class="dschk"><input type="checkbox" data-ds="copy" ${ui.copy ? "checked" : ""}> نسخة (مع التحريك واللف)</label></div>
+    <div class="dsrow"><label class="dschk"><input type="checkbox" data-ds="boxsel" ${ui.boxSel ? "checked" : ""}> ⬚ اختيار بالسحب (مربع)</label></div>
+    <div class="dsbtns"><button class="dsb" data-ds="selall">الكل</button><button class="dsb" data-ds="selnone">ولا حاجة</button><button class="dsb" data-ds="selmat" ${ui.sel.size ? "" : "disabled"}>نفس الخامة</button><button class="dsb" data-ds="selinv">اعكس الاختيار</button>
+      <button class="dsb" data-ds="copyc" ${ui.sel.size ? "" : "disabled"}>📋 نسخ</button><button class="dsb" data-ds="paste" ${ui.clip ? "" : "disabled"}>لزق</button><button class="dsb" data-ds="pastein" ${ui.clip ? "" : "disabled"}>لزق في نفس المكان</button></div></div>`;
   if (refs.length === 1 && solids.length === 1) {
     const s = solids[0], bs = G.boardSize(s), bx = G.solidBox(s);
     h += `<div class="dsbox"><input class="dsin" data-sp="name" value="${esc(s.name)}" aria-label="اسم اللوح">
@@ -1552,12 +1575,14 @@ function sideHtml() {
   if (ui.sel.size) {
     const grp = [...ui.sel].find((r) => r.startsWith("G:")), g = grp && M.groups.find((x) => "G:" + x.id === grp);
     h += `<div class="dsbox">${g ? `<input class="dsin" data-gp="${g.id}" value="${esc(g.name)}" aria-label="اسم المجموعة">` : ""}<div class="dsrow"><span>${refs.length} حاجة مختارة</span></div>
+      ${moreSelHtml(solids)}
       <div class="dsbtns"><button class="dsb" data-ds="dup">⧉ نسخة</button><button class="dsb" data-ds="del">🗑 امسح</button><button class="dsb" data-ds="hide">🙈 اخفي</button><button class="dsb" data-ds="isolate">👁 لوحده</button>
       ${solids.length > 1 && !grp ? `<button class="dsb" data-ds="group">▣ اعمل مجموعة</button>` : ""}${grp ? `<button class="dsb" data-ds="ungroup">▢ فك المجموعة</button><button class="dsb" data-ds="entergrp">ادخل جواها</button>` : ""}</div>
       <div class="dsrow"><span>لف 90°</span><span class="dsgrp"><button class="dsb ax0" data-rot90="0">X</button><button class="dsb ax1" data-rot90="1">Y</button><button class="dsb ax2" data-rot90="2">Z</button></span></div>
       <div class="dsrow"><span>اعكس</span><span class="dsgrp"><button class="dsb ax0" data-mirror="0">X</button><button class="dsb ax1" data-mirror="1">Y</button><button class="dsb ax2" data-mirror="2">Z</button></span></div></div>`;
   }
   h += `<div class="dsbox"><b>الخامة (للدهان واللي جاي)</b><div class="dsmats">${pal}</div></div>`;
+  h += `<details class="dsbox"><summary>⬆ استورد شكل</summary><p class="hint">ملف DXF (من أوتوكاد أو أي برنامج CNC): الخطوط والأقواس والدواير بتبقى أشكال مقفولة تسحبها ألواح على طول.</p><label class="dsb filelike">📂 اختار ملف DXF<input type="file" id="dsDxf" accept=".dxf,application/dxf,image/vnd.dxf" hidden></label></details>`;
   h += `<details class="dsbox"><summary>➕ ضيف بسرعة</summary>
     <div class="dsgrid"><label><span>الطول</span><input type="text" inputmode="decimal" data-numf id="qbW" value="60"></label><label><span>العرض</span><input type="text" inputmode="decimal" data-numf id="qbH" value="40"></label><label><span>السمك</span><input type="text" inputmode="decimal" data-numf id="qbT" value="${f1(ui.thick)}"></label></div>
     <div class="dsbtns"><button class="dsb" data-qb="h">▭ لوح نايم</button><button class="dsb" data-qb="v">▯ لوح واقف</button><button class="dsb" data-qb="s">◫ جنب</button></div>
@@ -1578,6 +1603,9 @@ const HELP = `<b>إزاي ترسم</b><ol>
   <li>«تحريك» مع «نسخة» وبعدين اكتب x5 = خمس نسخ ورا بعض. دوس على ركن لوح بالتحريك يغيّر شكله.</li>
   <li>الأسهم (أو X Y Z تحت) بتقفل الاتجاه على محور. صباعين: زحّك وكبّر. في «اختيار» اسحب في الفاضي تلف.</li>
   <li>«✏️ ارسم شكلها 2D» من جنب اللوح بيبصلك على وشه على طول عشان ترسم شكل القطعة بالظبط.</li>
+  <li>اختار لوح أو مجموعة: الأسهم الملوّنة بتحرّك، المربعات الصغيرة بتمط وتقصّر، والأرقام دوس عليها واكتب المقاس الجديد.</li>
+  <li>من الجنب: مصفوفة (نسخ منتظمة أو دائرية)، رص ووزّع، قص لوح بلوح تاني (تعشيق/تفريغ)، دمج، نسخ ولزق، واستيراد شكل DXF.</li>
+  <li>«شبكة» تحت بتخلّي الرسم يمشي على خطوات (1 سم، 5 سم…). على الآيباد بيظهر مكبّر فوق صباعك وانت بترسم.</li>
   <li>لما تخلص دوس «✓ خلصت»: كل لوح بيدخل القص والملصقات وملفات الـCNC بشكله الحقيقي.</li></ol>`;
 
 function onClick(e) {
@@ -1589,6 +1617,7 @@ function onClick(e) {
   if (d.axis != null) { lockAxis(+d.axis); return; }
   if (d.mat) { ui.mat = d.mat; renderUI(); if (ui.sel.size) edit(() => selRefs().forEach((r) => { const x = ent(r); if (x && (r[0] === "s" || r[0] === "w")) x.mat = d.mat; })); return; }
   if (d.rot90 != null) { rotSel90(+d.rot90); return; }
+  if (d.align != null) { alignSel(+el.querySelector("#dsAlAx").value, d.align); return; }
   if (d.mirror != null) { mirrorSel(+d.mirror); return; }
   if (d.pick) { ui.sel = new Set([d.pick]); ui.outline = true; rebuild(); renderUI(); return; }
   if (d.qb) { addBoard(+el.querySelector("#qbW").value || 60, +el.querySelector("#qbH").value || 40, +el.querySelector("#qbT").value || 1.8, d.qb); return; }
@@ -1626,6 +1655,17 @@ function onClick(e) {
     case "extrude": { const k = ent(selRefs()[0]); const t = +el.querySelector("#dsQuickT").value || ui.thick; ui.thick = t; ui.st = { kind: "sketch", k, plane: k.plane, n: G.nOf(k.plane), a: G.toWorld(k.plane, k.pts[0]) }; commitPush(t); break; }
     case "qbox": addBox(+el.querySelector("#qxW").value || 60, +el.querySelector("#qxH").value || 72, +el.querySelector("#qxD").value || 58, ui.thick, el.querySelector("#qxB").checked); break;
     case "mylib": ctx.saveLib?.(G.clone(M), mname); break;
+    case "selall": selectAll(); break;
+    case "selnone": ui.sel.clear(); ui.editGroup = null; rebuild(); renderUI(); break;
+    case "selinv": invertSel(); break;
+    case "selmat": selSameMat(); break;
+    case "copyc": copySel(); renderUI(); break;
+    case "paste": pasteClip(false); break;
+    case "pastein": pasteClip(true); break;
+    case "arr": readArr(); arrayLinear(); break;
+    case "parr": readArr(); arrayPolar(); break;
+    case "subtract": subtractSel(); break;
+    case "union": unionSel(); break;
   }
 }
 function confirmLeave() { return window.confirm ? window.confirm("هتقفل من غير ما تحفظ التعديلات؟") : true; }
@@ -1637,6 +1677,10 @@ function showHelp() {
 }
 function onChange(e) {
   const t = e.target, d = t.dataset;
+  if (t.id === "dsStep") { ui.step = +t.value || 0; return; }
+  if (t.id === "dsDxf" && t.files?.[0]) { importDxf(t.files[0]); t.value = ""; return; }
+  if (t.dataset.ds === "boxsel") { ui.boxSel = t.checked; setMsg(ui.boxSel ? "اسحب في الفاضي: من الشمال لليمين = اللي جوه المربع كله · من اليمين للشمال = أي حاجة بيلمسها" : ""); return; }
+  if (t.id === "dsStep") return;
   if (t.id === "dsPlane") { ui.plane = t.value; if (ui.face2d) { ui.face2d = null; applyControls(); } renderUI(); return; }
   if (t.dataset.ds === "addsel") { ui.addSel = t.checked; return; }
   if (t.dataset.ds === "copy") { ui.copy = t.checked; return; }
@@ -1661,4 +1705,426 @@ function onChange(e) {
 }
 function onInput(e) {
   if (e.target.id === "dsSecPos") { ui.secPos = +e.target.value; rebuild(); }
+}
+
+
+// ================================================================== more: handles, box select, inline sizes, array, align, booleans, clipboard, DXF, loupe
+/** round a free point to the grid on its plane */
+function stepIn(P, pl) {
+  if (!(ui.step > 0) || !pl) return P;
+  const q = G.toPlane(pl, P), k = ui.step;
+  return G.toWorld(pl, [Math.round(q[0] / k) * k, Math.round(q[1] / k) * k], q[2]);
+}
+function selBox(refs = selRefs()) {
+  const b = { x0: Infinity, y0: Infinity, z0: Infinity, x1: -Infinity, y1: -Infinity, z1: -Infinity };
+  const add = (P) => { b.x0 = Math.min(b.x0, P[0]); b.y0 = Math.min(b.y0, P[1]); b.z0 = Math.min(b.z0, P[2]); b.x1 = Math.max(b.x1, P[0]); b.y1 = Math.max(b.y1, P[1]); b.z1 = Math.max(b.z1, P[2]); };
+  for (const r of refs) {
+    const e = ent(r); if (!e) continue;
+    if (r[0] === "s") { const x = G.solidBox(e); add([x.x0, x.y0, x.z0]); add([x.x1, x.y1, x.z1]); }
+    else if (r[0] === "k") e.pts.forEach((p) => add(G.toWorld(e.plane, p)));
+    else if (r[0] === "w") for (const f of G.sweepFaces(e.profile, e.path, e.closed)) f.outer.forEach(add);
+    else if (r[0] === "p") e.pts.forEach(add);
+  }
+  return isFinite(b.x0) ? b : null;
+}
+const BL = (b) => [b.x0, b.y0, b.z0], BH = (b) => [b.x1, b.y1, b.z1];
+
+// ---- handles on the selection: arrows move it along an axis, squares stretch it, labels type its size
+let hdrag = null;
+function placeHandles() {
+  const H = el?.querySelector("#dsHandles");
+  if (!H) return;
+  if (hdrag) return; // keep the element under the finger while it drags (a touch is tied to it)
+  const refs = ui.tool === "select" && !ui.st ? selRefs() : [];
+  const b = refs.length ? selBox(refs) : null;
+  if (!b) { if (H.innerHTML) H.innerHTML = ""; return; }
+  const r = ren.domElement.getBoundingClientRect(), vr = el.querySelector("#dsView").getBoundingClientRect();
+  const S = (P) => { const q = T3(P).project(cam); return [((q.x + 1) / 2) * r.width + (r.left - vr.left), ((1 - q.y) / 2) * r.height + (r.top - vr.top), q.z]; };
+  const L = BL(b), Hh = BH(b), c = L.map((v, i) => (v + Hh[i]) / 2), size = Hh.map((v, i) => v - L[i]);
+  const span = Math.max(...size, 10);
+  let h = "";
+  const at = (P, cls, data, txt, title) => { const q = S(P); if (q[2] > 1 || q[2] < -1) return ""; return `<button class="dsh ${cls}" ${data} style="left:${q[0].toFixed(0)}px;top:${q[1].toFixed(0)}px" title="${title}">${txt}</button>`; };
+  // move arrows: a fixed distance on screen from the centre, along each axis as it looks on screen
+  const sc = S(c), atPx = (x, y, cls, data, txt, title) => `<button class="dsh ${cls}" ${data} style="left:${x.toFixed(0)}px;top:${y.toFixed(0)}px" title="${title}">${txt}</button>`;
+  if (sc[2] <= 1 && sc[2] >= -1) {
+    for (const a of [0, 1, 2]) {
+      const P = [...c]; P[a] += span * 0.5;
+      const q = S(P); let dx = q[0] - sc[0], dy = q[1] - sc[1]; const l = Math.hypot(dx, dy) || 1;
+      dx /= l; dy /= l;
+      h += atPx(sc[0] + dx * 62, sc[1] + dy * 62, `mv ax${a}`, `data-hmv="${a}"`, ["⇆", "⤢", "⇅"][a], `اسحب تحرّك على المحور ${AXN[a]}`);
+    }
+    h += atPx(sc[0], sc[1], "rt", `data-hrt="2"`, "↻", "لف 90° حوالين الأزرق");
+  }
+  // stretch squares on the six faces
+  for (const a of [0, 1, 2]) for (const sd of [0, 1]) {
+    if (size[a] < 0.05) continue;
+    const P = [...c]; P[a] = sd ? Hh[a] : L[a];
+    h += at(P, `rs ax${a}`, `data-hrs="${a},${sd}"`, "", "اسحب تمط / تقصّر");
+  }
+  // the three sizes, tap to type
+  const dimAt = [[c[0], L[1], L[2]], [Hh[0], c[1], L[2]], [Hh[0], L[1], c[2]]];
+  for (const a of [0, 1, 2]) if (size[a] >= 0.05) h += at(dimAt[a], `dm ax${a} ${ui.dimEdit === a ? "on" : ""}`, `data-hdm="${a}"`, f1(size[a]), "دوس واكتب المقاس");
+  H.innerHTML = h;
+}
+function handleDown(e) {
+  const b = e.target.closest(".dsh");
+  if (!b) return;
+  e.preventDefault(); e.stopPropagation();
+  const d = b.dataset;
+  if (d.hdm != null) { ui.dimEdit = +d.hdm; const i = el.querySelector("#dsVcb"); i.value = ""; el.querySelector("#dsVcbL").textContent = ["العرض (X)", "العمق (Y)", "الارتفاع (Z)"][ui.dimEdit]; i.focus(); need(); return; }
+  if (d.hrt != null) { rotSel90(+d.hrt); return; }
+  const box = selBox(); if (!box) return;
+  const ax = d.hmv != null ? +d.hmv : +d.hrs.split(",")[0], side = d.hrs != null ? +d.hrs.split(",")[1] : null;
+  const L = BL(box), Hh = BH(box), c = L.map((v, i) => (v + Hh[i]) / 2);
+  const base = [...c]; if (side != null) base[ax] = side ? Hh[ax] : L[ax];
+  const c0 = closestOnLine(base, AX[ax], e.clientX, e.clientY);
+  if (!c0) return;
+  try { b.setPointerCapture(e.pointerId); } catch { /* */ }
+  b.classList.add("drag");
+  hdrag = { kind: d.hmv != null ? "move" : "size", ax, side, base, t0: c0.t, snap: JSON.stringify(M), refs: selRefs(), box, d: 0, labelAt: base };
+  const mv = (ev) => {
+    const q = closestOnLine(hdrag.base, AX[hdrag.ax], ev.clientX, ev.clientY);
+    if (!q) return;
+    let dd = q.t - hdrag.t0;
+    const k = ui.step > 0 ? ui.step : 0.5;
+    dd = Math.round(dd / k) * k;
+    if (dd === hdrag.d) return;
+    hdrag.d = dd;
+    M = JSON.parse(hdrag.snap);
+    applyHandle(hdrag, dd);
+    hdrag.label = hdrag.kind === "move" ? `${dd > 0 ? "+" : ""}${f1(dd)}` : f1(Math.max(0.1, (hdrag.box[["x1", "y1", "z1"][hdrag.ax]] - hdrag.box[["x0", "y0", "z0"][hdrag.ax]]) + (hdrag.side ? dd : -dd)));
+    hdrag.labelAt = G.add(hdrag.base, G.mul(AX[hdrag.ax], dd));
+    live = [{ p: hdrag.labelAt, t: hdrag.label, cls: "len" }];
+    rebuild();
+  };
+  const up = () => {
+    window.removeEventListener("pointermove", mv); window.removeEventListener("pointerup", up); window.removeEventListener("pointercancel", up);
+    const st = hdrag; hdrag = null; live = [];
+    if (st.d) { hist.u.push(st.snap); hist.r = []; } else M = JSON.parse(st.snap);
+    rebuild(); renderUI();
+  };
+  window.addEventListener("pointermove", mv); window.addEventListener("pointerup", up); window.addEventListener("pointercancel", up);
+}
+function applyHandle(st, d) {
+  if (st.kind === "move") { const v = G.mul(AX[st.ax], d); for (const r of st.refs) xform(r, { p: (P) => G.add(P, v) }); return; }
+  const lo = st.box[["x0", "y0", "z0"][st.ax]], hi = st.box[["x1", "y1", "z1"][st.ax]], len0 = hi - lo;
+  const len1 = Math.max(0.1, len0 + (st.side ? d : -d));
+  const fixed = [0, 0, 0]; fixed[st.ax] = st.side ? lo : hi;
+  stretchRefs(st.refs, st.ax, fixed[st.ax], len0 > 0.01 ? len1 / len0 : 1);
+}
+/** stretch the selection along one world axis about a fixed coordinate */
+function stretchRefs(refs, ax, at, k) {
+  const kk = [1, 1, 1]; kk[ax] = k;
+  const c = [0, 0, 0]; c[ax] = at;
+  for (const r of refs) {
+    const e = ent(r); if (!e) continue;
+    if (r[0] === "s") {
+      const n = G.nOf(e.plane);
+      if (Math.abs(n[ax]) > 0.999 || Math.abs(e.plane.u[ax]) > 0.999 || Math.abs(e.plane.v[ax]) > 0.999) scaleSolid(e, c, kk);
+      else { // a slanted board: scale it uniformly in its plane along the projected axis
+        const pc = [...c]; for (let i = 0; i < 3; i++) if (i !== ax) pc[i] = e.plane.o[i];
+        scaleSolid(e, pc, kk);
+      }
+    } else if (r[0] === "k") { const pl = e.plane, fu = Math.hypot(...pl.u.map((x, i) => x * kk[i])), fv = Math.hypot(...pl.v.map((x, i) => x * kk[i])); e.pts = e.pts.map(([a, b]) => [a * fu, b * fv]); e.plane = { ...pl, o: pl.o.map((v, i) => c[i] + (v - c[i]) * kk[i] + (i === ax ? 0 : 0)) }; e.plane.o = pl.o.map((v, i) => (i === ax ? c[i] + (v - c[i]) * k : v)); }
+    else xform(r, { p: (P) => P.map((v, i) => (i === ax ? at + (v - at) * k : v)) });
+  }
+}
+/** a typed size for the selection along an axis (its low side stays put) */
+function setSize(ax, v) {
+  const b = selBox(); if (!b) return;
+  const lo = BL(b)[ax], len0 = BH(b)[ax] - lo;
+  if (len0 < 0.01) return;
+  edit(() => stretchRefs(selRefs(), ax, lo, v / len0));
+}
+
+// ---- box select
+function boxDraw(a, b) {
+  const x = el.querySelector("#dsBoxSel"), vr = el.querySelector("#dsView").getBoundingClientRect();
+  x.hidden = false;
+  x.classList.toggle("cross", b[0] < a[0]);
+  Object.assign(x.style, { left: Math.min(a[0], b[0]) - vr.left + "px", top: Math.min(a[1], b[1]) - vr.top + "px", width: Math.abs(b[0] - a[0]) + "px", height: Math.abs(b[1] - a[1]) + "px" });
+}
+function boxFinish(a, b) {
+  el.querySelector("#dsBoxSel").hidden = true;
+  if (Math.hypot(b[0] - a[0], b[1] - a[1]) < 6) { if (!ui.addSel) { ui.sel.clear(); rebuild(); renderUI(); } return; }
+  const cross = b[0] < a[0];
+  const x0 = Math.min(a[0], b[0]), x1 = Math.max(a[0], b[0]), y0 = Math.min(a[1], b[1]), y1 = Math.max(a[1], b[1]);
+  const inn = (P) => { const q = scr(P); return q[0] >= x0 && q[0] <= x1 && q[1] >= y0 && q[1] <= y1 && q[2] < 1; };
+  const test = (pts) => (cross ? pts.some(inn) : pts.length && pts.every(inn));
+  if (!ui.addSel) ui.sel.clear();
+  const groups = new Map();
+  for (const sld of M.solids) {
+    if (sld.hidden) continue;
+    const bx = G.solidBox(sld), corners = [];
+    for (const X of [bx.x0, bx.x1]) for (const Y of [bx.y0, bx.y1]) for (const Z of [bx.z0, bx.z1]) corners.push([X, Y, Z]);
+    if (!test(corners)) continue;
+    if (sld.group && !ui.editGroup) groups.set(sld.group, true); else ui.sel.add("s:" + sld.id);
+  }
+  for (const g of groups.keys()) ui.sel.add("G:" + g);
+  for (const k of M.sketches) if (test(k.pts.map((p) => G.toWorld(k.plane, p)))) ui.sel.add("k:" + k.id);
+  for (const pa of M.paths) if (test(pa.pts)) ui.sel.add("p:" + pa.id);
+  for (const w of M.sweeps) if (!w.hidden && test(w.path)) ui.sel.add("w:" + w.id);
+  rebuild(); renderUI();
+  setMsg(`اتختار ${ui.sel.size}`);
+}
+function selectAll() {
+  ui.sel.clear();
+  const gs = new Set();
+  for (const sld of M.solids) { if (sld.hidden) continue; if (sld.group) gs.add(sld.group); else ui.sel.add("s:" + sld.id); }
+  gs.forEach((g) => ui.sel.add("G:" + g));
+  M.sketches.forEach((k) => ui.sel.add("k:" + k.id)); M.paths.forEach((x) => ui.sel.add("p:" + x.id)); M.sweeps.forEach((w) => { if (!w.hidden) ui.sel.add("w:" + w.id); });
+  rebuild(); renderUI();
+}
+function invertSel() {
+  const had = new Set(selRefs());
+  ui.sel.clear();
+  for (const sld of M.solids) if (!sld.hidden && !had.has("s:" + sld.id)) ui.sel.add("s:" + sld.id);
+  for (const k of M.sketches) if (!had.has("k:" + k.id)) ui.sel.add("k:" + k.id);
+  rebuild(); renderUI();
+}
+function selSameMat() {
+  const mats = new Set(selSolids().map((x) => x.mat));
+  if (!mats.size) return;
+  ui.sel.clear();
+  for (const sld of M.solids) if (!sld.hidden && mats.has(sld.mat)) ui.sel.add("s:" + sld.id);
+  rebuild(); renderUI(); setMsg(`اتختار ${ui.sel.size} لوح من نفس الخامة`);
+}
+
+// ---- clipboard
+function copySel() {
+  const refs = selRefs(); if (!refs.length) return;
+  ui.clip = { items: refs.map((r) => ({ k: r[0], e: G.clone(ent(r)) })).filter((x) => x.e), groups: G.clone(M.groups) };
+  setMsg(`اتنسخ ${ui.clip.items.length} — «لزق» تحطهم`);
+}
+function pasteClip(inPlace) {
+  const cb = ui.clip; if (!cb?.items.length) return;
+  edit(() => {
+    const key = { s: "solids", k: "sketches", p: "paths", w: "sweeps", g: "guides", d: "dims", t: "texts" };
+    const gmap = new Map(), made = [];
+    const dv = inPlace ? [0, 0, 0] : [15, 15, 0];
+    for (const it of cb.items) {
+      const c = G.clone(it.e); c.id = uid();
+      if (c.group) { if (!gmap.has(c.group)) { const g0 = cb.groups.find((g) => g.id === c.group); const ng = { id: uid(), name: (g0?.name || "مجموعة") + " (لزق)" }; M.groups.push(ng); gmap.set(c.group, ng.id); } c.group = gmap.get(c.group); }
+      M[key[it.k]].push(c);
+      const ref = it.k + ":" + c.id;
+      xform(ref, { p: (P) => G.add(P, dv) });
+      made.push(ref);
+    }
+    ui.sel = new Set(made.map((r) => { const e = ent(r); return r[0] === "s" && e.group ? "G:" + e.group : r; }));
+  });
+}
+
+// ---- arrays, align, distribute
+function moreSelHtml(solids) {
+  const a = ui.arr;
+  const axSel = (id, v) => `<select id="${id}" class="dssel sm">${["X", "Y", "Z"].map((n, i) => `<option value="${i}" ${v === i ? "selected" : ""}>${n} ${["الأحمر", "الأخضر", "الأزرق"][i]}</option>`).join("")}</select>`;
+  let h = `<details class="dssub"><summary>▦ مصفوفة (نسخ منتظمة)</summary>
+    <div class="dsgrid"><label><span>العدد</span><input type="text" inputmode="decimal" data-numf id="arN" value="${a.n}"></label><label><span>المسافة بين كل نسخة</span><input type="text" inputmode="decimal" data-numf id="arD" value="${a.d}"></label><label><span>الاتجاه</span>${axSel("arAx", a.ax)}</label></div>
+    <div class="dsbtns"><button class="dsb" data-ds="arr">▦ اعمل المصفوفة</button></div>
+    <div class="dsgrid"><label><span>عدد دائري</span><input type="text" inputmode="decimal" data-numf id="prN" value="${a.pn}"></label><label><span>الزاوية الكلية°</span><input type="text" inputmode="decimal" data-numf id="prA" value="${a.pa}"></label><label><span>المركز س,ص</span><input type="text" id="prC" value="${a.px},${a.py}"></label></div>
+    <div class="dsbtns"><button class="dsb" data-ds="parr">◌ مصفوفة دائرية</button></div></details>`;
+  if (selRefs().length > 1) h += `<details class="dssub"><summary>⇹ رصّ ووزّع</summary><div class="dsrow"><span>على</span>${axSel("dsAlAx", ui.alignAx)}</div>
+    <div class="dsbtns"><button class="dsb" data-align="min">⇤ أول</button><button class="dsb" data-align="mid">⇹ النص</button><button class="dsb" data-align="max">⇥ آخر</button><button class="dsb" data-align="dist">↔ وزّع بالتساوي</button><button class="dsb" data-align="stack">▤ ورا بعض لازقين</button></div></details>`;
+  if (solids.length > 1) h += `<details class="dssub"><summary>✂ قص ودمج الألواح</summary><p class="hint">أول لوح اخترته هو اللي بيتقص. «اقطع» = شكل الباقي بيتشال منه (لو عدّى سمكه كله: قصة أو تفريغة، لو من وش واحد: حفر). «ادمج» = ألواح في نفس المستوى ونفس السمك بتبقى لوح واحد.</p>
+    <div class="dsbtns"><button class="dsb" data-ds="subtract">✂ اقطع الأول بالباقي</button><button class="dsb" data-ds="union">⊕ ادمج</button></div></details>`;
+  return h;
+}
+function readArr() {
+  const g = (id) => el.querySelector("#" + id)?.value;
+  const a = ui.arr;
+  a.n = Math.max(1, Math.min(200, Math.round(+g("arN") || a.n))); a.d = +g("arD") || a.d; a.ax = +g("arAx") || 0;
+  a.pn = Math.max(2, Math.min(200, Math.round(+g("prN") || a.pn))); a.pa = +g("prA") || 360;
+  const pc = String(g("prC") || "").split(/[,،]/).map(Number); if (pc.length === 2 && pc.every(isFinite)) { a.px = pc[0]; a.py = pc[1]; }
+}
+function arrayLinear() {
+  const a = ui.arr, refs = selRefs(); if (!refs.length) return;
+  edit(() => { for (let i = 1; i < a.n; i++) for (const c of copyRefs(refs)) xform(c, { p: (P) => G.add(P, G.mul(AX[a.ax], a.d * i)) }); });
+  setMsg(`اتعمل ${a.n - 1} نسخة كل ${f1(a.d)} سم`);
+}
+function arrayPolar() {
+  const a = ui.arr, refs = selRefs(); if (!refs.length) return;
+  const full = Math.abs(Math.abs(a.pa) - 360) < 0.01, step = ((a.pa / (full ? a.pn : Math.max(1, a.pn - 1))) * Math.PI) / 180;
+  const c = [a.px, a.py, selCenter()[2]];
+  edit(() => { for (let i = 1; i < a.pn; i++) for (const cp of copyRefs(refs)) xform(cp, { p: (P) => G.rotP(P, c, [0, 0, 1], step * i) }); });
+  setMsg(`اتعمل ${a.pn - 1} نسخة حوالين (${f1(a.px)}, ${f1(a.py)})`);
+}
+function alignSel(ax, how) {
+  ui.alignAx = ax;
+  const units = []; // each selected item (a group moves as one)
+  for (const r of ui.sel) { const refs = r.startsWith("G:") ? M.solids.filter((x) => x.group === r.slice(2)).map((x) => "s:" + x.id) : [r]; const b = selBox(refs); if (b) units.push({ refs, b }); }
+  if (units.length < 2) return;
+  const lo = (b) => BL(b)[ax], hi = (b) => BH(b)[ax], mid = (b) => (lo(b) + hi(b)) / 2;
+  const all = units.map((u) => u.b), L = Math.min(...all.map(lo)), H = Math.max(...all.map(hi)), Mi = (L + H) / 2;
+  edit(() => {
+    if (how === "dist" || how === "stack") {
+      const sorted = [...units].sort((p, q) => lo(p.b) - lo(q.b));
+      const total = sorted.reduce((s, u) => s + hi(u.b) - lo(u.b), 0);
+      const gap = how === "stack" ? 0 : (H - L - total) / Math.max(1, sorted.length - 1);
+      let at = lo(sorted[0].b);
+      for (const u of sorted) { const dv = [0, 0, 0]; dv[ax] = at - lo(u.b); for (const r of u.refs) xform(r, { p: (P) => G.add(P, dv) }); at += hi(u.b) - lo(u.b) + gap; }
+      return;
+    }
+    for (const u of units) {
+      const dv = [0, 0, 0];
+      dv[ax] = how === "min" ? L - lo(u.b) : how === "max" ? H - hi(u.b) : Mi - mid(u.b);
+      for (const r of u.refs) xform(r, { p: (P) => G.add(P, dv) });
+    }
+  });
+}
+
+// ---- booleans between boards
+/** the outline (in s's plane) and the depth range (along s's normal) that solid c covers */
+function footprintOn(s, c) {
+  const pts = [], ws = [];
+  for (const f of G.solidFaces(c)) for (const P of f.outer) { const q = G.toPlane(s.plane, P); pts.push([q[0], q[1]]); ws.push(q[2]); }
+  const nS = G.nOf(s.plane), nC = G.nOf(c.plane);
+  let loop;
+  if (Math.abs(Math.abs(G.dot(nS, nC)) - 1) < 1e-4) loop = c.outer.map((p) => G.toPlane(s.plane, G.toWorld(c.plane, p)).slice(0, 2));
+  else loop = hull(pts);
+  return { loop: G.ccw(G.clean(loop)), w0: Math.min(...ws), w1: Math.max(...ws) };
+}
+function hull(P) {
+  const p = [...P].sort((a, b) => a[0] - b[0] || a[1] - b[1]), cr = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const lo = [], up = [];
+  for (const q of p) { while (lo.length >= 2 && cr(lo.at(-2), lo.at(-1), q) <= 0) lo.pop(); lo.push(q); }
+  for (const q of [...p].reverse()) { while (up.length >= 2 && cr(up.at(-2), up.at(-1), q) <= 0) up.pop(); up.push(q); }
+  return lo.slice(0, -1).concat(up.slice(0, -1));
+}
+function subtractSel() {
+  const ss = selSolids(); if (ss.length < 2) return;
+  const [target, ...cutters] = ss;
+  let done = 0, skipped = 0;
+  edit(() => {
+    for (const c of cutters) {
+      const fp = footprintOn(target, c), D = target.depth;
+      if (fp.loop.length < 3 || fp.w1 <= 0.01 || fp.w0 >= D - 0.01) { skipped++; continue; }
+      if (fp.w0 <= 0.01 && fp.w1 >= D - 0.01) { cutThrough(target, fp.loop); done++; }
+      else if (fp.w1 >= D - 0.01) { target.pockets.push({ loop: fp.loop, depth: G.r2(D - fp.w0), face: "top" }); done++; }
+      else if (fp.w0 <= 0.01) { target.pockets.push({ loop: fp.loop, depth: G.r2(fp.w1), face: "bottom" }); done++; }
+      else skipped++;
+    }
+  });
+  setMsg(done ? `اتقص «${target.name}» بـ ${done}${skipped ? ` · ${skipped} مالمسوش` : ""}` : "الألواح التانية مش داخلة في اللوح الأول");
+}
+function unionSel() {
+  const ss = selSolids(); if (ss.length < 2) return;
+  const [a, ...rest] = ss;
+  let merged = 0;
+  edit(() => {
+    for (const b of rest) {
+      if (!G.samePlane(a.plane, b.plane, 0.05) || G.dot(G.nOf(a.plane), G.nOf(b.plane)) < 0.99 || Math.abs(a.depth - b.depth) > 0.05) continue;
+      const lb = b.outer.map((p) => G.toPlane(a.plane, G.toWorld(b.plane, p)).slice(0, 2));
+      const r = G.boolean(G.offset(a.outer, 0.02), G.offset(lb, 0.02), "union");
+      if (r.outers.length !== 1) continue;
+      a.outer = G.ccw(G.clean(G.offset(r.outers[0], -0.02).map(([x, y]) => [G.r2(x), G.r2(y)])));
+      a.holes = [...a.holes, ...r.holes, ...b.holes.map((h) => h.map((p) => G.toPlane(a.plane, G.toWorld(b.plane, p)).slice(0, 2)))];
+      a.pockets = [...a.pockets, ...b.pockets.map((pk) => ({ ...pk, loop: pk.loop.map((p) => G.toPlane(a.plane, G.toWorld(b.plane, p)).slice(0, 2)) }))];
+      M.solids = M.solids.filter((x) => x !== b);
+      merged++;
+    }
+    ui.sel = new Set(["s:" + a.id]);
+  });
+  setMsg(merged ? `اتدمج ${merged + 1} ألواح في لوح واحد` : "الدمج محتاج ألواح في نفس المستوى ونفس السمك ولازقة في بعض");
+}
+
+// ---- DXF import (LINE, LWPOLYLINE with bulges, POLYLINE/VERTEX, CIRCLE, ARC) → closed drawings on the ground
+async function importDxf(file) {
+  const txt = await file.text();
+  const lines = txt.split(/\r?\n/);
+  const pairs = []; for (let i = 0; i + 1 < lines.length; i += 2) pairs.push([lines[i].trim(), lines[i + 1].trim()]);
+  let units = 4; // mm unless the header says otherwise
+  for (let i = 0; i < pairs.length; i++) if (pairs[i][1] === "$INSUNITS" && pairs[i + 1]) units = +pairs[i + 1][1] || 4;
+  const k = units === 5 ? 1 : units === 6 ? 100 : units === 1 ? 2.54 : 0.1; // → cm
+  const segs = [], loops = [];
+  let i = pairs.findIndex((p) => p[0] === "2" && p[1] === "ENTITIES");
+  if (i < 0) i = 0;
+  const ent0 = () => { const e = { type: pairs[i][1], g: [] }; i++; while (i < pairs.length && pairs[i][0] !== "0") { e.g.push(pairs[i]); i++; } return e; };
+  const val = (e, c) => { const x = e.g.find((p) => p[0] === c); return x ? +x[1] : 0; };
+  const bulgeArc = (a, b, bu) => { if (!bu) return [a, b]; const ch = Math.hypot(b[0] - a[0], b[1] - a[1]), h = -(bu * ch) / 2; /* + bulge = counter-clockwise = bulges right of a→b */ return G.arc3(a, b, G.bulgePoint(a, b, h)); };
+  while (i < pairs.length) {
+    if (pairs[i][0] !== "0") { i++; continue; }
+    const t = pairs[i][1];
+    if (t === "EOF" || t === "ENDSEC") break;
+    if (t === "LINE") { const e = ent0(); segs.push([[val(e, "10") * k, val(e, "20") * k], [val(e, "11") * k, val(e, "21") * k]]); }
+    else if (t === "CIRCLE") { const e = ent0(); loops.push(G.circle([val(e, "10") * k, val(e, "20") * k], val(e, "40") * k, 48)); }
+    else if (t === "ARC") {
+      const e = ent0(), c = [val(e, "10") * k, val(e, "20") * k], r = val(e, "40") * k; let a0 = (val(e, "50") * Math.PI) / 180, a1 = (val(e, "51") * Math.PI) / 180;
+      if (a1 <= a0) a1 += Math.PI * 2;
+      const n = Math.max(4, Math.ceil(((a1 - a0) / (Math.PI / 2)) * 8)), pts = [];
+      for (let j = 0; j <= n; j++) { const a = a0 + ((a1 - a0) * j) / n; pts.push([c[0] + r * Math.cos(a), c[1] + r * Math.sin(a)]); }
+      for (let j = 0; j + 1 < pts.length; j++) segs.push([pts[j], pts[j + 1]]);
+    } else if (t === "LWPOLYLINE") {
+      const e = ent0(), closed = (val(e, "70") & 1) === 1, vs = [];
+      for (const [c, v] of e.g) { if (c === "10") vs.push({ p: [+v * k, 0], b: 0 }); else if (c === "20" && vs.length) vs.at(-1).p[1] = +v * k; else if (c === "42" && vs.length) vs.at(-1).b = +v; }
+      const pts = [];
+      for (let j = 0; j < vs.length - (closed ? 0 : 1); j++) { const A = vs[j], B = vs[(j + 1) % vs.length]; const arc = bulgeArc(A.p, B.p, A.b); pts.push(...arc.slice(0, -1)); }
+      if (!closed && vs.length) pts.push(vs.at(-1).p);
+      if (closed && pts.length >= 3) loops.push(pts); else for (let j = 0; j + 1 < pts.length; j++) segs.push([pts[j], pts[j + 1]]);
+    } else if (t === "POLYLINE") {
+      const e = ent0(), closed = (val(e, "70") & 1) === 1, vs = [];
+      while (i < pairs.length && pairs[i][1] === "VERTEX") { const v = ent0(); vs.push({ p: [val(v, "10") * k, val(v, "20") * k], b: val(v, "42") }); }
+      if (pairs[i]?.[1] === "SEQEND") ent0();
+      const pts = [];
+      for (let j = 0; j < vs.length - (closed ? 0 : 1); j++) { const A = vs[j], B = vs[(j + 1) % vs.length]; pts.push(...bulgeArc(A.p, B.p, A.b).slice(0, -1)); }
+      if (!closed && vs.length) pts.push(vs.at(-1).p);
+      if (closed && pts.length >= 3) loops.push(pts); else for (let j = 0; j + 1 < pts.length; j++) segs.push([pts[j], pts[j + 1]]);
+    } else i++;
+  }
+  // chain loose segments into loops
+  const eq = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]) < 0.02;
+  const open = [];
+  const pool = segs.map((s2) => s2.map((p) => [...p]));
+  while (pool.length) {
+    let chain = pool.shift();
+    let grew = true;
+    while (grew) {
+      grew = false;
+      for (let j = 0; j < pool.length; j++) {
+        const [a, b] = pool[j];
+        if (eq(chain.at(-1), a)) { chain.push(b); } else if (eq(chain.at(-1), b)) { chain.push(a); } else if (eq(chain[0], b)) { chain.unshift(a); } else if (eq(chain[0], a)) { chain.unshift(b); } else continue;
+        pool.splice(j, 1); grew = true; break;
+      }
+    }
+    if (chain.length >= 4 && eq(chain[0], chain.at(-1))) { chain.pop(); loops.push(chain); } else open.push(chain);
+  }
+  if (!loops.length && !open.length) { setMsg("الملف مفيهوش خطوط أو أشكال نقدر نقراها"); return; }
+  // put it next to what is already drawn, its lower-left corner on the origin
+  const all = [...loops.flat(), ...open.flat()];
+  const bx = G.bbox2(all), b0 = selBox(M.solids.map((x) => "s:" + x.id)) || { x1: -10 };
+  const ox = (isFinite(b0.x1) ? b0.x1 + 20 : 0) - bx[0], oy = -bx[1];
+  edit(() => {
+    // loops inside other loops become their holes
+    const L = loops.map((l) => G.ccw(G.clean(l.map(([x, y]) => [x + ox, y + oy])))).filter((l) => l.length >= 3).sort((p, q) => Math.abs(G.area(q)) - Math.abs(G.area(p)));
+    const used = new Set();
+    L.forEach((outer, a) => {
+      if (used.has(a)) return;
+      const holes = [];
+      L.forEach((inner, b) => { if (b > a && !used.has(b) && inner.every((p) => G.inside(p, outer))) { holes.push(G.cw(inner)); used.add(b); } });
+      M.sketches.push({ id: uid(), plane: G.clone(G.GROUND), pts: outer.map((p) => p.map(G.r2)), closed: true, holes, smooth: outer.length > 24 });
+    });
+    for (const o of open) if (o.length >= 2) M.sketches.push({ id: uid(), plane: G.clone(G.GROUND), pts: o.map(([x, y]) => [G.r2(x + ox), G.r2(y + oy)]), closed: false });
+  });
+  zoomExtents();
+  setMsg(`اتقرا ${loops.length} شكل مقفول${open.length ? ` و${open.length} خط مفتوح` : ""} — اختار «سحب / زق» واعمله لوح`);
+}
+
+// ---- the loupe: what is under the finger, bigger, above it
+let loupe = null;
+function drawLoupe() {
+  const c = el.querySelector("#dsLoupe");
+  if (!loupe) { if (!c.hidden) c.hidden = true; return; }
+  const cv = ren.domElement, r = cv.getBoundingClientRect(), vr = el.querySelector("#dsView").getBoundingClientRect();
+  const sx = cv.width / r.width, R = 45; // css px around the finger
+  const g = c.getContext("2d");
+  c.hidden = false;
+  const lx = loupe[0] - vr.left, ly = loupe[1] - vr.top;
+  c.style.left = Math.max(0, Math.min(vr.width - 124, lx - 60)) + "px";
+  c.style.top = Math.max(0, ly - 190) + "px";
+  g.save(); g.clearRect(0, 0, 240, 240);
+  g.beginPath(); g.arc(120, 120, 118, 0, Math.PI * 2); g.clip();
+  g.fillStyle = "#fff"; g.fillRect(0, 0, 240, 240);
+  try { g.drawImage(cv, (loupe[0] - r.left - R) * sx, (loupe[1] - r.top - R) * sx, 2 * R * sx, 2 * R * sx, 0, 0, 240, 240); } catch { /* not ready */ }
+  g.strokeStyle = "#2f6fdf"; g.lineWidth = 2; g.beginPath(); g.moveTo(120, 96); g.lineTo(120, 144); g.moveTo(96, 120); g.lineTo(144, 120); g.stroke();
+  g.restore();
+  g.strokeStyle = "rgba(0,0,0,.35)"; g.lineWidth = 3; g.beginPath(); g.arc(120, 120, 117, 0, Math.PI * 2); g.stroke();
 }

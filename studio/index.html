@@ -7,7 +7,7 @@
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <style>html,body{margin:0;padding:0}body{min-height:100vh;min-height:100dvh}</style>
-<script>window.NOVERA_BUILD = "2026-10-03 18:16";</script>
+<script>window.NOVERA_BUILD = "2026-10-03 18:38";</script>
 </head>
 <body>
 <meta charset="utf-8">
@@ -918,6 +918,24 @@ body.indraw { overflow: hidden; }
 /* English: the page runs left to right */
 html.lang-en body, html.lang-en #pcPaste, html.lang-en .kpbar, html.lang-en .dsl.tip, html.lang-en .dsl.txt { direction: ltr; }
 html.lang-en .dsl.tip { transform: translate(10px, -150%); }
+
+.dshandles { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.dsh { position: absolute; pointer-events: auto; transform: translate(-50%, -50%); border: 2px solid #fff; box-shadow: 0 2px 8px rgba(0,0,0,.3); cursor: grab; touch-action: none; padding: 0; font: inherit; }
+.dsh.mv { width: 34px; height: 34px; border-radius: 50%; color: #fff; font-size: 17px; font-weight: 800; display: grid; place-items: center; }
+.dsh.rs { width: 16px; height: 16px; border-radius: 4px; }
+.dsh.ax0 { background: #e0413a; } .dsh.ax1 { background: #2f9e44; } .dsh.ax2 { background: #2f6fdf; }
+.dsh.dm { background: #fff; color: #1d211c; border: 1.5px solid currentColor; border-radius: 7px; font-size: 12px; font-weight: 800; padding: 1px 7px; box-shadow: 0 1px 4px rgba(0,0,0,.18); direction: ltr; cursor: text; }
+.dsh.dm.ax0 { color: #c0342e; } .dsh.dm.ax1 { color: #23803a; } .dsh.dm.ax2 { color: #2558bd; }
+.dsh.dm.on { background: #ffe9a8; }
+.dsh.rt { width: 32px; height: 32px; border-radius: 50%; background: #1d211c; color: #fff; font-size: 17px; display: grid; place-items: center; }
+.dsboxsel { position: absolute; border: 1.5px solid #2f6fdf; background: rgba(47,111,223,.12); pointer-events: none; }
+.dsboxsel.cross { border-style: dashed; border-color: #2f9e44; background: rgba(47,158,68,.12); }
+.dsloupe { position: absolute; width: 120px; height: 120px; border-radius: 50%; pointer-events: none; z-index: 3; box-shadow: 0 6px 18px rgba(0,0,0,.3); }
+.dssub { border-top: 1px dashed var(--line); padding-top: 6px; }
+.dssub summary { font-weight: 700; font-size: 13px; cursor: pointer; }
+.dssel.sm { height: 34px; max-width: 120px; }
+.filelike { cursor: pointer; }
+@media (pointer: coarse) { .dsh.rs { width: 22px; height: 22px; } .dsh.mv { width: 40px; height: 40px; } }
 </style>
 <div id="splash" class="splash" aria-hidden="true">
   <div class="sp-in">
