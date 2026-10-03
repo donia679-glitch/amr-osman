@@ -42,7 +42,12 @@ cd /home/claude/novera-app && python3 tools/build_pwa.py && python3 tools/build_
   purchase list by supplier (purchaseData/purchaseHtml, suppliers in prices, WhatsApp/PDF/Excel); extra clash checks (hob vs window/door/hood/gas, socket near sink, reach, fridge corner, oven height, tall vs window);
   step bar status lines (stepStatus); timeline (autoSchedule, P.lead, projectPulse) + home dashboard tiles (homeDash) + pulse strip on cards; hardware stock (state.hwStock, takeStock);
   assembly booklet PDF (exportAsmBooklet, snapshots per asm step); client e-signature (sigPad*, project.approval, sigBlockSvg in quote); presentation mode (presentOn/Off, #presentBar, finishes, price, sign).
-  Phase 3 still to do: designer by words, usage simulation/work triangle view, lighting plan, live waste hint, machine exports (Cutrite/Ardis/MPR/BPP), appliances catalog, finish compare, in-app barcode scanner, command palette, props levels, studio tool groups.
+- v47 (phase 3): new modules `speak.js` (parseDesign: Arabic sentence → shape/room/tier/front/openings/appliances; UI speakPop/speakRun), `appliances.js` (53-entry catalog, classOf/applyAppliance/fits; applianceField in props + purchase list),
+  `machines.js` (woodWOP MPR, Biesse BPP, Cutrite/Ardis CSV, bander list; exportMachines; built on the neutral `cncOps(pc)` that the DXF export now shares);
+  ergonomics (ergo(), ergoData, renderErgo panel #ergop, view.buildErgo figure + work triangle); lighting plan (lightingPlan/applyLighting, room.lights, plan + 3D + drawings table);
+  live board hint while editing (wasteBaseline/wasteHint, #wasteHint); finish compare pop (fincmp*, exportFinishCompare); in-app label scanner (scanOpen, BarcodeDetector → jsQR from cdnjs → typed code; progress kept in project.progress);
+  command palette (cmdOpen, ⌘K, #cmdBtn); props level «🏭 للورشة» (state.propsAdv === "shop", SHOP_SECTIONS); studio: favourite tools row, collapsible groups (localStorage ds-toolgroups), tool search #dsToolQ; presentation mode: unit stories + voice (unitStory/presentTell).
+  Not done (needs vision/ML): photo → room. Tests: scratchpad/lib/{t1,p1,p2,p3,p4}.py.
 - v45: library 3D thumbnails + preview popup (turn, open doors, size/pieces) + quick "＋"; «✨ تصميمات ذكية» sets (library.js `SMART`, added lined up);
   corner unit depth matches the straight units (L legs = depth − door, diagonal cut = leg − depth; L counter/kick to the door face);
   move a unit by holding a gold corner dot (snaps corner-to-corner / wall corners); wall paint in the studio (paint tool + swatches) and "all walls" applies at once;

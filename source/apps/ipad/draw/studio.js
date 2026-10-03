@@ -22,6 +22,17 @@ const TOOLS = [
   ["تاني", [["paint", "🪣", "دهان"], ["eraser", "⌫", "ممحاة"], ["trim", "✂", "قص عند التقاطع"]]],
 ];
 const TOOLNAME = Object.fromEntries(TOOLS.flatMap(([, l]) => l.map(([k, , n]) => [k, n])));
+/** the eight tools most hands reach for — always at the top; the groups under them fold (remembered per device) */
+const FAV_TOOLS = ["select", "line", "rect", "pushpull", "move", "tape", "eraser", "paint"];
+let toolGroups = null;
+function toolGroupOpen(i) { if (!toolGroups) { try { toolGroups = JSON.parse(localStorage.getItem("ds-toolgroups") || "null") || {}; } catch { toolGroups = {}; } } return toolGroups[i] !== false; }
+function toolGroupToggle(i) { toolGroupOpen(i); toolGroups[i] = toolGroups[i] === false; try { localStorage.setItem("ds-toolgroups", JSON.stringify(toolGroups)); } catch { /* private mode */ } const g = el?.querySelector(`[data-tg="${i}"]`); if (g) { g.classList.toggle("closed", !toolGroups[i] && toolGroups[i] === false); g.querySelector(".dstgh i").textContent = toolGroups[i] === false ? "▸" : "▾"; } }
+function toolSearch(q) {
+  const n = (t) => String(t || "").toLowerCase().replace(/[أإآ]/g, "ا").replace(/ة/g, "ه").replace(/ى/g, "ي");
+  const w = n(q).trim();
+  for (const b of el.querySelectorAll(".dstools .dst")) b.hidden = !!w && !n(b.title).includes(w);
+  for (const g of el.querySelectorAll(".dstools .dstg")) { const any = [...g.querySelectorAll(".dst")].some((b) => !b.hidden); g.hidden = !any; if (w) g.classList.remove("closed"); else if (g.dataset.tg != null) g.classList.toggle("closed", !toolGroupOpen(+g.dataset.tg)); }
+}
 const HINT = {
   select: "دوس على أي حاجة تختارها · اسحب في الفاضي تلف الكاميرا · صباعين: زحّك وكبّر",
   orbit: "اسحب بصباع تلف حوالين التصميم", pan: "اسحب بصباع تزحّك الكاميرا",
@@ -152,7 +163,9 @@ function build() {
       <span class="dsgrp"><button class="dsb" data-ds="xray" title="شفاف">◐</button><button class="dsb" data-ds="section" title="قطاع">✂</button><button class="dsb" data-ds="panel" title="اللوحة الجانبية">☰</button><button class="dsb" data-ds="help" title="شرح">؟</button></span>
     </header>
     <div class="dsmain">
-      <nav class="dstools" aria-label="أدوات الرسم">${TOOLS.map(([g, l]) => `<div class="dstg"><small>${g}</small>${l.map(([k, ic, n]) => `<button class="dst" data-tool="${k}" title="${n}" aria-label="${n}"><span>${ic}</span><em>${n}</em></button>`).join("")}</div>`).join("")}</nav>
+      <nav class="dstools" aria-label="أدوات الرسم"><input class="dstq" id="dsToolQ" type="search" placeholder="🔍 أداة" aria-label="دوّر على أداة">
+        <div class="dstg fav"><small>⭐ الأكثر استخداماً</small>${FAV_TOOLS.map((k) => { const t = TOOLS.flatMap(([, l]) => l).find((x) => x[0] === k); return t ? `<button class="dst" data-tool="${t[0]}" title="${t[2]}" aria-label="${t[2]}"><span>${t[1]}</span><em>${t[2]}</em></button>` : ""; }).join("")}</div>
+        ${TOOLS.map(([g, l], gi) => `<div class="dstg ${toolGroupOpen(gi) ? "" : "closed"}" data-tg="${gi}"><small><button class="dstgh" data-tgh="${gi}">${g} <i>${toolGroupOpen(gi) ? "▾" : "▸"}</i></button></small>${l.map(([k, ic, n]) => `<button class="dst" data-tool="${k}" title="${n}" aria-label="${n}"><span>${ic}</span><em>${n}</em></button>`).join("")}</div>`).join("")}</nav>
       <div class="dsview" id="dsView"><div class="dslabels" id="dsLabels"></div><div class="dshandles" id="dsHandles"></div><div class="dsboxsel" id="dsBoxSel" hidden></div><canvas class="dsloupe" id="dsLoupe" width="240" height="240" hidden></canvas><div class="dsmsg" id="dsMsg"></div><div class="dsconfirm" id="dsConfirm" hidden></div><div class="dssec" id="dsSec" hidden><input type="range" id="dsSecPos" min="-200" max="400" step="0.5" value="0"></div></div>
       <aside class="dsside" id="dsSide"></aside>
     </div>
@@ -2032,6 +2045,7 @@ function onClick(e) {
   const b = e.target.closest("button, [data-pick]");
   if (!b) return;
   const d = b.dataset;
+  if (d.tgh != null) { toolGroupToggle(+d.tgh); return; }
   if (d.tool) { setTool(d.tool); return; }
   if (d.view) { setView(d.view); renderUI(); return; }
   if (d.axis != null) { lockAxis(+d.axis); return; }
@@ -2133,6 +2147,7 @@ function showHelp() {
 }
 function onChange(e) {
   const t = e.target, d = t.dataset;
+  if (t.id === "dsToolQ") { toolSearch(t.value); return; }
   if (t.id === "dsStep") { ui.step = +t.value || 0; return; }
   if (d.rp || d.rset) { roomChange(t); return; }
   if (t.hasAttribute?.("data-wpaintin")) { ui.wallPaint = t.value; renderUI(); return; }
@@ -2165,6 +2180,7 @@ function onChange(e) {
   }
 }
 function onInput(e) {
+  if (e.target.id === "dsToolQ") { toolSearch(e.target.value); return; }
   if (e.target.id === "dsSecPos") { ui.secPos = +e.target.value; rebuild(); }
 }
 

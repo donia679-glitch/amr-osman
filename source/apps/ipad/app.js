@@ -18,6 +18,9 @@ import * as Render from "./render.js";
 import * as Lib from "./projects.js";
 import * as Decor from "./decor.js";
 import * as More from "./library.js";
+import * as Appl from "./appliances.js";
+import * as Mach from "./machines.js";
+import * as Speak from "./speak.js";
 import * as Obs from "./obstacles.js";
 import * as SurveyUI from "./survey_ui.js";
 import * as Media from "./media.js";
@@ -910,6 +913,33 @@ function setParams(u, mutate) {
   if (!all.includes(u)) all.unshift(u);
   for (const x of all) { const p = expanded(x); mutate(p); x.params = p; }
   save(); render();
+  wasteHint();
+}
+// ---- v47: the live board hint — while a size changes, how many boards the whole project needs now vs before the edit
+let wasteT = 0;
+function sheetsNow() { return cutData?.results ? Object.values(cutData.results).reduce((a, r) => a + r.sheets.filter((x) => x.stock !== "remnant").length, 0) : null; }
+function wasteBaseline() {
+  const u = selUnit();
+  if (!u || !["kitchen", "dressing", "panel"].includes(u.kind) || ui.wasteBase?.id === u.id) return;
+  ui.wasteBase = { id: u.id, sheets: null };
+  clearTimeout(wasteT);
+  wasteT = setTimeout(() => runCut(() => { if (ui.wasteBase?.id === u.id && ui.wasteBase.sheets == null) ui.wasteBase.sheets = sheetsNow(); }), 900);
+}
+function wasteHint() {
+  const u = selUnit();
+  if (!u || ui.wasteBase?.id !== u.id || ui.wasteBase.sheets == null || state.tab !== "design") return;
+  clearTimeout(wasteT);
+  wasteT = setTimeout(() => runCut(() => {
+    const now = sheetsNow(), base = ui.wasteBase?.sheets;
+    if (now == null || base == null || ui.wasteBase.id !== u.id) return;
+    const el = $("#wasteHint") || Object.assign(document.createElement("div"), { id: "wasteHint", className: "wastehint" });
+    if (!el.parentNode) $("#view3d").appendChild(el);
+    const d = now - base;
+    el.className = `wastehint ${d < 0 ? "good" : d > 0 ? "bad" : ""}`;
+    el.innerHTML = d === 0 ? `🪵 ${now} لوح — زي ما هو` : d < 0 ? `🪵 ${base} → <b>${now}</b> لوح — وفّرت ${-d} ✓` : `🪵 ${base} → <b>${now}</b> لوح — زاد ${d} ⚠`;
+    el.hidden = false;
+    clearTimeout(el._t); el._t = setTimeout(() => { el.hidden = true; }, 6000);
+  }), 700);
 }
 const getPath = (p, path) => path.split(".").reduce((a, k) => (a == null ? a : a[k]), p);
 function setPath(p, path, v) { const ks = path.split("."); let o = p; for (const k of ks.slice(0, -1)) o = o[k] ??= {}; o[ks[ks.length - 1]] = v; }
@@ -924,6 +954,7 @@ app.innerHTML = `
   <span class="undogrp"><button id="undoBtn" class="projbtn" aria-label="تراجع" title="تراجع (⌘Z)" disabled>↶</button><button id="redoBtn" class="projbtn" aria-label="إعادة" title="إعادة (⇧⌘Z)" disabled>↷</button></span>
   <button id="saveBtn" class="projbtn savebtn" aria-label="حفظ">💾<span>حفظ</span></button>
   <button id="drawBtn" class="projbtn drawbtn" title="ورشة الرسم" aria-label="ورشة الرسم">✏️<span>ورشة الرسم</span></button>
+  <button id="cmdBtn" class="projbtn" aria-label="اكتب أمر" title="اكتب اللي عايزه (⌘K)">⌘</button>
   <button id="expBtn" class="projbtn">${ICON.share}<span>تصدير</span></button>
   <button id="menuBtn" class="projbtn" aria-label="القائمة">☰<span>القائمة</span></button>
   <span id="cloud" class="cloud"></span>
@@ -943,6 +974,7 @@ app.innerHTML = `
       <div id="chips" class="chips"></div>
       <div id="scenep" class="scenep" hidden></div>
       <div id="inspp" class="scenep" hidden></div>
+      <div id="ergop" class="scenep ergop" hidden></div>
       <div id="multibar" class="movebar multibar" hidden></div>
       <div id="movebar" class="movebar" hidden><span>وضع التحريك — اسحب الوحدة اللي عليها الإطار الدهبي، أو امسكها من نقطة دهبي في ركنها عشان تلزق ركنها في ركن وحدة تانية أو ركن الحيطة بالظبط.</span><button data-moveoff>✕ خروج</button></div>
       <div id="view3d" class="view3d"><div id="fallback" class="fallback" hidden></div><div id="ptbar" class="ptbar" hidden></div>
@@ -1348,6 +1380,7 @@ $("#libBtn").addEventListener("click", () => { state.libOpen = !state.libOpen; r
       }
       return;
     }
+    if (ui.present) { const id = view.pickAt(e.clientX, e.clientY); if (id) presentTell(id); return; }
     const hit = view.pickAny(e.clientX, e.clientY);
     if (!hit && ui.moveMode) { sceneMode(); alertBar("رجعت للوضع العادي — السحب بيلف المشهد كله."); return; }
     if (hit?.kind === "unit") {
@@ -1458,6 +1491,9 @@ function renderScene() {
     <button class="add" data-vsave>＋ احفظ الكادر ده</button>`;
 }
 $("#scenep").addEventListener("pointerdown", (e) => e.stopPropagation());
+$("#ergop").addEventListener("pointerdown", (e) => e.stopPropagation());
+$("#ergop").addEventListener("click", (e) => { if (e.target.closest("[data-eclose]")) { ergo().on = false; renderChips(); renderErgo(); view.update(); } });
+$("#ergop").addEventListener("input", (e) => { if (e.target.dataset.eh !== undefined) { ergo().h = +e.target.value; renderErgo(); view.update(); } });
 $("#scenep").addEventListener("input", (e) => {
   const k = e.target.dataset?.sk;
   if (!k) return;
@@ -1601,6 +1637,7 @@ document.querySelector(".stage").addEventListener("click", (e) => {
   if (d.pturn !== undefined) { presentTurn(!ui.presentTurn); renderPresent(); return; }
   if (d.pfin !== undefined) { presentFinish(d.pfin); return; }
   if (d.pprice !== undefined) { ui.present.price = !ui.present.price; renderPresent(); return; }
+  if (d.pvoice !== undefined) { ui.present.voice = !ui.present.voice; if (ui.present.voice && "speechSynthesis" in window) speechSynthesis.getVoices(); renderPresent(); alertBar(ui.present.voice ? "🔊 دوس على أي وحدة تسمع عنها" : "🔇 الصوت اتقفل"); return; }
   if (d.psign !== undefined) { presentSign(); return; }
   if (d.pkeep !== undefined) { ui.present.orig = clone(state.project.units); ui.present.lib = null; save(); renderPresent(); alertBar("✓ اتثبّت اللون على التصميم."); return; }
 });
@@ -1625,6 +1662,7 @@ $("#sheetBtn").addEventListener("click", () => {
 document.body.dataset.sheet = "min";
 $("#saveBtn").addEventListener("click", () => saveNow());
 $("#homeBtn").addEventListener("click", () => showHome());
+$("#cmdBtn").addEventListener("click", () => cmdOpen());
 $("#home").addEventListener("click", async (e) => {
   const b = e.target.closest("button");
   if (!b) return;
@@ -1643,6 +1681,7 @@ $("#home").addEventListener("click", async (e) => {
   if (d.hsv) { svFrom = "home"; await openProject(d.hsv, true); SurveyUI.open("steps"); return; }
   if (b.hasAttribute("data-hdefs")) { ui.pop = "defaults"; renderPop(); return; }
   if (b.hasAttribute("data-hbrand")) { ui.pop = "brand"; renderPop(); return; }
+  if (b.hasAttribute("data-hspeak")) { closeHome(); ui.pop = "speak"; renderPop(); setTimeout(() => $("#speakText")?.focus(), 100); return; }
   if (d.hf) { ui.homeF = d.hf; showHome(); return; }
   if (b.hasAttribute("data-hlook")) { ui.pop = "look"; renderPop(); return; }
   if (b.hasAttribute("data-habout")) { ui.pop = "about"; renderPop(); return; }
@@ -2190,7 +2229,7 @@ function renderChips() {
   const u = selUnit();
   const el = $("#chips");
   if (ui.planOn) { el.innerHTML = `<div class="cbody">${planChips()}</div>`; return; }
-  if (!u) { el.innerHTML = `<div class="cbody"><button class="chip tog" data-plan>المسقط والحيطان</button><button class="chip tog" data-roompop>📐 أوضة بالمقاسات · 📷 مسح</button><button class="chip tog gold" data-autok>✨ صمملي المطبخ</button>${state.project.variants?.length > 1 ? `<button class="chip tog" data-varpop>🗂 النسخ</button>` : ""}</div>`; return; }
+  if (!u) { el.innerHTML = `<div class="cbody"><button class="chip tog" data-plan>المسقط والحيطان</button><button class="chip tog" data-roompop>📐 أوضة بالمقاسات · 📷 مسح</button><button class="chip tog gold" data-autok>✨ صمملي المطبخ</button><button class="chip tog" data-speak>🗣 اوصفلي</button>${state.project.variants?.length > 1 ? `<button class="chip tog" data-varpop>🗂 النسخ</button>` : ""}</div>`; return; }
   const r = R(u);
   const p = r.params;
   let h = "";
@@ -2247,6 +2286,8 @@ function renderChips() {
   v += `<button class="chip tog ${state.render ? "on" : ""}" data-render>✦ ريندر واقعي</button><button class="chip" data-present>🖥 عرض للعميل</button>`;
   if (state.render) v += `<button class="chip tog ${ui.sceneOpen ? "on" : ""}" data-scene>☀ المشهد والإضاءة</button><button class="chip tog ${ui.pt ? "on" : ""}" data-final>📸 ريندر نهائي</button>`;
   v += `<button class="chip tog" data-shot>احفظ صورة</button>`;
+  if (whole) v += `<button class="chip tog ${ui.ergo?.on ? "on" : ""}" data-ergo>👤 شخص ومثلث الشغل</button>`;
+  v += `<button class="chip tog" data-fincmp>🎨 لو خامة تانية؟</button>`;
   v += `<button class="chip tog" data-ar>📱 شوفها في الأوضة (AR)</button><button class="chip tog" data-video>🎬 فيديو</button>`;
   let a = "";
   if (whole) {
@@ -2263,7 +2304,7 @@ function renderChips() {
     a += `<span class="chip step zone"><span class="zl">لف</span><button data-rot="-90" aria-label="لف 90 شمال">↺90</button><button data-rot="-15" aria-label="لف 15 شمال">↺15</button><button data-rot="15" aria-label="لف 15 يمين">↻15</button><button data-rot="90" aria-label="لف 90 يمين">↻90</button></span>`;
     if (state.project.units.some((x) => x.pos)) a += `<button class="chip tog" data-autolay>رصّ تلقائي</button>`;
   }
-  let rm = `<button class="chip tog" data-plan>المسقط والحيطان</button><button class="chip tog" data-roompop>📐 أوضة بالمقاسات · 📷 مسح بالكاميرا</button><button class="chip tog gold" data-autok>✨ صمملي المطبخ</button>`;
+  let rm = `<button class="chip tog" data-plan>المسقط والحيطان</button><button class="chip tog" data-roompop>📐 أوضة بالمقاسات · 📷 مسح بالكاميرا</button><button class="chip tog" data-speak>🗣 اوصفلي المطبخ</button><button class="chip tog gold" data-autok>✨ صمملي المطبخ</button>`;
   rm += `<button class="chip tog" data-varpop>🗂 النسخ${state.project.variants?.length > 1 ? ` (${state.project.variants.length})` : ""}</button>`;
   if (whole || state.project.room) { const n = designChecks().filter((c) => c.level !== "n").length; rm += `<button class="chip tog ${n ? "warnchip" : ""}" data-checks>فحص التصميم${n ? ` (${n})` : " ✓"}</button>`; }
   if (state.project.room) rm += `<p class="chiphint">في العرض 3D: دوس على حيطة أو بريزة أو عمود عشان تعدّله. البريزة تتسحب على الحيطة من "الترتيب ← حرّك".</p>`;
@@ -2285,6 +2326,7 @@ $("#chips").addEventListener("click", async (e) => {
   if (b.hasAttribute("data-plan")) { ui.planOn = !ui.planOn; ui.planView = "plan"; ui.planTool = "select"; plan.vb = null; if (!ui.planOn) { state.whole = state.whole || !!state.project.room; } render(true); return; }
   if (b.hasAttribute("data-roompop")) { ui.pop = "room"; renderPop(); return; }
   if (b.hasAttribute("data-autok")) { ui.pop = "auto"; renderPop(); return; }
+  if (b.hasAttribute("data-speak")) { ui.pop = "speak"; renderPop(); setTimeout(() => $("#speakText")?.focus(), 100); return; }
   if (b.hasAttribute("data-varpop")) { ui.pop = "variants"; renderPop(); return; }
   if (b.hasAttribute("data-ar") || b.hasAttribute("data-video")) {
     const ar = b.hasAttribute("data-ar"), old = b.textContent;
@@ -2313,6 +2355,8 @@ $("#chips").addEventListener("click", async (e) => {
   if (b.hasAttribute("data-present")) { presentOn(); return; }
   if (b.hasAttribute("data-render")) { state.render = !state.render; if (!state.render) { ui.sceneOpen = false; closeFinal(); } save(); renderChips(); renderScene(); view.update(); return; }
   if (b.hasAttribute("data-insp")) { ui.inspOpen = !ui.inspOpen; ui.sceneOpen = false; renderScene(); renderInsp(); renderChips(); return; }
+  if (b.hasAttribute("data-fincmp")) { ui.pop = "fincmp"; renderPop(); return; }
+  if (b.hasAttribute("data-ergo")) { ergo().on = !ergo().on; renderChips(); renderErgo(); view.update(); return; }
   if (b.hasAttribute("data-scene")) { ui.inspOpen = false; renderInsp(); ui.sceneOpen = !ui.sceneOpen; renderChips(); renderScene(); return; }
   if (b.hasAttribute("data-final")) { if (ui.pt) closeFinal(); else { ui.pt = { quality: "high", size: "hd", denoise: true, phase: "setup" }; renderPt(); } renderChips(); return; }
   if (b.hasAttribute("data-shot")) { b.disabled = true; exportImage().catch(() => alertBar("ما قدرتش أحفظ الصورة.")).finally(() => { b.disabled = false; }); return; }
@@ -2409,6 +2453,7 @@ function roomOverview() {
     <div class="kv"><span>الحيطان</span><b>${segs.length}</b><span>المحيط</span><b>${n1(per / 100)} م</b>${room.closed ? `<span>المساحة</span><b>${n1(area)} م²</b>` : ""}
     <span>أبواب / شبابيك</span><b>${(room.openings || []).length}</b><span>نقط كهربا وسباكة</span><b>${(room.points || []).length}</b></div>
     <p class="hint">دوس على أي حيطة عشان تعدّلها، أو على وحدة عشان تختارها.</p>
+    ${lightingHtml()}
     <details open><summary>كل الحيطان</summary>${finishEditor(room.wallAll || {}, "rall", "#f3f1ea")}<button class="add" data-rallapply>طبّق على كل الحيطان</button></details>
     ${room.closed ? `<details open><summary>الأرضية</summary>${finishEditor(room.floor || { finish: "tile", color: "#d9d4c8", size: 60 }, "rfl", "#d9d4c8", { tile: "بورسلين / سيراميك", wood: "باركيه خشب", paint: "لون سادة", photo: "خامة من صورة" })}</details>` : `<p class="hint">الأرضية بتتحدد لما الأوضة تبقى مقفولة.</p>`}`;
 }
@@ -2472,6 +2517,7 @@ function fieldSel(x) {
 const secKey = (sm) => sm.textContent.replace(/\(\d+\)|\d+/g, "").replace(/\s+/g, " ").trim();
 let propsLater = 0;
 function renderProps() {
+  wasteBaseline();
   const el = $("#props");
   if (!el) return;
   // a change fired while leaving a field (Tab / next / tapping another field): let the focus land first,
@@ -2978,8 +3024,8 @@ props.addEventListener("change", (e) => {
   if (d.appl) {
     u.appliance ??= {};
     if (t.value) u.appliance[d.appl] = t.value; else delete u.appliance[d.appl];
-    const a = APPLIANCES[t.value];
-    if (a) setParams(u, (p) => Object.assign(p, a.set)); else { save(); renderProps(); }
+    const a = t.value && Appl.findEntry(t.value);
+    if (a) { setParams(u, (p) => { const q = Appl.applyAppliance(p, a); for (const k of Object.keys(q)) if (q[k] !== p[k]) p[k] = q[k]; }); if (a.note) alertBar(a.note); } else { save(); renderProps(); }
     return;
   }
   if (d.bshow !== undefined || d.fabcPick !== undefined || d.bduvetPick !== undefined || d.bthrowPick !== undefined) {
@@ -3018,7 +3064,7 @@ props.addEventListener("click", (e) => {
   const b = e.target.closest("[data-padv]");
   if (!b) return;
   e.stopImmediatePropagation();
-  state.propsAdv = b.dataset.padv === "1"; save(); renderProps();
+  state.propsAdv = b.dataset.padv === "shop" ? "shop" : b.dataset.padv === "1"; save(); renderProps();
   if (state.propsAdv && b.classList.contains("advmore")) $("#props").querySelector("details.advhid, details[data-basic='0']")?.scrollIntoView({ block: "start", behavior: "smooth" });
 }, true);
 props.addEventListener("input", (e) => {
@@ -3134,6 +3180,8 @@ props.addEventListener("click", (e) => {
       for (const w of room.walls) Object.assign(w, { finish: src.finish, color: src.color, size: src.size, mat: src.mat });
       save(); view.update(); alertBar("اتطبّق على كل الحيطان."); return;
     }
+    if (rb.hasAttribute("data-lightauto")) { applyLighting(true); return; }
+    if (rb.hasAttribute("data-lightclear")) { delete room.lights; save(); render(true); return; }
     if (rb.hasAttribute("data-rallapply")) {
       const src = room.wallAll || { finish: "paint", color: "#f3f1ea" };
       for (const w of room.walls) Object.assign(w, { finish: src.finish || "paint", color: src.color, size: src.size, mat: src.mat });
@@ -3813,14 +3861,16 @@ function applyLibTo(u, key, lib) {
 }
 // ---- the settings panel: "basic" shows only what most units need, search finds any field
 const BASIC_SECTIONS = ["✏️ ورشة الرسم", "درج الوزرة", "الحيطة الجاية بالمقاس", "الرسم بالقلم", "الأبواب والشبابيك", "المكان", "المقاسات", "المقاسات والنظام", "الوحدة", "الواجهة", "من جوه", "الخامات", "الأقسام (من الشمال لليمين)", "الواجهة (من تحت لفوق)", "الألواح", "اللون والتشطيب", "🧩 التقسيمات الداخلية", "الأوضة", "كل الحيطان"];
+/** the sections the workshop cares about: construction, joints, hinges, grooves, banding, drawers, assembly sizes, summary */
+const SHOP_SECTIONS = /التصنيع والتجميع|الهيكل والتجميع|الأليتا|كبب المفصلات|مفحار|الأورزة|درج الوزرة|صناديق الأدراج|الأدراج بالتفصيل|مقاسات التركيب|ملخص الوحدة|تفاصيل الضلف|المقاسات|القطع|الجهاز اللي هيتركب|مجرى الليد/;
 const normAr = (t) => String(t || "").toLowerCase().replace(/[أإآ]/g, "ا").replace(/ة/g, "ه").replace(/ى/g, "ي").replace(/[ًٌٍَُِّْـ]/g, "");
 function propsMode(el) {
   if (!el || !selUnit() || el.querySelector(".emptyp")) return;
-  const adv = !!state.propsAdv;
+  const adv = !!state.propsAdv, shop = state.propsAdv === "shop";
   const bar = document.createElement("div");
   bar.className = "propsbar";
   bar.innerHTML = `<input id="propQ" type="search" placeholder="🔍 دوّر في الإعدادات: مفصلة، سكلو، ليد…" aria-label="دوّر في الإعدادات" value="${esc(ui.propQ || "")}">
-    <div class="seg"><button data-padv="0" class="${adv ? "" : "on"}">أساسي</button><button data-padv="1" class="${adv ? "on" : ""}">كل الإعدادات</button></div>`;
+    <div class="seg"><button data-padv="0" class="${adv ? "" : "on"}">أساسي</button><button data-padv="shop" class="${shop ? "on" : ""}">🏭 للورشة</button><button data-padv="1" class="${adv && !shop ? "on" : ""}">كل الإعدادات</button></div>`;
   const head = el.querySelector(".stats") || el.querySelector(".tplname");
   (head ? head.after(bar) : el.prepend(bar));
   const top = [...el.children].filter((x) => x.tagName === "DETAILS");
@@ -3828,8 +3878,10 @@ function propsMode(el) {
   for (const d of top) {
     const t = d.querySelector(":scope > summary")?.textContent.trim() || "";
     const basic = BASIC_SECTIONS.some((k) => t === k || t.startsWith(k + " ") || t.startsWith("إعدادات "));
+    const forShop = SHOP_SECTIONS.test(t);
     d.dataset.basic = basic ? "1" : "0";
-    if (!adv && !basic) { d.classList.add("advhid"); hidden++; }
+    if (shop ? !forShop : !adv && !basic) { d.classList.add("advhid"); hidden++; }
+    else if (shop) d.open = true;
   }
   if (!adv && hidden) {
     const more = document.createElement("button");
@@ -4091,10 +4143,14 @@ function renderPop() {
   }
   else if (ui.pop === "defaults") h = defaultsPop();
   else if (ui.pop === "brand") h = brandPop();
+  else if (ui.pop === "speak") h = speakPop();
+  else if (ui.pop === "fincmp") h = fincmpPop();
   else if (ui.pop === "menu") {
     const it = (k, ic, t, d) => `<button class="mitem" data-menu="${k}"><span class="mic">${ic}</span><span><b>${t}</b><small>${d}</small></span></button>`;
     h = `<div class="popbox menubox" role="dialog" aria-label="القائمة"><div class="libhead"><h2>القائمة</h2><button class="x" data-close aria-label="قفل">×</button></div>
       <h3>المشروع</h3>${it("projects", "📁", "مشاريعي", "افتح مشروع تاني أو ابدأ جديد")}${it("export", "⬆", "تصدير وطباعة", "الملصقات، خطة القص، CNC، عرض السعر، سكتش أب")}${it("survey", "📐", "رفع مقاسات", "شاشة الرفع في الموقع خطوة بخطوة")}${it("studio", "✏️", "ورشة الرسم", "صمّم أي قطعة أو وحدة من الصفر برسم 3D حر")}
+      ${it("speak", "🗣", "اوصفلي المطبخ", "اكتب جملة والبرنامج يرسم الأوضة ويملاها وحدات")}
+      ${it("fincmp", "🎨", "لو الضلف خامة تانية؟", "نفس التصميم بأكتر من خامة جنب بعض مع فرق السعر")}
       ${it("present", "🖥", "وضع العرض للعميل", "شاشة نظيفة: الريندر، الألوان البديلة، السعر، والاعتماد بالتوقيع")}
       <h3>الإعدادات</h3>${it("brand", "🏷", "هوية المصنع", "اللوجو والاسم والتليفون والشروط على كل الأوراق")}${it("defaults", "⚙", "الإعدادات الافتراضية", "مقاسات الوحدات، التصنيع، التسعير، القص — مرة واحدة لكل المشاريع")}${it("look", "🎨", "الألوان والمظهر والكيبورد", "فاتح/غامق، لون التطبيق، كيبورد الأرقام")}
       <h3>مساعدة</h3>${it("lang", "🌐", I18n.lang === "en" ? "اللغة: عربي" : "Language: English", I18n.lang === "en" ? "التطبيق كله بالعربي" : "Switch the whole app to English")}${it("tour", "🧭", "الجولة التعريفية", "شرح سريع لكل جزء في الشاشة")}${it("about", "ⓘ", "عن التطبيق", "الإصدار والتواصل")}</div>`;
@@ -4272,6 +4328,18 @@ $("#pop").addEventListener("click", async (e) => {
   const d = b.dataset;
   if (b.hasAttribute("data-opendefs")) { ui.pop = "defaults"; renderPop(); return; }
   if (ui.pop === "brand" && b.hasAttribute("data-brandlogo-del")) { brandSet("logo", ""); renderPop(); return; }
+  if (ui.pop === "fincmp") {
+    const F = fincmp();
+    if (d.fclib) { if (F.libs.includes(d.fclib)) F.libs = F.libs.filter((x) => x !== d.fclib); else if (F.libs.length < 4) F.libs.push(d.fclib); else alertBar("4 خامات بالكتير — شيل واحدة الأول."); F.shots = null; renderPop(); return; }
+    if (b.hasAttribute("data-fcgo")) { b.disabled = true; b.textContent = "بيصوّر…"; await fincmpShots(); renderPop(); return; }
+    if (b.hasAttribute("data-fcpdf")) { b.disabled = true; try { await exportFinishCompare(); } catch (err) { alertBar(err.message); } b.disabled = false; return; }
+    if (d.fcuse) { histTrack?.(); state.project.units = applyFinish(state.project.units, d.fcuse); F.shots = null; ui.pop = null; renderPop(); save(); render(true); alertBar("🎨 اتغيّرت خامة الضلف — ترجع بالتراجع ↶."); return; }
+  }
+  if (ui.pop === "speak") {
+    if (d.speakex) { ui.speak = { text: d.speakex, parsed: Speak.parseDesign(d.speakex) }; renderPop(); $("#speakText")?.focus(); return; }
+    if (b.hasAttribute("data-speakparse")) { const text = $("#speakText")?.value || ""; ui.speak = { text, parsed: Speak.parseDesign(text) }; renderPop(); return; }
+    if (b.hasAttribute("data-speakgo")) { speakRun(); return; }
+  }
   if (ui.pop === "menu" && d.menu) {
     const m = d.menu;
     ui.pop = null; renderPop();
@@ -4538,6 +4606,7 @@ async function showHome() {
     <div class="htiles">
       <div class="htile main"><b>🎨 مشروع تصميم جديد</b><small>أوضة ← تصميم ← سعر ← قص ← ورشة</small><div class="homenew"><input id="homeName" placeholder="اسم المشروع (مثلاً: مطبخ أ. محمد — التجمع)" aria-label="اسم المشروع الجديد"><button class="primary" data-hnew>ابدأ ←</button></div></div>
       <button class="htile" data-hsurvey><b>📐 رفع مقاسات</b><small>في الموقع، خطوة بخطوة، والمصمم يستلم الأوضة جاهزة</small></button>
+      <button class="htile" data-hspeak><b>🗣 اوصفلي المطبخ</b><small>جملة واحدة: الشكل والمقاس واللون — ويطلعلك مطبخ كامل</small></button>
       <button class="htile" data-hstudio><b>✏️ ورشة الرسم</b><small>ارسم وحدتك أو قطعتك من الصفر برسم 3D حر</small></button>
       <button class="htile" data-hcut><b>✂ كت ليست سريع</b><small>اكتب مقاسات القطع وخد خطة القص والملصقات</small></button>
     </div>
@@ -4749,6 +4818,11 @@ const plan = {
       const on = sel?.kind === "pt" && sel.id === pt.id;
       const cx = w.x + w.n[0] * fs * 0.9, cz = w.z + w.n[1] * fs * 0.9;
       h += `<g class="pmep ${on ? "on" : ""}" data-mep="${pt.id}"><circle cx="${cx}" cy="${cz}" r="${fs * 0.75}" fill="${col}"/><text x="${cx}" y="${cz}" font-size="${fs * 0.62}" text-anchor="middle" dominant-baseline="central">${esc(k[3])}</text></g>`;
+    }
+    // ceiling lights: a sun-like mark (spot) or a double ring (pendant)
+    for (const l of room?.lights || []) {
+      const r = fs * (l.kind === "pendant" ? 1.1 : 0.8);
+      h += `<g class="plight"><circle cx="${l.x}" cy="${l.z}" r="${r}" fill="#fff3c4" stroke="#b07d12" stroke-width="${fs * 0.1}"/>${l.kind === "pendant" ? `<circle cx="${l.x}" cy="${l.z}" r="${r * 0.55}" fill="none" stroke="#b07d12" stroke-width="${fs * 0.1}"/>` : `<path d="M${l.x - r * 0.6} ${l.z - r * 0.6}L${l.x + r * 0.6} ${l.z + r * 0.6}M${l.x + r * 0.6} ${l.z - r * 0.6}L${l.x - r * 0.6} ${l.z + r * 0.6}" stroke="#b07d12" stroke-width="${fs * 0.1}"/>`}</g>`;
     }
     // rotate handle in front of the selected unit
     {
@@ -5513,7 +5587,7 @@ const view = {
     const units = asmU ? [asmU] : whole ? (project?.units || []) : one ? [one] : [];
     const layout = whole && !asmU ? projectPoses(project) : null;
     this.poses = layout;
-    if (layout && project?.room) { this.buildRoom(g, project.room, dark); this.buildColumns(g, project.room, dark); }
+    if (layout && project?.room) { this.buildRoom(g, project.room, dark); this.buildColumns(g, project.room, dark); this.buildLights(g, project.room); }
     let selBox = null;
     for (const u of units) {
       const r = R(u);
@@ -5559,6 +5633,7 @@ const view = {
         }
       }
     }
+    if (whole && ui.ergo?.on && ui.mode === "owner") this.buildErgo(g, dark);
     g.updateMatrixWorld(true);
     const box = new THREE.Box3().setFromObject(g);
     if (selBox) {
@@ -5787,6 +5862,47 @@ const view = {
     ray.setFromCamera(v, this.cam);
     const p = new THREE.Vector3();
     return ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), p) ? [p.x, p.z] : null;
+  },
+  /** the ceiling lights of the lighting plan: a warm disc on the ceiling (and a hanging pendant) */
+  buildLights(g, room) {
+    const THREE = this.three, L = room.lights || [];
+    if (!L.length) return;
+    const H = (room.walls?.[0]?.h || Room.WALL_H) - 0.5;
+    const mat = new THREE.MeshStandardMaterial({ color: 0xfff1c0, emissive: new THREE.Color(0xffd27a), emissiveIntensity: state.render ? 1.2 : 0.6, roughness: 0.4 });
+    for (const l of L) {
+      if (l.kind === "pendant") {
+        const cord = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.4, 70, 6), new THREE.MeshStandardMaterial({ color: 0x222222 })); cord.position.set(l.x, H - 35, l.z); g.add(cord);
+        const shade = new THREE.Mesh(new THREE.ConeGeometry(16, 18, 24, 1, true), new THREE.MeshStandardMaterial({ color: 0x2b2b2b, side: THREE.DoubleSide, roughness: 0.6 })); shade.position.set(l.x, H - 76, l.z); g.add(shade);
+        const bulb = new THREE.Mesh(new THREE.SphereGeometry(4, 12, 8), mat); bulb.position.set(l.x, H - 80, l.z); g.add(bulb);
+      } else {
+        const disc = new THREE.Mesh(new THREE.CylinderGeometry(4.5, 4.5, 0.8, 20), mat); disc.position.set(l.x, H, l.z); g.add(disc);
+      }
+    }
+  },
+  /** the person, the reach line and the work triangle (ergonomics check) */
+  buildErgo(g) {
+    const THREE = this.three, D = ergoData();
+    if (!D.spot) return;
+    const h = D.h, grp = new THREE.Group();
+    const skin = new THREE.MeshStandardMaterial({ color: 0x3b6fb6, roughness: 0.8, transparent: true, opacity: 0.85 });
+    const legs = new THREE.Mesh(new THREE.CylinderGeometry(9, 10, h * 0.47, 14), skin); legs.position.y = h * 0.235;
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(14, 11, h * 0.36, 14), skin); body.position.y = h * 0.47 + h * 0.18;
+    const head = new THREE.Mesh(new THREE.SphereGeometry(h * 0.065, 16, 12), new THREE.MeshStandardMaterial({ color: 0xe8c3a0, roughness: 0.7 })); head.position.y = h - h * 0.065;
+    const arm = new THREE.Mesh(new THREE.CylinderGeometry(4, 4, h * 0.42, 10), skin); arm.position.set(16, h * 0.53 + h * 0.21, 0);
+    grp.add(legs, body, head, arm);
+    grp.position.set(D.spot.x, 0, D.spot.z); grp.rotation.y = D.spot.face;
+    g.add(grp);
+    const ring = new THREE.Mesh(new THREE.RingGeometry(55, 57, 48), new THREE.MeshBasicMaterial({ color: 0x1fa44a, transparent: true, opacity: 0.7, side: THREE.DoubleSide }));
+    ring.rotation.x = -Math.PI / 2; ring.position.set(D.spot.x, D.reach, D.spot.z); g.add(ring);
+    if (D.tri) {
+      const y = D.counterH || 90;
+      for (const t of D.tri) {
+        const a = D.ctr(t.a), b = D.ctr(t.b), good = t.d >= 120 && t.d <= 270;
+        const geo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(a[0], y + 2, a[1]), new THREE.Vector3(b[0], y + 2, b[1])]);
+        const ln = new THREE.Line(geo, new THREE.LineDashedMaterial({ color: good ? 0x1fa44a : 0xd23228, dashSize: 8, gapSize: 5 })); ln.computeLineDistances(); g.add(ln);
+        const dot = new THREE.Mesh(new THREE.SphereGeometry(4, 12, 8), new THREE.MeshBasicMaterial({ color: 0xd9a63a })); dot.position.set(a[0], y + 2, a[1]); g.add(dot);
+      }
+    }
   },
   /** a green ring where a held corner lands */
   snapMark(p) {
@@ -6284,7 +6400,7 @@ function drawShop() {
   const pid = state.project.id;
   const online = !!(cloud.db && cloud.me);
   const pieces = projectPieces(state.project);
-  const prog = ui.ownerProgress || {};
+  const prog = progressAll();
   const doneN = pieces.filter((pc) => (prog[pc.key] || 0) >= 4).length;
   const appr = ui.ownerApproval;
   let h = `<div class="cuthead"><div><h2>الورشة والعميل — ${esc(state.project.name)}</h2><p class="hint">ابعت التصميم للعميل يعتمده، واطبع الملصقات، وتابع كل قطعة في الورشة.</p></div></div>
@@ -6298,7 +6414,8 @@ function drawShop() {
       ${ui.sharedAt ? linkBox(`${APP_URL}#c-${pid}`) : ""}` : `<p class="e">لينك العميل واختيار اللون بالسعر شغالين من نسخة NOVERA أونلاين بس (عشان العميل يفتح نفس التصميم من موبايله). افتحها من هنا وانت مسجّل دخول، وانقل المشروع بـ«تصدير ← نسخة من المشروع» لو مش موجود هناك.</p>${window.noveraNative ? "" : `<div class="btnrow"><a class="primary" style="text-decoration:none" href="${APP_URL}" target="_blank" rel="noopener">افتح NOVERA أونلاين</a></div>`}`}
     </section>
     <section class="mgroup"><div class="mg-h"><h3>الورشة</h3><span class="pill soft">${doneN} / ${pieces.length} قطعة خلصت</span></div>
-      <p class="hint">كل ملصق عليه QR. العامل يصوّره بكاميرا الموبايل، تفتحله القطعة ويعلّم المرحلة اللي خلصها.</p>
+      <p class="hint">كل ملصق عليه QR. العامل يصوّره بكاميرا الموبايل، تفتحله القطعة ويعلّم المرحلة اللي خلصها — أو امسحه من هنا بكاميرا الجهاز.</p>
+      <div class="btnrow"><button class="primary" data-scan>📷 امسح ملصق</button></div>
       ${prodBoard(pieces, prog)}
       <div class="btnrow"><label class="f"><span>مقاس الملصقات</span><select id="labelFmt"><option value="a4" ${state.labelFmt === "a4" ? "selected" : ""}>A4 — 21 ملصق في الورقة</option><option value="roll" ${state.labelFmt === "roll" ? "selected" : ""}>رول 60×40 مم</option></select></label>
       <button class="primary" data-labels>ملف الملصقات PDF</button></div>
@@ -6361,6 +6478,7 @@ $("#v-shop").addEventListener("change", (e) => {
 $("#v-shop").addEventListener("click", async (e) => {
   const b = e.target.closest("button");
   if (!b) return;
+  if (b.hasAttribute("data-scan")) { scanOpen(); return; }
   if (b.hasAttribute("data-sigok")) { signApprove(); return; }
   if (b.hasAttribute("data-sigwipe")) { const c = $("#v-shop #sigPad"); if (c) { c.getContext("2d").clearRect(0, 0, c.width, c.height); delete c.dataset.inked; } return; }
   if (b.hasAttribute("data-sigclear")) { state.project.approval = null; const st = stagesOf(); if (st.approve?.by && st.approve.by !== "العميل") st.approve = {}; save(); drawShop(); renderSteps(); return; }
@@ -7622,6 +7740,7 @@ async function exportDrawingsPdf() {
     pages.push({ title: `واجهة حيطة ${seg.i + 1}`, svg: style + nest(e, 40, 90, 1334, 860) });
   }
   const mr = mepRows();
+  for (const l of room.lights || []) mr.push([mr.length, l.kind === "pendant" ? "نجفة" : "سبوت سقف", "إضاءة", "السقف", `س ${n1(l.x)} · ص ${n1(l.z)}`, l.kind === "pendant" ? "معلّقة 80 سم تحت السقف" : "في السقف"]);
   if (mr.length > 1) {
     let t = `<text x="1384" y="110" font-size="22" font-weight="700" text-anchor="end">جدول نقط الكهربا والسباكة والغاز</text>`;
     mr.forEach((r, i) => { t += `<text x="1384" y="${150 + i * 24}" font-size="${i ? 15 : 14}" ${i ? "" : 'font-weight="700"'} text-anchor="end">${r.map((c) => esc(String(c))).join("   ·   ")}</text>`; });
@@ -7681,70 +7800,73 @@ async function exportDxf() {
  * diameter and depth (DRILL_V_D8_Z12 = vertical, Ø8, 12 deep), hinge cups on DRILL_V_D35_Z13, back grooves
  * as a closed pocket on GROOVE_W7_Z8, the piece number on TEXT. + one CSV listing the operations per piece.
  */
-async function exportCnc() {
-  const pieces = projectPieces(state.project);
-  const files = [], rows = [["رقم القطعة", "الوحدة", "القطعة", "الخامة", "X مم (العرض في الملصق)", "Y مم (الطول في الملصق)", "السمك مم", "أخرام", "كبب مفصلات", "مفاحير", "ملاحظات"]];
+/** one piece's machining in plain numbers (mm): size, outline, drills, grooves, pockets — the DXF, MPR and BPP writers all read this */
+function cncOps(pc) {
+  const { pt, lb } = pc;
   const mm = (v) => Math.round(v * 100) / 10;
-  for (const pc of pieces) {
-    const { pt, lb } = pc;
-    if (["glass", "mirror", "frame", "door_frame_alu", "rail", "led"].includes(pt.material)) continue;
-    if (/^(alu_|stainless|copper|glass_|mirror)/.test(pc.lib || "")) continue;
-    const u = state.project.units[pc.unitIdx], p = R(u).params || {};
-    const W = mm(lb.w), H = mm(lb.h), T = mm(lb.t);
+  const u = state.project.units[pc.unitIdx], p = R(u).params || {};
+  const W = mm(lb.w), H = mm(lb.h), T = mm(lb.t);
+  const op = { key: pc.key, unit: pc.unit, name: pt.name, mat: pc.mname, W, H, T, outline: null, cutouts: [], pockets: [], drills: [], grooves: [], note: [pt.note, ...(pt.checks || [])].filter(Boolean).join(" | "), banded: lb.banded || {}, bandAll: !!pt.band_all_sides, grain: !!lb.grain };
+  if (pt.cnc?.outline?.length) {
+    const P = (l) => l.map(([x, y]) => [mm(x), mm(y)]);
+    op.outline = P(pt.cnc.outline);
+    for (const h of pt.cnc.holes || []) op.cutouts.push(P(h));
+    for (const pk of pt.cnc.pockets || []) op.pockets.push({ loop: P(pk.loop), z: mm(pk.depth), face: pk.face === "bottom" ? "back" : "front" });
+  }
+  for (const ho of pt.holes || []) {
+    const dia = mm(ho.d || (ho.kind === "cam" ? 1.5 : ho.kind === "pin" ? 0.5 : 0.8));
+    const z = ho.kind === "cam" ? 13 : ho.kind === "pin" || dia <= 5 ? 10 : Math.min(12, Math.max(8, Math.round(T * 0.65)));
+    op.drills.push({ x: Math.round(ho.w * W * 10) / 10, y: Math.round(ho.h * H * 10) / 10, d: dia, z, kind: ho.kind || "sys" });
+  }
+  const dl = pt.door_label;
+  if (dl?.hinge_ratios?.length) {
+    const e = mm(+p.hinge_cup_edge_distance || 2.2);
+    for (const r of dl.hinge_ratios) {
+      const [x, y] = dl.hinge_side === "top" ? [r * W, H - e] : [dl.hinge_side === "right" ? W - e : e, r * H];
+      op.drills.push({ x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10, d: 35, z: 13, kind: "cup" });
+    }
+  }
+  if (lb.groove) {
+    const gi = grooveInfo(pc), gw = gi ? gi.gw : Math.round(((+p.back_panel_thickness || 0.6) * 10 + 1) * 10) / 10, gz = gi ? gi.gz : Math.round((+p.back_groove_depth || 0.8) * 10 * 10) / 10;
+    const g = lb.groove;
+    if (g.axis === "vertical") { const x = g.ratio * W; op.grooves.push({ x: Math.round((x - gw / 2) * 10) / 10, y: 0, w: gw, h: H, z: gz }); }
+    else { const y = g.ratio * H; op.grooves.push({ x: 0, y: Math.round((y - gw / 2) * 10) / 10, w: W, h: gw, z: gz }); }
+  }
+  const rm = /حفر CNC مقبض بلت إن من الضهر على (الحرف اللي فوق|الحرف اللي تحت|الحرف الشمال|الحرف اليمين): طول ([\d.]+) × عرض ([\d.]+) × عمق ([\d.]+)/.exec(op.note);
+  if (rm) {
+    const L = mm(+rm[2]), Wd = mm(+rm[3]), Z = mm(+rm[4]);
+    const r = rm[1] === "الحرف اللي فوق" ? [(W - L) / 2, H - Wd, L, Wd] : rm[1] === "الحرف اللي تحت" ? [(W - L) / 2, 0, L, Wd] : rm[1] === "الحرف الشمال" ? [0, (H - L) / 2, Wd, L] : [W - Wd, (H - L) / 2, Wd, L];
+    op.pockets.push({ rect: r.map((v) => Math.round(v * 10) / 10), z: Z, face: "back" });
+  }
+  return op;
+}
+/** the wood pieces that go to a machine (glass, metal and mirrors stay out) */
+function cncPieces() {
+  return projectPieces(state.project).filter((pc) => !["glass", "mirror", "frame", "door_frame_alu", "rail", "led"].includes(pc.pt.material) && !/^(alu_|stainless|copper|glass_|mirror)/.test(pc.lib || ""));
+}
+async function exportCnc() {
+  const files = [], rows = [["رقم القطعة", "الوحدة", "القطعة", "الخامة", "X مم (العرض في الملصق)", "Y مم (الطول في الملصق)", "السمك مم", "أخرام", "كبب", "مفاحير/تفريغ", "ملاحظة"]];
+  for (const pc of cncPieces()) {
+    const op = cncOps(pc), { W, H, T } = op;
     const d = new Exp.Dxf(4);
-    let nh = 0, nc = 0, ng = 0;
-    if (pt.cnc?.outline?.length) {
-      // a shaped board from the drawing studio: its real outline, cut-outs and pockets
-      const P = (l) => l.map(([x, y]) => [mm(x), mm(y)]);
-      d.poly(P(pt.cnc.outline), "OUTLINE");
-      for (const h of pt.cnc.holes || []) { d.poly(P(h), "CUTOUT"); ng++; }
-      for (const pk of pt.cnc.pockets || []) { d.poly(P(pk.loop), `POCKET_${pk.face === "bottom" ? "BACK" : "FRONT"}_Z${mm(pk.depth)}`); ng++; }
+    if (op.outline) {
+      d.poly(op.outline, "OUTLINE");
+      for (const h of op.cutouts) d.poly(h, "CUTOUT");
     } else d.rect(0, 0, W, H, "OUTLINE");
-    for (const ho of pt.holes || []) {
-      const dia = mm(ho.d || (ho.kind === "cam" ? 1.5 : ho.kind === "pin" ? 0.5 : 0.8));
-      const z = ho.kind === "cam" ? 13 : ho.kind === "pin" || dia <= 5 ? 10 : Math.min(12, Math.max(8, Math.round(T * 0.65)));
-      d.circle(Math.round(ho.w * W * 10) / 10, Math.round(ho.h * H * 10) / 10, dia / 2, `DRILL_V_D${dia}_Z${z}`);
-      nh++;
-    }
-    const dl = pt.door_label;
-    if (dl?.hinge_ratios?.length) {
-      const e = mm(+p.hinge_cup_edge_distance || 2.2);
-      for (const r of dl.hinge_ratios) {
-        const [x, y] = dl.hinge_side === "top" ? [r * W, H - e] : [dl.hinge_side === "right" ? W - e : e, r * H];
-        d.circle(Math.round(x * 10) / 10, Math.round(y * 10) / 10, 17.5, "DRILL_V_D35_Z13");
-        // the two screw holes of the hinge arm (45 mm apart, 9.5 mm behind the cup centre)
-        nc++;
-      }
-    }
-    if (lb.groove) {
-      const gi = grooveInfo(pc), gw = gi ? gi.gw : Math.round(((+p.back_panel_thickness || 0.6) * 10 + 1) * 10) / 10, gz = gi ? gi.gz : Math.round((+p.back_groove_depth || 0.8) * 10 * 10) / 10;
-      const g = lb.groove;
-      if (g.axis === "vertical") { const x = g.ratio * W; d.rect(Math.round((x - gw / 2) * 10) / 10, 0, gw, H, `GROOVE_W${gw}_Z${gz}`); }
-      else { const y = g.ratio * H; d.rect(0, Math.round((y - gw / 2) * 10) / 10, W, gw, `GROOVE_W${gw}_Z${gz}`); }
-      ng++;
-    }
-    // routed built-in handle (from the back): the handle system writes it in the piece's note
-    const rm = /حفر CNC مقبض بلت إن من الضهر على (الحرف اللي فوق|الحرف اللي تحت|الحرف الشمال|الحرف اليمين): طول ([\d.]+) × عرض ([\d.]+) × عمق ([\d.]+)/.exec([pt.note, lb.note, ...(pt.checks || [])].filter(Boolean).join(" | "));
-    if (rm) {
-      const L = mm(+rm[2]), Wd = mm(+rm[3]), Z = mm(+rm[4]), lay = `POCKET_BACK_Z${Z}`;
-      if (rm[1] === "الحرف اللي فوق") d.rect(Math.round((W - L) / 2 * 10) / 10, Math.round((H - Wd) * 10) / 10, L, Wd, lay);
-      else if (rm[1] === "الحرف اللي تحت") d.rect(Math.round((W - L) / 2 * 10) / 10, 0, L, Wd, lay);
-      else if (rm[1] === "الحرف الشمال") d.rect(0, Math.round((H - L) / 2 * 10) / 10, Wd, L, lay);
-      else d.rect(Math.round((W - Wd) * 10) / 10, Math.round((H - L) / 2 * 10) / 10, Wd, L, lay);
-      ng++;
-    }
-    d.text(4, H + 6, 8, `${pc.key}  ${pt.name}  ${W}x${H}x${T}`, "TEXT");
-    const note = [pt.note, ...(pt.checks || [])].filter(Boolean).join(" | ");
-    if (/تفريغة|قصة ركن|اتقصّت/.test(note)) d.text(4, -12, 6, "CUT-OUT: see label / شوف الملصق", "TEXT");
+    for (const pk of op.pockets) { const lay = `POCKET_${pk.face === "back" ? "BACK" : "FRONT"}_Z${pk.z}`; if (pk.loop) d.poly(pk.loop, lay); else d.rect(...pk.rect, lay); }
+    for (const dr of op.drills) d.circle(dr.x, dr.y, dr.d / 2, `DRILL_V_D${dr.d}_Z${dr.z}`);
+    for (const g of op.grooves) d.rect(g.x, g.y, g.w, g.h, `GROOVE_W${Math.round(Math.min(g.w, g.h) * 10) / 10}_Z${g.z}`);
+    d.text(4, H + 6, 8, `${pc.key}  ${op.name}  ${W}x${H}x${T}`, "TEXT");
+    if (/تفريغة|قصة ركن|اتقصّت/.test(op.note)) d.text(4, -12, 6, "CUT-OUT: see label / شوف الملصق", "TEXT");
     const safe = (t) => String(t).replace(/[\\/:*?"<>|]+/g, " ").trim();
     files.push({ name: `${safe(pc.mname)} ${T}mm/${safe(pc.key)}.dxf`, data: d.toString() });
-    rows.push([pc.key, pc.unit, pt.name, pc.mname, W, H, T, nh, nc, ng, note]);
+    rows.push([pc.key, pc.unit, op.name, pc.mname, W, H, T, op.drills.filter((x) => x.kind !== "cup").length, op.drills.filter((x) => x.kind === "cup").length, op.grooves.length + op.pockets.length + op.cutouts.length, op.note]);
   }
   if (!files.length) throw new Error("مفيش قطع خشب في المشروع");
   files.push({ name: "عمليات CNC.csv", data: Exp.csv(rows) });
   files.push({ name: "اقراني.txt", data: "NOVERA Studio — ملفات CNC\r\n\r\nكل قطعة في ملف DXF لوحدها بالمليمتر، مقسومة فولدرات حسب الخامة والسمك.\r\n" +
     "الطبقات (Layers):\r\n  OUTLINE  حدود القطعة (العرض اللي في الملصق على X والطول على Y)\r\n  DRILL_V_D8_Z12  خرم رأسي قطره 8 وعمقه 12 مم (الرقمين في اسم الطبقة)\r\n" +
-    "  DRILL_V_D35_Z13  كبة مفصلة\r\n  GROOVE_W7_Z8  مفحار عرضه 7 وعمقه 8 مم\r\n  POCKET_BACK_Z12  حفر مقبض بلت إن من ضهر الوش (العمق في الاسم بالمم)\r\n  POCKET_FRONT_Z8  حفر من وش القطعة بالعمق ده (من ورشة الرسم)\r\n  CUTOUT  تفريغة جوه القطعة (قص كامل)\r\n  TEXT  رقم القطعة (مش للتشغيل)\r\n\r\nفي برنامج المكنة: اربط كل طبقة بالعدة المناسبة مرة واحدة واحفظها كقالب.\r\n" });
+    "  DRILL_V_D35_Z13  كبة مفصلة\r\n  GROOVE_W7_Z8  مفحار عرضه 7 وعمقه 8 مم\r\n  POCKET_BACK_Z12  حفر مقبض بلت إن من ضهر الوش (العمق في الاسم بالمم)\r\n  POCKET_FRONT_Zn / CUTOUT  حفر وتفريغ من ورشة الرسم\r\n  TEXT  رقم القطعة واسمها\r\n" });
   return Exp.deliver(cloud.downloads, `${fileBase()} — CNC.zip`, Exp.zip(files));
 }
 async function exportImage() {
@@ -7920,34 +8042,27 @@ async function exportAR() {
 
 // ------------------------------------------------------------------ 9) appliances (standard built-in sizes)
 // Typical European built-in sizes — always check the appliance's own installation sheet.
-const APPLIANCES = {
-  oven60: { kind: "oven", label: "فرن بلت إن 60 (قياسي)", dims: "59.5×59.5×56", set: { oven_cavity_height: 59.5 }, note: "فتحة التركيب 56–56.8 × 58.5–60 سم، وتهوية 5 سم ورا." },
-  oven45: { kind: "oven", label: "فرن كومباكت 45", dims: "59.5×45.5×56", set: { oven_cavity_height: 45.5 }, note: "فتحة 45 سم ارتفاع." },
-  mw38: { kind: "microwave", label: "ميكروويف بلت إن 38", dims: "59.4×38.2×32", set: { microwave_cavity_height: 38, microwave_cavity_width: 56 } },
-  mw45: { kind: "microwave", label: "ميكروويف / فرن كومبي 45", dims: "59.5×45.5×56", set: { microwave_cavity_height: 45.5, microwave_cavity_width: 56 } },
-  fr60: { kind: "fridge", label: "تلاجة 60 (فري ستاندنج)", dims: "60×185×65", set: { fridge_cavity_width: 64, fridge_cavity_height: 190 }, note: "سيب 2 سم من كل جنب و5 سم فوق للتهوية." },
-  fr70: { kind: "fridge", label: "تلاجة 70", dims: "70×190×68", set: { fridge_cavity_width: 74, fridge_cavity_height: 195 } },
-  fr80: { kind: "fridge", label: "تلاجة 80 (دبل دور)", dims: "80×190×70", set: { fridge_cavity_width: 84, fridge_cavity_height: 195 } },
-  frsbs: { kind: "fridge", label: "تلاجة سايد باي سايد", dims: "91×178×70", set: { fridge_cavity_width: 95, fridge_cavity_height: 182 } },
-  frbi: { kind: "fridge", label: "تلاجة بلت إن 178", dims: "54×177×55", set: { fridge_cavity_width: 56, fridge_cavity_height: 178 }, note: "بتتركب بضلفة على مفصلات الجهاز." },
-  wm60: { kind: "washing_machine", label: "غسالة هدوم 60", dims: "60×85×60", set: { washer_cavity_width: 62, washer_cavity_height: 86 } },
-  wmtop: { kind: "washing_machine", label: "غسالة فوق تحميل علوي", dims: "40×90×60", set: { washer_cavity_width: 44, washer_cavity_height: 92 }, note: "سيب فوقها 50 سم فاضي عشان الغطا." },
-};
+function applianceClasses(u, p) {
+  const out = [];
+  const c = Appl.classOf(p, u.name); if (c) out.push(c);
+  if (p.unit_category === "oven" && (p.include_microwave === true || p.include_microwave === "true")) out.push("microwave");
+  return out;
+}
 function applianceField(u, p) {
-  const cat = p.unit_category;
-  const list = Object.entries(APPLIANCES).filter(([, a]) => a.kind === cat || (cat === "oven" && a.kind === "microwave" && p.include_microwave));
-  if (!list.length) return "";
-  const groups = {};
-  for (const [k, a] of list) (groups[a.kind] ??= []).push([k, a]);
-  let h = `<details open class="appbox"><summary>🔌 الجهاز اللي هيتركب</summary><p class="hint">اختار الجهاز والتجويف يتظبط على مقاسه. المقاسات قياسية — راجع ورقة تركيب الجهاز نفسه.</p>`;
-  for (const [kind, items] of Object.entries(groups)) {
-    const cur = u.appliance?.[kind] || "";
-    h += `<label class="f"><span>${kind === "microwave" ? "الميكروويف" : kind === "oven" ? "الفرن" : kind === "fridge" ? "التلاجة" : "الغسالة"}</span><select data-appl="${kind}"><option value="">— مقاس يدوي —</option>${items.map(([k, a]) => `<option value="${k}" ${k === cur ? "selected" : ""}>${esc(a.label)} (${a.dims})</option>`).join("")}</select></label>`;
-    if (cur && APPLIANCES[cur]?.note) h += `<p class="hint">${esc(APPLIANCES[cur].note)}</p>`;
+  const classes = applianceClasses(u, p);
+  if (!classes.length) return "";
+  let h = `<details open class="appbox"><summary>🔌 الجهاز اللي هيتركب</summary><p class="hint">اختار الجهاز من الكتالوج والتجويف / الفتحة تتظبط على مقاسه، ويظهر في قايمة الطلبيات. المقاسات قياسية للفئة — راجع ورقة تركيب الموديل اللي العميل هيشتريه.</p>`;
+  for (const cls of classes) {
+    const cur = u.appliance?.[cls] || "", list = Appl.APPLIANCES[cls] || [];
+    h += `<label class="f"><span>${esc(Appl.CLASS_LABELS[cls] || cls)}</span><select data-appl="${cls}"><option value="">— مقاس يدوي —</option>${list.map((a) => `<option value="${a.id}" ${a.id === cur ? "selected" : ""}>${esc(a.label)} (${a.size.w}×${a.size.h}×${a.size.d})</option>`).join("")}</select></label>`;
+    const a = cur && Appl.findEntry(cur);
+    if (a) {
+      const f = Appl.fits(p, a);
+      h += `<div class="applinfo">${f.ok ? `<span class="okmsg">${ICON.check}الوحدة تناسب الجهاز</span>` : `<span class="e">${esc(f.why)}</span>`}<small>التجويف ${a.cavity.w}×${a.cavity.h}×${a.cavity.d} سم${a.power ? ` · ${esc(a.power)}` : ""}${a.brands?.length ? ` · ماركات: ${esc(a.brands.slice(0, 5).join("، "))}` : ""}</small>${a.note ? `<small>${esc(a.note)}</small>` : ""}</div>`;
+    }
   }
   return h + `</details>`;
 }
-
 // ------------------------------------------------------------------ 4) a quick price (no cut plan needed)
 function quickEstimate(units) {
   const P = priceDefaults();
@@ -8710,14 +8825,15 @@ function purchaseData() {
   for (const u of state.project.units) {
     const r = R(u); if (!r.ok || u.kind !== "kitchen") continue;
     const p = r.params || {}, w = +p.width || 60;
-    const add = (name, note) => out.appl.push({ name, qty: 1, unit: "", note: `${u.code} ${u.name} · ${note}` });
-    if (p.unit_category === "fridge") add("تلاجة", `تجويف ${n1(+p.fridge_cavity_width || w - 4)} × ${n1(+p.fridge_cavity_height || 180)} سم`);
-    if (p.unit_category === "oven") { add("فرن بلت إن", `تجويف ${n1(w - 4)} × ${n1(+p.oven_cavity_height || 60)} سم`); if (p.include_microwave === true || p.include_microwave === "true") add("ميكروويف بلت إن", `تجويف ${n1(w - 4)} × ${n1(+p.microwave_cavity_height || 38)} سم`); }
-    if (p.unit_category === "microwave") add("ميكروويف بلت إن", `تجويف ${n1(w - 4)} سم`);
-    if (p.unit_category === "washing_machine") add("غسالة", `تجويف ${n1(w - 4)} سم`);
-    if (p.include_sink_cutout === true || p.include_sink_cutout === "true") add("حوض", `فتحة ${n1(+p.sink_cutout_width || w - 10)} × ${n1(+p.sink_cutout_depth || 45)} سم`);
-    if (/بوتجاز|مسطح|hob/i.test(`${p.unit_label || ""} ${u.name}`)) add("مسطح / بوتجاز بلت إن", `عرض ${n1(w)} سم`);
-    if (/شفاط|hood/i.test(`${p.unit_label || ""} ${u.name}`)) add("شفاط", `عرض ${n1(w)} سم`);
+    const pick = (cls) => Appl.findEntry(u.appliance?.[cls] || "");
+    const add = (cls, name, note) => { const a = pick(cls); out.appl.push({ name: a ? a.label : name, qty: 1, unit: "", note: `${u.code} ${u.name} · ${a ? `${a.size.w}×${a.size.h}×${a.size.d} سم${a.power ? ` · ${a.power}` : ""}` : note}` }); };
+    if (p.unit_category === "fridge") add("fridge", "تلاجة", `تجويف ${n1(+p.fridge_cavity_width || w - 4)} × ${n1(+p.fridge_cavity_height || 180)} سم`);
+    if (p.unit_category === "oven") { add("oven", "فرن بلت إن", `تجويف ${n1(w - 4)} × ${n1(+p.oven_cavity_height || 60)} سم`); if (p.include_microwave === true || p.include_microwave === "true") add("microwave", "ميكروويف بلت إن", `تجويف ${n1(w - 4)} × ${n1(+p.microwave_cavity_height || 38)} سم`); }
+    if (p.unit_category === "microwave") add("microwave", "ميكروويف بلت إن", `تجويف ${n1(w - 4)} سم`);
+    if (p.unit_category === "washing_machine") add("washer", "غسالة", `تجويف ${n1(w - 4)} سم`);
+    if (p.include_sink_cutout === true || p.include_sink_cutout === "true") add("sink", "حوض", `فتحة ${n1(+p.sink_cutout_width || w - 10)} × ${n1(+p.sink_cutout_depth || 45)} سم`);
+    if (/بوتجاز|مسطح|hob/i.test(`${p.unit_label || ""} ${u.name}`)) add("hob", "مسطح / بوتجاز بلت إن", `عرض ${n1(w)} سم`);
+    if (/شفاط|hood/i.test(`${p.unit_label || ""} ${u.name}`)) add("hood", "شفاط", `عرض ${n1(w)} سم`);
   }
   for (const k of Object.keys(out)) out[k].forEach((l) => { l.total = l.price ? l.price * l.qty : 0; });
   return out;
@@ -8945,7 +9061,8 @@ function presentOff(keepFinish = false) {
   state.tab = ui.present.tab || "design"; state.sel = ui.present.sel && state.project.units.some((u) => u.id === ui.present.sel) ? ui.present.sel : state.project.units[0]?.id || null;
   ui.present = null;
   document.body.classList.remove("present");
-  $("#presentBar")?.remove();
+  $("#presentBar")?.remove(); $("#presentTell")?.remove();
+  if ("speechSynthesis" in window) speechSynthesis.cancel();
   save(); render(true); view.resize?.();
 }
 function renderPresent() {
@@ -8960,7 +9077,7 @@ function renderPresent() {
       ${views.length ? `<span class="pb-grp">${views.map((v) => `<button data-pview="${v.id}">📷 ${esc(v.name)}</button>`).join("")}</span>` : ""}
       <span class="pb-grp"><button data-pvp="iso">منظور</button><button data-pvp="front">قدام</button><button data-pvp="fit">الكل</button><button data-popen>${ui.presentOpen ? "🚪 اقفل الضلف" : "🚪 افتح الضلف"}</button><button data-prender class="${state.render ? "on" : ""}">✨ ريندر</button><button data-pturn>${ui.presentTurn ? "⏸ وقّف اللف" : "▶ لف تلقائي"}</button></span>
       ${o.finishes.length ? `<span class="pb-grp"><button class="${!fin ? "on" : ""}" data-pfin="">اللون الحالي</button>${o.finishes.map((f) => `<button class="${fin === f.lib ? "on" : ""}" data-pfin="${esc(f.lib)}">${esc(f.name || f.lib)}${+f.delta ? ` <small>${+f.delta > 0 ? "+" : ""}${money(+f.delta)}</small>` : ""}</button>`).join("")}</span>` : ""}
-      <span class="pb-grp"><button data-pprice class="${ui.present.price ? "on" : ""}">💰 ${ui.present.price && Q ? `${money(Q.total + delta)} ج.م` : "السعر"}</button><button data-psign class="pb-sign">✍️ اعتمد</button>${fin ? `<button data-pkeep>✓ ثبّت اللون ده</button>` : ""}</span>
+      <span class="pb-grp"><button data-pprice class="${ui.present.price ? "on" : ""}">💰 ${ui.present.price && Q ? `${money(Q.total + delta)} ج.م` : "السعر"}</button><button data-pvoice class="${ui.present.voice ? "on" : ""}" title="دوس على أي وحدة تتكلم عن نفسها">🔊 ${ui.present.voice ? "صوت" : "صامت"}</button><button data-psign class="pb-sign">✍️ اعتمد</button>${fin ? `<button data-pkeep>✓ ثبّت اللون ده</button>` : ""}</span>
     </div>`;
 }
 function presentFinish(lib) {
@@ -9000,6 +9117,349 @@ function signApproveFrom(c, name) {
   alertBar("✍️ اتعمد — التوقيع هيطلع في عرض السعر PDF.");
 }
 
+// ================================================================== v47 — industrial machine files (woodWOP MPR, Biesse BPP, Cutrite, Ardis, edge bander)
+async function exportMachines() {
+  const pcs = cncPieces();
+  if (!pcs.length) throw new Error("مفيش قطع خشب في المشروع");
+  const ops = pcs.map(cncOps);
+  const files = [];
+  for (const f of Mach.mprZip(ops)) files.push({ name: `HOMAG woodWOP (MPR)/${f.name}`, data: f.data });
+  for (const f of Mach.bppZip(ops)) files.push({ name: `Biesse (BPP)/${f.name}`, data: f.data });
+  files.push({ name: "Cutrite - parts.csv", data: "﻿" + Mach.cutriteParts(ops, { projectName: state.project.name }) });
+  files.push({ name: "Ardis - parts.csv", data: "﻿" + Mach.ardisParts(ops) });
+  files.push({ name: "Edge bander - edges.csv", data: "﻿" + Mach.bandList(ops) });
+  files.push({ name: "اقراني.txt", data: "NOVERA Studio — ملفات المكن الصناعي\r\n\r\n" + Mach.MACHINE_FORMATS.map(([, l, d]) => `• ${l}: ${d}`).join("\r\n") +
+    "\r\n\r\nالملفات دي بتتولد من نفس قايمة القطع والأخرام بتاعة الـCNC (DXF). افتح ملف واحد الأول على المكنة واتأكد من اتجاه المحاور والتعويض قبل ما تشغّل الباقي.\r\nالأسماء العربية جوه ملفات MPR/BPP ممكن تظهر علامات استفهام على بعض المكن — رقم القطعة (K01-03) هو المرجع.\r\n" });
+  return Exp.deliver(cloud.downloads, `${fileBase()} — مكن صناعي.zip`, Exp.zip(files));
+}
+
+// ================================================================== v47 — "describe the kitchen" → room + auto kitchen
+function speakPop() {
+  const r = ui.speak || {};
+  return `<div class="popbox" role="dialog" aria-label="اوصفلي المطبخ"><div class="libhead"><h2>🗣 اوصفلي المطبخ</h2><button class="x" data-close aria-label="قفل">×</button></div>
+    <p class="hint">اكتب بكلامك العادي: شكل المطبخ، مقاس الأوضة، مكان الشباك والباب، التشطيب، لون الضلف، الأجهزة — والبرنامج يرسم الأوضة ويملاها وحدات. بعد كده عدّل براحتك.</p>
+    <textarea id="speakText" class="speakin" rows="3" placeholder="مثلاً: مطبخ حرف L في أوضة 3 في 4، الحوض تحت الشباك، التلاجة جنب الباب، ضلف أبيض لامع، تشطيب عادي">${esc(r.text || "")}</textarea>
+    <div class="chips2">${Speak.examples.map((x) => `<button class="chip" data-speakex="${esc(x)}">${esc(x.length > 46 ? x.slice(0, 44) + "…" : x)}</button>`).join("")}</div>
+    ${r.parsed ? `<div class="speakres"><b>فهمت:</b> ${r.parsed.understood.length ? r.parsed.understood.map((x) => `<span class="pill soft">${esc(x)}</span>`).join(" ") : "<span class='hint'>مفيش حاجة واضحة لسه</span>"}${r.parsed.unknown.length ? `<p class="hint">مش فاهم: ${esc(r.parsed.unknown.join("، "))}</p>` : ""}</div>` : ""}
+    <div class="btnrow"><button class="primary" data-speakgo>✨ صمّم</button><button class="ghost2" data-speakparse>افهم بس</button></div>
+    <p class="hint">${state.project.room ? "الأوضة الحالية هتتستخدم لو ما كتبتش مقاسات، والوحدات المطبخ الحالية هتتبدل (ترجع بالتراجع ↶)." : "لو ما كتبتش مقاس أوضة، هعمل أوضة 400×300."}</p></div>`;
+}
+function speakRun() {
+  const text = $("#speakText")?.value || "";
+  const q = Speak.parseDesign(text);
+  ui.speak = { text, parsed: q };
+  if (!q.shape && !q.room && !q.tier && !q.front && !q.wallLen) { renderPop(); alertBar("اكتب شكل المطبخ أو مقاس الأوضة على الأقل."); return; }
+  histTrack?.();
+  // 1) the room
+  let room = state.project.room;
+  if (q.room || !room) {
+    const w = q.room?.w || (q.wallLen ? q.wallLen : 400), d = q.room?.d || 300;
+    const kind = q.shape === "line" && !q.room ? "line" : "rect";
+    room = Room.presetRoom(kind, { w, d, h: Room.WALL_H });
+    state.project.room = room;
+    const segs = Room.segments(room);
+    // window: the wall asked for, else the longest wall; door: the wall asked for, else the wall opposite the window
+    const long = segs.reduce((a, b) => (b.L > a.L ? b : a), segs[0]);
+    const wWall = q.window?.wall ? segs[Math.min(segs.length, q.window.wall) - 1] : long;
+    if (q.window !== null || q.sinkUnderWindow) { const o = Room.addOpening(room, wWall.id, "window"); if (q.window?.w) o.w = q.window.w; if (q.window?.at === "left") o.at = 30; else if (q.window?.at === "right") o.at = Math.max(0, wWall.L - o.w - 30); else o.at = Math.max(0, Room.r1((wWall.L - o.w) / 2)); }
+    if (segs.length >= 3) {
+      const dWall = q.door?.wall ? segs[Math.min(segs.length, q.door.wall) - 1] : segs[(segs.indexOf(wWall) + 2) % segs.length];
+      const o = Room.addOpening(room, dWall.id, "door");
+      if (q.door?.at === "left") o.at = 15; else if (q.door?.at === "right") o.at = Math.max(0, dWall.L - o.w - 15);
+    }
+  }
+  // 2) the kitchen
+  const tier = q.tier || ui.akTier || "std";
+  ui.akTier = tier;
+  const props = kitchenProposals(tier);
+  if (!props.length) { save(); render(true); alertBar("رسمت الأوضة بس الحيطان قصيرة للمطبخ — عدّل المقاسات."); return; }
+  const want = { line: 1, L: 2, U: 3, parallel: 2, island: 2 }[q.shape] || null;
+  const pr = (want && props.find((x) => x.k === want)) || props[props.length - 1];
+  let units = pr.units.map((u) => clone(u));
+  if (q.wallUnits === false) units = units.filter((u) => R(u).params?.unit_type !== "wall");
+  if (q.front?.lib && Catalog.LIB[q.front.lib]) units = applyFinish(units, q.front.lib);
+  if (q.led) for (const u of units) if (R(u).params?.unit_type === "wall") u.params.include_led_marker = true;
+  if (q.glass) for (const u of units) { const p = R(u).params || {}; if (p.unit_type === "wall" && (p.door_type === "double" || !p.door_type) && !/شفاط|ليفت|مصفاة/.test(u.name)) u.params.door_type = "double_glass"; }
+  const have = (re) => units.some((u) => re.test(`${u.name} ${R(u).params?.unit_category || ""}`));
+  const extra = [];
+  if (q.appliances.includes("oven") && !have(/oven|فرن/)) extra.push("k_oven_only");
+  if (q.appliances.includes("microwave") && !have(/microwave|ميكرو/)) extra.push("k_micro_tall");
+  if (q.appliances.includes("tall") && !have(/تموين|pantry/)) extra.push("k_pantry60");
+  if (q.appliances.includes("washer") && !have(/washing|غسالة/)) extra.push("k_washer");
+  for (const k of extra) { const u = libUnit({ kitchen: k }); if (q.front?.lib && Catalog.LIB[q.front.lib]) Object.assign(u, applyFinish([u], q.front.lib)[0]); units.push(u); }
+  applyKitchen(units, null);
+  ui.pop = null; renderPop();
+  const msg = [`✨ ${pr.name}`, q.tier ? `تشطيب ${AK_TIERS[tier].label}` : "", q.front ? q.front.label : "", extra.length ? `+${extra.length} وحدات` : ""].filter(Boolean).join(" · ");
+  alertBar(msg + " — عدّل براحتك، وافتح «فحص التصميم» تشوف الملاحظات.");
+}
+
+// ================================================================== v47 — ergonomics: a person in the kitchen, reach and the work triangle
+function ergo() { return (ui.ergo ??= { on: false, h: 165 }); }
+/** the kitchen's key spots and how they relate to a person of height h — the numbers the panel and the 3D figure use */
+function ergoData() {
+  const E = ergo(), h = +E.h || 165;
+  const reach = h + 45, eye = Math.round(h * 0.93), counterRec = Math.round(h / 2 + 5), bend = 40;
+  const project = state.project, poses = projectPoses(project);
+  const items = projectItems(project).map((it) => ({ ...it, u: project.units.find((x) => x.id === it.id), pose: poses.get(it.id) })).filter((x) => x.pose && x.u.kind === "kitchen");
+  const prm = (it) => R(it.u).params || {};
+  const ctr = (it) => Room.centerOf(it.pose, it.box);
+  const isHob = (it) => /بوتجاز|مسطح|hob/i.test(`${prm(it).unit_label || ""} ${it.u.name}`);
+  const sink = items.find((it) => prm(it).include_sink_cutout === true || prm(it).include_sink_cutout === "true"), hob = items.find(isHob), fridge = items.find((it) => prm(it).unit_category === "fridge");
+  const base = items.filter((it) => it.row === "lower");
+  const counterH = base.length ? Math.max(...base.map((it) => { const p = prm(it); return (+p.height || 72) + ((p.include_toe_kick === true || p.include_toe_kick === "true") ? +p.toe_kick_height || 10 : 0) + (+p.countertop_thickness || 3.8); })) : null;
+  const uppers = items.filter((it) => it.row === "upper").map((it) => { const p = prm(it); const top = (+p.wall_mount_height || 140) + (+p.height || 70); return { it, bottom: +p.wall_mount_height || 140, top, shelf: top - 4 }; });
+  const far = uppers.filter((x) => x.shelf > reach);
+  const tri = sink && hob && fridge ? [[sink, hob], [hob, fridge], [fridge, sink]].map(([a, b]) => ({ a, b, d: Math.hypot(ctr(a)[0] - ctr(b)[0], ctr(a)[1] - ctr(b)[1]) })) : null;
+  // where the figure stands: in front of the sink (or the hob, or the first base unit), 55 cm out from the front
+  const at = sink || hob || base[0] || items[0] || null;
+  let spot = null;
+  if (at) { const f = Room.footprint(at.pose, at.box); const c = ctr(at); const fx = (f[0][0] + f[1][0]) / 2, fz = (f[0][1] + f[1][1]) / 2; const dx = fx - c[0], dz = fz - c[1], L = Math.hypot(dx, dz) || 1; spot = { x: fx + (dx / L) * 45, z: fz + (dz / L) * 45, face: Math.atan2(-dx, -dz) }; }
+  return { h, reach, eye, counterRec, bend, counterH, uppers, far, tri, sink, hob, fridge, spot, ctr };
+}
+function renderErgo() {
+  const el = $("#ergop");
+  const on = !!(ergo().on && state.tab === "design" && !ui.planOn && wholeView());
+  el.hidden = !on;
+  if (!on) return;
+  const D = ergoData();
+  const ok = (c) => (c ? `<i class="ok">✓</i>` : `<i class="warn">⚠</i>`);
+  let h = `<div class="sph"><b>👤 شخص في المطبخ</b><button class="x" data-eclose aria-label="قفل">×</button></div>
+    <label class="sl"><span>طول الشخص <b class="num">${D.h} سم</b></span><input type="range" min="140" max="200" step="1" data-eh value="${D.h}"></label>
+    <div class="ergo-kv"><span>أقصى وصول واقف</span><b>${D.reach} سم</b><span>مستوى النظر</span><b>${D.eye} سم</b><span>ارتفاع كونتر مريح</span><b>${D.counterRec}–${D.counterRec + 5} سم</b></div>`;
+  if (D.counterH != null) h += `<p class="erow">${ok(Math.abs(D.counterH - D.counterRec - 2) <= 6)} الكونتر الحالي ${n1(D.counterH)} سم ${Math.abs(D.counterH - D.counterRec - 2) <= 6 ? "— مناسب" : D.counterH > D.counterRec + 8 ? "— عالي شوية على الشخص ده، قلّل ارتفاع السفلي أو السكلو" : "— واطي شوية، زوّد السكلو"}</p>`;
+  if (D.uppers.length) {
+    const lowU = D.uppers.filter((x) => D.counterH != null && x.bottom - D.counterH < 45);
+    h += `<p class="erow">${ok(!D.far.length)} ${D.far.length ? `${D.far.length} علوية رفّها الأعلى فوق الوصول (${D.far.map((x) => x.it.u.code).join("، ")}) — رف ليفت أو خليها للموسمي` : "كل الأرفف العلوية في متناول اليد"}</p>`;
+    if (lowU.length) h += `<p class="erow">${ok(false)} ${lowU.map((x) => x.it.u.code).join("، ")}: العلوي نازل أقل من 45 سم فوق الكونتر — الرأس هيخبط فيه</p>`;
+  }
+  if (D.tri) {
+    const sum = D.tri.reduce((a, t) => a + t.d, 0), names = ["حوض ↔ بوتجاز", "بوتجاز ↔ تلاجة", "تلاجة ↔ حوض"];
+    h += `<div class="ergo-tri"><b>مثلث الشغل ${n1(sum / 100)} م ${sum >= 400 && sum <= 790 ? "✓" : "⚠"}</b>${D.tri.map((t, i) => `<span>${ok(t.d >= 120 && t.d <= 270)} ${names[i]}: ${n1(t.d / 100)} م</span>`).join("")}<small>كل ضلع بين 1.2 و2.7 م، والمجموع بين 4 و7.9 م.</small></div>`;
+  } else h += `<p class="hint">مثلث الشغل بيظهر لما يكون فيه حوض وبوتجاز وتلاجة.</p>`;
+  h += `<p class="hint">الشخص واقف قدام الحوض؛ الخطوط في المشهد هي مثلث الشغل، والخط الأخضر عند مستوى الوصول.</p>`;
+  el.innerHTML = h;
+}
+
+// ================================================================== v47 — automatic lighting plan (ceiling spots over the counters, a pendant in the middle, LED under the wall units)
+function lightingPlan(room = state.project.room, opts = {}) {
+  if (!room?.pts?.length) return null;
+  const segs = Room.segments(room);
+  const poses = projectPoses(state.project);
+  const items = projectItems(state.project).map((it) => ({ ...it, pose: poses.get(it.id) })).filter((it) => it.pose);
+  const lights = [];
+  const spacing = +opts.spacing || 80, out = +opts.out || 60;
+  for (const sg of segs) {
+    const on = items.filter((it) => it.pose.wall === sg.id && it.row !== "upper" && it.pose.s != null);
+    if (!on.length) continue;
+    // the runs of base/tall units along this wall (merged when they touch)
+    const iv = on.map((it) => [it.pose.s, it.pose.s + it.box.x1 - it.box.x0]).sort((a, b) => a[0] - b[0]);
+    const runs = [];
+    for (const [a, b] of iv) { const L = runs[runs.length - 1]; if (L && a <= L[1] + 5) L[1] = Math.max(L[1], b); else runs.push([a, b]); }
+    const { S, e } = Room.runStart(sg);
+    for (const [a, b] of runs) {
+      const L = b - a, n = Math.max(1, Math.round(L / spacing));
+      for (let i = 0; i < n; i++) {
+        const s = a + (L * (i + 0.5)) / n;
+        lights.push({ id: uid(), kind: "spot", x: Room.r1(S[0] + e[0] * s + sg.n[0] * out), z: Room.r1(S[1] + e[1] * s + sg.n[1] * out), over: "الكونتر" });
+      }
+    }
+  }
+  if (room.closed) {
+    const p = room.pts; let area = 0, cx = 0, cz = 0;
+    for (let i = 0; i < p.length; i++) { const q = p[(i + 1) % p.length]; const c = p[i][0] * q[1] - q[0] * p[i][1]; area += c; cx += (p[i][0] + q[0]) * c; cz += (p[i][1] + q[1]) * c; }
+    area /= 2; cx /= 6 * area; cz /= 6 * area;
+    const free = !items.some((it) => Room.footprint(it.pose, it.box).some((q) => Math.hypot(q[0] - cx, q[1] - cz) < 70)) && !lights.some((l) => Math.hypot(l.x - cx, l.z - cz) < 90);
+    if (Math.abs(area) >= 70000 && free) lights.push({ id: uid(), kind: "pendant", x: Room.r1(cx), z: Room.r1(cz), over: "نص الأوضة" });
+  }
+  return lights;
+}
+function applyLighting(withLed = true) {
+  const room = state.project.room;
+  const lights = lightingPlan(room);
+  if (!lights) { alertBar("ارسم الحيطان الأول."); return; }
+  room.lights = lights;
+  let led = 0;
+  if (withLed) for (const u of state.project.units) { const p = R(u).params || {}; if (u.kind === "kitchen" && p.unit_type === "wall" && !(p.include_led_marker === true || p.include_led_marker === "true")) { u.params.include_led_marker = true; led++; } }
+  save(); render(true);
+  alertBar(`💡 ${lights.filter((l) => l.kind === "spot").length} سبوت فوق الكونتر${lights.some((l) => l.kind === "pendant") ? " + نجفة في النص" : ""}${led ? ` + ليد تحت ${led} علوية` : ""} — عدّل من المسقط أو امسحها.`);
+}
+function lightingHtml() {
+  const room = state.project.room; if (!room) return "";
+  const L = room.lights || [];
+  return `<details ${L.length ? "open" : ""}><summary>💡 الإضاءة (${L.length})</summary>
+    <p class="hint">سبوتات السقف بتتحط فوق حرف الكونتر كل 80 سم تقريباً، ونجفة في نص الأوضة لو فاضية، وليد تحت العلوي. بتظهر في المسقط والمساقط PDF مع جدول الإحداثيات للكهربائي.</p>
+    ${L.length ? `<div class="kv">${L.map((l, i) => `<span>${l.kind === "pendant" ? "نجفة" : "سبوت"} ${i + 1}</span><b class="num">${n1(l.x)} ، ${n1(l.z)}</b>`).join("")}</div>` : ""}
+    <div class="btnrow"><button class="ghost2" data-lightauto>💡 خطة إضاءة تلقائية</button>${L.length ? `<button class="ghost2" data-lightclear>امسح الإضاءة</button>` : ""}</div></details>`;
+}
+
+// ================================================================== v47 — "what if": the same design in several door finishes, side by side with the price difference
+function fincmp() { return (ui.fincmp ??= { libs: [], shots: null }); }
+function fincmpPop() {
+  const F = fincmp();
+  const cur = (() => { const u = state.project.units.find((x) => x.kind === "kitchen") || state.project.units[0]; const k = u && FRONT_KEY[u.kind]; return (u?.libs?.[k]) || null; })();
+  const groups = [["HPL", /^hpl_/], ["أكريليك لامع", /^acrylic_/], ["خشب", /^wood_/], ["لاكيه", /^lacquer_/], ["PVC / أخرى", /^(pvc_|melamine_|mdf_)/]];
+  const used = new Set();
+  let chips = "";
+  for (const [g, re] of groups) {
+    const ks = Object.keys(Catalog.LIB).filter((k) => re.test(k)); ks.forEach((k) => used.add(k));
+    if (ks.length) chips += `<div class="fcgrp"><b>${g}</b>${ks.map((k) => `<button class="fcchip ${F.libs.includes(k) ? "on" : ""} ${k === cur ? "cur" : ""}" data-fclib="${k}"><i style="background:${Catalog.LIB[k][2]}"></i>${esc(Catalog.LIB[k][0])}</button>`).join("")}</div>`;
+  }
+  const rest = Object.keys(Catalog.LIB).filter((k) => !used.has(k) && !STONE(k) && !/^(glass_|mirror|alu_|stainless|copper)/.test(k));
+  if (rest.length) chips += `<div class="fcgrp"><b>تانية</b>${rest.map((k) => `<button class="fcchip ${F.libs.includes(k) ? "on" : ""}" data-fclib="${k}"><i style="background:${Catalog.LIB[k][2]}"></i>${esc(Catalog.LIB[k][0])}</button>`).join("")}</div>`;
+  const mine = Mat.all();
+  if (mine.length) chips += `<div class="fcgrp"><b>خاماتي</b>${mine.map((m) => `<button class="fcchip ${F.libs.includes(m.id) ? "on" : ""}" data-fclib="${m.id}"><i style="background:${m.color || "#ccc"}"></i>${esc(m.name)}</button>`).join("")}</div>`;
+  let h = `<div class="popbox fcbox" role="dialog" aria-label="قارن الخامات"><div class="libhead"><h2>🎨 لو الضلف خامة تانية؟</h2><button class="x" data-close aria-label="قفل">×</button></div>
+    <p class="hint">اختار لحد 4 خامات للضلف، وهتشوف نفس التصميم بكل واحدة جنب بعض مع فرق السعر التقريبي (حسب أسعار الألواح اللي كاتبها في التسعير). الخامة الحالية عليها علامة.</p>
+    <div class="fcchips">${chips}</div>
+    <div class="btnrow"><button class="primary" data-fcgo ${F.libs.length ? "" : "disabled"}>📸 قارن (${F.libs.length})</button>${F.shots ? `<button class="ghost2" data-fcpdf>PDF للعميل</button>` : ""}</div>`;
+  if (F.shots) {
+    h += `<div class="fcgrid">${F.shots.map((s) => `<div class="fccard"><img src="${s.img}" alt=""><div class="fcinfo"><b>${esc(s.name)}</b><span>${s.q.total ? money(s.q.total) + " ج.م" : "—"}</span>${s.delta != null && s.q.total ? `<small class="${s.delta > 0 ? "bad" : s.delta < 0 ? "good" : ""}">${s.delta > 0 ? "+" : ""}${money(s.delta)} عن الحالي</small>` : ""}</div><button class="ghost2 sm" data-fcuse="${esc(s.lib)}">استخدم دي</button></div>`).join("")}</div>`;
+  }
+  return h + `</div>`;
+}
+async function fincmpShots() {
+  const F = fincmp();
+  if (!F.libs.length || !view.ready) return;
+  const p = state.project, keep = { units: p.units, whole: state.whole, sel: state.sel };
+  const q0 = quickEstimate(p.units);
+  F.shots = [];
+  try {
+    state.whole = p.units.length > 1; state.sel = null;
+    for (const lib of F.libs) {
+      p.units = applyFinish(keep.units, lib);
+      view.update(true);
+      await new Promise((r) => setTimeout(r, 60));
+      const q = quickEstimate(p.units);
+      F.shots.push({ lib, name: Catalog.LIB[lib]?.[0] || Mat.get(lib)?.name || lib, img: view.snapshot(720, 450, true), q, delta: q.total && q0.total ? Math.round(q.total - q0.total) : null });
+    }
+  } finally { p.units = keep.units; state.whole = keep.whole; state.sel = keep.sel; view.update(true); }
+}
+async function exportFinishCompare() {
+  const F = fincmp();
+  if (!F.shots?.length) throw new Error("اعمل المقارنة الأول");
+  const pages = []; let t = `<text x="940" y="110" font-size="28" font-weight="800" text-anchor="end">نفس التصميم — خامات مختلفة للضلف</text><text x="940" y="142" font-size="15" fill="#555" text-anchor="end">${esc(state.project.name)} · الأسعار تقريبية لحد عرض السعر النهائي</text>`;
+  let y = 170;
+  F.shots.forEach((s, i) => {
+    if (i && i % 2 === 0) { pages.push({ title: "مقارنة الخامات", svg: t }); t = ""; y = 110; }
+    t += `<image href="${s.img}" x="60" y="${y}" width="880" height="550" preserveAspectRatio="xMidYMid slice"/><rect x="60" y="${y + 550}" width="880" height="56" fill="#123f23"/>
+      <text x="920" y="${y + 587}" font-size="22" font-weight="800" fill="#fff" text-anchor="end">${esc(s.name)}</text><text x="80" y="${y + 587}" font-size="20" font-weight="700" fill="#e8bd55">${s.q.total ? money(s.q.total) + " ج.م" : ""}${s.delta ? ` (${s.delta > 0 ? "+" : ""}${money(s.delta)})` : ""}</text>`;
+    y += 640;
+  });
+  pages.push({ title: "مقارنة الخامات", svg: t });
+  return pdfOut(pages, "مقارنة الخامات");
+}
+
+// ================================================================== v47 — scan a label in the app (camera → piece card → tick the stage)
+const scan = { on: false, stream: null, raf: 0, det: null, lastHit: 0 };
+function progressAll() { return { ...(state.project.progress || {}), ...(ui.ownerProgress || {}) }; }
+async function scanOpen() {
+  let box = $("#scanBox");
+  if (!box) { box = document.createElement("div"); box.id = "scanBox"; box.className = "libprev scanbox"; document.body.appendChild(box); }
+  box.hidden = false; scan.on = true;
+  box.innerHTML = `<div class="lpcard scancard" role="dialog" aria-modal="true"><div class="lphead"><b>📷 امسح ملصق القطعة</b><button class="x" data-scx aria-label="قفل">×</button></div>
+    <div class="scanstage"><video id="scanVid" playsinline muted autoplay></video><div class="scanframe"></div><p class="scanmsg">وجّه الكاميرا على الـQR اللي على الملصق…</p></div>
+    <form class="scanman" data-scanform><input name="code" placeholder="أو اكتب رقم القطعة: K01-03" autocomplete="off"><button class="ghost2">افتح</button></form>
+    <div id="scanPiece"></div></div>`;
+  box.onclick = async (e) => {
+    if (e.target === box || e.target.closest("[data-scx]")) { scanClose(); return; }
+    const st = e.target.closest("[data-scstage]");
+    if (st) { await scanSetStage(st.dataset.scpiece, +st.dataset.scstage); return; }
+  };
+  box.querySelector("[data-scanform]").onsubmit = (e) => { e.preventDefault(); const v = e.target.code.value.trim().toUpperCase(); if (v) scanShow(v); };
+  const vid = box.querySelector("#scanVid"), msg = box.querySelector(".scanmsg");
+  try {
+    scan.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 } }, audio: false });
+    vid.srcObject = scan.stream; await vid.play();
+  } catch { msg.textContent = "الكاميرا مش متاحة — اكتب رقم القطعة تحت."; return; }
+  // decoder: the browser's own, else jsQR from the CDN (needs internet), else typing the code
+  if ("BarcodeDetector" in window) { try { scan.det = new window.BarcodeDetector({ formats: ["qr_code"] }); } catch { scan.det = null; } }
+  if (!scan.det && !window.jsQR) { try { await new Promise((res, rej) => { const sc = document.createElement("script"); sc.src = "https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js"; sc.onload = res; sc.onerror = rej; document.head.appendChild(sc); }); } catch { /* offline */ } }
+  if (!scan.det && !window.jsQR) { msg.textContent = "المتصفح ده مش بيقرا QR من غير نت — اكتب رقم القطعة تحت."; return; }
+  const cv = document.createElement("canvas"), g = cv.getContext("2d", { willReadFrequently: true });
+  const tick = async () => {
+    if (!scan.on) return;
+    if (vid.readyState >= 2 && performance.now() - scan.lastHit > 1500) {
+      let text = null;
+      try {
+        if (scan.det) { const r = await scan.det.detect(vid); text = r[0]?.rawValue || null; }
+        else { const w = 480, h = Math.round((vid.videoHeight / vid.videoWidth) * 480) || 360; cv.width = w; cv.height = h; g.drawImage(vid, 0, 0, w, h); const r = window.jsQR(g.getImageData(0, 0, w, h).data, w, h, { inversionAttempts: "dontInvert" }); text = r?.data || null; }
+      } catch { text = null; }
+      if (text) { scan.lastHit = performance.now(); scanShow(text); }
+    }
+    scan.raf = requestAnimationFrame(tick);
+  };
+  tick();
+}
+function scanClose() {
+  scan.on = false; cancelAnimationFrame(scan.raf);
+  if (scan.stream) { for (const t of scan.stream.getTracks()) t.stop(); scan.stream = null; }
+  const box = $("#scanBox"); if (box) { box.hidden = true; box.innerHTML = ""; }
+  if (state.tab === "shop") drawShop();
+}
+/** a scanned QR (the label link) or a typed code → that piece's card */
+function scanShow(text) {
+  const m = /#w-([a-z0-9]+)\.([^\s]+)$/i.exec(text);
+  const key = m ? decodeURIComponent(m[2]) : text.trim().toUpperCase();
+  const pid = m ? m[1] : null;
+  const host = $("#scanPiece"); if (!host) return;
+  if (pid && pid !== state.project.id) { host.innerHTML = `<p class="e">الملصق ده من مشروع تاني (${esc(pid)}) — افتح المشروع ده الأول من 🏠.</p>`; return; }
+  const pc = projectPieces(state.project).find((x) => x.key.toUpperCase() === key);
+  if (!pc) { host.innerHTML = `<p class="e">مفيش قطعة برقم ${esc(key)} في المشروع ده.</p>`; return; }
+  const cur = progressAll()[pc.key] || 0;
+  if (navigator.vibrate) navigator.vibrate(40);
+  host.innerHTML = `<div class="scpiece"><div class="lt"><span class="ucode">${esc(pc.key)}</span><b>${esc(pc.pt.name)}</b><span class="num">${n1(pc.lb.h)}×${n1(pc.lb.w)}×${n1(pc.lb.t)}</span></div>
+    <div class="scmid"><div class="dia">${pieceSvg(pc, 1)}</div><div><small>${esc(pc.unit)}</small><br><small>${esc(pc.mname)}</small>${pc.pt.note ? `<br><small>${esc(pc.pt.note)}</small>` : ""}</div></div>
+    <div class="scstages">${STAGES.map((s, i) => `<button class="${i < cur ? "on" : ""} ${i === cur - 1 ? "last" : ""}" data-scpiece="${esc(pc.key)}" data-scstage="${i + 1}">${i < cur ? "✓ " : ""}${s}</button>`).join("")}</div>
+    <p class="hint">دوس المرحلة اللي خلصت — ودوسها تاني لو غلطت.</p></div>`;
+}
+async function scanSetStage(key, n) {
+  const cur = progressAll()[key] || 0;
+  const val = n === cur ? n - 1 : n;
+  (state.project.progress ??= {})[key] = val;
+  ui.ownerProgress = { ...(ui.ownerProgress || {}), [key]: val };
+  save();
+  if (cloud.db && state.project.id) { try { const ref = cloud.db.doc(`progress/${state.project.id}`); const s = await ref.get(); if (s.exists) await ref.update({ stages: { [key]: val } }); else await ref.set({ stages: { [key]: val } }); } catch { /* offline: kept in the project */ } }
+  scanShow(key);
+}
+
+// ================================================================== v47 — "the kitchen talks": in presentation mode a tap on a unit explains it (text + voice)
+function unitStory(u) {
+  const r = R(u), p = r.params || {};
+  const parts = [];
+  if (u.kind === "kitchen") {
+    const where = p.unit_type === "wall" ? "وحدة علوية" : p.unit_type === "tall" ? "وحدة طويلة" : "وحدة سفلية";
+    parts.push(`${where} عرضها ${n1(+p.width || 60)} سم`);
+    if (p.unit_category === "corner") parts.push("بتستغل الركنة اللي عادة بتضيع");
+    if (p.include_sink_cutout === true || p.include_sink_cutout === "true") parts.push("فيها الحوض — قريبة من المية والصرف");
+    if (/بوتجاز|مسطح/.test(`${p.unit_label || ""} ${u.name}`)) parts.push("تحتها أدراج للحلل عشان تبقى تحت إيدك وانت بتطبخ");
+    if (p.unit_category === "fridge") parts.push("مكان التلاجة بتهوية من الجنبين");
+    if (p.unit_category === "oven") parts.push("الفرن على مستوى العين — من غير ما تنحني" + (p.include_microwave === true || p.include_microwave === "true" ? " ومعاه الميكروويف" : ""));
+    if (r.drawers) parts.push(`${r.drawers} ${r.drawers === 1 ? "درج" : "أدراج"} على مجاري سحب كامل`);
+    else if (r.doors) parts.push(`${r.doors} ${r.doors === 1 ? "ضلفة" : "ضلف"} بمفصلات بطيئة`);
+    if (u.inserts && Object.keys(u.inserts).length) parts.push("الأدراج متقسمة من جوه: " + Object.values(u.inserts).map((k) => INSERTS[k]?.label).filter(Boolean).join("، "));
+    if (u.org && ORGS[u.org]) parts.push(ORGS[u.org].label || "بمنظّم سحب");
+    if (p.include_led_marker === true || p.include_led_marker === "true" || p.led_panel_below === true) parts.push("وتحتها ليد بينوّر الكونتر");
+    if (p.door_type?.includes("glass")) parts.push("ضلف زجاج تعرض اللي جواها");
+    const a = u.appliance && Object.values(u.appliance).map((id) => Appl.findEntry(id)?.label).filter(Boolean);
+    if (a?.length) parts.push("مجهّزة لـ " + a.join(" و"));
+  } else if (u.kind === "dressing") parts.push("دريسنج بأقسام شماعات وأرفف وأدراج على مقاسك");
+  else parts.push(u.name);
+  const fr = u.libs?.[FRONT_KEY[u.kind]];
+  if (fr && Catalog.LIB[fr]) parts.push(`الواجهة ${Catalog.LIB[fr][0]}`);
+  return `${u.name}: ${parts.join("، ")}.`;
+}
+function presentTell(id) {
+  const u = state.project.units.find((x) => x.id === id); if (!u) return;
+  const text = unitStory(u);
+  let b = $("#presentTell");
+  if (!b) { b = document.createElement("div"); b.id = "presentTell"; b.className = "ptell"; $(".stage").appendChild(b); }
+  b.innerHTML = `<b>${esc(u.name)}</b><span>${esc(text.slice(u.name.length + 2))}</span>`;
+  b.hidden = false; clearTimeout(b._t); b._t = setTimeout(() => { b.hidden = true; }, 9000);
+  if (ui.present?.voice && "speechSynthesis" in window) {
+    try { speechSynthesis.cancel(); const m = new SpeechSynthesisUtterance(text); m.lang = I18n.lang === "en" ? "en-US" : "ar-EG"; const v = speechSynthesis.getVoices().find((x) => x.lang?.startsWith(I18n.lang === "en" ? "en" : "ar")); if (v) m.voice = v; m.rate = 0.95; speechSynthesis.speak(m); } catch { /* no voices */ }
+  }
+}
+
 const EXPORTS = [
   ["ar", "شوفها في الأوضة (AR)", "على الآيباد/الآيفون: التصميم بيقف في الأوضة بمقاسه الحقيقي بالكاميرا — تلف حواليه مع العميل.", exportAR],
   ["video", "فيديو عرض التصميم", "فيديو 9 ثواني: الكاميرا بتلف حوالين التصميم والضلف بتتفتح، وفي الآخر لوجو المصنع — للعميل والسوشيال.", exportVideo],
@@ -9016,6 +9476,7 @@ const EXPORTS = [
   ["asm", "ملخص الوحدات ودليل التجميع PDF", "لكل وحدة: صفحة ملخص (مقاسات، خامات، هاردوير، وزن) وصفحة لكل خطوة تجميع بصورة وأرقام القطع.", () => exportAssemblyPdf()],
   ["cnc", "ملفات CNC بالتخريم (DXF لكل قطعة)", "كل قطعة في ملف بالمليمتر: الحدود، والأخرام والكبب والمفاحير على طبقات باسم القطر والعمق — بتتفتح في برامج المكن (woodWOP · bSolid · Alphacam · الراوتر الصيني) + جدول العمليات.", exportCnc],
   ["dxf", "ملفات DXF (CNC / أوتوكاد)", "كل لوح بقطعه وأرقامها كرسمة DXF، والمسقط — في ملف ZIP.", exportDxf],
+  ["machines", "ملفات المكن الصناعي (MPR · BPP · Cutrite · Ardis · ماكينة الشريط)", "ZIP فيه برنامج woodWOP (MPR) وBiesse (BPP) لكل قطعة بالأخرام والمفاحير، وقايمة قطع لـCutrite وArdis، وقايمة الحواف لماكينة الشريط. أول مرة: جرّب ملف واحد على المكنة.", exportMachines],
   ["skp", "سكتش أب (موديل + ملف البلجن)", "ملف ZIP فيه موديل .dae يتفتح في أي سكتش أب، وملف للبلجن (187) يبني الوحدات الحقيقية بإعداداتها والحيطان ونقط الكهربا — عشان تكمّل شغل عليه.", exportSketchUp],
   ["png", "صورة التصميم", "صورة 1920×1080 من العرض 3D الحالي.", exportImage],
   ["quote", "عرض سعر للعميل PDF", "بالأسعار اللي كاتبها في تاب الورشة والعميل: صورة التصميم، سعر كل وحدة، الإجمالي، والشروط.", exportQuotePdf],
@@ -9034,7 +9495,7 @@ function render(refit = false) {
   if (ui.mode !== "owner") return;
   if (state.tab === "design") {
     $("#view3d").hidden = !!ui.planOn;
-    renderStrip(); renderChips(); renderProps(); renderErrs(); renderMoveBar(); renderScene(); renderMulti(); renderInsp();
+    renderStrip(); renderChips(); renderProps(); renderErrs(); renderMoveBar(); renderScene(); renderMulti(); renderInsp(); renderErgo();
     plan.render();
     if (!ui.planOn) view.update(refit);
   }
@@ -9145,4 +9606,53 @@ if (location.hash === "#survey") { svFrom = "home"; SurveyUI.open("list"); }
 matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", () => { applyLook(); view.update(); });
 applyLook();
 const DEV = location.protocol === "http:" && /^(localhost|127\.0\.0\.1)$/.test(location.hostname);
-if (DEV) window.__dbg = { view, plan, R, render: (x) => render(x), ak: (t) => kitchenProposals(t), applyK: (u) => applyKitchen(u, null), checks: () => designChecks(), merge: (a, b) => mergeInto(a, b), get ui() { return ui; }, layout: asmLayout, libUnit, libSet, thumbs, openStudio: (u, x) => openStudio(u, x), exportUnitDrawings, exportPurchasePdf, exportPurchaseXlsx, renderPop, libAdd, exportQuotePdf, exportAsmBooklet, presentOn, presentOff, renderPresent, elev: (u) => unitElevSvg(u), get state() { return state; } };
+// ================================================================== v47 — command palette (⌘K): type what you want — a unit, a library item, an export, a screen
+function cmdItems() {
+  const items = [];
+  const add = (grp, label, run, hint = "") => items.push({ grp, label, hint, run });
+  for (const u of state.project.units) add("الوحدات", `${u.code || ""} ${u.name}`, () => { state.sel = u.id; ui.planOn = false; state.tab = "design"; render(true); }, "اختار");
+  for (const [k, l] of STEPS) add("الشاشات", l, () => $(`#steps [data-step0="${k}"]`)?.click(), "روح");
+  const pops = [["speak", "🗣 اوصفلي المطبخ"], ["auto", "✨ صمملي المطبخ"], ["checks", "🔍 فحص التصميم"], ["fincmp", "🎨 لو الضلف خامة تانية؟"], ["brand", "🏷 هوية المصنع"], ["defaults", "⚙ الإعدادات الافتراضية"], ["variants", "🗂 النسخ"], ["look", "🎨 المظهر والكيبورد"], ["about", "ⓘ عن التطبيق"]];
+  for (const [k, l] of pops) add("أدوات", l, () => { ui.pop = k; renderPop(); });
+  add("أدوات", "🖥 وضع العرض للعميل", () => presentOn());
+  add("أدوات", "✏️ ورشة الرسم", () => { const su = selUnit(); openStudio(su?.params?.model ? su : null); });
+  add("أدوات", "📷 امسح ملصق", () => scanOpen());
+  add("أدوات", "👤 شخص ومثلث الشغل", () => { ergo().on = !ergo().on; state.tab = "design"; render(true); });
+  add("أدوات", "💡 خطة إضاءة تلقائية", () => applyLighting(true));
+  add("أدوات", "📅 جدول تلقائي للمراحل", () => { autoSchedule(); save(); if (state.tab === "shop") drawShop(); alertBar("📅 اتحطت المواعيد."); });
+  add("أدوات", state.render ? "✦ قفل الريندر الواقعي" : "✦ ريندر واقعي", () => { state.render = !state.render; save(); render(true); });
+  add("أدوات", "🏠 الشاشة الرئيسية / المشاريع", () => showHome());
+  add("أدوات", I18n.lang === "en" ? "🌐 عربي" : "🌐 English", () => { I18n.setLang(I18n.lang === "en" ? "ar" : "en"); });
+  for (const [k, l, d] of EXPORTS) add("تصدير", l, async () => { try { alertBar(`بيجهّز ${l}…`); await EXPORTS.find((x) => x[0] === k)[3](); } catch (err) { alertBar(err.message || "ما كملش"); } }, d.slice(0, 60));
+  for (const [key, s] of Object.entries(KU.KITCHEN)) add("المكتبة", `＋ ${s.label}`, () => libAdd({ kitchen: key }), s.desc);
+  for (const [key, S] of Object.entries(More.SMART)) add("المكتبة", `✨ ${S.label}`, () => libAdd({ smart: key }), S.desc);
+  for (const [key, s] of Object.entries(DRESSING)) add("المكتبة", `＋ ${s.label}`, () => libAdd({ dress: key }), s.desc);
+  for (const [key, pr] of Object.entries({ ...PRESETS, ...Decor.EXTRA_PRESETS })) add("المكتبة", `＋ ${pr.label}`, () => libAdd({ preset: key }), pr.group);
+  return items;
+}
+function cmdOpen() {
+  let box = $("#cmdBox");
+  if (!box) { box = document.createElement("div"); box.id = "cmdBox"; box.className = "libprev cmdbox"; document.body.appendChild(box); }
+  box.hidden = false;
+  box.innerHTML = `<div class="lpcard cmdcard" role="dialog" aria-modal="true"><input id="cmdQ" class="cmdq" placeholder="اكتب اللي عايزه: وحدة حوض 80 · ملصقات · السعر · ريندر…" autocomplete="off" aria-label="أمر"><div id="cmdList" class="cmdlist"></div><p class="hint">↑↓ تنقل · ↵ تنفيذ · Esc قفل · (⌘K / Ctrl+K يفتحها في أي وقت)</p></div>`;
+  const all = cmdItems();
+  let list = [], cur = 0;
+  const q = box.querySelector("#cmdQ"), L = box.querySelector("#cmdList");
+  const draw = () => {
+    const words = normAr(q.value).split(/\s+/).filter(Boolean);
+    list = (words.length ? all.filter((it) => words.every((w) => normAr(it.label + " " + it.hint + " " + it.grp).includes(w))) : all.filter((it) => it.grp !== "المكتبة")).slice(0, 40);
+    cur = Math.min(cur, Math.max(0, list.length - 1));
+    L.innerHTML = list.length ? list.map((it, i) => `<button class="cmdit ${i === cur ? "on" : ""}" data-ci="${i}"><span class="cg">${esc(it.grp)}</span><b>${esc(it.label)}</b>${it.hint ? `<small>${esc(it.hint)}</small>` : ""}</button>`).join("") : `<p class="hint">مفيش حاجة بالاسم ده.</p>`;
+    L.querySelector(".on")?.scrollIntoView({ block: "nearest" });
+  };
+  const go = (i) => { const it = list[i]; if (!it) return; cmdClose(); setTimeout(() => it.run(), 0); };
+  q.oninput = () => { cur = 0; draw(); };
+  q.onkeydown = (e) => { if (e.key === "ArrowDown") { cur = Math.min(list.length - 1, cur + 1); draw(); e.preventDefault(); } else if (e.key === "ArrowUp") { cur = Math.max(0, cur - 1); draw(); e.preventDefault(); } else if (e.key === "Enter") { go(cur); e.preventDefault(); } else if (e.key === "Escape") cmdClose(); };
+  box.onclick = (e) => { if (e.target === box) { cmdClose(); return; } const b = e.target.closest("[data-ci]"); if (b) go(+b.dataset.ci); };
+  draw();
+  setTimeout(() => q.focus(), 50);
+}
+function cmdClose() { const b = $("#cmdBox"); if (b) { b.hidden = true; b.innerHTML = ""; } }
+addEventListener("keydown", (e) => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); if ($("#cmdBox") && !$("#cmdBox").hidden) cmdClose(); else cmdOpen(); } });
+
+if (DEV) window.__dbg = { view, plan, R, render: (x) => render(x), ak: (t) => kitchenProposals(t), applyK: (u) => applyKitchen(u, null), checks: () => designChecks(), merge: (a, b) => mergeInto(a, b), get ui() { return ui; }, layout: asmLayout, libUnit, libSet, thumbs, openStudio: (u, x) => openStudio(u, x), exportUnitDrawings, exportPurchasePdf, exportPurchaseXlsx, renderPop, libAdd, exportQuotePdf, exportAsmBooklet, presentOn, presentOff, renderPresent, exportMachines, speakRun, applyLighting, setParams, cmdOpen, elev: (u) => unitElevSvg(u), get state() { return state; } };

@@ -81,7 +81,7 @@ export const rotFor = (n) => Math.atan2(n[0], n[1]);
 export const axisX = (rot) => [Math.cos(rot), -Math.sin(rot)];
 export const axisZ = (rot) => [Math.sin(rot), Math.cos(rot)];
 /** where the run along a wall starts (the end the units' local x points away from) */
-function runStart(seg) {
+export function runStart(seg) {
   const e = axisX(rotFor(seg.n));
   return dot(e, seg.d) > 0 ? { S: seg.A, e } : { S: seg.B, e };
 }
