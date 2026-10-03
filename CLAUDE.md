@@ -47,4 +47,9 @@ cd /home/claude/novera-app && python3 tools/build_pwa.py && python3 tools/build_
 ## Still waiting on Amr
 Support email/phone for privacy.html · Apple Developer account · subscription Group ID (then `required = true`) · real iPad test · English spelling of his name (Osman).
 Known, not fixed: side banding on the rabbet edge, hinge cups off by default, laminated-layer labels, Arabic folder names in CNC/DXF zips,
-auto-kitchen corner wall-unit warnings; the SketchUp plugin itself still builds L-corner counters to the carcass line (app engine now goes to the door face).
+auto-kitchen corner wall-unit warnings.
+
+## SketchUp plugin sync — later, all at once, ONLY when Amr asks
+Amr wants the plugin updated in one go after all app edits are done. Pending for that sync:
+- corners: L-corner counter + plinth to the door face (engine/kitchen/corners.js v45), and the corner depth defaults (app.js `cornerFit()`:
+  L corner_depth = depth − 1.8, diagonal cut = leg − depth) so corner units line up with the straight units.
