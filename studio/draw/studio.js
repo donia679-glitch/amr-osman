@@ -31,7 +31,7 @@ const HINT = {
   fillet: "دوس على ركن لوح أو شكل · نص القطر من خانة المقاس", chamfer: "دوس على ركن · مقاس الشطفة من خانة المقاس",
   move: "دوس على الحاجة (أو اختارها الأول) وبعدين المكان الجديد · «نسخة» تنسخ · بعدها «x5» = 5 نسخ · «/4» = تقسيم · دوس على ركن لوح يغيّر شكله",
   rotate: "دوس المركز، وبعدين اتجاه البداية، وبعدين الزاوية · اكتب الزاوية", scale: "دوس نقطة ثابتة، وبعدين نقطة، وبعدين المكان الجديد · أو اكتب النسبة",
-  tape: "دوس من نقطة لنقطة: بيقيس ويسيب خط مساعد", protractor: "دوس المركز، البداية، وبعدين الزاوية: خط مساعد مايل",
+  tape: "دوس من نقطة لنقطة: بيقيس المسافة بس (الخط المساعد اختياري من الجنب)", protractor: "دوس المركز، البداية، وبعدين الزاوية: خط مساعد مايل",
   dim: "دوس نقطتين وبعدين مكان خط البعد", text: "دوس المكان واكتب النص في الخانة تحت", paint: "اختار الخامة من الجنب ودوس على اللوح",
   eraser: "دوس أو اسحب على اللي عايز تمسحه",
   wall: "دوس على الأرض نقطة نقطة (الوش الداخلي للحيطة) · اكتب الطول · ارجع لأول نقطة تقفل الأوضة · دوس نفس النقطة تاني أو ↵ تخلّص",
@@ -397,7 +397,7 @@ function rebuild() {
       const o = new THREE.LineSegments(lg, new THREE.LineBasicMaterial({ color: sel ? 0x2f6fdf : 0x6b6f66 }));
       o.userData = { ref }; extraG.add(o); objs.set(ref, [o]);
     } else {
-      const d = G.norm(G.sub(g.b, g.a)), A = G.add(g.a, G.mul(d, -800)), B = G.add(g.a, G.mul(d, 800));
+      const [A, B] = guideEnds(g);
       const o = new THREE.Line(new THREE.BufferGeometry().setFromPoints([T3(A), T3(B)]), new THREE.LineDashedMaterial({ color: sel ? 0x2f6fdf : 0x7d8278, dashSize: 3, gapSize: 2 }));
       o.computeLineDistances(); o.userData = { ref }; extraG.add(o); objs.set(ref, [o]);
     }
@@ -418,6 +418,15 @@ function rebuild() {
   grid.visible = !ui.face2d;
   need();
   renderLabelsList();
+}
+/** a guide's drawn ends: a measured segment as it is; a guide line a little past the drawing (not 16 m long) */
+function guideEnds(g) {
+  if (g.kind === "seg") return [g.a, g.b];
+  const d = G.norm(G.sub(g.b, g.a));
+  let r = 120;
+  for (const s of M.solids) { const b = G.solidBox(s); r = Math.max(r, Math.abs(b.x0 - g.a[0]), Math.abs(b.x1 - g.a[0]), Math.abs(b.y0 - g.a[1]), Math.abs(b.y1 - g.a[1]), Math.abs(b.z1 - g.a[2])); }
+  r = Math.min(r * 1.15 + 20, 800);
+  return [G.add(g.a, G.mul(d, -r)), G.add(g.a, G.mul(d, r))];
 }
 function clipPlanes() {
   if (!ui.section) return [];
@@ -510,7 +519,7 @@ function pickAny(cx, cy) {
   // guides / dims / texts near the pointer
   let best = null;
   for (const g of M.guides) {
-    const a = scr(g.a), d = g.kind === "point" ? Math.hypot(a[0] - cx, a[1] - cy) : segDist2([cx, cy], scr(G.add(g.a, G.mul(G.norm(G.sub(g.b, g.a)), -800))), scr(G.add(g.a, G.mul(G.norm(G.sub(g.b, g.a)), 800)))).d;
+    const a = scr(g.a), d = g.kind === "point" ? Math.hypot(a[0] - cx, a[1] - cy) : (() => { const [A, B] = guideEnds(g); return segDist2([cx, cy], scr(A), scr(B)).d; })();
     if (d < 10 && (!best || d < best.d)) best = { ref: "g:" + g.id, d };
   }
   for (const L of labelList) { const a = scr(L.p); const d = Math.hypot(a[0] - cx, a[1] - cy); if (d < 22 && (!best || d < best.d)) best = { ref: L.ref, d }; }
@@ -556,7 +565,7 @@ function snapEdges() {
   for (const s of M.solids) if (!s.hidden) for (const e of G.solidEdges(s)) segs.push({ a: e[0], b: e[1], sid: s.id });
   for (const k of M.sketches) { const W = k.pts.map((p) => G.toWorld(k.plane, p)); for (let i = 0; i + 1 < W.length + (k.closed ? 1 : 0); i++) segs.push({ a: W[i], b: W[(i + 1) % W.length], kid: k.id }); }
   for (const pa of M.paths) for (let i = 0; i + 1 < pa.pts.length + (pa.closed ? 1 : 0); i++) segs.push({ a: pa.pts[i], b: pa.pts[(i + 1) % pa.pts.length], pid: pa.id });
-  for (const g of M.guides) if (g.kind !== "point") { const d = G.norm(G.sub(g.b, g.a)); segs.push({ a: G.add(g.a, G.mul(d, -800)), b: G.add(g.a, G.mul(d, 800)), guide: true }); }
+  for (const g of M.guides) if (g.kind !== "point") { const [A, B] = guideEnds(g); segs.push({ a: A, b: B, guide: true }); }
   for (const sg of roomSegs()) segs.push({ a: P3(sg.A), b: P3(sg.B), room: true });
   return segs;
 }
@@ -1488,15 +1497,30 @@ TOOL.tape = {
   click(xy) {
     const st = ui.st, inf = infer(...xy, st ? { anchor: st.a } : {});
     if (!st) { ui.st = { a: inf.p }; return; }
-    const b = inf.p; ui.st = null;
-    if (G.dist(st.a, b) < 0.05) return;
-    edit(() => { M.guides.push({ id: uid(), kind: "line", a: st.a, b }); M.guides.push({ id: uid(), kind: "point", a: b }); });
-    setMsg(`المسافة ${f1(G.dist(st.a, b))} سم`);
-    overlay();
+    tapeDone(st.a, inf.p);
   },
-  hover(xy) { const st = ui.st, inf = infer(...xy, st ? { anchor: st.a } : {}); overlay(() => { oMarker(inf); if (st) { oLine([st.a, inf.p], 0x6b6f66, true); liveLen(st.a, inf.p); st.h = inf.p; } }); if (st) vcbSet(G.dist(st.a, inf.p), "المسافة"); },
-  vcb(v) { const st = ui.st; if (!st?.h || v.v == null) return; const b = G.add(st.a, G.mul(G.norm(G.sub(st.h, st.a)), v.v)); ui.st = null; edit(() => { M.guides.push({ id: uid(), kind: "line", a: st.a, b }); M.guides.push({ id: uid(), kind: "point", a: b }); }); overlay(); },
+  hover(xy) {
+    const st = ui.st, inf = infer(...xy, st ? { anchor: st.a } : {});
+    overlay(() => {
+      oMarker(inf);
+      if (st) { oLine([st.a, inf.p], 0x2f6fdf, false); liveLen(st.a, inf.p); st.h = inf.p; }
+      else if (ui.tapeLast) { oLine([ui.tapeLast.a, ui.tapeLast.b], 0x2f6fdf, false); liveLen(ui.tapeLast.a, ui.tapeLast.b); }
+    });
+    if (st) vcbSet(G.dist(st.a, inf.p), "المسافة");
+  },
+  vcb(v) { const st = ui.st; if (!st?.h || v.v == null) return; tapeDone(st.a, G.add(st.a, G.mul(G.norm(G.sub(st.h, st.a)), v.v))); },
 };
+/** the tape only measures (the result stays on screen until the next measure); a guide is left only when asked */
+function tapeDone(a, b) {
+  ui.st = null;
+  if (G.dist(a, b) < 0.05) { overlay(); return; }
+  ui.tapeLast = { a, b };
+  if (ui.tapeGuide) edit(() => { M.guides.push({ id: uid(), kind: "seg", a, b }); M.guides.push({ id: uid(), kind: "point", a: b }); });
+  const d = G.sub(b, a);
+  const parts = [["عرض", d[0]], ["عمق", d[1]], ["ارتفاع", d[2]]].filter(([, v]) => Math.abs(v) > 0.05);
+  setMsg(`المسافة ${f1(G.dist(a, b))} سم${parts.length > 1 ? "  ·  " + parts.map(([k, v]) => `${k} ${f1(Math.abs(v))}`).join(" · ") : ""}`);
+  overlay(() => { oLine([a, b], 0x2f6fdf, false); liveLen(a, b); });
+}
 TOOL.protractor = {
   wantsDown: () => !ui.st,
   click(xy) {
@@ -1598,7 +1622,7 @@ function setTool(t) {
   if (ui.tool === "line" && ui.st?.wpts?.length >= 2) finishLine(false);
   if (ui.tool === "wall" && ui.st?.wpts?.length >= 2) finishWall(false);
   restoreRoomDrag();
-  ui.tool = t; ui.st = null; vcbNormal();
+  ui.tool = t; ui.st = null; vcbNormal(); ui.tapeLast = null;
   overlay(); applyControls(); vcbSet("", "المقاس"); renderLabelsList();
   if (t === "wall" && !M.room && !M.solids.length && !M.sketches.length) setView("top", 900);
   if (t === "wall" && !M.room) setMsg("دوس أول ركن على الأرض، وبعدين كل ركن — أو اكتب الطول بعد ما تحدد الاتجاه");
@@ -1715,6 +1739,7 @@ function sideHtml() {
   if (ui.face2d) h += `<div class="dsbox on2d"><b>✏️ بترسم شكل القطعة 2D</b><p class="hint">ارسم خطوط وأقواس ودواير على وشها، وبعدين بـ«سحب/زق» زق الشكل لجوه: تفريغ أو قصة من الحرف أو حفر. «تدوير ركن» و«شطف ركن» على أركانها.</p><button class="dsb" data-ds="exit2d">↩ رجوع للـ3D</button></div>`;
   const refs = selRefs(), solids = refs.filter((r) => r[0] === "s").map(ent).filter(Boolean);
   h += faceHtml();
+  if (ui.tool === "tape") h += `<div class="dsbox"><b>📏 شريط القياس</b><p class="hint">دوس نقطتين: بيقيس المسافة بينهم (والفرق في العرض والطول والارتفاع) من غير ما يرسم حاجة.</p><label class="dschk"><input type="checkbox" data-ds="tapeguide" ${ui.tapeGuide ? "checked" : ""}> سيب خط مساعد مكان القياس</label></div>`;
   h += roomHtml();
   const pal = Object.keys(MATS).map((k) => `<button class="dsmat ${ui.mat === k ? "on" : ""}" data-mat="${k}" title="${esc(matName(k))}"><i style="background:${matColor(k)}"></i><span>${esc(matName(k))}</span></button>`).join("");
   h += `<div class="dsbox"><div class="dsrow"><b>الاختيار</b><label class="dschk"><input type="checkbox" data-ds="addsel" ${ui.addSel ? "checked" : ""}> + اختيار متعدد</label></div>
@@ -1892,6 +1917,7 @@ function onChange(e) {
   if (t.dataset.ds === "boxsel") { ui.boxSel = t.checked; setMsg(ui.boxSel ? "اسحب في الفاضي: من الشمال لليمين = اللي جوه المربع كله · من اليمين للشمال = أي حاجة بيلمسها" : ""); return; }
   if (t.id === "dsStep") return;
   if (t.id === "dsPlane") { ui.plane = t.value; if (ui.face2d) { ui.face2d = null; applyControls(); } renderUI(); return; }
+  if (t.dataset.ds === "tapeguide") { ui.tapeGuide = t.checked; return; }
   if (t.dataset.ds === "addsel") { ui.addSel = t.checked; return; }
   if (t.dataset.ds === "copy") { ui.copy = t.checked; return; }
   if (t.id === "dsName") { mname = t.value.trim() || mname; return; }

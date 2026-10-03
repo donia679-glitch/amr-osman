@@ -4126,5 +4126,9 @@
 "أكّد حذف": "Confirm deleting",
 "أي تعديل هنا بيتطبّق على": "Any change here applies to",
 "مختارة مع بعض": "selected together",
-"اختار وحدة واحدة بس": "Edit one unit only"
+"اختار وحدة واحدة بس": "Edit one unit only",
+"دوس من نقطة لنقطة: بيقيس المسافة بس (الخط المساعد اختياري من الجنب)": "Tap from point to point: it only measures the distance (a guide line is optional in the side panel)",
+"شريط القياس": "Tape measure",
+"دوس نقطتين: بيقيس المسافة بينهم (والفرق في العرض والطول والارتفاع) من غير ما يرسم حاجة.": "Tap two points: it measures the distance between them (and the difference in width, depth and height) without drawing anything.",
+"سيب خط مساعد مكان القياس": "Leave a guide line where you measured"
 }
