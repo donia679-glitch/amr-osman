@@ -4156,5 +4156,10 @@
 "الطول راح على المحور الأحمر — عشان اتجاه تاني اقفل محور": "The length went along the red axis — for another direction lock an axis",
 "تحت) أو اسحب صباعك ناحية الاتجاه": "below) or drag your finger towards the direction",
 "مالقتش مكان على الحيطان (الحيطان مليانة أو قصيرة) — اتحطت في نص الأوضة. حرّكها لمكانها أو صغّر وحدات تانية.": "found no room on the walls (they're full or short) — it was put in the middle of the room. Move it into place or make other units smaller.",
-"نسبة الربح على التكلفة %": "Profit on cost %"
+"نسبة الربح على التكلفة %": "Profit on cost %",
+"تقاطع": "Intersection",
+"تقاطع الخطوط والدواير": "Where lines and circles cross",
+"اتحطت نقطة": "Point placed",
+"على التقاطع": "on the intersection",
+"دوس مكان النقطة (بتلقط التقاطعات والأطراف والمراكز) — بتفضل علامة ترسم منها بعدين": "Tap where the point goes (it snaps to crossings, ends and centres) — it stays as a mark to draw from later"
 }

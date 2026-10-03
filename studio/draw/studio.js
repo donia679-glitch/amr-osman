@@ -15,7 +15,7 @@ const TOOLS = [
   ["رسم", [["line", "╱", "خط"], ["rect", "▭", "مستطيل"], ["circle", "◯", "دايرة"], ["polygon", "⬡", "مضلّع"], ["arc", "◠", "قوس"]]],
   ["تشكيل", [["pushpull", "⇕", "سحب / زق"], ["offset", "⧈", "إزاحة"], ["follow", "➰", "اتبعني"], ["fillet", "◜", "تدوير ركن"], ["chamfer", "◸", "شطف ركن"]]],
   ["تعديل", [["move", "✥", "تحريك / نسخ"], ["rotate", "↻", "لف"], ["scale", "⇲", "تكبير / تصغير"]]],
-  ["قياس", [["tape", "📏", "شريط قياس"], ["protractor", "∡", "منقلة"], ["dim", "↔", "أبعاد"], ["text", "T", "نص"]]],
+  ["قياس", [["tape", "📏", "شريط قياس"], ["protractor", "∡", "منقلة"], ["dim", "↔", "أبعاد"], ["text", "T", "نص"], ["gpoint", "✚", "نقطة"]]],
   ["حوائط", [["wall", "🧱", "حيطة"], ["door", "🚪", "باب"], ["window", "🪟", "شباك"], ["mep", "🔌", "مرافق"]]],
   ["تاني", [["paint", "🪣", "دهان"], ["eraser", "⌫", "ممحاة"]]],
 ];
@@ -31,6 +31,7 @@ const HINT = {
   fillet: "دوس على ركن لوح أو شكل · نص القطر من خانة المقاس", chamfer: "دوس على ركن · مقاس الشطفة من خانة المقاس",
   move: "دوس على الحاجة (أو اختارها الأول) وبعدين المكان الجديد · «نسخة» تنسخ · بعدها «x5» = 5 نسخ · «/4» = تقسيم · دوس على ركن لوح يغيّر شكله",
   rotate: "دوس المركز، وبعدين اتجاه البداية، وبعدين الزاوية · اكتب الزاوية", scale: "دوس نقطة ثابتة، وبعدين نقطة، وبعدين المكان الجديد · أو اكتب النسبة",
+  gpoint: "دوس مكان النقطة (بتلقط التقاطعات والأطراف والمراكز) — بتفضل علامة ترسم منها بعدين",
   tape: "دوس من نقطة لنقطة: بيقيس المسافة بس (الخط المساعد اختياري من الجنب)", protractor: "دوس المركز، البداية، وبعدين الزاوية: خط مساعد مايل",
   dim: "دوس نقطتين وبعدين مكان خط البعد", text: "دوس المكان واكتب النص في الخانة تحت", paint: "اختار الخامة من الجنب ودوس على اللوح",
   eraser: "دوس أو اسحب على اللي عايز تمسحه",
@@ -49,7 +50,7 @@ const objs = new Map(); // entity ref → three object(s), for picking and ghost
 const ui = { tool: "select", sel: new Set(), st: null, axis: null, plane: "auto", copy: false, xray: false, section: null, secPos: 0, ortho: false, mat: "carcass",
   segs: 32, sides: 6, filletR: 5, chamferD: 2, editGroup: null, face2d: null, info: null, addSel: false, lastPush: null, lastMove: null, thick: 1.8, panel: true, outline: false, msg: "",
   step: 1, boxSel: false, recent: [], face: null, wallT: Room.WALL_T, wallH: Room.WALL_H, mepKind: "socket", rsel: null, showWalls: true,
-  snap: { on: true, end: true, mid: true, center: true, edge: true, face: true, axis: true, par: true, align: true, angle: true, strength: 1.3 }, dimEdit: null, clip: null, arr: { n: 3, d: 40, ax: 0, pn: 6, pa: 360, px: 0, py: 0 }, alignAx: 0 };
+  snap: { on: true, end: true, mid: true, center: true, int: true, edge: true, face: true, axis: true, par: true, align: true, angle: true, strength: 1.3 }, dimEdit: null, clip: null, arr: { n: 3, d: 40, ax: 0, pn: 6, pa: 360, px: 0, py: 0 }, alignAx: 0 };
 const hist = { u: [], r: [] };
 
 export const newModel = () => ({ v: 1, solids: [], sketches: [], paths: [], sweeps: [], guides: [], dims: [], texts: [], groups: [] });
@@ -564,6 +565,48 @@ function snapPoints() {
   if (ui.st?.wpts) ui.st.wpts.forEach((p) => pts.push({ p, kind: "end", cur: true }));
   return pts;
 }
+/** where two circles (or arcs) drawn on the same plane cross — exactly, from their centres and radii */
+function circleCrossings() {
+  const C = M.sketches.filter((k) => k.center && k.smooth && k.pts?.length > 2);
+  const out = [];
+  for (let i = 0; i < C.length; i++) for (let j = i + 1; j < C.length; j++) {
+    const a = C[i], b = C[j];
+    if (!G.samePlane(a.plane, b.plane, 0.05)) continue;
+    const c1 = a.center, c2 = G.toPlane(a.plane, G.toWorld(b.plane, b.center)).slice(0, 2);
+    const r1 = Math.hypot(a.pts[0][0] - c1[0], a.pts[0][1] - c1[1]);
+    const bp0 = G.toPlane(a.plane, G.toWorld(b.plane, b.pts[0])).slice(0, 2), r2 = Math.hypot(bp0[0] - c2[0], bp0[1] - c2[1]);
+    const dx = c2[0] - c1[0], dy = c2[1] - c1[1], d = Math.hypot(dx, dy);
+    if (d < 1e-6 || d > r1 + r2 + 1e-6 || d < Math.abs(r1 - r2) - 1e-6) continue;
+    const t = (r1 * r1 - r2 * r2 + d * d) / (2 * d), h = Math.sqrt(Math.max(0, r1 * r1 - t * t));
+    const mx = c1[0] + (dx * t) / d, my = c1[1] + (dy * t) / d;
+    for (const sg of h < 1e-6 ? [0] : [1, -1]) out.push({ p: G.toWorld(a.plane, [mx - (sg * dy * h) / d, my + (sg * dx * h) / d]), kind: "int", exact: true });
+  }
+  return out;
+}
+/** where two straight edges near the finger cross (lines, rectangles, board edges, walls, guides…) */
+function edgeCrossings(cx, cy, pr) {
+  const R = POINT_R * pr * 2.2, near = [];
+  for (const e of snapEdges()) {
+    const a = scr(e.a), b = scr(e.b);
+    if (a[2] > 1 && b[2] > 1) continue;
+    if (segDist2([cx, cy], a, b).d < R) near.push(e);
+    if (near.length > 60) break;
+  }
+  const out = [];
+  for (let i = 0; i < near.length; i++) for (let j = i + 1; j < near.length; j++) {
+    const A = near[i], B = near[j], u = G.sub(A.b, A.a), v = G.sub(B.b, B.a), w = G.sub(A.a, B.a);
+    const aa = G.dot(u, u), bb = G.dot(u, v), cc = G.dot(v, v), dd = G.dot(u, w), ee = G.dot(v, w), den = aa * cc - bb * bb;
+    if (den < 1e-9 * aa * cc) continue; // parallel
+    const s = (bb * ee - cc * dd) / den, t = (aa * ee - bb * dd) / den;
+    if (s < -1e-6 || s > 1 + 1e-6 || t < -1e-6 || t > 1 + 1e-6) continue;
+    const P = G.add(A.a, G.mul(u, s)), Q = G.add(B.a, G.mul(v, t));
+    if (G.dist(P, Q) > 0.05) continue;
+    // a shared corner is already an "end" point
+    if (Math.min(s, 1 - s) < 1e-4 && Math.min(t, 1 - t) < 1e-4) continue;
+    out.push({ p: G.lerp(P, Q, 0.5), kind: "int" });
+  }
+  return out;
+}
 function snapEdges() {
   const segs = [];
   for (const s of M.solids) if (!s.hidden) for (const e of G.solidEdges(s)) segs.push({ a: e[0], b: e[1], sid: s.id });
@@ -573,7 +616,7 @@ function snapEdges() {
   for (const sg of roomSegs()) segs.push({ a: P3(sg.A), b: P3(sg.B), room: true });
   return segs;
 }
-const KLABEL = { end: "طرف", mid: "منتصف", center: "مركز", guide: "خط مساعد", origin: "نقطة الأصل", edge: "على الحرف", face: "على الوش", plane: "", axis: "" };
+const KLABEL = { end: "طرف", mid: "منتصف", center: "مركز", int: "تقاطع", guide: "خط مساعد", origin: "نقطة الأصل", edge: "على الحرف", face: "على الوش", plane: "", axis: "" };
 /**
  * Where the pointer means, SketchUp-style: points first (end, middle, centre), then edges, faces, the drawing plane;
  * with an anchor, a direction along one of the three axes wins when the pointer is near it.
@@ -594,20 +637,22 @@ function inferCore(cx, cy, opts = {}) {
   // what surface is under the finger: corners hidden behind it (the far side of a board) don't snap
   const under = sn.on ? pickMesh(cx, cy) : null, rO = ray.ray.origin.clone(), rD = ray.ray.direction.clone();
   const hidden = (P) => { if (!under || ui.xray) return false; const v = T3(P).sub(rO); return v.dot(rD) > under.dist + 0.8; };
-  for (const q of sn.on ? snapPoints() : []) {
+  const cands = sn.on ? snapPoints() : [];
+  if (sn.on && sn.int !== false) cands.push(...circleCrossings(), ...edgeCrossings(cx, cy, pr));
+  for (const q of cands) {
     if ((q.kind === "end" && !sn.end) || (q.kind === "mid" && !sn.mid) || (q.kind === "center" && !sn.center)) continue;
     const s = scr(q.p);
     if (s[2] > 1) continue;
     const d = Math.hypot(s[0] - cx, s[1] - cy);
     if (d >= POINT_R * pr || hidden(q.p)) continue;
     // a corner wins over a middle when they are about as close, but the one right under the finger wins
-    const score = d + (q.kind === "end" ? 0 : q.kind === "center" ? 4 : q.kind === "mid" ? 7 : 10);
+    const score = d + (q.exact ? -8 : q.kind === "int" ? -1 : q.kind === "end" ? 0 : q.kind === "center" ? 4 : q.kind === "mid" ? 7 : 10);
     if (!best || score < best.score) best = { ...q, d, score };
   }
   let res = null;
   if (best && (!opts.plane || Math.abs(G.toPlane(opts.plane, best.p)[2]) < 0.6)) res = { p: [...best.p], kind: best.kind, sid: best.sid, kid: best.kid, vi: best.vi, loop: best.loop, w: best.w, seg: best.seg };
   // an axis direction from the anchor
-  if (opts.anchor && !res?.kind?.match(/end|center/) && (sn.on && sn.axis || ui.axis != null)) {
+  if (opts.anchor && !res?.kind?.match(/end|center|int/) && (sn.on && sn.axis || ui.axis != null)) {
     const axes = ui.axis != null ? [ui.axis] : opts.axes || [0, 1, 2];
     let ab = null;
     for (const i of axes) {
@@ -774,7 +819,7 @@ function oGhost(faces, color = 0x2f6fdf) {
 function oMarker(inf) {
   if (!inf) return;
   for (const [a, b, c] of inf.lines || []) if (G.dist(a, b) > 0.05) oLine([a, b], c, true);
-  const col = inf.kind === "end" ? 0x2f9e44 : inf.kind === "mid" ? 0x22a6b3 : inf.kind === "center" ? 0x9b59b6 : inf.kind === "edge" ? 0xe0413a : inf.kind === "face" ? 0x2f6fdf : inf.kind === "axis" ? [0xe0413a, 0x2f9e44, 0x2f6fdf][inf.axis] : inf.kind === "par" ? 0xd63aa0 : inf.kind === "align" ? 0xb05bd6 : inf.kind === "angle" ? 0x8a6d1f : 0x555555;
+  const col = inf.kind === "int" ? 0xe8590c : inf.kind === "end" ? 0x2f9e44 : inf.kind === "mid" ? 0x22a6b3 : inf.kind === "center" ? 0x9b59b6 : inf.kind === "edge" ? 0xe0413a : inf.kind === "face" ? 0x2f6fdf : inf.kind === "axis" ? [0xe0413a, 0x2f9e44, 0x2f6fdf][inf.axis] : inf.kind === "par" ? 0xd63aa0 : inf.kind === "align" ? 0xb05bd6 : inf.kind === "angle" ? 0x8a6d1f : 0x555555;
   const s = new THREE.Mesh(new THREE.SphereGeometry(1, 10, 8), new THREE.MeshBasicMaterial({ color: col, depthTest: false }));
   const dpx = camDistAt(inf.p) * (touchy ? 0.012 : 0.008);
   s.scale.setScalar(dpx); s.position.copy(T3(inf.p)); s.renderOrder = 12; overG.add(s);
@@ -1596,6 +1641,16 @@ TOOL.dim = {
   },
 };
 function offsetFor(st, P) { const d = G.norm(G.sub(st.b, st.a)), v = G.sub(P, st.a); return G.sub(v, G.mul(d, G.dot(v, d))); }
+// ---- a guide point: mark a spot (the crossing of two circles, a centre …) to draw from later
+TOOL.gpoint = {
+  click(xy) {
+    const inf = infer(...xy, {});
+    edit(() => M.guides.push({ id: uid(), kind: "point", a: inf.p.map(G.r2) }));
+    setMsg(`اتحطت نقطة${inf.kind === "int" ? " على التقاطع" : inf.label ? " — " + inf.label : ""}`);
+    overlay();
+  },
+  hover(xy) { const inf = infer(...xy, {}); overlay(() => oMarker(inf)); },
+};
 TOOL.text = {
   click(xy) { const inf = infer(...xy, {}); ui.st = { p: inf.p }; const i = el.querySelector("#dsVcb"); i.removeAttribute("data-keypad"); i.inputMode = "text"; i.value = ""; i.placeholder = "اكتب النص واضغط ↵"; el.querySelector("#dsVcbL").textContent = "النص"; i.focus(); /* now, inside the tap: iPadOS opens the keyboard only then */ overlay(() => oMarker(inf)); },
   raw(txt) { const st = ui.st; ui.st = null; const i = el.querySelector("#dsVcb"); i.setAttribute("data-keypad", ""); i.placeholder = "—"; i.inputMode = "decimal"; if (!st || !txt.trim()) return; edit(() => M.texts.push({ id: uid(), p: st.p, s: txt.trim() })); overlay(); },
@@ -2469,7 +2524,7 @@ function snapMenu() {
   p = document.createElement("div"); p.className = "dssnap";
   const sn = ui.snap, ck = (k, l, c) => `<label class="dschk"><input type="checkbox" data-snap="${k}" ${sn[k] ? "checked" : ""}><i style="background:${c}"></i> ${l}</label>`;
   p.innerHTML = `<div class="dsrow"><b>🧲 المغناطيس (Snap)</b><label class="dschk"><input type="checkbox" data-snap="on" ${sn.on ? "checked" : ""}> شغّال</label></div>
-    ${ck("end", "أطراف الخطوط والأركان", "#2f9e44")}${ck("mid", "منتصف الخطوط", "#22a6b3")}${ck("center", "مراكز الدواير", "#9b59b6")}${ck("edge", "على الحروف", "#e0413a")}${ck("face", "على الوشوش", "#2f6fdf")}
+    ${ck("end", "أطراف الخطوط والأركان", "#2f9e44")}${ck("mid", "منتصف الخطوط", "#22a6b3")}${ck("center", "مراكز الدواير", "#9b59b6")}${ck("int", "تقاطع الخطوط والدواير", "#e8590c")}${ck("edge", "على الحروف", "#e0413a")}${ck("face", "على الوشوش", "#2f6fdf")}
     ${ck("axis", "اتجاه المحاور (أحمر · أخضر · أزرق)", "#888")}${ck("par", "موازي / عمودي على اللي مرسوم", "#d63aa0")}${ck("align", "على استقامة نقطة لمستها قبل كده", "#b05bd6")}${ck("angle", "زوايا كل 15°", "#8a6d1f")}
     <label class="dsf"><span>قوة الجذب</span><select data-snap="strength"><option value="0.8" ${sn.strength < 1 ? "selected" : ""}>خفيف</option><option value="1.3" ${sn.strength >= 1 && sn.strength < 1.8 ? "selected" : ""}>عادي</option><option value="2" ${sn.strength >= 1.8 ? "selected" : ""}>قوي (للصوابع)</option></select></label>
     <p class="hint">المس ركن أو منتصف أي خط الأول، وبعدين اتحرك: هيظهر خط بنفسجي لما تبقى على استقامته. الشبكة تحت بتخلي النقط الحرة تمشي بالسم.</p>`;
