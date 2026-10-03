@@ -4122,5 +4122,9 @@
 "تراجع لو غلط": "undo if it was a mistake",
 "حرّكهم مع بعض": "Move them together",
 "دوس النقطة اللي بعدها": "Tap the next point",
-"نسخة — اتحطّت جنب التصميم، حرّكهم لمكانهم": "copies — placed next to the design, move them into place"
+"نسخة — اتحطّت جنب التصميم، حرّكهم لمكانهم": "copies — placed next to the design, move them into place",
+"أكّد حذف": "Confirm deleting",
+"أي تعديل هنا بيتطبّق على": "Any change here applies to",
+"مختارة مع بعض": "selected together",
+"اختار وحدة واحدة بس": "Edit one unit only"
 }

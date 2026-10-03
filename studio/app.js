@@ -850,7 +850,13 @@ function dimsText(u, r) {
 
 const selUnit = () => state.project.units.find((u) => u.id === state.sel) || null;
 function expanded(u) { const p = clone(R(u).params || {}); delete p.preset; return p; }
-function setParams(u, mutate) { const p = expanded(u); mutate(p); u.params = p; save(); render(); }
+function setParams(u, mutate) {
+  // several units ticked: the same change goes to every one of the same kind (width, material, handle, plinth …)
+  const all = ui.multi?.size > 1 && ui.multi.has(u.id) ? targetUnits().filter((x) => x.kind === u.kind) : [u];
+  if (!all.includes(u)) all.unshift(u);
+  for (const x of all) { const p = expanded(x); mutate(p); x.params = p; }
+  save(); render();
+}
 const getPath = (p, path) => path.split(".").reduce((a, k) => (a == null ? a : a[k]), p);
 function setPath(p, path, v) { const ks = path.split("."); let o = p; for (const k of ks.slice(0, -1)) o = o[k] ??= {}; o[ks[ks.length - 1]] = v; }
 
@@ -1212,7 +1218,7 @@ $("#libBtn").addEventListener("click", () => { state.libOpen = !state.libOpen; r
     const hit = view.pickAny(e.clientX, e.clientY);
     if (!hit && ui.moveMode) { sceneMode(); alertBar("رجعت للوضع العادي — السحب بيلف المشهد كله."); return; }
     if (hit?.kind === "unit") {
-      if (ui.multi) { ui.multi.has(hit.id) ? ui.multi.delete(hit.id) : ui.multi.add(hit.id); renderMulti(); renderStrip(); view.update(); return; }
+      if (ui.multi) { ui.multi.has(hit.id) ? ui.multi.delete(hit.id) : ui.multi.add(hit.id); renderMulti(); renderStrip(); renderProps(); view.update(); return; }
       ui.room3d = false; ui.planSel = null;
       if (hit.id !== state.sel) { state.sel = hit.id; save(); renderStrip(); renderChips(); renderProps(); renderErrs(); view.update(); }
       else renderProps();
@@ -1751,7 +1757,7 @@ function renderStrip() {
 $("#unitStrip").addEventListener("click", (e) => {
   const b = e.target.closest("[data-unit]");
   if (!b) return;
-  if (ui.multi) { const id = b.dataset.unit; ui.multi.has(id) ? ui.multi.delete(id) : ui.multi.add(id); if (!state.sel) state.sel = id; renderMulti(); renderStrip(); view.update(); return; }
+  if (ui.multi) { const id = b.dataset.unit; ui.multi.has(id) ? ui.multi.delete(id) : ui.multi.add(id); if (!state.sel) state.sel = id; renderMulti(); renderStrip(); renderProps(); view.update(); return; }
   if (state.sel === b.dataset.unit && matchMedia("(max-width: 640px), (max-height: 520px)").matches) { ui.sheet = ui.sheet === "min" ? "half" : "min"; document.body.dataset.sheet = ui.sheet; setTimeout(() => view.resize(), 260); }
   state.sel = b.dataset.unit;
   save();
@@ -2114,7 +2120,8 @@ function renderProps0() {
   if (!u) { el.innerHTML = `<div class="emptyp"><h2>ابدأ بوحدة</h2><p class="hint">افتح المكتبة واختار تصميم جاهز أو قالب فاضي.</p></div>`; return; }
   const r = R(u);
   const p = r.params;
-  let h = `<div class="ph"><input id="unitName" class="uname" value="${esc(trv(u.name))}" aria-label="اسم الوحدة">
+  const multiN = ui.multi?.size > 1 && ui.multi.has(u.id) ? targetUnits().filter((x) => x.kind === u.kind).length : 0;
+  let h = (multiN > 1 ? `<div class="multinote">☑ أي تعديل هنا بيتطبّق على <b>${multiN} وحدة</b> مختارة مع بعض · <button class="linkbtn" data-mmoff>اختار وحدة واحدة بس</button></div>` : "") + `<div class="ph"><input id="unitName" class="uname" value="${esc(trv(u.name))}" aria-label="اسم الوحدة">
     <div class="pa"><button data-mysave title="احفظها في مكتبتي" aria-label="احفظها في مكتبتي">⭐</button><button data-dup title="نسخة" aria-label="نسخة">${ICON.copy}</button><button data-del class="danger" title="حذف" aria-label="حذف">${ICON.trash}</button></div></div>
     <div class="tplname"><span class="ucode">${esc(unitCode(u))}</span>${esc(r.label || (u.kind === "dressing" ? "دريسنج" : u.kind === "kitchen" ? "وحدة مطبخ" : ""))}</div>`;
   if (r.ok) h += `<div class="stats"><div><b>${r.pieces}</b><span>قطعة</span></div><div><b>${r.banding}</b><span>م شريط</span></div><div><b>${r.doors}</b><span>ضلفة</span></div><div><b>${r.drawers}</b><span>درج</span></div></div>`;
@@ -2600,6 +2607,9 @@ props.addEventListener("change", (e) => {
 });
 props.addEventListener("input", (e) => { if (e.target.id === "propQ") { ui.propQ = e.target.value; filterProps(); } }, true);
 props.addEventListener("click", (e) => {
+  if (e.target.closest("[data-mmoff]")) { ui.multi = null; renderMulti(); renderChips(); renderStrip(); renderProps(); view.update(); }
+});
+props.addEventListener("click", (e) => {
   const b = e.target.closest("[data-padv]");
   if (!b) return;
   e.stopImmediatePropagation();
@@ -2754,16 +2764,22 @@ props.addEventListener("click", (e) => {
   }
   if (b.hasAttribute("data-mysave")) { ui.pop = "mysave"; ui.mysaveId = u.id; renderPop(); return; }
   if (b.hasAttribute("data-dup")) {
-    const c = { ...clone(u), id: uid(), name: u.name + " (نسخة)" };
-    state.project.units.splice(state.project.units.indexOf(u) + 1, 0, c);
+    const many = ui.multi?.size > 1 && ui.multi.has(u.id) ? targetUnits() : [u];
+    const made = many.map((x) => { const c = { ...clone(x), id: uid(), name: x.name + " (نسخة)" }; delete c.code; delete c.pos; return c; });
+    state.project.units.splice(state.project.units.indexOf(u) + 1, 0, ...made);
+    ensureCodes(state.project);
+    if (many.length > 1) ui.multi = new Set(made.map((x) => x.id));
+    const c = made[0];
     state.sel = c.id;
     save();
     render(true);
   } else if (b.hasAttribute("data-del")) {
-    if (d.armed !== "1") { d.armed = "1"; b.classList.add("armed"); b.textContent = "أكّد الحذف"; return; }
-    const i = state.project.units.indexOf(u);
-    state.project.units.splice(i, 1);
-    state.sel = state.project.units[Math.max(0, i - 1)]?.id ?? null;
+    const many = ui.multi?.size > 1 && ui.multi.has(u.id) ? targetUnits() : [u];
+    if (d.armed !== "1") { d.armed = "1"; b.classList.add("armed"); b.textContent = many.length > 1 ? `أكّد حذف ${many.length} وحدة` : "أكّد الحذف"; return; }
+    const i = state.project.units.indexOf(u), gone = new Set(many.map((x) => x.id));
+    state.project.units = state.project.units.filter((x) => !gone.has(x.id));
+    if (many.length > 1) ui.multi = null;
+    state.sel = state.project.units[Math.max(0, Math.min(i, state.project.units.length) - 1)]?.id ?? state.project.units[0]?.id ?? null;
     save();
     render(true);
   } else if (d.zdel != null) setParams(u, (p) => p.fronts.splice(+d.zdel, 1));
@@ -2862,7 +2878,7 @@ function targetUnits() {
 function toggleMulti(add) {
   if (ui.multi && !add) ui.multi = null;
   else { ui.multi ??= new Set([state.sel].filter(Boolean)); if (add) ui.multi.add(add); if (!state.whole && state.project.units.length > 1) state.whole = true; }
-  renderMulti(); renderChips(); renderStrip(); view.update();
+  renderMulti(); renderChips(); renderStrip(); renderProps(); view.update();
   if (ui.multi) alertBar("اختيار متعدد — دوس على الوحدات اللي عايزها (في العرض أو في الشريط اللي تحت)");
 }
 function renderMulti() {
@@ -2893,6 +2909,7 @@ $("#multibar").addEventListener("click", (e) => {
   }
   if (k === "del") {
     const list = targetUnits(); if (!list.length) return;
+    if (b.dataset.armed !== "1") { b.dataset.armed = "1"; b.classList.add("armed"); b.textContent = `أكّد حذف ${list.length} وحدة`; return; }
     const ids = new Set(list.map((x) => x.id));
     state.project.units = state.project.units.filter((x) => !ids.has(x.id));
     ui.multi = null; state.sel = state.project.units[0]?.id ?? null;
