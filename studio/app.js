@@ -2696,14 +2696,44 @@ const DEF_KEYS = [ // construction settings a new kitchen unit takes (the unit's
   ["toe_kick_style", "شكل السكلو", "s", { apron: "وزرة قطعة واحدة", segments: "قطع منفصلة" }], ["drawer_box_depth", "عمق صناديق الأدراج (سم)", "n"],
   ["include_edge_banding", "شريط حواف", "b"], ["include_assembly_holes", "أليتا (كام لوك)", "b"], ["include_hinge_cups", "كبب المفصلات", "b"], ["include_drawer_boxes", "صناديق الأدراج", "b"],
 ];
-const userDefs = () => (state.defaults ??= { k: {}, dims: {}, handle: "", room: {} });
+const userDefs = () => { const D = (state.defaults ??= { k: {}, dims: {}, handle: "", room: {} }); D.by ??= { base: {}, wall: {}, tall: {} }; D.rules ??= {}; return D; };
+/** NOVERA's own factory standards — the starting defaults on a fresh install (and the «معايير NOVERA» button) */
+const NOVERA_DEFAULTS = {
+  k: { back_rear_offset: 1.8, door_position: "overlay", include_assembly_holes: true, include_hinge_cups: true, include_drawer_boxes: true },
+  by: { base: { top_style: "rails", top_rail_front_inset: 2.5, door_handle_recess: 4 }, wall: { door_bottom_extension: 2 }, tall: {} },
+  rules: { shelves: { base: 1, wall: 1, tall: 4 }, drawerBoxLikeCarcass: true, runner: "bottom", runnerClr: { bottom: 0.6, side: 2.6 } },
+};
+function seedDefaults() {
+  const D0 = userDefs();
+  if (D0.seeded) return;
+  for (const [k, v] of Object.entries(NOVERA_DEFAULTS.k)) if (D0.k[k] === undefined || D0.k[k] === "") D0.k[k] = v;
+  for (const t of ["base", "wall", "tall"]) D0.by[t] = { ...NOVERA_DEFAULTS.by[t], ...(D0.by[t] || {}) };
+  D0.rules = { ...clone(NOVERA_DEFAULTS.rules), ...D0.rules };
+  D0.seeded = true;
+}
+/** the per-type defaults and the rules (shelves, runners, drawer-box thickness) on top of a unit's params — used for new units and «طبّقها» */
+function applyTypeDefaults(out, params, { force = false } = {}) {
+  const D0 = userDefs(), ut = out.unit_type || "base", cat = out.unit_category || "standard";
+  for (const [k, v] of Object.entries(D0.by[ut] || {})) if (v !== "" && v != null && (force || params[k] == null)) out[k] = v;
+  const R0 = D0.rules || {};
+  // shelves: the factory's count unless the preset is about its shelves (open shelves, glass displays, pantries with "5 أرفف")
+  const sh = R0.shelves?.[ut];
+  // a preset's own count stays only when it is clearly deliberate (a tall pantry with 5 shelves, say); 1–3 on a base/wall unit follows the factory rule
+  const deliberate = params.shelf_count != null && (ut === "tall" ? +params.shelf_count >= 4 : +params.shelf_count > 3);
+  if (sh != null && sh !== "" && ["standard", "corner", "divided"].includes(cat) && (force || !deliberate) && out.include_shelves !== false && out.include_shelves !== "false") out.shelf_count = +sh;
+  if (R0.drawerBoxLikeCarcass) { out.drawer_box_panel_thickness = +out.panel_thickness || 1.8; out.drawer_box_base_thickness = +out.back_panel_thickness || 0.6; }
+  if (R0.runner && (force || params.drawer_runner == null)) out.drawer_runner = R0.runner;
+  if (out.drawer_runner && R0.runnerClr?.[out.drawer_runner] != null && (force || params.drawer_box_side_clearance == null)) out.drawer_box_side_clearance = +R0.runnerClr[out.drawer_runner];
+  return out;
+}
 /** a new kitchen unit's params with the user's defaults under the preset (dims only where the preset kept the standard) */
 function withDefaults(params) {
+  seedDefaults();
   const D0 = userDefs(), out = { ...D0.k, ...params };
   if (D0.handle && !params.kud_handles) out.kud_handles = { type: D0.handle };
   const ut = params.unit_type || "base", std = DEF_DIMS[ut], mine = D0.dims[ut] || {};
   if (std) for (const k of Object.keys(std)) if (mine[k] && (params[k] == null || +params[k] === std[k])) out[k] = +mine[k];
-  return out;
+  return applyTypeDefaults(out, params);
 }
 function defaultsPop() {
   const D0 = userDefs(), P = priceDefaults(), o = state.cutOpts || {};
@@ -2720,7 +2750,18 @@ function defaultsPop() {
       : nf(`k.${k}`, l, dv(k), DEF_PH[k] ?? "")).join("")}
       <label class="f"><span>نوع المقبض</span><select data-def="handle"><option value="">— زي البرنامج —</option>${Object.entries(HANDLE_TYPES_UI).map(([v, lb]) => `<option value="${v}" ${D0.handle === v ? "selected" : ""}>${esc(lb)}</option>`).join("")}</select></label></div>
       <div class="bools">${DEF_KEYS.filter((x) => x[2] === "b").map(([k, l]) => `<label class="f b"><input type="checkbox" data-defb="k.${k}" ${dv(k) === true ? "checked" : ""} ${dv(k) === undefined ? 'data-unset="1"' : ""}><span>${esc(l)}${dv(k) === undefined ? " <small>(زي البرنامج)</small>" : ""}</span></label>`).join("")}</div>
-      <div class="btnrow"><button class="ghost2" data-defapply>طبّقها على وحدات المطبخ في المشروع ده</button></div></details>
+      </details>
+    <details open><summary>🏭 حسب نوع الوحدة ومعايير المصنع</summary>
+      <p class="hint">إعدادات بتختلف بين السفلي والعلوي والطويل، وقواعد بتتطبق على كل وحدة جديدة. زرار «معايير NOVERA» بيرجّع القيم اللي اتفقنا عليها.</p>
+      <div class="btnrow"><button class="ghost2" data-defnovera>🏭 معايير NOVERA</button></div>
+      <b class="deflbl">السفلي</b><div class="grid2"><label class="f"><span>الرأس</span><select data-def="by.base.top_style"><option value="">— زي البرنامج —</option><option value="solid" ${D0.by.base.top_style === "solid" ? "selected" : ""}>لوح كامل</option><option value="rails" ${D0.by.base.top_style === "rails" ? "selected" : ""}>شريطين</option></select></label>
+        ${nf("by.base.top_rail_front_inset", "رجوع الشريط الأمامي لورا (سم)", D0.by.base.top_rail_front_inset, 0)}${nf("by.base.door_handle_recess", "خلوص المقبض في الضلف السفلية (سم)", D0.by.base.door_handle_recess, 0)}${nf("rules.shelves.base", "أرفف السفلي", D0.rules.shelves?.base, 3)}</div>
+      <b class="deflbl">العلوي</b><div class="grid2">${nf("by.wall.door_bottom_extension", "نزول الضلفة لتحت بدل المقبض (سم)", D0.by.wall.door_bottom_extension, 0)}${nf("rules.shelves.wall", "أرفف العلوي", D0.rules.shelves?.wall, 3)}</div>
+      <b class="deflbl">الطويل / الدولاب</b><div class="grid2">${nf("rules.shelves.tall", "أرفف الدولاب", D0.rules.shelves?.tall, 3)}${nf("by.tall.door_handle_recess", "خلوص المقبض في الطويل (سم)", D0.by.tall.door_handle_recess, 0)}</div>
+      <b class="deflbl">الأدراج والمجاري</b><div class="grid2"><label class="f"><span>نوع المجاري الافتراضي</span><select data-def="rules.runner"><option value="bottom" ${D0.rules.runner !== "side" ? "selected" : ""}>مجاري سفلية (تحت الصندوق)</option><option value="side" ${D0.rules.runner === "side" ? "selected" : ""}>مجاري جانبية</option></select></label>
+        ${nf("rules.runnerClr.bottom", "خلوص كل جنب — مجاري سفلية (سم)", D0.rules.runnerClr?.bottom, 0.6)}${nf("rules.runnerClr.side", "خلوص كل جنب — مجاري جانبية (سم)", D0.rules.runnerClr?.side, 1.27)}</div>
+      <div class="bools"><label class="f b"><input type="checkbox" data-defb="rules.drawerBoxLikeCarcass" ${D0.rules.drawerBoxLikeCarcass ? "checked" : ""}><span>صندوق الدرج بسمك الهيكل، وقاعدته بسمك الظهر</span></label></div>
+      <div class="btnrow"><button class="ghost2" data-defapply>طبّق كل الإعدادات دي على وحدات المطبخ في المشروع ده</button></div></details>
     <details><summary>🧱 الأوضة والحيطان</summary><div class="grid2">${nf("room.t", "سمك الحيطة", D0.room.t, Room.WALL_T)}${nf("room.h", "ارتفاع السقف", D0.room.h, Room.WALL_H)}</div></details>
     <details><summary>💰 التسعير</summary><div class="grid2"><label class="f"><span>حساب الخامة</span><select data-def="price.mode"><option value="area" ${P.mode === "area" ? "selected" : ""}>بمسطح القطع (م²) لكل وحدة</option><option value="sheets" ${P.mode !== "area" ? "selected" : ""}>بعدد الألواح من خطة القص</option></select></label>${nf("price.waste", "نسبة الهالك % (بالمسطح)", P.waste)}${nf("price.defaultSheet", "سعر اللوح (أي خامة ملهاش سعر)", P.defaultSheet)}${nf("price.band", "سعر متر الشريط", P.band)}
       ${nf("price.laborUnit", "مصنعية الوحدة", P.laborUnit)}${nf("price.laborM2", "مصنعية المتر المربع", P.laborM2)}${nf("price.install", "التركيب للمشروع", P.install)}${nf("price.margin", "نسبة الربح على التكلفة %", P.margin)}
@@ -2757,6 +2798,7 @@ function setDefault(path, v) {
   if (a === "cut") { state.cutOpts ??= {}; const lim = CUT_OK[rest[0]]; if (v === "" || v == null || (lim && (!Number.isFinite(+v) || +v < lim[0] || +v > lim[1]))) state.cutOpts[rest[0]] = CUT_DEF[rest[0]] ?? state.cutOpts[rest[0]]; else state.cutOpts[rest[0]] = v; cutKey = ""; return; }
   if (a === "labelFmt") { state.labelFmt = v; return; }
   if (a === "handle") { D0.handle = v; return; }
+  if (a === "by" || a === "rules") { let o = D0[a]; for (const k of rest.slice(0, -1)) o = o[k] ??= {}; const last = rest[rest.length - 1]; if (v === "" || v == null) delete o[last]; else o[last] = v; return; }
   let o = D0;
   const ks = [a, ...rest];
   for (const k of ks.slice(0, -1)) o = o[k] ??= {};
@@ -2841,7 +2883,7 @@ function kitchenProps(p) {
   }
   if (p.include_led_marker) h += `<details><summary>مجرى الليد</summary><div class="grid2">${numF("led_marker_offset", "البعد عن الحرف الأمامي", p.led_marker_offset, 0.1)}${numF("led_marker_width", "عرض المجرى", p.led_marker_width, 0.1)}</div></details>`;
   if (p.include_drawer_boxes) {
-    h += `<details><summary>صناديق الأدراج</summary><div class="grid2">${numF("drawer_box_depth", "عمق الصندوق", p.drawer_box_depth)}${numF("drawer_box_side_clearance", "خلوص المجرى", p.drawer_box_side_clearance, 0.1)}
+    h += `<details><summary>صناديق الأدراج</summary><div class="grid2"><label class="f"><span>نوع المجاري</span><select data-runner><option value="bottom" ${p.drawer_runner !== "side" ? "selected" : ""}>سفلية (تحت الصندوق)</option><option value="side" ${p.drawer_runner === "side" ? "selected" : ""}>جانبية</option></select></label>${numF("drawer_box_depth", "عمق الصندوق", p.drawer_box_depth)}${numF("drawer_box_side_clearance", "خلوص المجرى (كل جنب)", p.drawer_box_side_clearance, 0.1)}
       ${numF("drawer_box_panel_thickness", "سمك الألواح", p.drawer_box_panel_thickness, 0.1)}${numF("drawer_box_wall_drop", "نزول الجوانب عن الوش", p.drawer_box_wall_drop, 0.1)}${numF("drawer_box_base_thickness", "سمك القاعدة", p.drawer_box_base_thickness, 0.1)}
       ${numF("drawer_box_base_setback", "نزول الجوانب (مكان القاعدة)", p.drawer_box_base_setback, 0.1)}${numF("drawer_box_base_groove", "دخول القاعدة في المفحار", p.drawer_box_base_groove, 0.1)}${numF("drawer_box_bottom_offset", "رفع الصندوق عن أسفل الوش", p.drawer_box_bottom_offset, 0.1)}</div></details>`;
   }
@@ -3021,6 +3063,7 @@ props.addEventListener("change", (e) => {
     applyInsert(u, i, "grid");
     return;
   }
+  if (t.hasAttribute("data-runner")) { const R0 = userDefs().rules || {}; const clr = R0.runnerClr?.[t.value]; setParams(u, (p) => { p.drawer_runner = t.value; if (clr != null) p.drawer_box_side_clearance = +clr; }); return; }
   if (d.appl) {
     u.appliance ??= {};
     if (t.value) u.appliance[d.appl] = t.value; else delete u.appliance[d.appl];
@@ -4450,10 +4493,18 @@ $("#pop").addEventListener("click", async (e) => {
     }
     return;
   }
+  if (ui.pop === "defaults" && b.hasAttribute("data-defnovera")) {
+    const D0 = userDefs();
+    Object.assign(D0.k, NOVERA_DEFAULTS.k);
+    for (const t of ["base", "wall", "tall"]) Object.assign(D0.by[t], NOVERA_DEFAULTS.by[t]);
+    D0.rules = { ...D0.rules, ...clone(NOVERA_DEFAULTS.rules) };
+    D0.seeded = true; state.settingsAt = new Date().toISOString();
+    save(); settingsPush(); renderPop(); alertBar("🏭 اتحطت معايير NOVERA كإعدادات افتراضية — أي وحدة جديدة هتاخدها."); return;
+  }
   if (ui.pop === "defaults" && b.hasAttribute("data-defapply")) {
     const D0 = userDefs();
     let n = 0;
-    for (const u of state.project.units) if (u.kind === "kitchen") { const p = expanded(u); Object.assign(p, D0.k); if (D0.handle) p.kud_handles = { ...(p.kud_handles || {}), type: D0.handle }; u.params = p; n++; }
+    for (const u of state.project.units) if (u.kind === "kitchen") { const p = expanded(u); Object.assign(p, D0.k); if (D0.handle) p.kud_handles = { ...(p.kud_handles || {}), type: D0.handle }; applyTypeDefaults(p, {}, { force: true }); u.params = p; n++; }
     save(); render(true); alertBar(`اتطبّقت الإعدادات على ${n} وحدة مطبخ (المقاسات زي ما هي).`); return;
   }
   if (ui.pop === "ar" && b.hasAttribute("data-arsave")) {
@@ -9553,6 +9604,7 @@ async function boot() {
   if (!db || !cloud.me) { setCloud("local"); return; }
   myLibPull();
   settingsPull();
+  seedDefaults();
   // owner: pull the newest copy of this project from the cloud, else upload the local one
   try {
     const ref = db.doc(`data/users/${cloud.me}/p_${state.project.id}`);

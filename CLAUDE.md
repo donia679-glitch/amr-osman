@@ -38,6 +38,10 @@ cd /home/claude/novera-app && python3 tools/build_pwa.py && python3 tools/build_
 - Kitchen units: base depth 58 includes the door (inset, face at y=0); corner units get their depth from `cornerFit()` in app.js unless set by hand.
 
 ## History (latest first)
+- v48: NOVERA factory defaults. `NOVERA_DEFAULTS` + `seedDefaults()` (seeded once per install, flag `defaults.seeded`), per-type defaults `defaults.by.{base,wall,tall}`,
+  rules `defaults.rules` (shelves per type, drawerBoxLikeCarcass, runner + runnerClr), applied by `applyTypeDefaults()` inside `withDefaults()` and by the «طبّق» button (force).
+  Values: back_rear_offset 1.8 · doors overlay · base top = rails with front rail inset 2.5 · base door_handle_recess 4 · wall door_bottom_extension 2 · shelves base/wall 1, tall 4 (preset counts ≤3 are overridden) ·
+  assembly holes + hinge cups on · drawer box thickness = panel, base = back thickness · runners: bottom 0.6 cm/side, side 2.6 cm/side (new app param `drawer_runner`, select in the drawer-boxes section).
 - v46 (phase 1+2 of the "strongest app" plan): brand identity pop (logo/name/phone/terms → every PDF via brandHead/brandFoot); shop drawings per unit (exportUnitDrawings, projSvg);
   purchase list by supplier (purchaseData/purchaseHtml, suppliers in prices, WhatsApp/PDF/Excel); extra clash checks (hob vs window/door/hood/gas, socket near sink, reach, fridge corner, oven height, tall vs window);
   step bar status lines (stepStatus); timeline (autoSchedule, P.lead, projectPulse) + home dashboard tiles (homeDash) + pulse strip on cards; hardware stock (state.hwStock, takeStock);
