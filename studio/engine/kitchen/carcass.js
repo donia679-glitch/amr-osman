@@ -375,8 +375,9 @@ export class CarcassBuilder {
         if (this.edgeBandingEnabled())
             bandAllSideEdges(this.ctx, f, this.edgeBandingMaterial());
         this.recordDoorLabel(label, fx0, fx1, fz0, fz1, null);
-        if (this.drawerBoxesEnabled())
-            this.buildDrawerBox(sub, pt, this.width() - pt, fy1, fz0, rmax(kh - cm(0.5), fz0 + cm(2.0)), label);
+        // the plinth drawer always gets its box (a front alone is no drawer); its depth can be set on its own
+        const kd = toF(this.p["toe_kick_drawer_depth"]);
+        this.buildDrawerBox(sub, pt, this.width() - pt, fy1, fz0, rmax(kh - cm(0.5), fz0 + cm(2.0)), label, kd > 0 ? cm(kd) : null);
         tagDrawerSlide(group, this.drawerSlideBase());
     }
     // ---------------------------------------------------------------- sides
@@ -1460,14 +1461,14 @@ export class CarcassBuilder {
     drawerBoxBaseGroove() {
         return pcm(this.p["drawer_box_base_groove"]);
     }
-    buildDrawerBox(e, fx0, fx1, fby, dz0, dz1, label) {
+    buildDrawerBox(e, fx0, fx1, fby, dz0, dz1, label, depthOverride = null) {
         const bx0 = fx0 + this.drawerBoxSideClearance();
         const bx1 = fx1 - this.drawerBoxSideClearance();
         if (bx1 <= bx0)
             return [dz0, dz0];
         const by0 = fby;
         const maxDepth = rmax(this.depth() - this.backT() - this.backRearOffset() - by0, 0);
-        const by1 = by0 + rmin(this.drawerBoxDepthCm(), maxDepth);
+        const by1 = by0 + rmin(depthOverride ?? this.drawerBoxDepthCm(), maxDepth);
         if (by1 <= by0)
             return [dz0, dz0];
         const t = rmin(this.drawerBoxT(), (bx1 - bx0) / 2.5);

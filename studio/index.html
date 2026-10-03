@@ -7,7 +7,7 @@
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <style>html,body{margin:0;padding:0}body{min-height:100vh;min-height:100dvh}</style>
-<script>window.NOVERA_BUILD = "2026-10-03 14:39";</script>
+<script>window.NOVERA_BUILD = "2026-10-03 15:21";</script>
 </head>
 <body>
 <meta charset="utf-8">
@@ -95,7 +95,11 @@ button { cursor: pointer; }
 #views > section { position: absolute; inset: 0; }
 
 /* design view */
-.design { display: grid; grid-template-columns: 1fr 340px; }
+.design { display: grid; grid-template-columns: 1fr 340px; grid-template-rows: minmax(0, 1fr); }
+.design > .stage, .design > .props { min-height: 0; }
+@supports (height: 100dvh) { #app { height: 100dvh; } }
+.chip.step button.chipin { background: transparent; color: #fff; font: inherit; font-size: 13px; padding: 0 6px; }
+.chip.step button.chipin b { color: #f1cf86; }
 .stage { position: relative; display: flex; flex-direction: column; min-width: 0; background: var(--stage); }
 .view3d { flex: 1; min-height: 0; position: relative; touch-action: none; }
 .view3d canvas { display: block; width: 100%; height: 100%; }
@@ -470,7 +474,7 @@ body.guest .ghost { display: none; }
 
 /* narrow screens (iPad portrait / phone) */
 @media (max-width: 900px) {
-  .design { grid-template-columns: 1fr; grid-template-rows: minmax(360px, 58%) 1fr; }
+  .design { grid-template-columns: 1fr; grid-template-rows: minmax(300px, 58%) minmax(0, 1fr); }
   .props { border-inline-start: 0; border-top: 1px solid var(--line); }
   .pcols { grid-template-columns: 1fr; }
   .cutopts { grid-template-columns: repeat(2, 1fr); width: 100%; }
@@ -771,7 +775,28 @@ body.insurvey #app > :not(#survey):not(#pop) { visibility: hidden; }
 .svsignwrap { background: #eee; }
 #svmark, #svsign { touch-action: none; display: block; border-radius: 6px; }
 .svfromroom { width: 100%; margin: 6px 0; }
+.angpre { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
+.angpre .chip { min-height: 38px; box-shadow: none; }
+.pang { fill: var(--gold) !important; font-weight: 800; }
+.arlink { display: flex; flex-direction: column; gap: 8px; align-items: center; text-decoration: none; color: var(--brand-ink); background: var(--brand); border-radius: 16px; padding: 10px; font-weight: 700; font-size: 16px; text-align: center; }
+.arlink img, .arprev { width: 100%; max-height: 300px; object-fit: contain; border-radius: 12px; background: #fff; }
 .hstage.svwait { background: var(--gold-soft); color: var(--gold); border-radius: 999px; padding: 1px 8px; font-size: 12px; }
+
+/* ---- NOVERA number pad (keypad.js) */
+.kpad { position: fixed; inset-inline: 0; bottom: 0; z-index: 95; background: var(--panel); border-top: 1px solid var(--line); box-shadow: 0 -8px 24px rgba(0,0,0,.18); padding: 8px 10px max(10px, env(safe-area-inset-bottom)); transform: translateY(105%); transition: transform .18s ease; direction: ltr; }
+.kpad.on { transform: none; }
+@media (prefers-reduced-motion: reduce) { .kpad { transition: none; } }
+.kpbar { display: flex; align-items: center; gap: 10px; padding: 0 4px 8px; direction: rtl; }
+.kplabel { color: var(--muted); font-size: 13px; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.kpval { font-size: 22px; font-variant-numeric: tabular-nums; color: var(--ink); }
+.kpx { width: 44px; height: 36px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel2); color: var(--ink); font-size: 18px; }
+.kpkeys { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; max-width: 560px; margin: 0 auto; }
+.kpkeys button { min-height: 54px; border-radius: 12px; border: 1px solid var(--line); background: var(--panel2); color: var(--ink); font: inherit; font-size: 24px; font-weight: 700; touch-action: manipulation; -webkit-user-select: none; user-select: none; }
+.kpkeys button.kfn { background: var(--bg); font-size: 20px; }
+.kpkeys button.kgo { background: var(--brand); color: var(--brand-ink); border-color: var(--brand); font-size: 16px; }
+.kpkeys button.hit { filter: brightness(.88); }
+body.kpad-on #props, body.kpad-on .svbody, body.kpad-on .popbox, body.kpad-on .svpopbox { padding-bottom: calc(var(--kpad-h, 300px) + 12px); }
+@media (max-height: 560px) { .kpkeys button { min-height: 42px; font-size: 20px; } }
 </style>
 <div id="splash" class="splash" aria-hidden="true">
   <div class="sp-in">

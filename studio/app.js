@@ -21,6 +21,7 @@ import * as More from "./library.js";
 import * as Obs from "./obstacles.js";
 import * as SurveyUI from "./survey_ui.js";
 import * as Media from "./media.js";
+import * as Keypad from "./keypad.js";
 
 const APP_URL = "https://claude.ai/artifact/EP8c8LmBNS8d3EqLcDioXi";
 const APP_VERSION = "1.0";
@@ -1621,7 +1622,7 @@ function renderChips() {
     if (p.include_shelves) h += stepChip("shelf_count", "أرفف", p.shelf_count, 1);
     h += cycleChip("door_position", "التركيب", "K_POS", p.door_position);
     h += cycleChip("kud_handles.type", "المقبض", "K_HANDLES", p.kud_handles?.type || "none");
-    if (p.unit_type !== "wall") h += togChip("include_toe_kick", "سكلو", p.include_toe_kick) + (p.include_toe_kick ? togChip("toe_kick_drawer", "درج وزرة", p.toe_kick_drawer) : "");
+    if (p.unit_type !== "wall") h += togChip("include_toe_kick", "سكلو", p.include_toe_kick) + (p.include_toe_kick ? (p.toe_kick_drawer ? `<span class="chip step"><button data-step="toe_kick_height" data-d="-1" aria-label="درج الوزرة أوطى">${ICON.minus}</button><button class="chipin" data-toggle="toe_kick_drawer" title="اقفل درج الوزرة">درج وزرة <b>${n1(kickFrontOf(p))}</b></button><button data-step="toe_kick_height" data-d="1" aria-label="درج الوزرة أعلى">${ICON.plus}</button></span>` : togChip("toe_kick_drawer", "درج وزرة", false)) : "");
     h += togChip("include_assembly_holes", "أليتا", p.include_assembly_holes);
   } else if (u.kind === "dressing") {
     h += stepChip("width", "العرض", n1(p.width)) + stepChip("height", "الارتفاع", n1(p.height));
@@ -1789,8 +1790,15 @@ function drawProps() {
   return `<div class="ph"><h2 class="uname">رسم الحيطان</h2></div>
     <p class="hint">${pts.length ? `حطيت ${pts.length} ${pts.length === 1 ? "نقطة" : "نقط"}. اكتب طول الحيطة الجاية واختار اتجاهها، أو دوس على المسقط.` : "دوس على المسقط عشان تحط أول ركن، أو ابدأ من النص بالأرقام."}</p>
     <details open><summary>الحيطة الجاية بالمقاس</summary><div class="grid2"><label class="f"><span>الطول (سم)</span><input id="drawLen" type="text" inputmode="decimal" data-numf value="${ui.drawLen || 300}"></label></div>
+    ${pts.length >= 2 ? `<div class="grid2"><label class="f"><span>الزاوية مع الحيطة اللي قبلها (°)</span><input id="drawAng" type="text" inputmode="decimal" data-numf data-inc="5" value="${ui.drawAng ?? 90}"></label></div>
+      <div class="angpre">${[90, 120, 135, 150, 60, 45].map((a) => `<button class="chip tog ${+(ui.drawAng ?? 90) === a ? "on" : ""}" data-drawangp="${a}">${a}°</button>`).join("")}</div>
+      <div class="grid2"><button class="primary" data-drawturn="1">↱ لف يمين وضيف</button><button class="ghost2" data-drawturn="-1">↰ لف شمال وضيف</button></div>
+      <p class="hint">90 = ركن عادي. أكبر من 90 = ركن مفتوح (زي 135 في الحيطان المايلة). اليمين = الأوضة جوه على إيدك اليمين.</p>` : `<p class="hint">أول حيطة: اختار اتجاهها.</p>`}
     <div class="dirgrid">${dirs.map(([t, a]) => `<button class="ghost2" data-drawdir="${a}" aria-label="اتجاه ${a} درجة">${t}</button>`).join("")}</div>
-    <p class="hint">المقاس من الوش الداخلي للحيطة. لما ترجع لأول نقطة الأوضة بتتقفل لوحدها.</p></details>`;
+    <p class="hint">المقاس من الوش الداخلي للحيطة. لما ترجع لأول نقطة الأوضة بتتقفل لوحدها.</p></details>
+    <details open><summary>الرسم بالقلم</summary><p class="hint">الخط بيمسك على زوايا كل:</p>
+      <div class="seg">${[[90, "90°"], [45, "45°"], [15, "15°"], [0, "حر"]].map(([v, l]) => `<button data-drawsnap="${v}" class="${(ui.drawSnap ?? 45) === v ? "on" : ""}">${l}</button>`).join("")}</div>
+      <p class="hint">وانت بترسم، الزاوية مع الحيطة اللي قبلها بتظهر على المسقط. وبعد الرسم تقدر تكتب أي زاوية بالظبط من الحيطة نفسها.</p></details>`;
 }
 /** editor for a finish spec (wall, band or floor); attr = data attribute prefix */
 function finishEditor(spec, attr, fallback, finishes = Mat.FINISHES) {
@@ -1829,6 +1837,9 @@ function roomProps() {
     return `<div class="ph"><h2 class="uname">حيطة ${k + 1}</h2><div class="pa"><button data-rwdel class="danger" title="امسح الحيطة" aria-label="امسح الحيطة">${ICON.trash}</button></div></div>
       <p class="tplname">المقاسات من الوش الداخلي — الحيطة اللي بعدها بتتحرك معاها</p>
       <details open><summary>المقاسات</summary><div class="grid3">${rf("L", "الطول", r1(sg.L))}${rf("t", "السمك", sg.t)}${rf("h", "الارتفاع", sg.h)}</div>
+      ${(() => { const a = Room.cornerAngle(room, sg.i); return a == null ? "" : `<div class="grid2">${rf("ang", "زاوية الركن عند أول الحيطة (°)", a, 5)}</div>
+        <div class="angpre">${[90, 120, 135, 150, 60, 45].map((v) => `<button class="chip tog ${Math.abs(a - v) < 0.2 ? "on" : ""}" data-rwang="${v}">${v}°</button>`).join("")}</div>
+        <p class="hint">الحيطة دي واللي بعدها بيلفّوا حوالين الركن${room.closed ? "، وآخر حيطة بتتمد أو تقصر عشان الأوضة تفضل مقفولة" : ""}.</p>`; })()}
       <div class="bools"><label class="f b"><input type="checkbox" data-rwflip ${sg.wall.flip ? "checked" : ""}><span>اقلب ناحية الأوضة</span></label></div>
       <div class="grid2"><button class="add" data-rwsplit>قسّم الحيطة نصين</button></div></details>
       <details open><summary>اللون والتشطيب</summary>${finishEditor(sg.wall, "rwf", "#f3f1ea")}<button class="add" data-rwall>طبّق التشطيب ده على كل الحيطان</button></details>
@@ -1985,6 +1996,19 @@ function panelAdvanced(p, shown) {
   return h + "</details>";
 }
 
+/** the plinth drawer's front height from the unit's settings (kick height − floor gap − gaps) */
+function kickFrontOf(p) {
+  const ov = p.door_position === "overlay", eg = +(ov ? p.door_gap_overlay : p.door_gap_inset) || 0;
+  return Math.round(((+p.toe_kick_height || 10) + eg - (+p.door_bottom_extension || 0) - (+p.drawer_gap || 0) - (+(p.toe_kick_drawer_floor_gap ?? 1))) * 10) / 10;
+}
+function kickDrawerSection(p) {
+  if (p.unit_type === "wall" || !p.include_toe_kick) return "";
+  const on = !!p.toe_kick_drawer, fh = kickFrontOf(p);
+  return `<details open><summary>درج الوزرة</summary><div class="bools">${boolF("toe_kick_drawer", "درج مكان الوزرة (السكلو)", on)}</div>
+    ${on ? `<div class="grid2">${numF("__kickfront", "ارتفاع وش الدرج", fh, 0.5)}${numF("toe_kick_height", "ارتفاع السكلو كله", p.toe_kick_height, 0.5)}
+      ${numF("toe_kick_drawer_depth", "عمق علبة الدرج (0 = تلقائي)", p.toe_kick_drawer_depth ?? 0, 1)}${numF("toe_kick_drawer_floor_gap", "خلوص عن الأرض", p.toe_kick_drawer_floor_gap ?? 1, 0.1)}</div>
+      <p class="hint">العرض = عرض الوحدة. لما تكبّر وش الدرج، السكلو والوحدة كلها بتعلى معاه (الكونتر بيعلى). ${fh < 6 ? `<b class="danger">الوش أقل من 6 سم — هيتعمل سكلو عادي بدل الدرج. كبّر السكلو.</b>` : ""}</p>` : `<p class="hint">درج واطي مكان السكلو، وشه على مستوى الضلف — مكان زيادة للصواني والحاجات المسطحة.</p>`}</details>`;
+}
 function kitchenProps(p) {
   const f = ([path, label, type, choices]) => (type === "choice" ? selF(path, label, choices, getPath(p, path) ?? "") : type === "bool" ? boolF(path, label, getPath(p, path)) : type === "text" ? textF(path, label, getPath(p, path)) : numF(path, label, getPath(p, path), type === "int" ? 1 : 0.5));
   const dims = KU.dimsFor(p);
@@ -1992,6 +2016,7 @@ function kitchenProps(p) {
     <div class="grid2">${textF("unit_label", "اسم/تعليق للوحدة (بيظهر في الملصقات)", p.unit_label)}</div>
     <div class="grid3">${dims.map(([k, l]) => numF(k, l, p[k])).join("")}</div>
     ${p.unit_type === "wall" ? `<div class="grid2">${numF("wall_mount_height", "التعليق من الأرض", p.wall_mount_height)}</div>` : ""}</details>`;
+  h += kickDrawerSection(p);
   const extra = KU.extraFields(p);
   if (extra.length) {
     h += `<details open><summary>إعدادات ${esc(KU.K_CATS[p.unit_category] || "")}</summary><div class="grid2">${extra.filter((x) => x[2] !== "bool").map(f).join("")}</div>
@@ -2027,13 +2052,11 @@ function kitchenProps(p) {
     <div class="bools">${boolF("include_shelves", "أرفف", p.include_shelves)}${boolF("include_vertical_dividers", "قواطيع رأسية", p.include_vertical_dividers)}${boolF("include_led_marker", "مجرى ليد في الجنب", p.include_led_marker)}${boolF("assembly_shelves_fixed", "أرفف ثابتة بأليتا", p.assembly_shelves_fixed)}</div></details>`;
   h += `<details><summary>الهيكل والتجميع</summary><div class="grid2">${numF("panel_thickness", "سمك الخشب", p.panel_thickness, 0.1)}${numF("back_panel_thickness", "سمك الظهر", p.back_panel_thickness, 0.1)}
     ${numF("back_groove_depth", "دخول الظهر في المفحار", p.back_groove_depth, 0.1)}${numF("back_rear_offset", "بعد الظهر عن الآخر", p.back_rear_offset, 0.1)}${selF("top_style", "الرأس", KU.K_TOP, p.top_style)}
-    ${p.include_toe_kick && p.toe_kick_drawer && p.unit_type !== "wall" ? numF("toe_kick_height", "ارتفاع السكلو (= درج الوزرة)", p.toe_kick_height) + numF("toe_kick_drawer_floor_gap", "خلوص درج الوزرة عن الأرض", p.toe_kick_drawer_floor_gap ?? 1, 0.1) : ""}
     ${p.include_toe_kick && !(p.toe_kick_drawer && p.unit_type !== "wall") ? numF("toe_kick_height", "ارتفاع السكلو", p.toe_kick_height) + numF("toe_kick_setback", "رجوع السكلو", p.toe_kick_setback) + selF("toe_kick_style", "شكل السكلو", KU.K_KICK, p.toe_kick_style)
       + (p.toe_kick_style === "segments" ? numF("toe_kick_segment_width", "أقصى عرض لقطعة السكلو", p.toe_kick_segment_width) + numF("toe_kick_segment_gap", "الفاصل بين القطع", p.toe_kick_segment_gap, 0.1) : numF("toe_kick_apron_thickness", "سمك الوزرة", p.toe_kick_apron_thickness, 0.1)) : ""}
     ${p.top_style === "rails" ? numF("top_rail_width", "عرض شريط الرأس", p.top_rail_width) + numF("top_rail_front_inset", "رجوع الشريط الأمامي", p.top_rail_front_inset, 0.1) : ""}
     ${p.include_wall_cleat ? numF("wall_cleat_height", "ارتفاع الكليت", p.wall_cleat_height) : ""}${p.include_bottom_valance ? numF("bottom_valance_height", "ارتفاع وزرة الليد السفلية", p.bottom_valance_height) : ""}</div>
-    ${p.include_toe_kick && p.toe_kick_drawer && p.unit_type !== "wall" ? `<p class="hint full">درج الوزرة: وش على مستوى الضلف + علبة واطية تحت قاعدة الوحدة على جنبين سكلو بيشيلوا المجرى. السكلو ${+p.toe_kick_height || 10} سم ← وش ${n1(Math.max(0, (+p.toe_kick_height || 10) - (+p.toe_kick_drawer_floor_gap || 1) - (+p.drawer_gap || 0.3)))} سم تقريباً. خلّي السكلو 12 سم أو أكتر عشان الدرج يبقى مفيد.</p>` : ""}
-    <div class="bools">${boolF("include_toe_kick", "سكلو", p.include_toe_kick)}${p.include_toe_kick && p.unit_type !== "wall" ? boolF("toe_kick_drawer", "درج مكان الوزرة", p.toe_kick_drawer) : ""}${boolF("include_edge_banding", "شريط حواف", p.include_edge_banding)}${boolF("include_assembly_holes", "أليتا (كام لوك)", p.include_assembly_holes)}
+    <div class="bools">${boolF("include_toe_kick", "سكلو", p.include_toe_kick)}${boolF("include_edge_banding", "شريط حواف", p.include_edge_banding)}${boolF("include_assembly_holes", "أليتا (كام لوك)", p.include_assembly_holes)}
     ${boolF("include_end_panel", "تقفيلة نهاية", p.include_end_panel)}${boolF("include_top_valance", "أورزة علوية", p.include_top_valance)}${boolF("include_wall_cleat", "كليت تعليق", p.include_wall_cleat)}${boolF("include_bottom_valance", "وزرة ليد سفلية", p.include_bottom_valance)}</div></details>`;
   if (p.include_assembly_holes) {
     h += `<details open><summary>مقاسات الأليتا (سم)</summary><div class="grid2">${numF("assembly_hole_diameter", "قطر خرم الدوبل", p.assembly_hole_diameter, 0.1)}${numF("assembly_edge_distance", "البعد عن الحرف", p.assembly_edge_distance, 0.1)}
@@ -2202,6 +2225,7 @@ props.addEventListener("change", (e) => {
       const k = segs.findIndex((g) => g.id === ui.planSel.id), sg = segs[k];
       const v = +t.value;
       if (t.dataset.rw === "L") Room.setWallLength(room, sg.i, v);
+      else if (t.dataset.rw === "ang") Room.setCornerAngle(room, sg.i, toNum(t.value));
       else if (v > 0) room.walls[sg.i][t.dataset.rw] = v;
     } else if (t.hasAttribute("data-rwflip")) { const sg = segs.find((g) => g.id === ui.planSel.id); room.walls[sg.i].flip = t.checked; }
     else {
@@ -2250,6 +2274,7 @@ props.addEventListener("change", (e) => {
     setExtra(u, (l) => { if (!l[+i]) return; l[+i][f] = d.xnum ? Math.max(f === "w" || f === "d" || f === "h" ? 0.1 : -1e4, toNum(t.value)) : t.value; });
     return;
   }
+  if (d.num === "__kickfront") { const rp = R(u).params || u.params, cur = kickFrontOf(rp), v = toNum(t.value); if (v > 0) setParams(u, (p) => { p.toe_kick_height = Math.max(4, Math.round(((+rp.toe_kick_height || 10) + v - cur) * 10) / 10); }); return; }
   if (d.num) setParams(u, (p) => setPath(p, d.num, t.value === "" ? 0 : toNum(t.value)));
   else if (d.auto) setParams(u, (p) => setPath(p, d.auto, t.value.trim() === "" ? "auto" : toNum(t.value)));
   else if (d.sel) setParams(u, (p) => setPath(p, d.sel, d.sel === "doors.layout" ? t.value : t.value));
@@ -2312,6 +2337,20 @@ props.addEventListener("click", (e) => {
     return;
   }
   const room = state.project.room;
+  if (ui.planTool === "draw" && (rb?.dataset.drawsnap != null || rb?.dataset.drawangp || rb?.dataset.drawturn)) {
+    if (rb.dataset.drawsnap != null) { ui.drawSnap = +rb.dataset.drawsnap; renderProps(); return; }
+    if (rb.dataset.drawangp) { ui.drawAng = +rb.dataset.drawangp; renderProps(); return; }
+    const L = toNum($("#drawLen").value) || 0, A = toNum($("#drawAng")?.value) || 90;
+    if (L <= 0 || A <= 0 || A >= 360) return;
+    ui.drawLen = L; ui.drawAng = A;
+    const pts = (ui.draft ??= []);
+    const q = Room.nextPoint(pts, L, A, +rb.dataset.drawturn);
+    if (pts.length >= 3 && Math.hypot(q[0] - pts[0][0], q[1] - pts[0][1]) < 1) { finishDraw(true); return; }
+    pts.push(q);
+    plan.vb = null; plan.fitPts = pts;
+    renderChips(); renderProps(); plan.render();
+    return;
+  }
   if (rb?.dataset.drawdir != null && ui.planTool === "draw") {
     const L = +$("#drawLen").value || 0;
     if (L <= 0) return;
@@ -2328,6 +2367,11 @@ props.addEventListener("click", (e) => {
   }
   if (rb && room && ui.planOn) {
     const d = rb.dataset;
+    if (d.rwang) {
+      const sg = Room.segments(room).find((g) => g.id === ui.planSel?.id);
+      if (sg && Room.setCornerAngle(room, sg.i, +d.rwang)) { save(); renderProps(); plan.render(); view.update(); }
+      return;
+    }
     if (rb.hasAttribute("data-rwdel")) {
       if (d.armed !== "1") { d.armed = "1"; rb.classList.add("armed"); rb.textContent = "أكّد"; return; }
       const sg = Room.segments(room).find((g) => g.id === ui.planSel.id);
@@ -2938,7 +2982,7 @@ function applyLibTo(u, key, lib) {
   } else setParams(u, (p) => { p.materials ??= {}; p.materials[key] = lib ? { lib } : {}; });
 }
 // ---- the settings panel: "basic" shows only what most units need, search finds any field
-const BASIC_SECTIONS = ["المقاسات", "المقاسات والنظام", "الوحدة", "الواجهة", "من جوه", "الخامات", "الأقسام (من الشمال لليمين)", "الواجهة (من تحت لفوق)", "الألواح", "اللون والتشطيب", "🧩 التقسيمات الداخلية", "الأوضة", "كل الحيطان"];
+const BASIC_SECTIONS = ["درج الوزرة", "الحيطة الجاية بالمقاس", "الرسم بالقلم", "الأبواب والشبابيك", "المكان", "المقاسات", "المقاسات والنظام", "الوحدة", "الواجهة", "من جوه", "الخامات", "الأقسام (من الشمال لليمين)", "الواجهة (من تحت لفوق)", "الألواح", "اللون والتشطيب", "🧩 التقسيمات الداخلية", "الأوضة", "كل الحيطان"];
 const normAr = (t) => String(t || "").toLowerCase().replace(/[أإآ]/g, "ا").replace(/ة/g, "ه").replace(/ى/g, "ي").replace(/[ًٌٍَُِّْـ]/g, "");
 function propsMode(el) {
   if (!el || !selUnit() || el.querySelector(".emptyp")) return;
@@ -3047,7 +3091,7 @@ const dimTags = {
     if (!b || !this.t) return;
     const k = b.dataset.dk, u = this.t.u, p = R(u).params;
     this.editing = true;
-    b.innerHTML = `<input type="text" inputmode="decimal" value="${n1(+p[k] || 0)}" aria-label="${esc(b.title)}">`;
+    b.innerHTML = `<input type="text" inputmode="${Keypad.active() ? "none" : "decimal"}" data-keypad data-kpsolo value="${n1(+p[k] || 0)}" aria-label="${esc(b.title)}">`;
     const inp = b.querySelector("input");
     inp.focus(); inp.select();
     const done = (ok) => {
@@ -3156,7 +3200,9 @@ function renderPop() {
       <h3>لون التطبيق</h3><div class="swgrid">${Object.entries(ACCENTS).map(([k, a]) => `<button class="swb ${L.accent === k ? "on" : ""}" data-laccent="${k}"><i style="background:linear-gradient(135deg, ${a[2]} 50%, ${a[1]} 50%)"></i><span>${a[0]}</span></button>`).join("")}</div>
       <h3>خلفية شاشة التصميم</h3><div class="swgrid">${Object.entries(STAGE_BGS).map(([k, l]) => `<button class="swb ${L.stage === k ? "on" : ""}" data-lstage="${k}"><i style="background:${k || "var(--stage)"}"></i><span>${l}</span></button>`).join("")}
         <label class="swb"><i style="background:${L.stage || "#cccccc"}"></i><span>لون تاني</span><input type="color" id="lookColor" value="${L.stage || "#cccccc"}" style="width:100%;height:28px;border:0;background:none"></label></div>
-      <p class="hint">الخلفية دي بتبان ورا التصميم في العرض العادي والريندر.</p></div>`;
+      <p class="hint">الخلفية دي بتبان ورا التصميم في العرض العادي والريندر.</p>
+      <h3>كيبورد الأرقام</h3><div class="seg"><button data-lkpad="on" class="${state.kpad !== false ? "on" : ""}">🔢 كيبورد NOVERA</button><button data-lkpad="off" class="${state.kpad === false ? "on" : ""}">⌨ كيبورد الجهاز</button></div>
+      <p class="hint">على الآيباد والموبايل، خانات الأرقام بتفتح لوحة أرقام كبيرة خاصة بالتطبيق (فيها + و− والتالي) بدل كيبورد الجهاز. الكتابة العادية (الأسماء والملاحظات) بتفضل بكيبورد الجهاز.</p></div>`;
   }
   else if (ui.pop === "mkeys") {
     const u = selUnit();
@@ -3211,6 +3257,14 @@ function renderPop() {
     const list = designChecks();
     h = `<div class="popbox" role="dialog" aria-label="فحص التصميم"><div class="libhead"><h2>فحص التصميم</h2><button class="x" data-close aria-label="قفل">×</button></div>
       <p class="hint">بيراجع التداخل، والخلوص بين الحيطان، والأبواب والشبابيك، ونقط الكهربا والمياه والغاز جنب الوحدات اللي محتاجاها. دوس على أي ملاحظة عشان تروح للوحدة.</p><div class="chklist">${checksHtml(list)}</div></div>`;
+  }
+  else if (ui.pop === "ar") {
+    const f = ui.arFile || {};
+    const direct = f.ar && !f.standalone && !f.framed;
+    h = `<div class="popbox" role="dialog" aria-label="شوفها في الأوضة"><div class="libhead"><h2>شوفها في الأوضة (AR)</h2><button class="x" data-close aria-label="قفل">×</button></div>
+      ${direct ? `<a class="arlink" rel="ar" href="${f.url}#allowsContentScaling=0">${f.img ? `<img src="${f.img}" alt="التصميم">` : `<img alt="">`}<span>👆 دوس هنا — والكاميرا تفتح والتصميم يقف على الأرض بمقاسه</span></a>` : f.img ? `<img class="arprev" src="${f.img}" alt="التصميم">` : ""}
+      <p class="hint">${direct ? "وجّه الكاميرا على الأرض وحرّك الجهاز شوية لحد ما يلاقيها، والتصميم هيتحط بمقاسه الحقيقي. تقدر تلف حواليه وتحرّكه بصباعك." : f.ar ? "الـAR مش بيفتح من جوه التطبيق المثبّت على الشاشة أو من صفحة جوه صفحة. احفظ الملف، وبعدين افتحه من تطبيق «الملفات»، وهيفتح على طول بالكاميرا." : "الـAR بيشتغل على الآيباد والآيفون. احفظ الملف وابعته للجهاز، وافتحه من «الملفات»."}</p>
+      <div class="btnrow"><button class="${direct ? "ghost2" : "primary"}" data-arsave>💾 احفظ ملف AR (USDZ)</button></div><p class="hint" id="arMsg"></p></div>`;
   }
   else if (ui.pop === "export") {
     h = `<div class="popbox" role="dialog" aria-label="تصدير"><div class="libhead"><h2>تصدير — ${esc(state.project.name)}</h2><button class="x" data-close aria-label="قفل">×</button></div>
@@ -3348,6 +3402,7 @@ $("#pop").addEventListener("click", async (e) => {
   const b = e.target.closest("button");
   if (!b) return;
   const d = b.dataset;
+  if (ui.pop === "look" && d.lkpad) { state.kpad = d.lkpad === "on"; save(); renderPop(); return; }
   if (ui.pop === "look" && (d.lmode || d.laccent || d.lstage !== undefined)) {
     const L = (state.look ??= { mode: "auto", accent: "green", stage: "" });
     if (d.lmode) L.mode = d.lmode; else if (d.laccent) L.accent = d.laccent; else L.stage = d.lstage;
@@ -3436,6 +3491,12 @@ $("#pop").addEventListener("click", async (e) => {
       return;
     }
     return;
+  }
+  if (ui.pop === "ar" && b.hasAttribute("data-arsave")) {
+    const f = ui.arFile; if (!f) return;
+    b.disabled = true;
+    try { const r = await Exp.deliver(cloud.downloads, f.name, f.blob); $("#arMsg").textContent = r === "declined" ? "" : "اتحفظ ✓ — افتحه من «الملفات»."; } catch { $("#arMsg").textContent = "ما اتحفظش — جرّب تاني."; }
+    b.disabled = false; return;
   }
   if (ui.pop === "checks" && d.chkunit) { state.sel = d.chkunit; ui.planSel = ui.planOn ? { kind: "unit", id: d.chkunit } : null; ui.pop = null; renderPop(); save(); render(); return; }
   if (ui.pop === "export" && d.exp) {
@@ -3713,6 +3774,15 @@ const plan = {
       if (ang > 90 || ang < -90) ang += 180;
       h += `<text x="${mid[0]}" y="${mid[1]}" font-size="${fs}" class="pdim" transform="rotate(${ang} ${mid[0]} ${mid[1]})" text-anchor="middle" dominant-baseline="middle">${n1(sg.L)}</text>`;
     }
+    // corners that are not square: their inside angle
+    let angH = "";
+    if (room) segs.forEach((sg, k) => {
+      const a = Room.cornerAngle(room, sg.i);
+      if (a == null || Math.abs(a - 90) < 0.4) return;
+      const prev = k > 0 ? segs[k - 1] : segs[segs.length - 1];
+      let bx = prev.n[0] + sg.n[0], bz = prev.n[1] + sg.n[1]; const bl = Math.hypot(bx, bz) || 1; bx /= bl; bz /= bl;
+      angH += `<text x="${sg.A[0] + bx * fs * 2.4}" y="${sg.A[1] + bz * fs * 2.4}" font-size="${fs * 1.05}" class="pdim pang" text-anchor="middle" dominant-baseline="middle">${n1(a)}°</text>`;
+    });
     // openings
     for (const o of room?.openings || []) {
       const sg = segs.find((x) => x.id === o.wall);
@@ -3774,6 +3844,7 @@ const plan = {
         h += `<line x1="${c[0] + f[0] * ((it.box.y1 - it.box.y0) / 2)}" y1="${c[1] + f[1] * ((it.box.y1 - it.box.y0) / 2)}" x2="${hx}" y2="${hz}" class="prot-l"/><g class="prot" data-rot="1"><circle cx="${hx}" cy="${hz}" r="${fs * 1.1}"/><text x="${hx}" y="${hz}" font-size="${fs * 1.3}" text-anchor="middle" dominant-baseline="central">↻</text></g>`;
       }
     }
+    h += angH; // on top of the units
     // drawing preview + corner handles
     if (ui.planTool === "draw") {
       const pts = ui.draft || [];
@@ -3781,6 +3852,11 @@ const plan = {
       if (pts.length && this.hover) {
         const p = pts[pts.length - 1], q = this.hover;
         h += `<text x="${(p[0] + q[0]) / 2}" y="${(p[1] + q[1]) / 2 - fs}" font-size="${fs * 1.1}" class="pdim live" text-anchor="middle">${n1(Math.hypot(q[0] - p[0], q[1] - p[1]))}</text>`;
+        if (pts.length >= 2) {
+          const o = pts[pts.length - 2], a1 = Math.atan2(p[1] - o[1], p[0] - o[0]), a2 = Math.atan2(q[1] - p[1], q[0] - p[0]);
+          let t = ((a2 - a1) * 180) / Math.PI; while (t > 180) t -= 360; while (t < -180) t += 360;
+          h += `<text x="${p[0]}" y="${p[1] - fs * 1.4}" font-size="${fs}" class="pdim live pang" text-anchor="middle">${n1(180 - Math.abs(t))}°</text>`;
+        }
       }
       for (const p of pts) h += `<circle cx="${p[0]}" cy="${p[1]}" r="${fs * 0.45}" class="phandle"/>`;
     } else if (room) {
@@ -3863,7 +3939,7 @@ const plan = {
     const p = plan.toCm(e);
     if (ui.planTool === "draw") {
       const pts = (ui.draft ??= []);
-      const q = Room.snapDraw(pts[pts.length - 1], p);
+      const q = Room.snapDraw(pts[pts.length - 1], p, 5, ui.drawSnap ?? 45);
       if (pts.length >= 3 && Math.hypot(q[0] - pts[0][0], q[1] - pts[0][1]) < plan.vb.w / 60) { finishDraw(true); return; }
       if (pts.length && Math.hypot(q[0] - pts[pts.length - 1][0], q[1] - pts[pts.length - 1][1]) < 1) return;
       pts.push(q);
@@ -3902,7 +3978,7 @@ const plan = {
     if (ui.planView === "elev") return;
     if (plan.pointers.has(e.pointerId)) plan.pointers.set(e.pointerId, [e.clientX, e.clientY]);
     const a = plan.act;
-    if (ui.planTool === "draw" && !a) { const pts = ui.draft || []; plan.hover = Room.snapDraw(pts[pts.length - 1], plan.toCm(e)); plan.render(); return; }
+    if (ui.planTool === "draw" && !a) { const pts = ui.draft || []; plan.hover = Room.snapDraw(pts[pts.length - 1], plan.toCm(e), 5, ui.drawSnap ?? 45); plan.render(); return; }
     if (!a) return;
     if (a.kind === "pinch" && plan.pointers.size === 2) {
       const [p1, p2] = [...plan.pointers.values()];
@@ -3921,7 +3997,7 @@ const plan = {
     } else if (a.kind === "pt") {
       const pts = room().pts;
       const prev = pts[a.i - 1] ?? (room().closed ? pts[pts.length - 1] : null);
-      pts[a.i] = Room.snapDraw(prev, p);
+      pts[a.i] = Room.snapDraw(prev, p, 5, ui.drawSnap ?? 45);
       a.moved = true;
       plan.render();
     } else if (a.kind === "open") {
@@ -6530,8 +6606,10 @@ const arSupported = () => !!window.webkit?.messageHandlers?.noveraAR || (() => {
 async function exportAR() {
   if (!view.ready) throw new Error("العرض 3D مش جاهز");
   const THREE = view.three;
-  const wasRender = state.render;
-  if (!wasRender) { state.render = true; view.update(); }
+  const wasRender = state.render, wasWhole = state.whole;
+  if (!wasRender) state.render = true;
+  if (state.project.units.length > 1 && !state.whole) state.whole = true; // the whole design stands in the room
+  view.update(state.whole !== wasWhole);
   try {
     const { USDZExporter } = await import("three/addons/exporters/USDZExporter.js");
     const root = new THREE.Group();
@@ -6561,19 +6639,19 @@ async function exportAR() {
       nat.postMessage({ name, b64: btoa(bin) });
       return "shared";
     }
+    // Quick Look opens only from a real tap on an <a rel="ar"> (an automatic click after the export is
+    // ignored, and inside a Home-Screen app or an embedded page it never opens) → a page with that button
     const blob = new Blob([bytes], { type: "model/vnd.usdz+zip" });
-    const a = document.createElement("a");
-    if (a.relList?.supports?.("ar")) {
-      a.rel = "ar"; a.href = URL.createObjectURL(blob);
-      a.appendChild(document.createElement("img"));
-      document.body.appendChild(a); a.click();
-      setTimeout(() => a.remove(), 2000);
-      return "shared";
-    }
-    alertBar("الـAR بيشتغل على الآيباد والآيفون — الملف هيتحفظ وتفتحه من هناك.");
-    return Exp.deliver(cloud.downloads, name, blob);
+    if (ui.arFile?.url) URL.revokeObjectURL(ui.arFile.url);
+    let img = "";
+    try { img = view.snapshot(640, 420, true); } catch { img = ""; }
+    ui.arFile = { blob, name, url: URL.createObjectURL(blob), img, ar: !!document.createElement("a").relList?.supports?.("ar"), standalone: !!(navigator.standalone || matchMedia("(display-mode: standalone)").matches), framed: window.top !== window };
+    ui.pop = "ar"; renderPop();
+    return "shared";
   } finally {
-    if (!wasRender) { state.render = false; view.update(); }
+    if (!wasRender) state.render = false;
+    if (state.whole !== wasWhole) state.whole = wasWhole;
+    view.update(true);
   }
 }
 
@@ -7299,6 +7377,7 @@ persist = function () { state.savedAt = new Date().toISOString(); _persist(); };
 const _render = render;
 let lastPid = state.project.id;
 render = function (refit) { _render(refit); if (state.project.id !== lastPid) { lastPid = state.project.id; watchOwnerShared(); } };
+Keypad.init({ enabled: () => state.kpad !== false });
 // ---- the surveyor's own screen (survey_ui.js) — separate from the design screen
 let svFrom = "home";
 SurveyUI.init({

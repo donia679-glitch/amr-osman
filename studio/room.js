@@ -278,21 +278,58 @@ export function setWallLength(room, segIndex, L) {
   const last = room.closed ? pts.length - 1 : pts.length - 1;
   for (let k = j; k <= last; k++) pts[k] = add(pts[k], dv);
 }
-/** drawing: snap a point to 5 cm and to right angles from the previous point */
-export function snapDraw(prev, p, grid = 5) {
+/** drawing: snap a point to 5 cm and to angle steps from the previous point (stepDeg 0 = free) */
+export function snapDraw(prev, p, grid = 5, stepDeg = 45) {
   let q = [Math.round(p[0] / grid) * grid, Math.round(p[1] / grid) * grid];
-  if (prev) {
+  if (prev && stepDeg > 0) {
     const v = sub(q, prev);
     const ang = Math.atan2(v[1], v[0]);
-    const step = Math.PI / 4;
+    const step = (stepDeg * Math.PI) / 180;
     const snapA = Math.round(ang / step) * step;
-    if (Math.abs(ang - snapA) < 0.12) {
+    if (Math.abs(ang - snapA) < Math.min(0.12, step / 2.5) || stepDeg >= 45 && Math.abs(ang - snapA) < 0.12) {
       const L = Math.round(len(v) / grid) * grid;
       q = [prev[0] + Math.round(Math.cos(snapA) * L), prev[1] + Math.round(Math.sin(snapA) * L)];
     }
   }
   return q;
 }
+// ------------------------------------------------------------------ corner angles
+/** +1 when the room is on each wall's right (same rule as segments()) */
+function sideOf(room) { return room.closed ? (signedArea(room.pts) >= 0 ? 1 : -1) : 1; }
+/** the inside angle (degrees) of the corner where wall i starts; null when it has no wall before it */
+export function cornerAngle(room, i) {
+  const segs = segments(room), n = segs.length;
+  const cur = segs.find((g) => g.i === i);
+  if (!cur) return null;
+  const k = segs.indexOf(cur), prev = k > 0 ? segs[k - 1] : room.closed ? segs[n - 1] : null;
+  if (!prev) return null;
+  const turn = Math.atan2(prev.d[0] * cur.d[1] - prev.d[1] * cur.d[0], dot(prev.d, cur.d)) * 180 / Math.PI;
+  return r1(180 - sideOf(room) * turn);
+}
+/** set that inside angle: the wall and everything drawn after it turn around the corner
+ *  (a closed room's last wall stretches to close it) */
+export function setCornerAngle(room, i, deg) {
+  const cur = cornerAngle(room, i);
+  if (cur == null || !(deg > 0 && deg < 360)) return false;
+  const delta = (sideOf(room) * (cur - deg) * Math.PI) / 180;
+  const pts = room.pts, c = pts[i], cs = Math.cos(delta), sn = Math.sin(delta);
+  const last = pts.length - 1;
+  for (let k = i + 1; k <= last; k++) {
+    if (room.closed && k === 0) continue;
+    const v = sub(pts[k], c);
+    pts[k] = [r1(c[0] + v[0] * cs - v[1] * sn), r1(c[1] + v[0] * sn + v[1] * cs)];
+  }
+  return true;
+}
+/** the next drawn point: length L from the last point, turning off the last wall so the inside angle is
+ *  `inside` (90 = a normal corner), to the right (+1, room on the right) or left (-1) */
+export function nextPoint(pts, L, inside = 90, dir = 1) {
+  const p0 = pts[pts.length - 1];
+  let a = 0;
+  if (pts.length >= 2) { const q = pts[pts.length - 2]; a = Math.atan2(p0[1] - q[1], p0[0] - q[0]) + (dir * (180 - inside) * Math.PI) / 180; }
+  return [r1(p0[0] + Math.cos(a) * L), r1(p0[1] + Math.sin(a) * L)];
+}
+
 export function addOpening(room, wallId, kind) {
   const seg = segments(room).find((s) => s.id === wallId);
   if (!seg) return null;
