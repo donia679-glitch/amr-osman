@@ -35,6 +35,11 @@ export function compute(entries, labelName) {
             inc(hw, "ضلف زجاج/مراية (اتأكد من نوع المفصلة المناسبة)", glassDoors);
         for (const dg of drawers)
             inc(hw, `مجرى درج ${fmt(dg.slide_len ?? 0)} سم (زوج)`, 1);
+        const slides = res.groups.filter((g) => g.kind === "slide").length;
+        if (slides > 0) {
+            inc(hw, `طقم سكة سحّاب (علوي + سفلي) ${fmt(res.summary.sliding?.track_m ?? 0)} م`, 1);
+            inc(hw, "عجل/بكر سحّاب", slides * 2);
+        }
         const cams = parts.filter((pt) => pt.role === "hole" && String(pt.name).includes("قفل كام")).length;
         inc(hw, "أليتا — قفل كام", cams);
         inc(hw, "أليتا — مسمار/برغي كام", cams);

@@ -151,8 +151,15 @@ export class Engine {
     get inset() { return this.doors.mode === "inset"; }
     get ft() { return this.doors.thickness; }
     get sidesOuter() { return this.p.construction === "sides_outer"; }
-    get whole() { return this.doors.layout === "whole"; }
+    get whole() { return this.doors.layout === "whole" || this.sliding; }
+    /** v190: sliding doors across the whole front (2–4 panels on two tracks) */
+    get sliding() { return this.doors.layout === "sliding"; }
+    get slidingN() { return Math.min(Math.max(Math.round(Number(this.doors.sliding_panels) || 2), 2), 4); }
+    /** both tracks + 0.6 between them: what the inside has to keep clear behind inset sliding doors */
+    get slidingDepth() { return 2 * this.ft + 0.6; }
     behindFacadeY() {
+        if (this.sliding)
+            return this.inset ? this.slidingDepth + this.shelvesCfg.front_setback : 0.0;
         return this.whole && this.inset ? this.ft + this.shelvesCfg.front_setback : 0.0;
     }
     get ix0() { return this.t; }
@@ -449,7 +456,37 @@ export class Engine {
         return rows;
     }
     baseY(covered) {
+        if (this.sliding && this.inset)
+            return this.slidingDepth;
         return this.inset && (covered || this.whole) ? this.ft : 0.0;
+    }
+    /** sliding panels over the whole front: they overlap 2 cm, every other one runs in the second track
+     *  (behind it when the doors are inset, in front when overlay) */
+    buildSliding() {
+        const eg = this.doors.edge_gap, n = this.slidingN, ov = 2.0;
+        const [x0, x1] = this.inset ? [this.ix0 + eg, this.ix1 - eg] : [eg, this.w - eg];
+        const [z0, z1] = this.inset ? [this.iz0 + eg, this.iz1 - eg] : [eg, this.h - eg];
+        const pw = ((x1 - x0) + (n - 1) * ov) / n;
+        if (pw < 20.0 || z1 - z0 < 20.0) {
+            this.errors.push(`الضلف السحّاب: كل لوح هيبقى ${f(pw)}×${f(z1 - z0)} سم — صغير جداً.`);
+            return;
+        }
+        const style = this.doors.style;
+        for (let i = 0; i < n; i++) {
+            const px0 = x0 + i * (pw - ov);
+            const px1 = Math.min(px0 + pw, x1 + (i === n - 1 ? 0 : ov));
+            const track = (this.ft + 0.6) * (i % 2);
+            const fy0 = this.inset ? track : -this.ft - track;
+            const name = `باب سحاب ${i + 1}`;
+            this.doorSeq += 1;
+            const key = `door${this.doorSeq}`;
+            this.drawer_groups.push({ key, kind: "slide", name, style, hinge_side: null, hinge: null, box: this.box(px0, fy0, z0, px1, fy0 + this.ft, z1), slide: i % 2 === 1 ? (px1 - px0) * 0.92 : 0 });
+            this.addPart(name, "sliding_door", style === "mirror_alu" ? "mirror" : "door", this.box(px0, fy0, z0, px1, fy0 + this.ft, z1), {
+                label_axes: ["x", "z"], band: ["left", "right", "top", "bottom"], band_all_sides: true,
+                layer: "front", group: key, note: "⚠ باب سحّاب — هيتركّب على سكة علوية/سفلية، مش مفصلات",
+            });
+        }
+        this.slidingTrack = rround((x1 - x0) / 100.0, 2);
     }
     // ================================================================ contents
     buildContent(sec, c, covered) {
@@ -741,6 +778,8 @@ export class Engine {
     }
     // ======================================================= whole-facade doors
     computeFacade() {
+        if (this.sliding)
+            return [];
         const rows = this.doors.rows;
         const g = this.doors.gap;
         const eg = this.doors.edge_gap;
@@ -785,6 +824,8 @@ export class Engine {
         return leaves;
     }
     facadeCovers(sec, c) {
+        if (this.sliding)
+            return true;
         const area = (sec.x1 - sec.x0) * (c.z1 - c.z0);
         if (area <= 0)
             return false;
@@ -804,6 +845,8 @@ export class Engine {
         return list;
     }
     buildFacade() {
+        if (this.sliding)
+            return this.buildSliding();
         const [fy0, fy1] = this.inset ? [0.0, this.ft] : [-this.ft, 0.0];
         const tol = this.doors.edge_gap + 1.0;
         for (const lf of this.facade) {
@@ -1616,6 +1659,7 @@ export class Engine {
             handle_hardware: { ...(this.handleHw ?? {}) },
             led_hardware: { ...(this.ledHw ?? {}) },
             plinth_hardware: { ...(this.plinthHw ?? {}) },
+            ...(this.sliding ? { sliding: { panels: this.drawer_groups.filter((g) => g.kind === "slide").length, track_m: this.slidingTrack ?? 0 } } : {}),
         };
         if (!(ph > EPS))
             return;

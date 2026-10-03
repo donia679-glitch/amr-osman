@@ -45,7 +45,7 @@ const LO = (b) => [b.x0, b.y0, b.z0], HI = (b) => [b.x1, b.y1, b.z1];
 
 // ------------------------------------------------------------ a board as a 2D outline × thickness
 /** a flat board (thin along `axis`) whose outline is its rectangle minus `cuts` (rects in its u/v plane) */
-function slabOf(box) {
+export function slabOf(box) {
   const lo = LO(box), hi = HI(box), d = [0, 1, 2].map((i) => hi[i] - lo[i]);
   const axis = d.indexOf(Math.min(...d));
   const [u, v] = [0, 1, 2].filter((i) => i !== axis);
@@ -111,7 +111,7 @@ function loops(cs) {
 const area2 = (l) => l.reduce((s, p, i) => { const q = l[(i + 1) % l.length]; return s + p[0] * q[1] - q[0] * p[1]; }, 0);
 
 /** faces of a cut board in the mesh format ({n, outer, holes, mat}) */
-function slabFaces(s, mat) {
+export function slabFaces(s, mat) {
   const cs = cells(s);
   if (!cs.length) return null;
   const ls = loops(cs);
@@ -245,4 +245,51 @@ export function applyKitchen(res, params) {
     report.push(rep);
   });
   return { meshes, parts, warnings, report, ctx: c };
+}
+
+// ------------------------------------------------------------ the box-part engines (dressing, panel units)
+/**
+ * Same cutting on a result whose parts carry their own box (dressing / panel engines). Cut parts get
+ * shape { type: "faces", faces } so the 3D view draws their real outline; closing panels are new box parts.
+ * partMover: the result's door/drawer index per part (null = fixed).
+ */
+export function applyParts(res, params, partMover = []) {
+  if (!any(params)) return null;
+  const key = (i) => `${res.parts[i].name}#${i}`;
+  const carc = res.parts.filter((p) => p.box && p.layer === "carcass" && p.cut_piece !== false);
+  const thick = carc.map((p) => Math.min(p.box.x1 - p.box.x0, p.box.y1 - p.box.y0, p.box.z1 - p.box.z0)).filter((t) => t > 1).sort((a, b) => a - b);
+  const t = thick.length ? thick[Math.floor(thick.length / 2)] : 1.8;
+  const meshes = [], parts = [];
+  res.parts.forEach((p, i) => {
+    if (!p.box) return;
+    const moving = partMover[i] != null || p.layer === "front" && /door|drawer|flap/.test(p.role || "");
+    const round = /^cylinder/.test(p.shape?.type || "");
+    meshes.push({ id: `p${i}`, name: key(i), layer: p.layer === "carcass" ? "Kitchen - Carcass" : p.layer === "front" ? "Kitchen - Front" : "", mat: p.material,
+      mover: moving ? 1 : null, faces: new Array(round || p.role === "hole" ? 20 : 6), box: { ...p.box }, idx: i });
+    parts.push({ ...p, name: key(i), label: { ...(p.label || {}) }, checks: [...(p.checks || [])] });
+  });
+  const out = applyKitchen({ meshes, parts }, { ...params, panel_thickness: t });
+  if (!out) return null;
+  const byKey = new Map(out.parts.map((p) => [p.name, p]));
+  const newParts = [];
+  const keptIdx = new Set();
+  for (const m of out.meshes) {
+    if (m.idx != null) {
+      keptIdx.add(m.idx);
+      const orig = res.parts[m.idx], q = byKey.get(m.name) || {};
+      const cut = m.faces.length && m.faces[0] && m.faces !== meshes.find((x) => x.idx === m.idx)?.faces;
+      newParts.push({ ...orig, box: m.box, label: q.label || orig.label, checks: q.checks || orig.checks,
+        ...(m.cutBy ? { shape: { type: "faces", faces: m.faces }, note: [orig.note, ...(q.checks || []).filter((c) => c.startsWith("✂"))].filter(Boolean).join(" | ") } : {}), _i: m.idx });
+      void cut;
+    } else if (m.wrap) {
+      const q = byKey.get(m.name) || {};
+      newParts.push({ id: `ob_${m.id}`, name: m.name, role: "side", material: "carcass", box: m.box, shape: { type: "box" }, label: q.label, band: [], band_all_sides: false,
+        layer: "carcass", mark: null, door_label: null, group: null, cut_piece: true, note: "لوح تقفيل حوالين العائق", axes: ["y", "z"], holes: [], grain: null, checks: q.checks || [], module: null, _i: null });
+    }
+  }
+  // parts without a box (hardware rows etc.) stay where they were
+  res.parts.forEach((p, i) => { if (!p.box) newParts.push({ ...p, _i: i }); });
+  const mover = newParts.map((p) => (p._i != null ? partMover[p._i] ?? null : null));
+  for (const p of newParts) delete p._i;
+  return { parts: newParts, partMover: mover, warnings: out.warnings.map((w) => w.replace(/#\d+/, "")), report: out.report };
 }

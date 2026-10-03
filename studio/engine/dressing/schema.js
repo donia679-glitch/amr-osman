@@ -71,6 +71,7 @@ export const DOOR_STYLE_SPECS = {
 export const DOOR_LAYOUTS = {
     per_section: "ضلف لكل قسم (من الفراغات)",
     whole: "ضلف على الواجهة كلها (مستقلة عن الأقسام)",
+    sliding: "ضلف سحّاب (جرّار) على الواجهة كلها",
 };
 export const ROW_TYPES = {
     doors: "ضلف",

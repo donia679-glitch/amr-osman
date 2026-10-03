@@ -118,6 +118,7 @@ const defaults = () => ({ project: SAMPLE(), sel: null, tab: "design", xray: fal
 let state = loadLocal() || defaults();
 state.myMats ??= [];
 state.myUnits ??= [];
+state.myDel ??= [];
 for (const m of [...state.myMats, ...(state.project.mats || [])]) Mat.register(m);
 for (const u of state.project.units) u.kind ??= "panel";
 state.project.id ??= uid();
@@ -170,6 +171,11 @@ function R(u) {
   if (cache.has(key)) return cache.get(key);
   if (cache.size > 80) cache.delete(cache.keys().next().value);
   let out = u.kind === "dressing" ? adaptDressing(u) : u.kind === "kitchen" ? adaptKitchen(u) : u.kind === "pieces" ? adaptPieces(u) : adaptPanel(u);
+  if (out.ok && (u.kind === "dressing" || u.kind === "panel") && Obs.any(u.params)) {
+    const ob = Obs.applyParts(out, u.params, out.partMover || []);
+    if (ob) out = { ...out, parts: ob.parts, partMover: out.partMover ? ob.partMover : undefined, warnings: [...(out.warnings || []), ...ob.warnings], obstacles: true,
+      pieces: (out.pieces || 0) + ob.parts.length - out.parts.length, banding: bandM(ob.parts) };
+  }
   if (u.extra?.length && out.ok) out = withExtra(u, out);
   cache.set(key, out);
   return out;
@@ -178,23 +184,73 @@ function R(u) {
 const EXTRA_MATS = { kitchen: { carcass: "الهيكل", front: "الواجهة", back: "الظهر" }, dressing: { carcass: "الهيكل", door: "الضلف", shelf: "الأرفف", back: "الظهر" },
   panel: { carcass: "الهيكل", front: "الضلف", shelf: "الأرفف", accent: "المميزة", back: "الظهر" } };
 const extraMats = (u) => EXTRA_MATS[u.kind] || EXTRA_MATS.panel;
+const AXN = { 0: ["شمال", "يمين"], 1: ["قدام", "ورا"], 2: ["تحت", "فوق"] };
+/** corner names of a board's big face (u, v = its two long axes) */
+function cutCorners(q) {
+  const s = Obs.slabOf({ x0: 0, y0: 0, z0: 0, x1: +q.w || 1, y1: +q.d || 1, z1: +q.h || 1 });
+  const o = {};
+  for (const a of [0, 1]) for (const b of [0, 1]) o[`${a}${b}`] = `${AXN[s.v][b]} ${AXN[s.u][a]}`;
+  return { s, o };
+}
 function withExtra(u, out) {
   const mats = extraMats(u);
   const panels = u.extra.map((q) => ({ ...q, material: mats[q.material] ? q.material : "carcass", role: q.role || "other" }));
   let fr;
   try { fr = panelCompute({ template: "free", panels: panels.map((q) => ({ ...q, material: ["carcass", "front", "shelf", "accent", "back"].includes(q.material) ? q.material : q.material === "door" ? "front" : "carcass" })) }); } catch { return out; }
   if (!fr?.ok) return out;
-  const res = { ...out, parts: [...out.parts], extraCount: panels.length };
+  const res = { ...out, parts: [...out.parts], extraCount: panels.length, hardware: { ...(out.hardware || {}) } };
+  if (u.kind === "kitchen") res.meshes = [...out.meshes];
+  // what the pieces join onto: the unit's own boards (before the pieces were added)
+  const base = solidBoxes(u, out);
+  let cams = 0;
   fr.parts.forEach((pt, i) => {
     const q = panels[i] || panels[panels.length - 1];
     const mat = q.material, name = q.name || `قطعة إضافية ${i + 1}`;
-    const note = "➕ قطعة مضافة";
+    const checks = ["➕ قطعة مضافة"];
+    const b = pt.box;
+    // a corner cut out of the board (L shape)
+    let faces = null;
+    const sl = Obs.slabOf(b);
+    if (q.cut && +q.cut.a > 0 && +q.cut.b > 0) {
+      const [u0, v0, u1, v1] = sl.rect, a = Math.min(+q.cut.a, u1 - u0 - 0.5), c = Math.min(+q.cut.b, v1 - v0 - 0.5);
+      const cu = q.cut.c?.[0] === "1" ? [u1 - a, u1] : [u0, u0 + a], cv = q.cut.c?.[1] === "1" ? [v1 - c, v1] : [v0, v0 + c];
+      if (a > 0 && c > 0) {
+        sl.cuts.push([cu[0], cv[0], cu[1], cv[1]]);
+        faces = Obs.slabFaces(sl, mat)?.faces || null;
+        checks.push(`✂ قصة ركن ${Math.round(a * 10) / 10}×${Math.round(c * 10) / 10} سم — ${cutCorners(q).o[q.cut.c || "00"]}`);
+      }
+    }
+    // joints: every edge that butts against a board of the unit gets 2 cam + dowel sets
+    const L = [b.x0, b.y0, b.z0], H = [b.x1, b.y1, b.z1];
+    const holes = [];
+    const axes = (pt.axes || ["x", "y"]).map((k) => AXK.indexOf(k));
+    const ratio = (P) => ({ w: Math.max(0, Math.min(1, (P[axes[0]] - L[axes[0]]) / Math.max(H[axes[0]] - L[axes[0]], 0.01))), h: Math.max(0, Math.min(1, (P[axes[1]] - L[axes[1]]) / Math.max(H[axes[1]] - L[axes[1]], 0.01))) });
+    let edges = 0;
+    for (const ea of [sl.u, sl.v]) for (const side of [0, 1]) {
+      const at = side ? H[ea] : L[ea];
+      const other = ea === sl.u ? sl.v : sl.u;
+      const touch = base.some((x) => {
+        const xl = [x.x0, x.y0, x.z0], xh = [x.x1, x.y1, x.z1];
+        const face = side ? xl[ea] : xh[ea];
+        return Math.abs(face - at) < 0.2 && xl[other] < H[other] - 1 && xh[other] > L[other] + 1 && xl[sl.axis] <= L[sl.axis] + 0.1 && xh[sl.axis] >= H[sl.axis] - 0.1;
+      });
+      if (!touch) continue;
+      edges++;
+      const len = H[other] - L[other], e0 = Math.min(5, len / 4);
+      for (const pos of [L[other] + e0, H[other] - e0]) {
+        const P = [0, 0, 0];
+        P[ea] = side ? at - 3.4 : at + 3.4; P[other] = pos; P[sl.axis] = (L[sl.axis] + H[sl.axis]) / 2;
+        holes.push({ kind: "cam", ...ratio(P), d: 1.5 });
+        cams++;
+      }
+    }
+    if (edges) checks.push(`🔩 ${edges * 2} طقم أليتا (كام + مسمار) — ${edges} ناحية، واخرم القطعة المقابلة`);
     if (u.kind === "kitchen") {
-      res.parts.push({ id: `x${i}`, name, material: mat, cut_piece: true, label: { ...pt.label, led: null }, holes: [], door_label: null, checks: [note], material_name: null, extra: i });
-      res.meshes = [...(res.meshes || out.meshes)];
-      res.meshes.push({ id: `xm${i}`, name, layer: mat === "front" ? "Kitchen - Front" : "Kitchen - Carcass", mat, door: false, drawer: false, mover: null, faces: Obs.boxFaces(pt.box, mat), box: { ...pt.box }, extra: i });
-    } else res.parts.push({ ...pt, id: 90000 + i, name, material: mat, checks: [note], extra: i, ...(u.kind === "dressing" ? { layer: "carcass" } : {}) });
+      res.parts.push({ id: `x${i}`, name, material: mat, cut_piece: true, label: { ...pt.label, led: null }, holes, door_label: null, checks, material_name: null, extra: i });
+      res.meshes.push({ id: `xm${i}`, name, layer: mat === "front" ? "Kitchen - Front" : "Kitchen - Carcass", mat, door: false, drawer: false, mover: null, faces: faces || Obs.boxFaces(b, mat), box: { ...b }, extra: i });
+    } else res.parts.push({ ...pt, id: 90000 + i, name, material: mat, checks, holes, extra: i, ...(faces ? { shape: { type: "faces", faces } } : {}), ...(u.kind === "dressing" ? { layer: "carcass" } : {}) });
   });
+  if (cams) res.hardware["طقم أليتا (كام + مسمار) للقطع المضافة"] = (res.hardware["طقم أليتا (كام + مسمار) للقطع المضافة"] || 0) + cams;
   if (Array.isArray(out.partMover)) res.partMover = [...out.partMover, ...panels.map(() => null)];
   res.pieces = (out.pieces || 0) + panels.length;
   res.banding = bandM(res.parts);
@@ -304,8 +360,12 @@ function extraProps(u, r) {
     h += `<div class="zone-ed"><div class="zh"><input data-xtext="${i}.name" value="${esc(q.name || "")}" aria-label="اسم القطعة"><button data-xdup="${i}" class="sm" aria-label="نسخة">${ICON.copy}</button><button data-xdel="${i}" class="danger sm" aria-label="شيل القطعة">${ICON.trash}</button></div>
       <div class="grid3">${N("w", "العرض (س)")}${N("d", "العمق (ص)")}${N("h", "الارتفاع (ع)")}${N("x", "مكانها س")}${N("y", "مكانها ص")}${N("z", "مكانها ع")}</div>
       <div class="nudge">${["x", "y", "z"].map((a) => `<span>${{ x: "⇆", y: "⇅ عمق", z: "↕" }[a]}<button class="sm" data-xnudge="${i},${a},-1">−1</button><button class="sm" data-xnudge="${i},${a},1">+1</button></span>`).join("")}
-      <label class="f inl"><span>الخامة</span><select data-xsel="${i}.material">${Object.entries(mats).map(([k, l]) => `<option value="${k}" ${k === q.material ? "selected" : ""}>${esc(l)}</option>`).join("")}</select></label></div></div>`;
+      <label class="f inl"><span>الخامة</span><select data-xsel="${i}.material">${Object.entries(mats).map(([k, l]) => `<option value="${k}" ${k === q.material ? "selected" : ""}>${esc(l)}</option>`).join("")}</select></label></div>
+      <div class="nudge"><button class="sm" data-xrot="${i},w,d" title="لف القطعة أفقي 90°">↻ لف أفقي</button><button class="sm" data-xrot="${i},d,h" title="وقّفها أو نيّمها على العمق">⤒ قلب على العمق</button><button class="sm" data-xrot="${i},w,h" title="وقّفها أو نيّمها على العرض">⇱ قلب على العرض</button></div>
+      <div class="grid3"><label class="f"><span>✂ قصة ركن (شكل L)</span><select data-xcut="${i}.c"><option value="">من غير</option>${Object.entries(cutCorners(q).o).map(([k, l]) => `<option value="${k}" ${q.cut?.c === k ? "selected" : ""}>${esc(l)}</option>`).join("")}</select></label>
+      ${q.cut?.c ? `<label class="f"><span>طول القصة</span><input type="number" inputmode="decimal" step="0.5" data-xcut="${i}.a" value="${q.cut.a ?? 10}"></label><label class="f"><span>عرض القصة</span><input type="number" inputmode="decimal" step="0.5" data-xcut="${i}.b" value="${q.cut.b ?? 10}"></label>` : ""}</div></div>`;
   });
+  if (list.length) h += `<div class="btnrow"><button class="chip ${ui.xmove ? "on" : ""}" data-xmove>✋ حرّك القطع بالصباع في الـ3D</button>${ui.xmove ? `<select id="xmoveAx" class="chip"><option value="">اتجاه: تلقائي (على سمكها)</option><option value="0" ${ui.xmoveAx === "0" ? "selected" : ""}>⇆ شمال/يمين</option><option value="2" ${ui.xmoveAx === "2" ? "selected" : ""}>↕ فوق/تحت</option><option value="1" ${ui.xmoveAx === "1" ? "selected" : ""}>⇅ قدام/ورا</option></select>` : ""}</div>`;
   // free-board units can be merged into another unit (their boards become its extra pieces)
   const others = state.project.units.filter((x) => x.id !== u.id && x.kind !== "pieces");
   if ((u.kind === "panel" && r.params?.template === "free" || list.length) && others.length) {
@@ -317,16 +377,56 @@ function extraProps(u, r) {
 function mergeInto(u, target) {
   const r = R(u), boards = u.kind === "panel" && r.params?.template === "free" ? clone(r.params.panels || []).map((q) => ({ ...q, kind: "board" })) : clone(extraOf(u));
   if (!boards.length) return 0;
-  // offset between the two units' frames when both stand in the room the same way round
-  let off = [0, 0, 0];
+  // carry every board from u's frame into the target's through the room (any rotation; 90° steps stay exact)
   const poses = projectPoses(state.project), A = poses.get(u.id), B = poses.get(target.id);
-  if (A && B && Math.abs(Math.sin(A.rot - B.rot)) < 0.01 && Math.cos(A.rot - B.rot) > 0) {
-    const ex = Room.axisX(B.rot), ez = Room.axisZ(B.rot), d = [A.x - B.x, A.z - B.z];
-    off = [d[0] * ex[0] + d[1] * ex[1], -(d[0] * ez[0] + d[1] * ez[1]), (+u.lift || 0) - (+target.lift || 0)];
-  }
+  const r1 = (v) => Math.round(v * 10) / 10;
+  const toT = (lx, ly) => {
+    if (!A || !B) return [lx, ly];
+    const ea = Room.axisX(A.rot), za = Room.axisZ(A.rot), eb = Room.axisX(B.rot), zb = Room.axisZ(B.rot);
+    const w = [A.x + ea[0] * lx - za[0] * ly - B.x, A.z + ea[1] * lx - za[1] * ly - B.z];
+    return [w[0] * eb[0] + w[1] * eb[1], -(w[0] * zb[0] + w[1] * zb[1])];
+  };
+  const dz = (+u.lift || 0) - (+target.lift || 0);
   const mats = extraMats(target);
-  target.extra = [...extraOf(target), ...boards.map((q) => ({ ...q, x: Math.round(((+q.x || 0) + off[0]) * 10) / 10, y: Math.round(((+q.y || 0) + off[1]) * 10) / 10, z: Math.round(((+q.z || 0) + off[2]) * 10) / 10, material: mats[q.material] ? q.material : "carcass" }))];
+  let skew = false;
+  const moved = boards.map((q) => {
+    const x0 = +q.x || 0, y0 = +q.y || 0, w = +q.w || 0, d = +q.d || 0;
+    const pts = [[x0, y0], [x0 + w, y0], [x0 + w, y0 + d], [x0, y0 + d]].map(([a, b]) => toT(a, b));
+    const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
+    const nx0 = Math.min(...xs), nx1 = Math.max(...xs), ny0 = Math.min(...ys), ny1 = Math.max(...ys);
+    if (Math.abs((nx1 - nx0) * (ny1 - ny0) - w * d) > 0.5) skew = true;
+    const swap = Math.abs(nx1 - nx0 - w) > 0.5 && Math.abs(nx1 - nx0 - d) < 0.5;
+    const out = { ...q, x: r1(nx0), y: r1(ny0), z: r1((+q.z || 0) + dz), w: r1(swap ? d : nx1 - nx0), d: r1(swap ? w : ny1 - ny0), material: mats[q.material] ? q.material : "carcass" };
+    if (swap) delete out.cut;
+    return out;
+  });
+  target.extra = [...extraOf(target), ...moved];
+  if (skew) alertBar("الوحدتين مش على نفس الزاوية — القطع اتحطت بأقرب مقاس، راجع مقاساتها.");
   return boards.length;
+}
+/** engine-frame polygons ({n, outer, holes}) → one three.js geometry in the unit group's frame */
+function facesGeometry(THREE, faces) {
+  const T = ([x, y, z]) => [x, z, -y];
+  const arr = [];
+  for (const f of faces) {
+    const n = f.n;
+    const ax = Math.abs(n[0]) >= Math.abs(n[1]) && Math.abs(n[0]) >= Math.abs(n[2]) ? 0 : Math.abs(n[1]) >= Math.abs(n[2]) ? 1 : 2;
+    const [a, b] = [[1, 2], [0, 2], [0, 1]][ax];
+    const v2 = (p) => new THREE.Vector2(p[a], p[b]);
+    let tris;
+    try { tris = THREE.ShapeUtils.triangulateShape(f.outer.map(v2), (f.holes || []).map((h) => h.map(v2))); } catch { tris = []; }
+    const pts = [...f.outer, ...(f.holes || []).flat()], tn = T(n);
+    for (const [i, j, k] of tris) {
+      let A = T(pts[i]), B = T(pts[j]), C = T(pts[k]);
+      const ux = B[0] - A[0], uy = B[1] - A[1], uz = B[2] - A[2], vx = C[0] - A[0], vy = C[1] - A[1], vz = C[2] - A[2];
+      if ((uy * vz - uz * vy) * tn[0] + (uz * vx - ux * vz) * tn[1] + (ux * vy - uy * vx) * tn[2] < 0) [B, C] = [C, B];
+      arr.push(...A, ...B, ...C);
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.Float32BufferAttribute(arr, 3));
+  geo.computeVertexNormals();
+  return geo;
 }
 function bandM(parts) {
   let t = 0;
@@ -349,6 +449,13 @@ function partMovers(parts) {
     if (!b) return;
     const isDrawer = pt.role === "drawer_front" || (pt.role === "door" && (/درج/.test(pt.name) || /drawer/.test(pt.group || "")));
     const isDoor = !isDrawer && pt.role === "door";
+    if (pt.role === "sliding_door") {
+      // every second panel slides over its neighbour (towards -x)
+      const n = +(/(\d+)$/.exec(pt.name)?.[1] || 1);
+      movers.push({ kind: "slide", name: pt.name, hinge: [0, 0, 0], axis: [0, 0, 1], free: [0, 0, 0], normal: [-1, 0, 0], slide: n % 2 === 0 ? (b.x1 - b.x0) * 0.92 : 0 });
+      of[i] = movers.length - 1;
+      return;
+    }
     if (!isDoor && !isDrawer) return;
     const zc = (b.z0 + b.z1) / 2, yf = b.y0;
     let mv;
@@ -475,7 +582,7 @@ function adaptDressing(u) {
   let hardware = {};
   try { hardware = D.computeBom([[u.name, u.params]], (_p, k) => names[k] || k).hardware || {}; } catch { hardware = { ...r.summary.handle_hardware, ...r.summary.led_hardware, ...r.summary.plinth_hardware }; }
   const pm = partMovers(base.parts);
-  return { ...base, movers: pm.movers, partMover: pm.of, names, colors, hardware, pieces: r.summary.piece_count, banding: bandM(r.parts), doors: r.summary.door_count, drawers: r.summary.drawer_count,
+  return { ...base, movers: pm.movers, partMover: pm.of, names, colors, hardware, pieces: r.summary.piece_count, banding: bandM(r.parts), doors: r.summary.door_count + (r.summary.sliding?.panels || 0), drawers: r.summary.drawer_count,
     label: "دريسنج", libOf };
 }
 
@@ -501,8 +608,21 @@ function adaptKitchen(u) {
     if (ob) { meshes = ob.meshes; parts = ob.parts; warnings = [...(r.warnings || []), ...ob.warnings]; }
   }
   const slides = (r.movers || []).filter((m) => m.kind === "slide").length;
-  if (slides) { hw["طقم سكة سحّاب (علوي + سفلي)"] = (hw["طقم سكة سحّاب (علوي + سفلي)"] || 0) + 1; hw["عجل/بكر سحّاب"] = (hw["عجل/بكر سحّاب"] || 0) + slides * 2; }
-  return { ...base, meshes, parts, warnings, obstacles: Obs.any(u.params), names, colors, hardware: hw, pieces: parts.length, banding: bandM(parts), doors: r.stats.doors, drawers: r.stats.drawers,
+  if (slides) {
+    // one top + bottom track per run of sliding panels, as long as the run
+    const runs = new Map();
+    (r.movers || []).forEach((m, i) => {
+      if (m.kind !== "slide") return;
+      const pre = m.name.replace(/باب سحاب \d+$/, "");
+      const bs = r.meshes.filter((x) => x.mover === i).map((x) => x.box);
+      const run = runs.get(pre) || [Infinity, -Infinity];
+      for (const b of bs) { run[0] = Math.min(run[0], b.x0); run[1] = Math.max(run[1], b.x1); }
+      runs.set(pre, run);
+    });
+    for (const [, [a, b]] of runs) { const k = `طقم سكة سحّاب (علوي + سفلي) ${Math.round((b - a)) / 100} م`; hw[k] = (hw[k] || 0) + 1; }
+    hw["عجل/بكر سحّاب"] = (hw["عجل/بكر سحّاب"] || 0) + slides * 2;
+  }
+  return { ...base, meshes, parts, warnings, obstacles: Obs.any(u.params), names, colors, hardware: hw, pieces: parts.length, banding: bandM(parts), doors: r.stats.doors + slides, drawers: r.stats.drawers,
     label: `${kind} · ${KU.K_TYPES[p.unit_type] || ""}`, libOf };
 }
 /** how far each door may swing, and around which edge: a normal door stops at 90° so neighbours
@@ -613,6 +733,55 @@ $("#libBtn").addEventListener("click", () => { state.libOpen = !state.libOpen; r
   let down = null, drag = null, ptDrag = null;
   const host = $("#view3d");
   let press = 0;
+  // ---- drag a drawn/merged piece with the finger (along its thickness, or the axis picked)
+  let xdrag = null;
+  host.addEventListener("pointerdown", (e) => {
+    if (!ui.xmove || ui.mode !== "owner" || !view.ready || !e.isPrimary || e.target.closest(".vctl, .movebar")) return;
+    const T = view.three, rc = view.ren.domElement.getBoundingClientRect(), ray = new T.Raycaster();
+    ray.setFromCamera(new T.Vector2(((e.clientX - rc.left) / rc.width) * 2 - 1, -((e.clientY - rc.top) / rc.height) * 2 + 1), view.cam);
+    const h = ray.intersectObjects(view.pickables || [], true).find((x) => x.object.isMesh && x.object.visible);
+    if (!h || h.object.userData.xi == null) return;
+    let g = h.object; while (g && !g.userData.unitId) g = g.parent;
+    const u = g && state.project.units.find((x) => x.id === g.userData.unitId);
+    const xi = h.object.userData.xi, q = u?.extra?.[xi];
+    if (!q) return;
+    e.stopPropagation();
+    const dims = [+q.w || 0, +q.d || 0, +q.h || 0];
+    const ax = ui.xmoveAx !== "" && ui.xmoveAx != null ? +ui.xmoveAx : dims.indexOf(Math.min(...dims));
+    const c = new T.Vector3((+q.x || 0) + dims[0] / 2, (+q.z || 0) + dims[2] / 2, -((+q.y || 0) + dims[1] / 2));
+    const dirL = [new T.Vector3(1, 0, 0), new T.Vector3(0, 0, -1), new T.Vector3(0, 1, 0)][ax];
+    const s0 = g.localToWorld(c.clone()).project(view.cam), s1 = g.localToWorld(c.clone().addScaledVector(dirL, 10)).project(view.cam);
+    const px = (v) => [(v.x + 1) / 2 * rc.width, (1 - v.y) / 2 * rc.height];
+    const a0 = px(s0), a1 = px(s1), dv = [a1[0] - a0[0], a1[1] - a0[1]], len = Math.hypot(...dv);
+    if (len < 2) { alertBar("القطعة دي مش باينة في الاتجاه ده من الزاوية دي — لف المشهد أو اختار اتجاه تاني."); return; }
+    const objs = [];
+    g.traverse((o) => { if (o.userData.xi === xi) objs.push([o, o.position.clone()]); });
+    xdrag = { pid: e.pointerId, u, xi, ax, dir: [dv[0] / len, dv[1] / len], ppc: len / 10, xy: [e.clientX, e.clientY], v0: +q[AXK[ax]] || 0, d: 0, objs, dirL };
+    if (u.id !== state.sel) { state.sel = u.id; renderStrip(); }
+    view.ctl.enabled = false;
+    try { host.setPointerCapture(e.pointerId); } catch { /* gone */ }
+  }, true);
+  host.addEventListener("pointermove", (e) => {
+    if (!xdrag || e.pointerId !== xdrag.pid) return;
+    e.stopPropagation();
+    const d = ((e.clientX - xdrag.xy[0]) * xdrag.dir[0] + (e.clientY - xdrag.xy[1]) * xdrag.dir[1]) / xdrag.ppc;
+    xdrag.d = Math.round(d * 2) / 2;
+    for (const [o, p0] of xdrag.objs) o.position.copy(p0).addScaledVector(xdrag.dirL, xdrag.d);
+    view.dirty = true;
+    const lab = { 0: "من الشمال", 1: "من قدام", 2: "من تحت" }[xdrag.ax];
+    alertBar(`${xdrag.u.extra[xdrag.xi].name}: ${Math.round((xdrag.v0 + xdrag.d) * 10) / 10} سم ${lab}`);
+  }, true);
+  const xend = (e) => {
+    if (!xdrag || e.pointerId !== xdrag.pid) return;
+    e.stopPropagation();
+    const { u, xi, ax, v0, d } = xdrag;
+    xdrag = null;
+    view.ctl.enabled = true;
+    down = null;
+    if (d) setExtra(u, (l) => { if (l[xi]) l[xi][AXK[ax]] = Math.round((v0 + d) * 10) / 10; });
+  };
+  host.addEventListener("pointerup", xend, true);
+  host.addEventListener("pointercancel", (e) => { if (xdrag && e.pointerId === xdrag.pid) { for (const [o, p0] of xdrag.objs) o.position.copy(p0); xdrag = null; view.ctl.enabled = true; view.dirty = true; } }, true);
   const startDrag = (e, id) => {
     if (id !== state.sel) { state.sel = id; save(); renderStrip(); renderChips(); renderProps(); }
     const u = selUnit(), L = view.poses?.get(id), hit = view.floorAt(e.clientX, e.clientY);
@@ -1066,6 +1235,39 @@ function myUnitFrom(u, label, group) {
   try { const r = R(u); it.dims = r.ok ? dimsText(u, r) : ""; it.pieces = r.pieces || 0; } catch { it.dims = ""; }
   return it;
 }
+// my library follows the user to every device through the cloud store (when the app has one):
+// one doc with the list + the ids deleted anywhere, merged both ways
+let myLibT = 0;
+function myLibMerge(remote) {
+  const del = new Set([...(state.myDel || []), ...(remote?.del || [])]);
+  const byId = new Map();
+  for (const it of [...(remote?.units || []), ...(state.myUnits || [])]) {
+    if (!it?.id || del.has(it.id)) continue;
+    const o = byId.get(it.id);
+    if (!o || (it.at || 0) >= (o.at || 0)) byId.set(it.id, it);
+  }
+  state.myUnits = [...byId.values()];
+  state.myDel = [...del].slice(-500);
+  for (const it of state.myUnits) for (const m of it.mats || []) Mat.register(m);
+}
+function myLibPush() {
+  if (!cloud.db || !cloud.me) return;
+  clearTimeout(myLibT);
+  myLibT = setTimeout(async () => {
+    try { await cloud.db.doc(`data/users/${cloud.me}/mylib`).set({ units: state.myUnits, del: state.myDel || [], savedAt: new Date().toISOString() }); }
+    catch (e) { if (e?.code === "quota_exceeded") alertBar("مكتبتك كبرت على مساحة الحفظ أونلاين — اتحفظت على الجهاز ده بس. صدّرها ملف عشان متضيعش."); }
+  }, 600);
+}
+async function myLibPull() {
+  if (!cloud.db || !cloud.me) return;
+  try {
+    const s = await cloud.db.doc(`data/users/${cloud.me}/mylib`).get();
+    const before = JSON.stringify(state.myUnits || []);
+    myLibMerge(s.exists ? s.data() : null);
+    if (JSON.stringify(state.myUnits) !== before) { save(); renderLib(); }
+    myLibPush();
+  } catch { /* offline: the local copy stays */ }
+}
 function myLibHtml() {
   const list = state.myUnits || [];
   let h = `<h3>⭐ مكتبتي <small class="hint" style="font-weight:400">(${list.length})</small></h3><div class="cards mycards">`;
@@ -1088,7 +1290,8 @@ function myLibClick(e) {
   const del = t.closest("[data-mydel]");
   if (del) {
     if (del.dataset.armed !== "1") { del.dataset.armed = "1"; del.classList.add("armed"); del.textContent = "أكّد"; return true; }
-    state.myUnits = state.myUnits.filter((x) => x.id !== del.dataset.mydel); save(); renderLib(); return true;
+    state.myDel = [...new Set([...(state.myDel || []), del.dataset.mydel])];
+    state.myUnits = state.myUnits.filter((x) => x.id !== del.dataset.mydel); save(); myLibPush(); renderLib(); return true;
   }
   const ren = t.closest("[data-myren]");
   if (ren) { ui.pop = "mysave"; ui.mysaveId = null; ui.myrenId = ren.dataset.myren; renderPop(); return true; }
@@ -1119,7 +1322,7 @@ $("#lib").addEventListener("change", async (e) => {
     if (!Array.isArray(list) || !list.every((x) => x && x.kind && x.params)) throw new Error("bad");
     let n = 0;
     for (const it of list) { if (state.myUnits.some((x) => x.id === it.id)) continue; state.myUnits.push(it); n++; }
-    save(); renderLib();
+    save(); myLibPush(); renderLib();
     alertBar(n ? `اتضاف ${n} وحدة لمكتبتك.` : "كل الوحدات دي موجودة عندك بالفعل.");
   } catch { alertBar("الملف ده مش مكتبة وحدات من NOVERA Studio."); }
 });
@@ -1526,6 +1729,7 @@ function renderProps() {
   if (r.ok) h += summaryHtml(u);
   h += u.kind === "dressing" ? dressingProps(p) : u.kind === "kitchen" ? kitchenProps(p) : panelProps(p, r);
   if (u.kind === "panel" && r.ok) h += softProps(u, r);
+  if (r.ok && (u.kind === "dressing" || u.kind === "panel") && r.params?.template !== "free") h += obstaclesProps(p);
   if (r.ok) h += extraProps(u, r);
 
   h += `<details open><summary>الخامات</summary><div class="mats">`;
@@ -1764,6 +1968,7 @@ function dressingProps(p) {
     </div><div class="bools">${boolF("plinth.enabled", "سكلو تحت الدولاب", p.plinth.enabled)}${boolF("edge_banding", "شريط حواف", p.edge_banding)}</div>
     ${p.plinth.enabled ? `<div class="grid2">${selF("plinth.style", "نوع السكلو", D.PLINTH_STYLES, p.plinth.style)}${numF("plinth.height", "ارتفاع السكلو", p.plinth.height)}${selF("plinth.side_apron", "وزرة جانبية", D.PLINTH_SIDES, p.plinth.side_apron)}</div>` : ""}
   </details>`;
+  if (p.doors.layout === "sliding") h += `<div class="grid2">${numF("doors.sliding_panels", "عدد ألواح السحّاب (2–4)", p.doors.sliding_panels ?? 2, 1)}</div><p class="hint">الألواح بتغطي الواجهة كلها وبتتزحلق على سكتين — الأرفف والأدراج جوه بترجع لورا السكة لوحدها.</p>`;
   if (p.doors.layout === "whole") {
     h += `<details open><summary>صفوف الضلف (من تحت لفوق)</summary>`;
     p.doors.rows.forEach((row, i) => {
@@ -1874,6 +2079,12 @@ props.addEventListener("change", (e) => {
     return;
   }
   if (d.ulift !== undefined) { u.lift = Math.max(0, +t.value || 0); save(); renderChips(); view.update(); if (ui.planOn) plan.render(); return; }
+  if (t.id === "xmoveAx") { ui.xmoveAx = t.value; return; }
+  if (d.xcut) {
+    const [i, f] = d.xcut.split(".");
+    setExtra(u, (l) => { const q = l[+i]; if (!q) return; if (f === "c") { if (!t.value) delete q.cut; else q.cut = { a: 10, b: 10, ...(q.cut || {}), c: t.value }; } else { q.cut = { ...(q.cut || {}), [f]: Math.max(0, +t.value || 0) }; } });
+    return;
+  }
   if (d.xnum || d.xtext || d.xsel) {
     const [i, f] = (d.xnum || d.xtext || d.xsel).split(".");
     setExtra(u, (l) => { if (!l[+i]) return; l[+i][f] = d.xnum ? Math.max(f === "w" || f === "d" || f === "h" ? 0.1 : -1e4, +t.value || 0) : t.value; });
@@ -2022,7 +2233,7 @@ props.addEventListener("click", (e) => {
   } else if (d.zdel != null) setParams(u, (p) => p.fronts.splice(+d.zdel, 1));
   else if (d.fpdel != null) setParams(u, (p) => p.panels.splice(+d.fpdel, 1));
   else if (d.fpdup != null) setParams(u, (p) => { const q = clone(p.panels[+d.fpdup]); q.name += " (نسخة)"; q.x += q.w + 2; p.panels.splice(+d.fpdup + 1, 0, q); });
-  else if (d.xdraw !== undefined) { ui.xdraw = d.xdraw || null; renderProps(); if (ui.xdraw && ui.xdraw !== "board") { ui.open = true; view.setOpen(true); renderChips(); } if (ui.xdraw) alertBar(`دوس في الـ3D على المكان اللي عايز فيه ${XKIND[ui.xdraw].replace(/^\S+\s/, "")}`); }
+  else if (d.xdraw !== undefined) { ui.xdraw = d.xdraw || null; if (ui.xdraw) ui.xmove = false; renderProps(); if (ui.xdraw && ui.xdraw !== "board") { ui.open = true; view.setOpen(true); renderChips(); } if (ui.xdraw) alertBar(`دوس في الـ3D على المكان اللي عايز فيه ${XKIND[ui.xdraw].replace(/^\S+\s/, "")}`); }
   else if (d.xauto) {
     const r = R(u), bb = localBox(r);
     const zs = solidBoxes(u, r).reduce((a, b) => [Math.min(a[0], b.z0), Math.max(a[1], b.z1)], [Infinity, -Infinity]);
@@ -2032,6 +2243,18 @@ props.addEventListener("click", (e) => {
     if (!pc) { alertBar("مفيش مكان فاضي في نص الوحدة — ارسمها بالضغط على المكان اللي عايزه."); return; }
     setExtra(u, (l) => l.push(pc));
   }
+  else if (d.xrot) {
+    const [i, a, c] = d.xrot.split(",");
+    const ax = { w: "x", d: "y", h: "z" };
+    setExtra(u, (l) => {
+      const q = l[+i]; if (!q) return;
+      const ca = (+q[ax[a]] || 0) + (+q[a] || 0) / 2, cc = (+q[ax[c]] || 0) + (+q[c] || 0) / 2;
+      [q[a], q[c]] = [q[c], q[a]];
+      q[ax[a]] = Math.round((ca - q[a] / 2) * 10) / 10; q[ax[c]] = Math.round((cc - q[c] / 2) * 10) / 10;
+      delete q.cut;
+    });
+  }
+  else if (b.hasAttribute("data-xmove")) { ui.xmove = !ui.xmove; if (ui.xmove) { ui.xdraw = null; ui.open = true; view.setOpen(true); renderChips(); } renderProps(); if (ui.xmove) alertBar("اسحب أي قطعة مضافة بصباعك — بتتحرك على سمكها (الرف لفوق وتحت، القاطوع يمين وشمال)."); }
   else if (d.xdel != null) setExtra(u, (l) => l.splice(+d.xdel, 1));
   else if (d.xdup != null) setExtra(u, (l) => { const c = clone(l[+d.xdup]); c.name = (c.name || "قطعة") + " (نسخة)"; c.z = (+c.z || 0) + (c.kind === "shelf" ? 20 : 0); c.x = (+c.x || 0) + (c.kind === "divider" ? 20 : 0); l.splice(+d.xdup + 1, 0, c); });
   else if (d.xnudge) { const [i, a, s1] = d.xnudge.split(","); setExtra(u, (l) => { if (l[+i]) l[+i][a] = Math.round(((+l[+i][a] || 0) + +s1) * 10) / 10; }); }
@@ -2788,7 +3011,7 @@ $("#pop").addEventListener("click", (e) => {
   const name = ($("#myName")?.value || "").trim(), group = ($("#myGroup")?.value || "").trim();
   if (ui.myrenId) {
     const it = state.myUnits.find((x) => x.id === ui.myrenId);
-    if (it) { it.label = it.name = name || it.label; it.group = group; }
+    if (it) { it.label = it.name = name || it.label; it.group = group; it.at = Date.now(); }
     ui.myrenId = null;
   } else {
     const u = state.project.units.find((x) => x.id === ui.mysaveId);
@@ -2799,7 +3022,7 @@ $("#pop").addEventListener("click", (e) => {
     else state.myUnits.push(it);
     alertBar(rep ? "اتحدّثت في مكتبتك ⭐" : `اتحفظت في مكتبتك ⭐ — هتلاقيها في المكتبة ← مكتبتي`);
   }
-  ui.pop = null; renderPop(); save();
+  ui.pop = null; renderPop(); save(); myLibPush();
   renderLib();
 }, true);
 $("#pop").addEventListener("keydown", (e) => { if (ui.pop === "mysave" && e.key === "Enter" && e.target.matches("#myName,#myGroup")) $("#pop [data-myok]")?.click(); });
@@ -3844,6 +4067,7 @@ const view = {
           mesh.userData.led = key === "led";
           mesh.castShadow = mesh.receiveShadow = !!state.render;
           mesh.userData.pname = m.name;
+          if (m.extra != null) mesh.userData.xi = m.extra;
           (m.mover !== null ? this.moverGroup(g, r, m.mover) : g).add(mesh);
         }
         if (all.length && m.faces.length <= 16 && m.mat !== "led" && !state.render) {
@@ -3851,6 +4075,7 @@ const view = {
           eg.setAttribute("position", new THREE.Float32BufferAttribute(all, 3));
           const ln = new THREE.LineSegments(new THREE.EdgesGeometry(eg, 30), edgeMat);
           eg.dispose();
+          if (m.extra != null) ln.userData.xi = m.extra;
           (m.mover !== null ? this.moverGroup(g, r, m.mover) : g).add(ln);
         }
         const b = m.box;
@@ -3892,6 +4117,9 @@ const view = {
         mesh = new THREE.Mesh(geo, mat);
         mesh.rotation.y = Math.PI / 2;
         mesh.position.set(s.x0, 0, 0);
+      } else if (s.type === "faces" && s.faces?.length) {
+        geo = facesGeometry(THREE, s.faces);
+        mesh = new THREE.Mesh(geo, mat);
       } else if (s.type === "cylinder_x" || s.type === "cylinder_z" || s.type === "cylinder_y") {
         geo = new THREE.CylinderGeometry(s.r, s.r, s.length, 20);
         mesh = new THREE.Mesh(geo, mat);
@@ -3909,11 +4137,13 @@ const view = {
       mesh.userData.led = led;
       mesh.castShadow = mesh.receiveShadow = !!state.render;
       mesh.userData.pname = pt.name;
+      if (pt.extra != null) mesh.userData.xi = pt.extra;
       tgt.add(mesh);
       if (!led && !s.type?.startsWith("cylinder") && !state.render) {
         const ln = new THREE.LineSegments(new THREE.EdgesGeometry(geo, 30), edgeMat);
         ln.position.copy(mesh.position);
         ln.rotation.copy(mesh.rotation);
+        if (pt.extra != null) ln.userData.xi = pt.extra;
         tgt.add(ln);
       }
       minX = Math.min(minX, b.x0); maxX = Math.max(maxX, b.x1); minY = Math.min(minY, b.z0); maxY = Math.max(maxY, b.z1);
@@ -4793,6 +5023,87 @@ function overlapArea(a, b) {
   }
   return out.length > 2 ? polyArea(out) : 0;
 }
+// ---- doors and drawers opening into each other, into the next unit, a wall or a column
+const segX = (p1, p2, q1, q2) => {
+  const d = (a, b, c) => (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+  const d1 = d(q1, q2, p1), d2 = d(q1, q2, p2), d3 = d(p1, p2, q1), d4 = d(p1, p2, q2);
+  return ((d1 > 0.01 && d2 < -0.01) || (d1 < -0.01 && d2 > 0.01)) && ((d3 > 0.01 && d4 < -0.01) || (d3 < -0.01 && d4 > 0.01));
+};
+const inPoly = (pt, poly) => { let c = false; for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) { const [xi, yi] = poly[i], [xj, yj] = poly[j]; if ((yi > pt[1]) !== (yj > pt[1]) && pt[0] < ((xj - xi) * (pt[1] - yi)) / (yj - yi) + xi) c = !c; } return c; };
+const segHitsPoly = (a, b, poly) => inPoly(a, poly) || inPoly(b, poly) || poly.some((p, i) => segX(a, b, p, poly[(i + 1) % poly.length]));
+const shrink = (poly, e) => { const c = poly.reduce((a, p) => [a[0] + p[0] / poly.length, a[1] + p[1] / poly.length], [0, 0]); return poly.map(([x, y]) => { const dx = x - c[0], dy = y - c[1], l = Math.hypot(dx, dy) || 1; return [x - (dx / l) * e, y - (dy / l) * e]; }); };
+/** where each unit's doors (every 15° of their swing) and pulled-out drawers go, in room plan coords */
+function openPaths(it) {
+  const r = R(it.u);
+  if (!r.ok) return [];
+  const lift = +it.u.lift || 0;
+  const ex = Room.axisX(it.pose.rot), ez = Room.axisZ(it.pose.rot);
+  const W = ([x, y]) => [it.pose.x + ex[0] * x - ez[0] * y, it.pose.z + ex[1] * x - ez[1] * y];
+  const boxes = new Map();
+  const addB = (k, b) => { const o = boxes.get(k); boxes.set(k, o ? { x0: Math.min(o.x0, b.x0), x1: Math.max(o.x1, b.x1), y0: Math.min(o.y0, b.y0), y1: Math.max(o.y1, b.y1), z0: Math.min(o.z0, b.z0), z1: Math.max(o.z1, b.z1) } : { ...b }); };
+  if (r.meshes) r.meshes.forEach((m) => { if (m.mover != null) addB(m.mover, m.box); });
+  else r.parts.forEach((p, i) => { const k = r.partMover?.[i]; if (k != null && p.box) addB(k, p.box); });
+  const out = [];
+  (r.movers || []).forEach((mv, k) => {
+    const b = boxes.get(k);
+    if (!b) return;
+    const z = [b.z0 + lift, b.z1 + lift];
+    if (mv.kind === "door") {
+      if (Math.abs(mv.axis[2]) < 0.5) return; // flaps open upwards
+      const h = mv.hinge, f = mv.free, a = mv.axis[2] >= 0 ? 1 : -1;
+      const v = [f[0] - h[0], f[1] - h[1]];
+      const cr = [a * -v[1] * 0, 0];
+      void cr;
+      // sign: same rule as the 3D view (axis × (free − hinge) · normal)
+      const cx = [-a * v[1], a * v[0]];
+      const sign = cx[0] * mv.normal[0] + cx[1] * mv.normal[1] >= 0 ? 1 : -1;
+      const max = mv.maxAng ?? Math.PI / 2;
+      const segs = [];
+      for (let ang = Math.PI / 12; ang <= max + 1e-6; ang += Math.PI / 12) {
+        const t = sign * a * ang, c = Math.cos(t), s2 = Math.sin(t);
+        const e = [h[0] + v[0] * c - v[1] * s2, h[1] + v[0] * s2 + v[1] * c];
+        segs.push([W([h[0], h[1]]), W(e)]);
+      }
+      out.push({ kind: "door", name: mv.name, segs, z });
+    } else if (mv.kind === "drawer") {
+      const d = Math.max(mv.slide, 20) * 1.4, n = mv.normal;
+      const poly = [[b.x0, b.y0], [b.x1, b.y0], [b.x1, b.y1], [b.x0, b.y1]].map(([x, y]) => W([x + n[0] * d, y + n[1] * d]));
+      out.push({ kind: "drawer", name: mv.name, poly, z });
+    }
+  });
+  return out;
+}
+function swingChecks(items, add, room, label) {
+  const zr = (it) => { const r = R(it.u), lift = +it.u.lift || 0; const bs = r.meshes ? r.meshes.map((m) => m.box) : r.parts.filter((p) => p.box).map((p) => p.box); return [Math.min(...bs.map((b) => b.z0)) + lift, Math.max(...bs.map((b) => b.z1)) + lift]; };
+  const zo = (a, b) => Math.min(a[1], b[1]) - Math.max(a[0], b[0]) > 1;
+  const paths = new Map(items.map((it) => [it.id, openPaths(it)]));
+  const said = new Set();
+  const once = (key, lvl, txt, id) => { if (said.has(key)) return; said.add(key); add(lvl, txt, id); };
+  const walls = room ? Room.segments(room).map((sg) => [sg.A, sg.B]) : [];
+  const cols = (room?.columns || []).map((c) => [[c.x, c.z], [c.x + c.w, c.z], [c.x + c.w, c.z + c.d], [c.x, c.z + c.d]]);
+  for (const A of items) {
+    for (const p of paths.get(A.id)) {
+      const pSegs = p.kind === "door" ? p.segs : p.poly.map((q, i) => [q, p.poly[(i + 1) % p.poly.length]]);
+      // the other units' bodies
+      for (const B of items) {
+        if (B.id === A.id || !zo(p.z, zr(B))) continue;
+        const fp = shrink(Room.footprint(B.pose, B.box), 0.6);
+        if (pSegs.some(([a, b]) => segHitsPoly(a, b, fp))) once(`${A.id}|${p.name}|${B.id}`, "w", `${label(A)}: ${p.name} لما ${p.kind === "door" ? "تتفتح بتخبط" : "يتفتح بيخبط"} في ${label(B)}.`, A.id);
+        // both open at once
+        for (const q of paths.get(B.id) || []) {
+          if (!zo(p.z, q.z)) continue;
+          const qSegs = q.kind === "door" ? q.segs : q.poly.map((x, i) => [x, q.poly[(i + 1) % q.poly.length]]);
+          const pair = [A.id + p.name, B.id + q.name].sort().join("|");
+          if (pSegs.some(([a, b]) => qSegs.some(([c, d]) => segX(a, b, c, d))))
+            once(pair, "n", `${label(A)} (${p.name}) و${label(B)} (${q.name}) بيخبطوا في بعض لو اتفتحوا مع بعض.`, A.id);
+        }
+      }
+      // walls and columns
+      if (walls.some(([a, b]) => pSegs.some(([c, d]) => segX(a, b, c, d)))) once(`${A.id}|${p.name}|wall`, "w", `${label(A)}: ${p.name} ${p.kind === "door" ? "بتخبط في الحيطة قبل ما تفتح للآخر" : "بيخبط في الحيطة"} — سيب فيلر جنبها أو غيّر اتجاه المفصلة.`, A.id);
+      if (cols.some((c) => pSegs.some(([a, b]) => segHitsPoly(a, b, shrink(c, 0.5))))) once(`${A.id}|${p.name}|col`, "w", `${label(A)}: ${p.name} بيخبط في العمود وهو بيتفتح.`, A.id);
+    }
+  }
+}
 function designChecks(project = state.project) {
   const out = [];
   const add = (level, text, unitId = null) => out.push({ level, text, unitId });
@@ -4818,6 +5129,7 @@ function designChecks(project = state.project) {
     if (big.length) add("e", `${u.code} ${u.name}: ${big.slice(0, 3).join("، ")} — أكبر من أي لوح (لحد 366×183 أو 280×207). قسّم الوحدة لوحدتين أو صغّر المقاس.`, u.id);
     if (thin.length) add("w", `${u.code} ${u.name}: شرايح رفيعة قوي ${thin.slice(0, 2).join("، ")} — صعب تتقص على المنشار، الأحسن بروفايل أو تزوّد الفيلر.`, u.id);
   }
+  swingChecks(items, add, room, label);
   // overlaps (same height band)
   const band = (it) => (it.row === "upper" ? [140, 230] : it.row === "lower" ? [0, 90] : it.row === "free" ? [0, 80] : [0, 240]);
   for (let i = 0; i < items.length; i++) for (let j = i + 1; j < items.length; j++) {
@@ -6483,6 +6795,7 @@ async function boot() {
     return;
   }
   if (!db || !cloud.me) { setCloud("local"); return; }
+  myLibPull();
   // owner: pull the newest copy of this project from the cloud, else upload the local one
   try {
     const ref = db.doc(`data/users/${cloud.me}/p_${state.project.id}`);
@@ -6515,4 +6828,4 @@ render = function (refit) { _render(refit); if (state.project.id !== lastPid) { 
 boot();
 matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", () => { applyLook(); view.update(); });
 applyLook();
-window.__dbg = { view, plan, R, render: (x) => render(x), get ui() { return ui; }, layout: asmLayout, elev: (u) => unitElevSvg(u), get state() { return state; } };
+window.__dbg = { view, plan, R, render: (x) => render(x), checks: () => designChecks(), merge: (a, b) => mergeInto(a, b), get ui() { return ui; }, layout: asmLayout, elev: (u) => unitElevSvg(u), get state() { return state; } };
