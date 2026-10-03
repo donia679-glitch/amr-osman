@@ -3,7 +3,9 @@
 // ± step, next field, done. It types into the field and fires the same input / change / Enter events
 // the keyboard would, so the rest of the app does not know the difference.
 const SEL = "input[data-numf], input[data-len], input[data-keypad]";
-let on = () => true, pad = null, cur = null, fresh = false, pendingSel = null;
+let on = () => true, pad = null, cur = null, fresh = false, pendingSel = null, closedAt = 0;
+/** true for a moment after the pad closed: the tap that closed it must not also hit what was under it */
+export const justClosed = () => Date.now() - closedAt < 600;
 
 const isTouch = () => matchMedia("(pointer: coarse)").matches || navigator.maxTouchPoints > 0;
 export const active = () => on() && isTouch();
@@ -69,10 +71,17 @@ function show(t) {
   document.documentElement.style.setProperty("--kpad-h", pad.offsetHeight + "px");
   setTimeout(() => t.scrollIntoView?.({ block: "center", behavior: "smooth" }), 60);
 }
-function hide() {
+function hide(fromKey = false) {
   if (!pad) return;
   pad.classList.remove("on");
   document.body.classList.remove("kpad-on");
+  if (fromKey) closedAt = Date.now();
+  // swallow the click that WebKit sends to whatever is under the finger once the pad is gone
+  if (fromKey) {
+  const eat = (e) => { if (Date.now() - closedAt < 600 && !e.target.closest?.(".kpad")) { e.preventDefault(); e.stopImmediatePropagation(); } document.removeEventListener("click", eat, true); };
+  document.addEventListener("click", eat, true);
+  setTimeout(() => document.removeEventListener("click", eat, true), 650);
+  }
   if (cur) cur.dispatchEvent(new Event("change", { bubbles: true }));
   cur = null;
 }
@@ -103,16 +112,16 @@ function selOf(x) {
 function press(k, b) {
   if (!cur) return;
   b?.classList.add("hit"); setTimeout(() => b?.classList.remove("hit"), 120);
-  if (k === "close") { cur.blur(); hide(); return; }
+  if (k === "close") { closedAt = Date.now(); cur.blur(); hide(true); return; }
   if (k === "next") {
     const t = cur;
     const all = t.closest("#survey") ? [] : fields(), i = all.indexOf(t); // before the change re-draws the panel
     const nx = all[i + 1], sel = nx && selOf(nx);
     t.dispatchEvent(new Event("change", { bubbles: true }));
     // the survey moves on itself on Enter; elsewhere: the next field, or close
-    if (t.hasAttribute("data-kpsolo")) { t.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true })); hide(); return; }
+    if (t.hasAttribute("data-kpsolo")) { t.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true })); hide(true); return; }
     if (t.closest("#survey")) { t.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true })); return; }
-    if (!nx) { t.blur(); hide(); return; }
+    if (!nx) { closedAt = Date.now(); t.blur(); hide(true); return; }
     pendingSel = sel;
     const live = nx.isConnected ? nx : sel && document.querySelector(sel);
     if (live) { live.focus(); live.select?.(); }

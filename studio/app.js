@@ -3607,8 +3607,19 @@ $("#pop").addEventListener("click", (e) => {
   renderLib();
 }, true);
 $("#pop").addEventListener("keydown", (e) => { if (ui.pop === "mysave" && e.key === "Enter" && e.target.matches("#myName,#myGroup")) $("#pop [data-myok]")?.click(); });
+// the backdrop closes the pop only for a real tap on it: finger down AND up on the backdrop itself, with no
+// field in use — so a tap that closes the number pad, a picker, or the system keyboard never closes the pop too
+let popDownBg = false, popDownAt = 0;
+$("#pop").addEventListener("pointerdown", (e) => { popDownBg = e.target.id === "pop"; popDownAt = Date.now(); }, true);
 $("#pop").addEventListener("click", async (e) => {
-  if (e.target.id === "pop" || e.target.closest("[data-close]")) { ui.pop = null; renderPop(); return; }
+  if (e.target.id === "pop") {
+    const busy = document.body.classList.contains("kpad-on") || Keypad.justClosed?.() || (document.activeElement && document.activeElement !== document.body && $("#pop").contains(document.activeElement) && document.activeElement.matches("input,select,textarea"));
+    const real = popDownBg && Date.now() - popDownAt < 1500;
+    popDownBg = false;
+    if (busy || !real) { document.activeElement?.blur?.(); return; }
+    ui.pop = null; renderPop(); return;
+  }
+  if (e.target.closest("[data-close]")) { ui.pop = null; renderPop(); return; }
   const b = e.target.closest("button");
   if (!b) return;
   const d = b.dataset;
