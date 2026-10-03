@@ -214,7 +214,7 @@ async function cloudSave() {
   cloud.dirty = false;
   const p = state.project;
   try {
-    await cloud.db.doc(`data/users/${cloud.me}/p_${p.id}`).set({ name: p.name, units: p.units, room: p.room || null, mats: p.mats || [], stages: p.stages || null, survey: p.survey || null, variants: p.variants || null, variant: p.variant || null, updatedAt: new Date().toISOString() });
+    await cloud.db.doc(`data/users/${cloud.me}/p_${p.id}`).set({ name: p.name, units: p.units, room: p.room || null, mats: p.mats || [], stages: p.stages || null, survey: p.survey || null, variants: p.variants || null, variant: p.variant || null, approval: p.approval || null, quoteTotal: p.quoteTotal || 0, clientOpts: p.clientOpts || null, views: p.views || null, updatedAt: new Date().toISOString() });
     setCloud(cloud.dirty ? "pending" : "saved");
   } catch (e) {
     setCloud(e?.code === "quota_exceeded" ? "full" : "error");
@@ -1037,12 +1037,25 @@ function stepDone(k) {
   if (k === "cut" || k === "parts") return !!p.stockTaken || !!p.stages?.cut?.done;
   return !!p.stockTaken || (p.stages && Object.keys(p.stages).length > 1);
 }
+/** one short line under each step: what is there already */
+function stepStatus(k) {
+  const p = state.project;
+  if (k === "room") return p.room?.pts?.length ? `${Room.segments(p.room).length} حيطان · ${(p.room.openings || []).length} فتحات` : "لسه";
+  if (k === "design") return p.units.length ? `${p.units.length} وحدة${p.units.some((u) => !R(u).ok) ? " · فيها أخطاء" : ""}` : "لسه";
+  if (k === "mats") { const n = p.units.filter((u) => Object.keys(u.libs || {}).length).length; return n ? `${n} من ${p.units.length} بخامات` : "افتراضي"; }
+  if (k === "cut") return cutData?.results ? `${Object.values(cutData.results).reduce((a, r) => a + r.sheets.length, 0)} لوح` : p.units.length ? "اضغط تتحسب" : "لسه";
+  if (k === "parts") { const n = projectPieces(p).length; return n ? `${n} قطعة` : "لسه"; }
+  if (k === "price") { const Q = cutData?.results ? quoteCalc() : null; return Q?.total ? money(Q.total) + " ج" : "لسه"; }
+  if (k === "client") return p.approval?.status === "approved" || ui.ownerApproval?.status === "approved" ? "اعتمد ✓" : ui.sharedAt || p.sharedAt ? "اتبعت" : "لسه";
+  if (k === "shop") { const st = p.stages || {}; const d = Object.values(st).filter((x) => x?.done).length; return d ? `${d} مراحل خلصت` : "لسه"; }
+  return "";
+}
 function renderSteps() {
   const el = $("#steps");
   if (!el) return;
   el.hidden = ui.mode !== "owner";
   const now = stepNow();
-  el.innerHTML = STEPS.map(([k, l], i) => `<button data-step0="${k}" class="${k === now ? "on" : ""} ${stepDone(k) ? "done" : ""}"><b>${stepDone(k) && k !== now ? "✓" : i + 1}</b><span>${l}</span></button>`).join('<i aria-hidden="true"></i>');
+  el.innerHTML = STEPS.map(([k, l], i) => `<button data-step0="${k}" class="${k === now ? "on" : ""} ${stepDone(k) ? "done" : ""}"><b>${stepDone(k) && k !== now ? "✓" : i + 1}</b><span>${l}<small>${esc(stepStatus(k))}</small></span></button>`).join('<i aria-hidden="true"></i>');
   const on = el.querySelector(".on");
   if (on && el.scrollWidth > el.clientWidth) { const r = on.getBoundingClientRect(), b = el.getBoundingClientRect(); if (r.left < b.left || r.right > b.right) on.scrollIntoView({ inline: "center", block: "nearest" }); }
 }
@@ -1577,6 +1590,22 @@ function sceneMode() {
   renderMoveBar(); renderChips();
   if (view.ready) view.update();
 }
+document.querySelector(".stage").addEventListener("click", (e) => {
+  const b = e.target.closest("#presentBar button"); if (!b || !ui.present) return;
+  const d = b.dataset;
+  if (d.pexit !== undefined) { presentTurn(false); presentOff(false); return; }
+  if (d.pview) { const v = (state.project.views || []).find((x) => x.id === d.pview); if (v) { view.cam.position.set(...v.p); view.ctl.target.set(...v.t); view.cam.lookAt(view.ctl.target); view.dirty = true; } return; }
+  if (d.pvp) { view.preset(d.pvp); return; }
+  if (d.popen !== undefined) { ui.presentOpen = !ui.presentOpen; view.setOpen(ui.presentOpen); renderPresent(); return; }
+  if (d.prender !== undefined) { state.render = !state.render; if (!state.render) closeFinal(); save(); view.update(); renderPresent(); return; }
+  if (d.pturn !== undefined) { presentTurn(!ui.presentTurn); renderPresent(); return; }
+  if (d.pfin !== undefined) { presentFinish(d.pfin); return; }
+  if (d.pprice !== undefined) { ui.present.price = !ui.present.price; renderPresent(); return; }
+  if (d.psign !== undefined) { presentSign(); return; }
+  if (d.pkeep !== undefined) { ui.present.orig = clone(state.project.units); ui.present.lib = null; save(); renderPresent(); alertBar("✓ اتثبّت اللون على التصميم."); return; }
+});
+document.querySelector(".stage").addEventListener("pointerdown", (e) => { if (e.target.closest("#presentBar")) e.stopPropagation(); }, true);
+addEventListener("keydown", (e) => { if (e.key !== "Escape" || !ui.present || e.target.closest?.("input,textarea,select")) return; const sg = $("#presentSign"); if (sg && !sg.hidden) { sg.hidden = true; sg.innerHTML = ""; return; } presentTurn(false); presentOff(false); });
 addEventListener("keydown", (e) => { if (e.key === "Escape" && ui.moveMode && !e.target.closest?.("input,textarea,select")) sceneMode(); });
 $("#movebar").addEventListener("click", (e) => { if (e.target.closest("[data-moveoff]")) sceneMode(); });
 $("#fsBtn").addEventListener("click", () => {
@@ -1613,6 +1642,7 @@ $("#home").addEventListener("click", async (e) => {
   if (b.hasAttribute("data-hsurvey")) { svFrom = "home"; SurveyUI.open("list"); return; }
   if (d.hsv) { svFrom = "home"; await openProject(d.hsv, true); SurveyUI.open("steps"); return; }
   if (b.hasAttribute("data-hdefs")) { ui.pop = "defaults"; renderPop(); return; }
+  if (b.hasAttribute("data-hbrand")) { ui.pop = "brand"; renderPop(); return; }
   if (d.hf) { ui.homeF = d.hf; showHome(); return; }
   if (b.hasAttribute("data-hlook")) { ui.pop = "look"; renderPop(); return; }
   if (b.hasAttribute("data-habout")) { ui.pop = "about"; renderPop(); return; }
@@ -2214,7 +2244,7 @@ function renderChips() {
   if (r.ok && (r.movers?.length || state.whole)) v += `<button class="chip tog ${ui.open ? "on" : ""}" data-open>${ui.open ? "اقفل الضلف" : "افتح الضلف"}</button>`;
   if (state.project.units.length > 1 || state.project.room) v += `<button class="chip tog ${state.whole ? "on" : ""}" data-whole>${ICON.lib}المشروع كله</button>`;
   v += `<button class="chip tog ${ui.inspOpen || ui.explode || ui.cut || ui.hideCls?.size || ui.hidePart?.size ? "on" : ""}" data-insp>🔍 فك وشوف من جوه</button>`;
-  v += `<button class="chip tog ${state.render ? "on" : ""}" data-render>✦ ريندر واقعي</button>`;
+  v += `<button class="chip tog ${state.render ? "on" : ""}" data-render>✦ ريندر واقعي</button><button class="chip" data-present>🖥 عرض للعميل</button>`;
   if (state.render) v += `<button class="chip tog ${ui.sceneOpen ? "on" : ""}" data-scene>☀ المشهد والإضاءة</button><button class="chip tog ${ui.pt ? "on" : ""}" data-final>📸 ريندر نهائي</button>`;
   v += `<button class="chip tog" data-shot>احفظ صورة</button>`;
   v += `<button class="chip tog" data-ar>📱 شوفها في الأوضة (AR)</button><button class="chip tog" data-video>🎬 فيديو</button>`;
@@ -2280,6 +2310,7 @@ $("#chips").addEventListener("click", async (e) => {
   if (b.hasAttribute("data-xray")) { state.xray = !state.xray; save(); renderChips(); view.update(); return; }
   if (b.hasAttribute("data-open")) { ui.open = !ui.open; renderChips(); view.setOpen(ui.open); return; }
   if (b.hasAttribute("data-whole")) { state.whole = !state.whole; save(); renderChips(); view.update(true); return; }
+  if (b.hasAttribute("data-present")) { presentOn(); return; }
   if (b.hasAttribute("data-render")) { state.render = !state.render; if (!state.render) { ui.sceneOpen = false; closeFinal(); } save(); renderChips(); renderScene(); view.update(); return; }
   if (b.hasAttribute("data-insp")) { ui.inspOpen = !ui.inspOpen; ui.sceneOpen = false; renderScene(); renderInsp(); renderChips(); return; }
   if (b.hasAttribute("data-scene")) { ui.inspOpen = false; renderInsp(); ui.sceneOpen = !ui.sceneOpen; renderChips(); renderScene(); return; }
@@ -3129,6 +3160,8 @@ props.addEventListener("click", (e) => {
   if (!u || !b) return;
   const d = b.dataset;
   if (b.hasAttribute("data-asm")) { ui.asm = { id: u.id, step: 0 }; ui.planOn = false; render(true); return; }
+  if (b.hasAttribute("data-asmpdf2")) { b.disabled = true; exportAsmBooklet(u.id).catch((err) => alertBar(err.message || "ما كملش")).finally(() => { b.disabled = false; }); return; }
+  if (b.hasAttribute("data-unitdwg2")) { b.disabled = true; exportUnitDrawings(u.id).catch((err) => alertBar(err.message || "ما كملش")).finally(() => { b.disabled = false; }); return; }
   if (b.hasAttribute("data-asmclose")) { ui.asm = null; render(true); return; }
   if (d.asmgo || d.asmto != null) {
     const n = asmPlan(u).length;
@@ -3844,7 +3877,7 @@ const dimTags = {
   },
   target() {
     const u = selUnit();
-    if (!u || ui.mode !== "owner" || state.tab !== "design" || ui.planOn || ui.asm || ui.xdraw || ui.xmove || ui.moveMode || ui.multi || view.final?.active || document.body.classList.contains("fs")) return null; // moving units: the size tags would sit under the finger
+    if (!u || ui.mode !== "owner" || state.tab !== "design" || ui.planOn || ui.asm || ui.xdraw || ui.xmove || ui.moveMode || ui.multi || ui.present || view.final?.active || document.body.classList.contains("fs")) return null; // moving units: the size tags would sit under the finger
     const r = R(u);
     if (!r.ok) return null;
     const d = this.dims(u, r);
@@ -4057,11 +4090,13 @@ function renderPop() {
       <p class="hint">بيراجع التداخل، والخلوص بين الحيطان، والأبواب والشبابيك، ونقط الكهربا والمياه والغاز جنب الوحدات اللي محتاجاها. دوس على أي ملاحظة عشان تروح للوحدة.</p><div class="chklist">${checksHtml(list)}</div></div>`;
   }
   else if (ui.pop === "defaults") h = defaultsPop();
+  else if (ui.pop === "brand") h = brandPop();
   else if (ui.pop === "menu") {
     const it = (k, ic, t, d) => `<button class="mitem" data-menu="${k}"><span class="mic">${ic}</span><span><b>${t}</b><small>${d}</small></span></button>`;
     h = `<div class="popbox menubox" role="dialog" aria-label="القائمة"><div class="libhead"><h2>القائمة</h2><button class="x" data-close aria-label="قفل">×</button></div>
       <h3>المشروع</h3>${it("projects", "📁", "مشاريعي", "افتح مشروع تاني أو ابدأ جديد")}${it("export", "⬆", "تصدير وطباعة", "الملصقات، خطة القص، CNC، عرض السعر، سكتش أب")}${it("survey", "📐", "رفع مقاسات", "شاشة الرفع في الموقع خطوة بخطوة")}${it("studio", "✏️", "ورشة الرسم", "صمّم أي قطعة أو وحدة من الصفر برسم 3D حر")}
-      <h3>الإعدادات</h3>${it("defaults", "⚙", "الإعدادات الافتراضية", "مقاسات الوحدات، التصنيع، التسعير، القص — مرة واحدة لكل المشاريع")}${it("look", "🎨", "الألوان والمظهر والكيبورد", "فاتح/غامق، لون التطبيق، كيبورد الأرقام")}
+      ${it("present", "🖥", "وضع العرض للعميل", "شاشة نظيفة: الريندر، الألوان البديلة، السعر، والاعتماد بالتوقيع")}
+      <h3>الإعدادات</h3>${it("brand", "🏷", "هوية المصنع", "اللوجو والاسم والتليفون والشروط على كل الأوراق")}${it("defaults", "⚙", "الإعدادات الافتراضية", "مقاسات الوحدات، التصنيع، التسعير، القص — مرة واحدة لكل المشاريع")}${it("look", "🎨", "الألوان والمظهر والكيبورد", "فاتح/غامق، لون التطبيق، كيبورد الأرقام")}
       <h3>مساعدة</h3>${it("lang", "🌐", I18n.lang === "en" ? "اللغة: عربي" : "Language: English", I18n.lang === "en" ? "التطبيق كله بالعربي" : "Switch the whole app to English")}${it("tour", "🧭", "الجولة التعريفية", "شرح سريع لكل جزء في الشاشة")}${it("about", "ⓘ", "عن التطبيق", "الإصدار والتواصل")}</div>`;
   }
   else if (ui.pop === "ar") {
@@ -4126,6 +4161,11 @@ $("#pop").addEventListener("input", (e) => {
   if (pv && m.img) { pv.style.backgroundSize = `${Math.max(8, (260 * 60) / Math.max(5, m.tile))}px`; pv.style.filter = `brightness(${1 + m.bright / 100})`; }
 });
 $("#pop").addEventListener("change", async (e) => {
+  if (ui.pop === "brand") {
+    const t = e.target;
+    if (t.hasAttribute("data-brandlogo")) { await brandLogo(t.files?.[0]); renderPop(); return; }
+    if (t.dataset.brand) { brandSet(t.dataset.brand, t.value); if (t.type === "color") renderPop(); return; }
+  }
   if (ui.pop === "defaults") {
     const t = e.target, d = t.dataset;
     if (d.def) { const num = t.tagName === "INPUT"; setDefault(d.def, num ? (t.value.trim() === "" ? "" : toNum(t.value)) : t.value); }
@@ -4231,6 +4271,7 @@ $("#pop").addEventListener("click", async (e) => {
   if (!b) return;
   const d = b.dataset;
   if (b.hasAttribute("data-opendefs")) { ui.pop = "defaults"; renderPop(); return; }
+  if (ui.pop === "brand" && b.hasAttribute("data-brandlogo-del")) { brandSet("logo", ""); renderPop(); return; }
   if (ui.pop === "menu" && d.menu) {
     const m = d.menu;
     ui.pop = null; renderPop();
@@ -4239,6 +4280,7 @@ $("#pop").addEventListener("click", async (e) => {
     if (m === "survey") { svFrom = "design"; SurveyUI.open("steps"); return; }
     if (m === "studio") { const su = selUnit(); openStudio(su?.params?.model ? su : null); return; }
     if (m === "tour") { state.tourDone = false; startTour(); return; }
+    if (m === "present") { presentOn(); return; }
     if (m === "lang") { await Lib.put(state.project).catch(() => {}); I18n.setLang(I18n.lang === "en" ? "ar" : "en"); return; }
     ui.pop = m; renderPop(); return;
   }
@@ -4433,7 +4475,7 @@ async function openProject(id, quiet = false) {
   if (cloud.db && cloud.me) {
     try {
       const snap = await cloud.db.doc(`data/users/${cloud.me}/p_${id}`).get();
-      if (snap.exists && (!rec || (snap.data().updatedAt || "") > (rec.updatedAt || ""))) { const v = snap.data(); p = { id, name: v.name, units: v.units || [], ...(v.room ? { room: v.room } : {}), mats: v.mats || [], ...(v.stages ? { stages: v.stages } : {}), ...(v.survey ? { survey: v.survey } : {}), ...(v.variants ? { variants: v.variants, variant: v.variant } : rec?.project?.variants ? { variants: rec.project.variants, variant: rec.project.variant } : {}) }; }
+      if (snap.exists && (!rec || (snap.data().updatedAt || "") > (rec.updatedAt || ""))) { const v = snap.data(); p = { id, name: v.name, units: v.units || [], ...(v.room ? { room: v.room } : {}), mats: v.mats || [], ...(v.stages ? { stages: v.stages } : {}), ...(v.survey ? { survey: v.survey } : {}), ...(v.approval ? { approval: v.approval } : {}), ...(v.quoteTotal ? { quoteTotal: v.quoteTotal } : {}), ...(v.clientOpts ? { clientOpts: v.clientOpts } : {}), ...(v.views ? { views: v.views } : {}), ...(v.variants ? { variants: v.variants, variant: v.variant } : rec?.project?.variants ? { variants: rec.project.variants, variant: rec.project.variant } : {}) }; }
     } catch { /* offline: keep the local copy */ }
   }
   if (!p) { alertBar("المشروع ده مش موجود."); return; }
@@ -4488,7 +4530,8 @@ async function showHome() {
   const when = (t) => (t ? new Date(t).toLocaleString("ar-EG", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }) : "");
   const waiting = list.filter((x) => x.srv === "measured" && !x.stages?.design?.done).length;
   const f = ui.homeF || "all", q = (ui.homeQ || "").trim();
-  const shown = list.filter((x) => (f === "all" || (f === "wait" ? x.srv === "measured" && !x.stages?.design?.done : f === "srv" ? x.srv === "measuring" : true)) && (!q || String(x.name).includes(q)));
+  const pf = (x) => { const p = projectPulse(x); return f === "work" ? p.inShop : f === "ok" ? p.waitOk && !p.done : f === "late" ? p.late.length && !p.done : f === "inst" ? p.install && p.install <= dayStr(addDays(new Date(), 7)) : true; };
+  const shown = list.filter((x) => (f === "all" || (f === "wait" ? x.srv === "measured" && !x.stages?.design?.done : f === "srv" ? x.srv === "measuring" : pf(x))) && (!q || String(x.name).includes(q)));
   el.innerHTML = `<div class="homein">
     <div class="homehead"><span class="mark big">N</span><div><b>NOVERA Studio</b><small>تصميم وتصنيع المطابخ والأثاث</small></div></div>
     <h3 class="hsec">ابدأ</h3>
@@ -4499,14 +4542,16 @@ async function showHome() {
       <button class="htile" data-hcut><b>✂ كت ليست سريع</b><small>اكتب مقاسات القطع وخد خطة القص والملصقات</small></button>
     </div>
     <button class="hcont" data-hlast><span>↩</span><span><b>كمّل «${esc(state.project.name)}»</b><small>${state.project.units.length} وحدة · آخر حاجة كنت شغال عليها</small></span></button>
+    ${homeDash(list)}
     <div class="hprojhead"><h3 class="hsec">مشاريعي</h3><input id="homeQ" class="libq" placeholder="🔍 دوّر باسم المشروع" value="${esc(ui.homeQ || "")}">
       <div class="seg hfilt">${[["all", "الكل"], ["wait", `📐 مستني تصميم${waiting ? ` (${waiting})` : ""}`], ["srv", "بيترفع"]].map(([k, l]) => `<button data-hf="${k}" class="${f === k ? "on" : ""}">${l}</button>`).join("")}</div></div>
     <div class="homelist">${shown.map((x) => `<div class="hcard ${x.id === state.project.id ? "cur" : ""}"><button class="hopen" data-hopen="${x.id}"><b>${esc(x.name)}</b>
       ${x.srv === "measured" && !x.stages?.design?.done ? `<span class="hstage svwait">📐 اترفع — مستني تصميم</span>` : x.srv === "measuring" ? `<span class="hstage">📐 الرفع لسه شغال</span>` : x.stages && Object.values(x.stages).some((v) => v?.done) ? `<span class="hstage">🧭 ${esc(stageNow({ stages: x.stages }).cur)}</span>` : ""}
-      <small>${x.units != null ? `${x.units} وحدة · ` : ""}${x.variants > 1 ? `${x.variants} نسخ · ` : ""}${when(x.updatedAt)}${x.where === "cloud" ? " · أونلاين" : x.where === "both" ? " · على الجهاز وأونلاين" : ""}</small></button>
+      ${x.stages ? pulseStrip(x) : ""}
+      <small>${x.units != null ? `${x.units} وحدة · ` : ""}${x.variants > 1 ? `${x.variants} نسخ · ` : ""}${x.total ? `${money(x.total)} ج · ` : ""}${when(x.updatedAt)}${x.where === "cloud" ? " · أونلاين" : x.where === "both" ? " · على الجهاز وأونلاين" : ""}</small></button>
       ${x.srv ? `<button class="hdel sm" data-hsv="${x.id}" title="شاشة الرفع" aria-label="شاشة الرفع">📐</button>` : ""}<button class="hdel sm" data-hdup="${x.id}" title="اعمل نسخة من المشروع" aria-label="نسخة من ${esc(x.name)}">⧉</button><button class="hdel danger sm" data-hdel="${x.id}" aria-label="امسح ${esc(x.name)}">${ICON.trash}</button></div>`).join("") || `<p class="hint">${q || f !== "all" ? "مفيش مشاريع بالبحث ده." : "مفيش مشاريع لسه — ابدأ مشروع جديد."}</p>`}</div>
     <h3 class="hsec">أدوات</h3>
-    <div class="homeacts"><label class="ghost2 filebtn">📂 افتح ملف مشروع<input type="file" id="homeImp" accept=".json,application/json" hidden></label><button class="ghost2" data-hdefs>⚙ الإعدادات الافتراضية</button><button class="ghost2" data-hlook>🎨 المظهر والكيبورد</button><button class="ghost2" data-habout>ⓘ عن التطبيق</button><button class="ghost2" data-hlang data-noi18n>🌐 ${I18n.lang === "en" ? "عربي" : "English"}</button></div>
+    <div class="homeacts"><label class="ghost2 filebtn">📂 افتح ملف مشروع<input type="file" id="homeImp" accept=".json,application/json" hidden></label><button class="ghost2" data-hdefs>⚙ الإعدادات الافتراضية</button><button class="ghost2" data-hbrand>🏷 هوية المصنع</button><button class="ghost2" data-hlook>🎨 المظهر والكيبورد</button><button class="ghost2" data-habout>ⓘ عن التطبيق</button><button class="ghost2" data-hlang data-noi18n>🌐 ${I18n.lang === "en" ? "عربي" : "English"}</button></div>
     <p class="hint">المشاريع بتتحفظ لوحدها وانت شغال. خد نسخة احتياطي من ☰ ← تصدير ← نسخة من المشروع.</p></div>`;
 }
 async function refreshProjects() {
@@ -6247,6 +6292,8 @@ function drawShop() {
     <section class="mgroup"><div class="mg-h"><h3>العميل</h3>${appr?.status === "approved" ? `<span class="pill">${ICON.check} اتعمد ${appr.at ? new Date(appr.at).toLocaleDateString("ar-EG") : ""}${appr.variantName ? ` — اختار «${esc(appr.variantName)}»` : ""}</span>` : `<span class="pill soft">لسه ما اتعمدش</span>`}</div>
       <p class="hint">بيتبعت نسخة من التصميم دلوقتي. لو عدّلت بعد كده دوس "حدّث النسخة المبعوتة".</p>
       ${clientOptsHtml(appr)}
+      <details ${state.project.approval?.sig ? "open" : ""}><summary>✍️ اعتماد على الجهاز (توقيع العميل)${state.project.approval?.sig ? " · ✓" : ""}</summary>${sigPadHtml()}</details>
+      <div class="btnrow"><button class="ghost2" data-present>🖥 وضع العرض للعميل</button></div>
       ${online ? `<div class="btnrow"><button class="primary" data-publish="client">${ICON.share}${ui.sharedAt ? "حدّث النسخة المبعوتة" : "جهّز لينك العميل"}</button></div>
       ${ui.sharedAt ? linkBox(`${APP_URL}#c-${pid}`) : ""}` : `<p class="e">لينك العميل واختيار اللون بالسعر شغالين من نسخة NOVERA أونلاين بس (عشان العميل يفتح نفس التصميم من موبايله). افتحها من هنا وانت مسجّل دخول، وانقل المشروع بـ«تصدير ← نسخة من المشروع» لو مش موجود هناك.</p>${window.noveraNative ? "" : `<div class="btnrow"><a class="primary" style="text-decoration:none" href="${APP_URL}" target="_blank" rel="noopener">افتح NOVERA أونلاين</a></div>`}`}
     </section>
@@ -6262,6 +6309,7 @@ function drawShop() {
   ${stagesHtml()}
   ${quoteHtml()}
   ${stockHtml()}
+  ${purchaseHtml()}
   <section class="mgroup"><div class="mg-h"><h3>معاينة الملصقات</h3><span class="pill soft">${pieces.length} ملصق</span></div><div class="labprev">`;
   const sheets = sheetIndex();
   for (const pc of pieces.slice(0, 24)) {
@@ -6272,12 +6320,17 @@ function drawShop() {
   }
   if (pieces.length > 24) h += `<p class="hint">… و${pieces.length - 24} ملصق تاني في الملف.</p>`;
   el.innerHTML = h + `</div></section>`;
+  sigPadInit(el.querySelector("#sigPad"));
 }
 const linkBox = (url) => `<div class="linkbox"><input readonly value="${esc(url)}" aria-label="اللينك"><button class="ghost2" data-copy="${esc(url)}">انسخ</button></div>`;
 
 $("#v-shop").addEventListener("change", (e) => {
-  setTimeout(settingsPush, 0); // prices are account settings too
   const t = e.target;
+  if (t.dataset.hwstock) { hwStock()[t.dataset.hwstock] = Math.max(0, toNum(t.value) || 0); save(); drawShop(); return; }
+  if (t.dataset.lead) { const P = priceDefaults(); P.lead ??= { ...LEAD_DEF }; P.lead[t.dataset.lead] = Math.max(0, Math.round(toNum(t.value) || 0)); save(); settingsPush(); return; }
+  if (t.dataset.supby !== undefined) { suppliers().supBy[t.dataset.supby] = t.value; save(); settingsPush(); drawShop(); return; }
+  if (t.dataset.supn || t.dataset.supp) { const S = suppliers(), x = S.suppliers.find((q) => q.id === (t.dataset.supn || t.dataset.supp)); if (x) { if (t.dataset.supn) x.name = t.value; else x.phone = t.value; save(); settingsPush(); drawShop(); } return; }
+  setTimeout(settingsPush, 0); // prices are account settings too
   if (t.id === "labelFmt") { state.labelFmt = t.value; save(); return; }
   if (t.hasAttribute?.("data-stockmode")) { state.cutOpts.stockMode = t.value; delete state.cutOpts.useStock; save(); runCut(() => drawShop()); return; }
   if (t.dataset.stsheets) { stockOf(t.dataset.stsheets).sheets = Math.max(0, Math.round(+t.value || 0)); save(); drawShop(); return; }
@@ -6308,6 +6361,18 @@ $("#v-shop").addEventListener("change", (e) => {
 $("#v-shop").addEventListener("click", async (e) => {
   const b = e.target.closest("button");
   if (!b) return;
+  if (b.hasAttribute("data-sigok")) { signApprove(); return; }
+  if (b.hasAttribute("data-sigwipe")) { const c = $("#v-shop #sigPad"); if (c) { c.getContext("2d").clearRect(0, 0, c.width, c.height); delete c.dataset.inked; } return; }
+  if (b.hasAttribute("data-sigclear")) { state.project.approval = null; const st = stagesOf(); if (st.approve?.by && st.approve.by !== "العميل") st.approve = {}; save(); drawShop(); renderSteps(); return; }
+  if (b.hasAttribute("data-present")) { presentOn(); return; }
+  if (b.hasAttribute("data-autosched")) { autoSchedule(); save(); drawShop(); alertBar("📅 اتحطت مواعيد للمراحل الباقية — عدّلها من التواريخ."); return; }
+  if (b.hasAttribute("data-asmpdf2")) { b.disabled = true; exportAsmBooklet(selUnit()?.id).catch((err) => alertBar(err.message || "ما كملش")).finally(() => { b.disabled = false; }); return; }
+  if (b.hasAttribute("data-supadd")) { suppliers().suppliers.push({ id: uid(), name: "", phone: "" }); save(); settingsPush(); drawShop(); $("#v-shop .suprow:last-child input")?.focus(); return; }
+  if (b.dataset.supdel) { const S = suppliers(); S.suppliers = S.suppliers.filter((x) => x.id !== b.dataset.supdel); save(); settingsPush(); drawShop(); return; }
+  if (b.hasAttribute("data-purpdf")) { b.disabled = true; try { await exportPurchasePdf(); } catch (err) { alertBar(err.message || "ما كملش"); } b.disabled = false; return; }
+  if (b.hasAttribute("data-purxlsx")) { b.disabled = true; try { await exportPurchaseXlsx(); } catch (err) { alertBar(err.message || "ما كملش"); } b.disabled = false; return; }
+  if (b.dataset.purcopy) { try { await navigator.clipboard.writeText(purchaseText(b.dataset.purcopy)); alertBar("اتنسخت القايمة — الزقها في واتساب أو رسالة."); } catch { alertBar("ما قدرتش أنسخ"); } return; }
+  if (b.hasAttribute("data-unitdwg")) { b.disabled = true; try { await exportUnitDrawings(selUnit()?.id); } catch (err) { alertBar(err.message || "ما كملش"); } b.disabled = false; return; }
   if (b.dataset.pmode) { priceDefaults().mode = b.dataset.pmode; save(); settingsPush(); drawShop(); return; }
   if (b.dataset.remadd) {
     const k = b.dataset.remadd, w = +document.querySelector(`[data-remw="${CSS.escape(k)}"]`)?.value, hh = +document.querySelector(`[data-remh="${CSS.escape(k)}"]`)?.value;
@@ -6322,7 +6387,7 @@ $("#v-shop").addEventListener("click", async (e) => {
   if (b.dataset.remdel) { const [k, id] = b.dataset.remdel.split("|"); const st = stockOf(k); st.remnants = st.remnants.filter((r) => r.id !== id); save(); runCut(() => drawShop()); return; }
   if (b.hasAttribute("data-buywa")) {
     const P = priceDefaults(), ph = String(P.supplier || "").replace(/[^0-9]/g, "");
-    window.open(`https://wa.me/${ph}?text=${encodeURIComponent(purchaseText())}`, "_blank");
+    window.open(`https://wa.me/${ph}?text=${encodeURIComponent(stockOrderText())}`, "_blank");
     return;
   }
   if (b.hasAttribute("data-stocktake")) { takeStock(!!state.project.stockTaken); alertBar(state.project.stockTaken ? "اتخصم من المخزن واتضافت البواقي الجديدة." : "رجعت الكميات زي ما كانت."); runCut(() => drawShop()); return; }
@@ -6774,6 +6839,32 @@ function designChecks(project = state.project) {
         if (clear < 65) add("w", `${label(o)} فوق البوتجاز على ${n1(clear)} سم بس — الشفاط محتاج 65 سم على الأقل (غاز 75).`, o.id);
       }
     }
+    // ---- v46: more clashes — the hob and the window / door / hood / gas, sockets near water, reach, fridge door, light
+    const onWallRange = (it, sg) => { const fp = Room.footprint(it.pose, it.box).map((q) => (q[0] - sg.A[0]) * sg.d[0] + (q[1] - sg.A[1]) * sg.d[1]); return [Math.min(...fp), Math.max(...fp)]; };
+    const openOn = (it, kind, pad = 0) => { const sg = segs.find((x) => x.id === it.pose.wall); if (!sg) return null; const [lo, hi] = onWallRange(it, sg); return (room.openings || []).find((o) => o.wall === sg.id && o.kind === kind && hi > o.at - pad && lo < o.at + o.w + pad) || null; };
+    if (hobIt) {
+      if (openOn(hobIt, "window")) add("w", `${label(hobIt)} قدام الشباك — الهوا بيطفي الشعلة والستارة قريبة من النار؛ الأحسن الحوض تحت الشباك والبوتجاز على حيطة تانية.`, hobIt.id);
+      if (openOn(hobIt, "door", 30)) add("w", `${label(hobIt)} جنب باب الأوضة على طول — اللي داخل بيخبط في اللي بيطبخ. سيب 40 سم على الأقل.`, hobIt.id);
+      const hoodAbove = kit.some((o) => o.row === "upper" && o.pose.wall === hobIt.pose.wall && (gapOn(hobIt, o) ?? 99) < -5 && /شفاط|hood/i.test(`${prm(o).unit_label || ""} ${o.u.name}`));
+      const hoodPt = pts.some((q) => q.kind === "hood" && Math.hypot(q.w.x - ctr(hobIt)[0], q.w.z - ctr(hobIt)[1]) < 80);
+      if (!hoodAbove && !hoodPt) add("n", `${label(hobIt)}: مفيش شفاط فوق البوتجاز — ضيف «علوية فوق الشفاط» من المكتبة أو نقطة شفاط على الحيطة.`, hobIt.id);
+      const gasPts = pts.filter((q) => q.kind === "gas");
+      if (gasPts.length && !gasPts.some((q) => Math.hypot(q.w.x - ctr(hobIt)[0], q.w.z - ctr(hobIt)[1]) < 100)) add("w", `${label(hobIt)}: مخرج الغاز أبعد من متر عن البوتجاز — الخرطوم مش هيوصل.`, hobIt.id);
+    }
+    if (sinkIt) {
+      const sg = segs.find((x) => x.id === sinkIt.pose.wall);
+      if (sg) { const [lo, hi] = onWallRange(sinkIt, sg); for (const q of pts) if (q.wall === sg.id && ["socket", "socket_counter"].includes(q.kind) && q.at > lo - 30 && q.at < hi + 30 && q.z > 85 && q.z < 140) add("w", `بريزة على ${q.at} سم على ارتفاع ${q.z} — قريبة قوي من الحوض (${label(sinkIt)}). ابعدها 60 سم على الأقل أو حطها على ارتفاع 120+ بغطا.`, sinkIt.id); }
+    }
+    for (const it of kit) {
+      const q = prm(it);
+      if (it.row === "upper") { const top = (+q.wall_mount_height || 140) + (+q.height || 70); if (top > 225 && !(q.led_panel_below === true || q.led_panel_below === "true") && !/سقف/.test(it.u.name)) add("n", `${label(it)}: الرف الأعلى على ${n1(top)} سم — فوق متناول اليد (225). خليها للتخزين الموسمي أو ضيف رف ليفت.`, it.id); }
+      if (q.unit_category === "fridge" && it.pose.wall != null && it.pose.s != null) {
+        const sg = segs.find((x) => x.id === it.pose.wall); const w = it.box.x1 - it.box.x0;
+        if (sg && room.closed && (it.pose.s < 3 || sg.L - it.pose.s - w < 3)) add("n", `${label(it)} لازقة في الركنة — باب التلاجة مش هيفتح أكتر من 90° وأدراجها مش هتطلع. سيب 5–6 سم أو حط فيلر.`, it.id);
+      }
+      if (q.unit_category === "oven" && q.unit_type === "tall" && +q.oven_cavity_bottom_offset > 130) add("n", `${label(it)}: الفرن على ${n1(+q.oven_cavity_bottom_offset)} سم — أعلى من مستوى النظر، الصينية هتبقى فوق الكتف. 70–110 سم أريح.`, it.id);
+      if (it.row === "tall" && it.pose.wall) { const win = openOn(it, "window", 40); const sg = segs.find((x) => x.id === it.pose.wall); if (win && sg) { const [lo, hi] = onWallRange(it, sg); if (!(hi > win.at && lo < win.at + win.w)) add("n", `${label(it)} جنب الشباك — الوحدة الطويلة بتحجب نور الشباك عن الكونتر؛ لو ينفع حطها في آخر الصف البعيد.`, it.id); } }
+    }
     // inner corners with units on both walls and no corner unit → doors and handles clash
     for (let i = 0; i < segs.length; i++) {
       const inc = segs[i], out = segs[(i + 1) % segs.length];
@@ -6873,7 +6964,7 @@ function summaryHtml(u) {
       <span>القطع</span><b>${r.pieces} قطعة</b><span>الشريط</span><b>${r.banding} م</b><span>الوزن التقريبي</span><b>${kg} كجم</b></div>
     <table class="tbl"><thead><tr><th>الخامة</th><th>قطع</th><th>م²</th></tr></thead><tbody>${mats.map(([k, m]) => `<tr><td>${esc(k)}</td><td class="num">${m.n}</td><td class="num">${Math.round(m.area * 100) / 100}</td></tr>`).join("")}</tbody></table>
     ${Object.keys(r.hardware || {}).length ? `<table class="tbl"><thead><tr><th>الهاردوير</th><th>العدد</th></tr></thead><tbody>${Object.entries(r.hardware).map(([k, v]) => `<tr><td>${esc(k)}</td><td class="num">${v}</td></tr>`).join("")}</tbody></table>` : ""}
-    <button class="add" data-asm>${ICON.cube}دليل التجميع خطوة بخطوة</button></details>
+    <button class="add" data-asm>${ICON.cube}دليل التجميع خطوة بخطوة</button><button class="add" data-unitdwg2>📐 رسومات التصنيع للوحدة دي (PDF)</button><button class="add" data-asmpdf2>📘 كتيب التجميع بالصور (PDF)</button></details>
     <details class="elevbox"><summary>📐 مقاسات التركيب (الأرفف والأدراج والضلف)</summary>${(() => { const L = asmLayout(u); return unitElevSvg(u, L) + layoutTables(L); })()}</details>`;
 }
 function asmProps(u) {
@@ -7267,6 +7358,7 @@ function quoteCalc() {
 }
 function quoteHtml() {
   const P = priceDefaults(), Q = quoteCalc();
+  if (Q) state.project.quoteTotal = Math.round(Q.total);
   if (!Q) return `<section class="mgroup"><div class="mg-h"><h3>الأسعار وعرض السعر</h3></div><div class="busy"><span class="spin" aria-hidden="true"></span>بيحسب الألواح…</div></section>`;
   const pin = (k, v, label, step = 1) => `<label class="f"><span>${esc(label)}</span><input type="text" inputmode="decimal" data-numf step="${step}" data-price="${esc(k)}" value="${v ?? ""}"></label>`;
   let h = `<section class="mgroup"><div class="mg-h"><h3>الأسعار وعرض السعر</h3><span class="pill">${money(Q.total)} ج.م</span></div>
@@ -7323,12 +7415,15 @@ async function exportQuotePdf() {
     y += 30;
   });
   y += 14;
-  const termsN = 3 + (P.notes ? 1 : 0);
+  const bterms = String(brand().terms || "").split(/\n/).map((x) => x.trim()).filter(Boolean);
+  const termsN = 3 + (P.notes ? 1 : 0) + bterms.length;
   if (y + 70 + termsN * 24 > LIM + 60) newPage();
   t += `<rect x="50" y="${y}" width="900" height="44" fill="#d9a63a"/><text x="935" y="${y + 29}" font-size="19" font-weight="800" text-anchor="end">الإجمالي</text><text x="70" y="${y + 29}" font-size="20" font-weight="800">${money(Q.total)} ج.م</text>`;
   y += 70;
-  const terms = [`مدة التنفيذ: ${P.delivery}`, `الضمان: ${P.warranty}`, "الأسعار شاملة الخامات والهاردوير والتصنيع والتركيب حسب التصميم المرفق.", ...(P.notes ? [P.notes] : [])];
+  const terms = [`مدة التنفيذ: ${P.delivery}`, `الضمان: ${P.warranty}`, "الأسعار شاملة الخامات والهاردوير والتصنيع والتركيب حسب التصميم المرفق.", ...(P.notes ? [P.notes] : []), ...bterms];
   terms.forEach((x, i) => { t += `<text x="940" y="${y + i * 24}" font-size="14" text-anchor="end">• ${esc(x)}</text>`; });
+  y += terms.length * 24 + 16;
+  if (state.project.approval?.sig) { if (y + 120 > LIM + 60) newPage(); t += sigBlockSvg(y); }
   pages.push(t);
   const bytes = await Exp.pdfFromSvgPages(pages.map((pg, k) => pageFrame(pg, { title: "عرض سعر", page: pages.length > 1 ? k + 1 : 0, pages: pages.length > 1 ? pages.length : 0 })), { title: `عرض سعر — ${state.project.name}` });
   return Exp.deliver(cloud.downloads, `${fileBase()} — عرض سعر.pdf`, bytes);
@@ -7412,12 +7507,11 @@ function pageFrame(inner, { landscape = false, title = "", page = 0, pages = 0 }
   const W = landscape ? 1414 : 1000, H = landscape ? 1000 : 1414;
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" ${PFONT}>
     <rect width="${W}" height="${H}" fill="#fff"/>
-    <rect x="0" y="0" width="${W}" height="64" fill="#123f23"/>
-    <rect x="${W - 60}" y="14" width="36" height="36" rx="8" fill="#d9a63a"/><text x="${W - 42}" y="40" font-size="22" font-weight="700" text-anchor="middle" fill="#123f23">N</text>
-    <text x="${W - 72}" y="40" font-size="20" font-weight="700" fill="#fff" text-anchor="end">NOVERA <tspan fill="#d9a63a">Studio</tspan></text>
+    ${brandHead(W)}
     <text x="${W / 2}" y="40" font-size="20" font-weight="700" fill="#fff" text-anchor="middle">${esc(title)}</text>
     <text x="24" y="40" font-size="15" fill="#cfe0d4" text-anchor="start">${esc(state.project.name)} · ${today()}</text>
     ${inner}
+    ${brandFoot(W, H)}
     <text x="${W / 2}" y="${H - 18}" font-size="13" fill="#777" text-anchor="middle">${pages ? `صفحة ${page} من ${pages}` : ""}</text></svg>`;
 }
 async function pdfOut(pages, name, landscape) {
@@ -8249,13 +8343,14 @@ function stockHtml() {
   h += `</tbody></table></div>`;
   const used = cutData.groups.reduce((s, g) => s + (cutData.results[g.key].stats.remnants_used || 0), 0);
   if (used) h += `<p class="okmsg">${ICON.check}خطة القص بتستخدم ${used} بواقي من المخزن.</p>`;
+  h += hwStockHtml();
   h += `<label class="f"><span>رقم واتساب المورّد (اختياري)</span><input data-pricet="supplier" inputmode="tel" value="${esc(P.supplier || "")}" placeholder="2010xxxxxxxx"></label>
     <div class="btnrow"><button class="primary" data-buywa>🛒 طلب شرا على واتساب</button><button class="ghost2" data-stocktake>${state.project.stockTaken ? "↺ رجّع اللي اتخصم" : "✓ خصم من المخزن (بعد القص)"}</button></div>
     <p class="hint">الخصم بيشيل الألواح والبواقي اللي اتقصت، ويضيف البواقي الجديدة (أكبر من 30×30) للمخزن.</p></section>`;
   ui.buyList = buy;
   return h;
 }
-function purchaseText() {
+function stockOrderText() {
   const P = priceDefaults();
   const lines = [`طلب خامات — ${state.project.name} — ${today()}`, ""];
   for (const [k, n] of ui.buyList || []) lines.push(`• ${k}: ${n} لوح`);
@@ -8281,8 +8376,11 @@ function takeStock(undo) {
       st.sheets = (+st.sheets || 0) + m.sheets;
       st.remnants = st.remnants.filter((r) => !m.added.includes(r.id)).concat(m.removed);
     }
+    for (const [k, q] of Object.entries(rec.hw || {})) hwStock()[k] = Math.round(((+hwStock()[k] || 0) + q) * 100) / 100;
     p.stockTaken = null;
   } else {
+    rec.hw = {};
+    for (const [k, need] of Object.entries(hardwareTotals())) { const have = +hwStock()[k] || 0, take = Math.min(have, need); if (take > 0) { hwStock()[k] = Math.round((have - take) * 100) / 100; rec.hw[k] = take; } }
     for (const g of cutData.groups) {
       const st = stockOf(g.key), res = cutData.results[g.key];
       const full = res.sheets.filter((s) => s.stock !== "remnant").length;
@@ -8322,7 +8420,9 @@ function stagesHtml() {
     h += `<div class="strow ${s.done ? "on" : ""}"><label class="f b"><input type="checkbox" data-stg="${k}" ${s.done ? "checked" : ""}><span>${l}</span></label>
       <input type="date" data-stgdate="${k}" value="${s.done ? s.done.slice(0, 10) : s.plan || ""}" aria-label="التاريخ"><input data-stgby="${k}" value="${esc(s.by || "")}" placeholder="مين" aria-label="المسؤول"></div>`;
   }
-  return h + `</div><p class="hint">العميل بيشوف المرحلة اللي المشروع وصلها من نفس لينك الموافقة${cloud.db ? "" : " (لما يكون فيه حساب أونلاين)"}.</p></section>`;
+  const P = priceDefaults(); P.lead ??= { ...LEAD_DEF };
+  h += `</div><div class="btnrow"><button class="ghost2" data-autosched>📅 جدول تلقائي للمراحل الباقية</button><details class="leadbox"><summary>مدة كل مرحلة (أيام)</summary><div class="leadgrid">${PSTAGES.filter(([k]) => k !== "measure").map(([k, l]) => `<label class="f"><span>${l}</span><input type="text" inputmode="numeric" data-numf data-lead="${k}" value="${P.lead[k] ?? LEAD_DEF[k]}"></label>`).join("")}</div></details></div>`;
+  return h + `<p class="hint">العميل بيشوف المرحلة اللي المشروع وصلها من نفس لينك الموافقة${cloud.db ? "" : " (لما يكون فيه حساب أونلاين)"}.</p></section>`;
 }
 
 // ------------------------------------------------------------------ 7) warranty QR per unit
@@ -8447,6 +8547,459 @@ async function exportVideo() {
   return Exp.deliver(cloud.downloads, `${fileBase()} — فيديو.${type.includes("mp4") ? "mp4" : "webm"}`, blob);
 }
 
+// ================================================================== v46 — brand identity on every export
+/** the factory's identity (name, logo, phone, address, terms): lives with the prices so it syncs with the settings */
+function brand() {
+  const P = priceDefaults();
+  P.brand ??= { address: "", email: "", web: "", slogan: "تصميم وتصنيع المطابخ والأثاث", terms: "", logo: "", color: "#123f23", accent: "#d9a63a" };
+  return { name: P.factory || "NOVERA", phone: P.phone || "", ...P.brand };
+}
+function brandPop() {
+  const B = brand();
+  const tf = (k, label, ph = "") => `<label class="f"><span>${esc(label)}</span><input data-brand="${k}" value="${esc(B[k] || "")}" placeholder="${esc(ph)}"></label>`;
+  return `<div class="popbox defbox" role="dialog" aria-label="هوية المصنع"><div class="libhead"><h2>🏷 هوية المصنع على التصديرات</h2><button class="x" data-close aria-label="قفل">×</button></div>
+    <p class="hint">اللوجو والاسم والتليفون والعنوان بيطلعوا على كل ورقة بتطلع من البرنامج: عرض السعر، الرسومات، الملصقات، قايمة الطلبيات، كتيب التركيب.</p>
+    <div class="brandprev"><div class="bp-head" style="background:${esc(B.color)}">${B.logo ? `<img src="${B.logo}" alt="">` : `<span class="mark big" style="background:${esc(B.accent)}">${esc((B.name || "N")[0])}</span>`}<div><b>${esc(B.name)}</b><small>${esc(B.slogan || "")}</small></div><span class="bp-ph">${esc(B.phone || "")}</span></div></div>
+    <div class="grid2">${tf("name", "اسم المصنع / الشركة", "NOVERA")}${tf("slogan", "سطر تحت الاسم", "تصميم وتصنيع المطابخ والأثاث")}</div>
+    <div class="grid2">${tf("phone", "تليفون / واتساب", "010xxxxxxxx")}${tf("email", "إيميل")}</div>
+    <div class="grid2">${tf("address", "العنوان")}${tf("web", "موقع / صفحة")}</div>
+    <div class="grid2"><label class="f"><span>لون الهوية</span><input type="color" data-brand="color" value="${esc(B.color || "#123f23")}"></label><label class="f"><span>اللون المميز</span><input type="color" data-brand="accent" value="${esc(B.accent || "#d9a63a")}"></label></div>
+    <label class="f"><span>شروط ثابتة في عرض السعر (كل سطر شرط)</span><textarea data-brand="terms" rows="4">${esc(B.terms || "")}</textarea></label>
+    <div class="btnrow"><label class="ghost2 filelike">🖼 ${B.logo ? "غيّر اللوجو" : "ارفع اللوجو"}<input type="file" accept="image/*" data-brandlogo hidden></label>${B.logo ? `<button class="ghost2" data-brandlogo-del>امسح اللوجو</button>` : ""}</div>
+    <p class="hint">اللوجو بيتصغّر لـ 400 بكسل عشان يفضل خفيف. PNG بخلفية شفافة أحسن.</p></div>`;
+}
+function brandSet(k, v) {
+  const P = priceDefaults();
+  if (k === "name") P.factory = v; else if (k === "phone") P.phone = v; else { P.brand ??= {}; P.brand[k] = v; }
+  save(); settingsPush?.();
+}
+async function brandLogo(file) {
+  if (!file) return;
+  const url = await new Promise((res) => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.readAsDataURL(file); });
+  const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; });
+  const s = Math.min(1, 400 / Math.max(img.width, img.height));
+  const c = document.createElement("canvas"); c.width = Math.round(img.width * s); c.height = Math.round(img.height * s);
+  c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+  brandSet("logo", c.toDataURL("image/png"));
+}
+/** header strip of every PDF page */
+function brandHead(W) {
+  const B = brand();
+  const logo = B.logo ? `<image href="${B.logo}" x="${W - 60}" y="10" width="44" height="44" preserveAspectRatio="xMidYMid meet"/>` : `<rect x="${W - 60}" y="14" width="36" height="36" rx="8" fill="${esc(B.accent)}"/><text x="${W - 42}" y="40" font-size="22" font-weight="700" text-anchor="middle" fill="${esc(B.color)}">${esc((B.name || "N")[0])}</text>`;
+  const sub = [B.phone, B.email, B.web].filter(Boolean).join(" · ");
+  return `<rect x="0" y="0" width="${W}" height="64" fill="${esc(B.color)}"/>${logo}
+    <text x="${W - 72}" y="${sub ? 32 : 40}" font-size="${sub ? 18 : 20}" font-weight="700" fill="#fff" text-anchor="end">${esc(B.name)}${B.name === "NOVERA" ? ` <tspan fill="${esc(B.accent)}">Studio</tspan>` : ""}</text>
+    ${sub ? `<text x="${W - 72}" y="52" font-size="12" fill="#cfe0d4" text-anchor="end">${esc(sub)}</text>` : ""}`;
+}
+function brandFoot(W, H) {
+  const B = brand();
+  const t = [B.name, B.address, B.phone].filter(Boolean).join(" · ");
+  return `<text x="${W - 24}" y="${H - 18}" font-size="12" fill="#888" text-anchor="end">${esc(t)}</text>`;
+}
+
+// ================================================================== v46 — shop drawings: one sheet per unit for the workshop
+/** a 2D projection of a unit's parts: plan (x/y) or side (y/z) — boxes with their codes and the overall dimensions */
+function projSvg(u, r, mode, W, H) {
+  const codes = partCodes(u, r);
+  const src = r.meshes ? r.meshes.filter((m) => m.mat !== "hole" && !/كبة|خرم/.test(m.name || "")).map((m) => ({ name: m.name, box: m.box, code: "", front: m.door || m.drawer }))
+    : (r.parts || []).filter((p) => p.box && p.role !== "hole").map((p) => ({ name: p.name, box: p.box, code: codes.get(p) || "", front: p.layer === "front" || p.role === "door" || p.role === "drawer_front" }));
+  if (!src.length) return "";
+  if (r.meshes) { const byName = new Map(); for (const pt of r.parts) if (codes.has(pt)) { const l = byName.get(pt.name) || []; l.push(pt); byName.set(pt.name, l); } const used = new Set(); for (const e of src) { const l = byName.get(e.name) || []; const p = l.find((x) => !used.has(x)) || l[0]; if (p) { used.add(p); e.code = codes.get(p) || ""; } } }
+  // plan: horizontal x, vertical y (front at the bottom) · side: horizontal y (front at the left), vertical z
+  const A = (b) => (mode === "plan" ? [b.x0, b.x1, b.y0, b.y1] : [b.y0, b.y1, b.z0, b.z1]);
+  let u0 = 1e9, u1 = -1e9, v0 = 1e9, v1 = -1e9;
+  for (const e of src) { const [a, b, c, d] = A(e.box); u0 = Math.min(u0, a); u1 = Math.max(u1, b); v0 = Math.min(v0, c); v1 = Math.max(v1, d); }
+  const padL = 30, padR = 70, padT = 30, padB = 46;
+  const s = Math.min((W - padL - padR) / Math.max(u1 - u0, 1), (H - padT - padB) / Math.max(v1 - v0, 1));
+  const ox = padL + ((W - padL - padR) - (u1 - u0) * s) / 2, oy = padT + ((H - padT - padB) - (v1 - v0) * s) / 2;
+  const X = (x) => ox + (x - u0) * s, Y = (y) => oy + (v1 - y) * s;
+  const items = src.map((e) => { const [a, b, c, d] = A(e.box); return { ...e, a, b, c, d, area: (b - a) * (d - c) }; }).sort((p, q) => q.area - p.area);
+  let g = "", labels = "";
+  const seen = new Map();
+  for (const it of items) {
+    const k = [it.a, it.b, it.c, it.d].map((v) => Math.round(v * 2) / 2).join("|");
+    const dup = seen.get(k);
+    if (dup) { dup.n++; continue; }
+    seen.set(k, { n: 1, it });
+    const w = Math.max((it.b - it.a) * s, 0.8), h = Math.max((it.d - it.c) * s, 0.8);
+    g += `<rect x="${X(it.a).toFixed(1)}" y="${Y(it.d).toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" fill="${it.front ? "rgba(31,109,61,.12)" : "rgba(236,229,214,.55)"}" stroke="${it.front ? "#1f6d3d" : "#5a554b"}" stroke-width="${it.front ? 1.1 : 0.7}"${it.front ? ' stroke-dasharray="5 3"' : ""}/>`;
+  }
+  for (const { n, it } of seen.values()) {
+    const w = (it.b - it.a) * s, h = (it.d - it.c) * s;
+    if (!it.code || w < 26 || h < 11) continue;
+    const t = it.code.split("-").pop() + (n > 1 ? ` ×${n}` : "");
+    labels += `<text x="${(X(it.a) + w / 2).toFixed(1)}" y="${(Y(it.d) + h / 2 + 4).toFixed(1)}" font-size="${Math.min(11, h * 0.6).toFixed(1)}" text-anchor="middle" font-weight="700" fill="#123f23" paint-order="stroke" stroke="#fff" stroke-width="2.5">${esc(t)}</text>`;
+  }
+  // overall dimension lines
+  const dim = (x1, y1, x2, y2, txt, vert) => `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#333" stroke-width="0.8"/><line x1="${x1}" y1="${y1 - (vert ? 0 : 4)}" x2="${x1 - (vert ? 4 : 0)}" y2="${y1 + (vert ? 0 : 4)}" stroke="#333" stroke-width="0.8"/><line x1="${x2}" y1="${y2 - (vert ? 0 : 4)}" x2="${x2 - (vert ? 4 : 0)}" y2="${y2 + (vert ? 0 : 4)}" stroke="#333" stroke-width="0.8"/>` +
+    (vert ? `<text x="${x1 + 6}" y="${(y1 + y2) / 2 + 4}" font-size="12" font-weight="700">${txt}</text>` : `<text x="${(x1 + x2) / 2}" y="${y1 + 15}" font-size="12" font-weight="700" text-anchor="middle">${txt}</text>`);
+  g += dim(X(u0), Y(v0) + 14, X(u1), Y(v0) + 14, n1(u1 - u0), false);
+  g += dim(X(u1) + 14, Y(v1), X(u1) + 14, Y(v0), n1(v1 - v0), true);
+  const cap = mode === "plan" ? "مسقط (من فوق) — الواجهة تحت" : "قطاع جانبي — الواجهة شمال";
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}"><rect width="${W}" height="${H}" fill="#fff" stroke="#ddd" stroke-width="0.6"/><text x="${W - 8}" y="18" font-size="12" fill="#666" text-anchor="end">${cap}</text>${g}${labels}</svg>`;
+}
+async function exportUnitDrawings(only = null) {
+  ensureCodes(state.project);
+  const units = state.project.units.filter((u) => R(u).ok && (!only || u.id === only));
+  if (!units.length) throw new Error("مفيش وحدات سليمة ترسمها");
+  const pages = [];
+  const W = 1414;
+  for (const u of units) {
+    const r = R(u), codes = partCodes(u, r), p = r.params || {};
+    const front = unitElevSvg(u, undefined, { W: 640, H: 560, print: true });
+    let t = `<text x="${W - 30}" y="100" font-size="24" font-weight="800" text-anchor="end"><tspan fill="#1f6d3d">${esc(u.code)}</tspan>  ${esc(u.name)}</text>
+      <text x="${W - 30}" y="126" font-size="14" fill="#555" text-anchor="end">${esc(r.label || "")} · ${esc(dimsText(u, r))} · ${r.pieces} قطعة · ${r.doors} ضلفة · ${r.drawers} درج${p.unit_type === "wall" ? ` · تعليق من الأرض ${n1(+p.wall_mount_height || 140)} سم` : ""}${p.include_toe_kick === true || p.include_toe_kick === "true" ? ` · سكلو ${n1(+p.toe_kick_height || 10)} سم` : ""}</text>`;
+    if (front) t += `<text x="360" y="150" font-size="13" fill="#666" text-anchor="middle">الواجهة — كل القطع بأرقامها</text>` + nest(front.replace("<svg ", '<svg xmlns="http://www.w3.org/2000/svg" '), 40, 156, 640, 560);
+    t += nest(projSvg(u, r, "plan", 620, 290), 754, 150, 620, 290) + nest(projSvg(u, r, "side", 620, 290), 754, 452, 620, 290);
+    // hardware list: right column of page 1
+    const hw = Object.entries(r.hardware || {});
+    if (hw.length) {
+      t += `<text x="1374" y="770" font-size="15" font-weight="700" text-anchor="end">الهاردوير</text>`;
+      hw.slice(0, 9).forEach(([k, q], i) => { t += `<text x="1374" y="${792 + i * 20}" font-size="12.5" text-anchor="end">${esc(k)}: <tspan font-weight="700">${n1(q)}</tspan></text>`; });
+      if (hw.length > 9) t += `<text x="1374" y="${792 + 9 * 20}" font-size="12" fill="#777" text-anchor="end">و${hw.length - 9} صنف تاني في قايمة الطلبيات</text>`;
+    }
+    // parts table: left of the hardware on page 1, full width on the pages after
+    const rows = r.parts.filter((pt) => pt.cut_piece && pt.label).map((pt) => [codes.get(pt), pt.name, `${n1(pt.label.w)} × ${n1(pt.label.h)} × ${n1(pt.label.t)}`, r.names[pt.material] || pt.material, bandText(pt), pt.label.groove ? "مفحار" : ""]);
+    const frac = [[0, "الكود"], [0.1, "القطعة"], [0.42, "المقاس (ع × ط × سمك)"], [0.6, "الخامة"], [0.8, "شريط"], [0.92, "ملاحظة"]];
+    let x1 = hw.length ? 1000 : 1374, y = 740;
+    const cols = () => frac.map(([f, l]) => [x1 - f * (x1 - 40), l]);
+    const head = () => { t += `<rect x="40" y="${y - 18}" width="${x1 - 40}" height="26" fill="#123f23"/>`; for (const [x, l] of cols()) t += `<text x="${x}" y="${y}" font-size="12.5" font-weight="700" fill="#fff" text-anchor="end">${esc(l)}</text>`; y += 24; };
+    head();
+    rows.forEach((rw, i) => {
+      if (y > 968) { pages.push({ title: `رسومات التصنيع — ${u.code}`, svg: t }); t = `<text x="${W - 30}" y="100" font-size="20" font-weight="800" text-anchor="end">${esc(u.code)} ${esc(u.name)} — تابع القطع</text>`; x1 = 1374; y = 150; head(); }
+      t += `<rect x="40" y="${y - 15}" width="${x1 - 40}" height="22" fill="${i % 2 ? "#f4f5f0" : "#fff"}"/>`;
+      cols().forEach(([x], k) => { t += `<text x="${x}" y="${y}" font-size="12" text-anchor="end" ${k === 0 ? 'font-weight="700"' : ""}>${esc(String(rw[k] ?? ""))}</text>`; });
+      y += 22;
+    });
+    pages.push({ title: `رسومات التصنيع — ${u.code}`, svg: t });
+  }
+  return pdfOut(pages, only ? `رسومات ${units[0].code}` : "رسومات التصنيع", true);
+}
+const bandText = (pt) => { const b = pt.label?.banded || {}; if (pt.band_all_sides) return "كل الجوانب"; const s = [b.top && "فوق", b.bottom && "تحت", b.left && "شمال", b.right && "يمين"].filter(Boolean); return s.length ? s.join("، ") : "—"; };
+
+// ================================================================== v46 — purchase list (what to buy, by supplier)
+const PUR_CATS = [["boards", "🪵 ألواح"], ["band", "📏 شريط حواف"], ["hw", "🔩 هاردوير وإكسسوارات"], ["stone", "🪨 رخام / كوارتز"], ["glass", "🪟 زجاج ومرايات ومعدن"], ["appl", "🔌 أجهزة"], ["led", "💡 إضاءة"]];
+function suppliers() { const P = priceDefaults(); P.suppliers ??= []; P.supBy ??= {}; return P; }
+function purchaseData() {
+  if (!cutData?.results) return null;
+  const P = priceDefaults();
+  const out = { boards: [], band: [], hw: [], stone: [], glass: [], appl: [], led: [] };
+  for (const g of cutData.groups) {
+    const res = cutData.results[g.key]; if (!res) continue;
+    const n = res.sheets.filter((s) => s.stock !== "remnant").length, rem = res.sheets.length - n;
+    const a = g.parts.reduce((s, p) => s + (p.w * p.h) / 10000, 0);
+    const have = +state.stock?.[g.key]?.sheets || 0, buy = Math.max(0, n - have);
+    out.boards.push({ name: g.key, qty: buy, unit: "لوح", note: `${g.sheet?.w || cutData.opts.sheetW} × ${g.sheet?.h || cutData.opts.sheetH} سم · ${g.parts.length} قطعة · ${n1(a)} م²${rem ? ` · ${rem} من البواقي` : ""}${have ? ` · محتاج ${n} وعندك ${have} في المخزن` : ""}`, price: +P.sheets?.[g.key] || +P.defaultSheet || 0 });
+  }
+  const bandBy = new Map();
+  for (const pc of projectPieces(state.project)) {
+    const b = pc.lb.banded || {}, all = pc.pt.band_all_sides;
+    const m = ((all || b.left) ? pc.lb.h : 0) + ((all || b.right) ? pc.lb.h : 0) + ((all || b.top) ? pc.lb.w : 0) + ((all || b.bottom) ? pc.lb.w : 0);
+    if (m <= 0) continue;
+    const k = `${pc.mname} — ${Math.round(pc.lb.t * 10)} مم`;
+    bandBy.set(k, (bandBy.get(k) || 0) + m / 100);
+  }
+  for (const [k, m] of bandBy) out.band.push({ name: `شريط ${k}`, qty: Math.ceil(m * 1.05), unit: "م", note: `${n1(m)} م + 5% · عرض ${Math.round(+String(k.match(/(\d+) مم/)?.[1] || 18) + 4)} مم`, price: +P.band || 0 });
+  for (const [k, q] of Object.entries(hardwareTotals())) { const have = +hwStock()[k] || 0, buy = Math.max(0, Math.ceil((q - have) * 100) / 100); (/ليد|led/i.test(k) ? out.led : out.hw).push({ name: k, qty: buy, unit: /متر/.test(k) ? "م" : "", note: have ? `محتاج ${n1(q)} وعندك ${n1(have)}` : "", price: +P.hw?.[k] || 0 }); }
+  const outBy = new Map();
+  for (const pc of cutData.outside || []) { const k = pc.mname || "خامة من مورّد"; const o = outBy.get(k) || { a: 0, n: 0, dims: [] }; o.a += (pc.lb.w * pc.lb.h) / 10000; o.n++; o.dims.push(`${n1(pc.lb.w)}×${n1(pc.lb.h)}`); outBy.set(k, o); }
+  for (const [k, o] of outBy) (STONE(Mat.findByName?.(k)?.id) || /رخام|كوارتز|جرانيت|marble|quartz/i.test(k) ? out.stone : out.glass).push({ name: k, qty: Math.round(o.a * 100) / 100, unit: "م²", note: `${o.n} قطعة: ${o.dims.slice(0, 6).join("، ")}${o.dims.length > 6 ? "…" : ""}`, price: +P.out?.[k] || 0 });
+  let ctr = 0; const ctrN = new Set();
+  for (const u of state.project.units) { const r = R(u); if (!r.ok) continue; for (const x of r.meshes || []) if (x.box && /كونتر|countertop/i.test(`${x.name || ""} ${x.mat || ""}`)) { const w = x.box.x1 - x.box.x0, d = x.box.y1 - x.box.y0; ctr += (w > 75 && d > 75 ? w + d - 60 : Math.max(w, d)) / 100; ctrN.add(r.names?.countertop || "كونتر"); } }
+  if (ctr > 0) out.stone.push({ name: `كونتر ${[...ctrN].join(" / ")}`, qty: Math.round(ctr * 100) / 100, unit: "م طولي", note: "بعمق 60 سم — بالتفصيل في المسقط", price: +P.ctr || 0 });
+  for (const u of state.project.units) {
+    const r = R(u); if (!r.ok || u.kind !== "kitchen") continue;
+    const p = r.params || {}, w = +p.width || 60;
+    const add = (name, note) => out.appl.push({ name, qty: 1, unit: "", note: `${u.code} ${u.name} · ${note}` });
+    if (p.unit_category === "fridge") add("تلاجة", `تجويف ${n1(+p.fridge_cavity_width || w - 4)} × ${n1(+p.fridge_cavity_height || 180)} سم`);
+    if (p.unit_category === "oven") { add("فرن بلت إن", `تجويف ${n1(w - 4)} × ${n1(+p.oven_cavity_height || 60)} سم`); if (p.include_microwave === true || p.include_microwave === "true") add("ميكروويف بلت إن", `تجويف ${n1(w - 4)} × ${n1(+p.microwave_cavity_height || 38)} سم`); }
+    if (p.unit_category === "microwave") add("ميكروويف بلت إن", `تجويف ${n1(w - 4)} سم`);
+    if (p.unit_category === "washing_machine") add("غسالة", `تجويف ${n1(w - 4)} سم`);
+    if (p.include_sink_cutout === true || p.include_sink_cutout === "true") add("حوض", `فتحة ${n1(+p.sink_cutout_width || w - 10)} × ${n1(+p.sink_cutout_depth || 45)} سم`);
+    if (/بوتجاز|مسطح|hob/i.test(`${p.unit_label || ""} ${u.name}`)) add("مسطح / بوتجاز بلت إن", `عرض ${n1(w)} سم`);
+    if (/شفاط|hood/i.test(`${p.unit_label || ""} ${u.name}`)) add("شفاط", `عرض ${n1(w)} سم`);
+  }
+  for (const k of Object.keys(out)) out[k].forEach((l) => { l.total = l.price ? l.price * l.qty : 0; });
+  return out;
+}
+function purchaseHtml() {
+  const D = purchaseData();
+  const S = suppliers();
+  if (!D) return `<section class="mgroup"><div class="mg-h"><h3>🛒 قايمة الطلبيات</h3></div><p class="hint">بتتحسب بعد خطة القص (افتح تاب القص مرة).</p></section>`;
+  const supSel = (cat) => `<select data-supby="${cat}"><option value="">— المورّد —</option>${S.suppliers.map((s) => `<option value="${s.id}" ${S.supBy[cat] === s.id ? "selected" : ""}>${esc(s.name)}</option>`).join("")}</select>`;
+  let h = `<section class="mgroup purch"><div class="mg-h"><h3>🛒 قايمة الطلبيات</h3><span class="pill soft">${PUR_CATS.reduce((a, [k]) => a + D[k].length, 0)} صنف</span></div>
+    <p class="hint">كل اللي المشروع محتاجه تشتريه، من خطة القص والهاردوير والأجهزة. حدّد المورّد لكل مجموعة وابعتله القايمة واتساب أو PDF.</p>
+    <details><summary>المورّدين (${S.suppliers.length})</summary><div class="suplist">${S.suppliers.map((s) => `<div class="suprow"><input data-supn="${s.id}" value="${esc(s.name)}" placeholder="الاسم"><input data-supp="${s.id}" inputmode="tel" value="${esc(s.phone || "")}" placeholder="واتساب 2010…"><button class="danger sm" data-supdel="${s.id}">${ICON.trash}</button></div>`).join("")}</div><button class="add" data-supadd>+ مورّد</button></details>`;
+  for (const [cat, label] of PUR_CATS) {
+    const L = D[cat]; if (!L.length) continue;
+    const sup = S.suppliers.find((s) => s.id === S.supBy[cat]);
+    const tot = L.reduce((a, l) => a + l.total, 0);
+    h += `<div class="purcat"><div class="mg-h"><b>${label}</b><span class="purtools">${supSel(cat)}${sup?.phone ? `<a class="ghost2 sm" target="_blank" rel="noopener" href="https://wa.me/${esc(String(sup.phone).replace(/[^0-9]/g, ""))}?text=${encodeURIComponent(purchaseText(cat, D))}">📲 واتساب</a>` : `<button class="ghost2 sm" data-purcopy="${cat}">📋 انسخ</button>`}</span></div>
+      <table class="purt"><thead><tr><th>الصنف</th><th>الكمية</th><th>ملاحظة</th>${tot ? "<th>تقديري</th>" : ""}</tr></thead><tbody>${L.map((l) => `<tr><td>${esc(l.name)}</td><td class="num">${n1(l.qty)} ${esc(l.unit)}</td><td class="hint">${esc(l.note || "")}</td>${tot ? `<td class="num">${l.total ? money(l.total) : "—"}</td>` : ""}</tr>`).join("")}</tbody></table></div>`;
+  }
+  h += `<div class="btnrow"><button class="primary" data-purpdf>🧾 قايمة الطلبيات PDF</button><button class="ghost2" data-purxlsx>Excel</button></div></section>`;
+  return h;
+}
+function purchaseText(cat, D = purchaseData()) {
+  const B = brand(), label = PUR_CATS.find(([k]) => k === cat)?.[1] || "";
+  const L = D?.[cat] || [];
+  return [`${B.name} — طلبية ${label.replace(/^\S+\s/, "")}`, `مشروع: ${state.project.name} · ${today()}`, "", ...L.map((l, i) => `${i + 1}. ${l.name}: ${n1(l.qty)} ${l.unit}${l.note ? ` (${l.note})` : ""}`), "", B.phone ? `للتواصل: ${B.phone}` : ""].join("\n");
+}
+async function exportPurchasePdf() {
+  await cutReady();
+  const D = purchaseData(); if (!D) throw new Error("خطة القص لسه مش جاهزة");
+  const S = suppliers(), pages = [];
+  for (const [cat, label] of PUR_CATS) {
+    const L = D[cat]; if (!L.length) continue;
+    const sup = S.suppliers.find((s) => s.id === S.supBy[cat]);
+    let t = `<text x="940" y="112" font-size="26" font-weight="800" text-anchor="end">طلبية — ${esc(label.replace(/^\S+\s/, ""))}</text>
+      <text x="940" y="140" font-size="15" fill="#555" text-anchor="end">${esc(state.project.name)} · ${today()}${sup ? ` · المورّد: ${esc(sup.name)}${sup.phone ? ` (${esc(sup.phone)})` : ""}` : ""}</text>`;
+    let y = 190;
+    const head = () => { t += `<rect x="50" y="${y - 24}" width="900" height="34" fill="#123f23"/><text x="935" y="${y}" font-size="14" font-weight="700" fill="#fff" text-anchor="end">الصنف</text><text x="560" y="${y}" font-size="14" font-weight="700" fill="#fff" text-anchor="end">الكمية</text><text x="470" y="${y}" font-size="14" font-weight="700" fill="#fff" text-anchor="end">ملاحظة</text><text x="70" y="${y}" font-size="14" font-weight="700" fill="#fff">✓</text>`; y += 30; };
+    head();
+    L.forEach((l, i) => {
+      if (y > 1320) { pages.push({ title: "قايمة الطلبيات", svg: t }); t = ""; y = 120; head(); }
+      t += `<rect x="50" y="${y - 20}" width="900" height="28" fill="${i % 2 ? "#f4f5f0" : "#fff"}"/><text x="935" y="${y}" font-size="14" text-anchor="end">${esc(l.name)}</text><text x="560" y="${y}" font-size="14" font-weight="700" text-anchor="end">${n1(l.qty)} ${esc(l.unit)}</text><text x="470" y="${y}" font-size="11.5" fill="#555" text-anchor="end">${esc((l.note || "").slice(0, 60))}</text><rect x="64" y="${y - 14}" width="14" height="14" fill="none" stroke="#999"/>`;
+      y += 28;
+    });
+    pages.push({ title: "قايمة الطلبيات", svg: t });
+  }
+  if (!pages.length) throw new Error("مفيش حاجة تتشترى");
+  return pdfOut(pages, "قايمة الطلبيات", false);
+}
+async function exportPurchaseXlsx() {
+  await cutReady();
+  const D = purchaseData(); if (!D) throw new Error("خطة القص لسه مش جاهزة");
+  const S = suppliers();
+  const sheets = [];
+  for (const [cat, label] of PUR_CATS) { const L = D[cat]; if (!L.length) continue; const sup = S.suppliers.find((s) => s.id === S.supBy[cat]); sheets.push({ name: label.replace(/^\S+\s/, "").replace(/[\/\\?*[\]:]/g, " ").slice(0, 28), widths: [34, 10, 8, 50, 18, 12], rows: [["الصنف", "الكمية", "الوحدة", "ملاحظة", "المورّد", "سعر تقديري"], ...L.map((l) => [l.name, l.qty, l.unit, l.note || "", sup?.name || "", l.total || ""])] }); }
+  return Exp.deliver(cloud.downloads, `${fileBase()} — طلبيات.xlsx`, Exp.xlsx(sheets));
+}
+
+// ================================================================== v46 — timeline: plan dates, auto schedule, home dashboard
+const LEAD_DEF = { measure: 0, design: 3, approve: 3, deposit: 1, cut: 4, build: 8, install: 3, handover: 1 };
+const dayStr = (d) => new Date(d).toISOString().slice(0, 10);
+const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
+/** plan dates for the stages still open, one after the other, from the last finished stage (or today) */
+function autoSchedule(p = state.project, from = null) {
+  const P = priceDefaults(); P.lead ??= { ...LEAD_DEF };
+  const st = stagesOf(p);
+  let cur = from ? new Date(from) : new Date();
+  for (const [k] of PSTAGES) { const s = st[k]; if (s?.done) cur = new Date(Math.max(cur, new Date(s.done))); }
+  for (const [k] of PSTAGES) {
+    const s = (st[k] ??= {});
+    if (s.done) continue;
+    cur = addDays(cur, +P.lead[k] || 0);
+    s.plan = dayStr(cur);
+  }
+}
+/** where a project stands: next stage, its planned date, late or not */
+function projectPulse(x) {
+  const st = x.stages || {};
+  const next = PSTAGES.find(([k]) => !st[k]?.done);
+  const today = dayStr(new Date());
+  const late = PSTAGES.filter(([k]) => !st[k]?.done && st[k]?.plan && st[k].plan < today).map(([, l]) => l);
+  const install = st.install?.done ? null : st.install?.plan || null;
+  const inShop = !!st.cut?.done && !st.install?.done;
+  const waitOk = (!!st.design?.done || (x.units || 0) > 0) && !st.approve?.done;
+  return { next: next ? next[1] : "خلص ✓", nextKey: next?.[0] || null, plan: next ? st[next[0]]?.plan || null : null, late, install, inShop, waitOk, done: !next };
+}
+function homeDash(list) {
+  const today = new Date(), wk = dayStr(addDays(today, 7)), ts = dayStr(today);
+  const P = list.map((x) => ({ x, p: projectPulse(x) }));
+  const inShop = P.filter((o) => o.p.inShop), waitOk = P.filter((o) => o.p.waitOk && !o.p.done), late = P.filter((o) => o.p.late.length && !o.p.done);
+  const inst = P.filter((o) => o.p.install && o.p.install <= wk && o.p.install >= ts);
+  const value = P.filter((o) => !o.p.done).reduce((a, o) => a + (+o.x.total || 0), 0);
+  const tile = (k, n, l, sub, cls = "") => `<button class="dtile ${cls} ${ui.homeF === k ? "on" : ""}" data-hf="${k}"><b>${n}</b><span>${l}</span>${sub ? `<small>${esc(sub)}</small>` : ""}</button>`;
+  return `<div class="dash">
+    ${tile("work", inShop.length, "في الورشة", inShop.slice(0, 2).map((o) => o.x.name).join(" · "))}
+    ${tile("ok", waitOk.length, "مستني اعتماد", waitOk.slice(0, 2).map((o) => o.x.name).join(" · "), waitOk.length ? "warn" : "")}
+    ${tile("inst", inst.length, "تركيب خلال أسبوع", inst.slice(0, 2).map((o) => `${o.x.name} ${o.p.install.slice(5)}`).join(" · "))}
+    ${tile("late", late.length, "متأخر", late.slice(0, 2).map((o) => `${o.x.name}: ${o.p.late[0]}`).join(" · "), late.length ? "bad" : "")}
+    <div class="dtile money"><b>${value ? money(value) : "—"}</b><span>قيمة الشغل الجاري (ج.م)</span><small>${P.filter((o) => !o.p.done).length} مشروع شغال</small></div>
+  </div>`;
+}
+/** the 8-stage strip on a project card */
+function pulseStrip(x) {
+  const st = x.stages || {}, p = projectPulse(x);
+  return `<span class="pulse">${PSTAGES.map(([k, l]) => `<i class="${st[k]?.done ? "on" : st[k]?.plan && st[k].plan < dayStr(new Date()) ? "late" : ""}" title="${esc(l)}${st[k]?.done ? " ✓" : st[k]?.plan ? " " + st[k].plan : ""}"></i>`).join("")}</span><small class="pnext ${p.late.length ? "late" : ""}">${p.done ? "خلص ✓" : `${p.next}${p.plan ? ` · ${p.plan.slice(5).replace("-", "/")}` : ""}${p.late.length ? " · متأخر" : ""}`}</small>`;
+}
+
+// ================================================================== v46 — hardware inventory
+function hwStock() { return (state.hwStock ??= {}); }
+function hwStockHtml() {
+  const need = hardwareTotals(), have = hwStock();
+  const keys = [...new Set([...Object.keys(need), ...Object.keys(have).filter((k) => +have[k] > 0)])];
+  if (!keys.length) return "";
+  let h = `<details class="hwstock"><summary>🔩 مخزن الهاردوير (${Object.keys(need).length} صنف محتاج)</summary><p class="hint">اللي عندك في المخزن من مفصلات ومجاري ومقابض — قايمة الطلبيات بتطرحه، و«خصم من المخزن» بيشيله لما تقص.</p>
+    <div class="tblwrap"><table class="tbl"><thead><tr><th>الصنف</th><th>محتاج</th><th>عندي</th><th>اشتري</th></tr></thead><tbody>`;
+  for (const k of keys) { const n = +need[k] || 0, hv = +have[k] || 0; h += `<tr><td>${esc(k)}</td><td class="num">${n ? n1(n) : "—"}</td><td><input class="pin" type="text" inputmode="decimal" data-numf data-hwstock="${esc(k)}" value="${hv || 0}"></td><td class="num ${n > hv ? "bad" : ""}">${Math.max(0, Math.ceil((n - hv) * 100) / 100) || "—"}</td></tr>`; }
+  return h + `</tbody></table></div></details>`;
+}
+
+// ================================================================== v46 — assembly booklet (pictures per step, for the fitter)
+async function exportAsmBooklet(only = null) {
+  ensureCodes(state.project);
+  if (!view.ready) throw new Error("الـ3D لسه بيحمّل");
+  const units = state.project.units.filter((u) => R(u).ok && (!only || u.id === only));
+  if (!units.length) throw new Error("مفيش وحدات سليمة");
+  const keep = { sel: state.sel, whole: state.whole, asm: ui.asm, xray: state.xray, explode: ui.explode, cut: ui.cut };
+  const pages = [];
+  try {
+    for (const u of units) {
+      const steps = asmPlan(u), r = R(u);
+      state.sel = u.id; state.whole = false; state.xray = false; ui.explode = 0; ui.cut = null;
+      // cover: the finished unit + the steps list
+      ui.asm = null; view.update(true);
+      const cover = view.snapshot(760, 560, true);
+      let t = `<text x="1384" y="104" font-size="26" font-weight="800" text-anchor="end">كتيب التجميع — <tspan fill="#1f6d3d">${esc(u.code)}</tspan> ${esc(u.name)}</text>
+        <text x="1384" y="132" font-size="14" fill="#555" text-anchor="end">${esc(dimsText(u, r))} · ${r.pieces} قطعة · ${steps.length} خطوات</text>
+        <image href="${cover}" x="40" y="150" width="760" height="560"/>`;
+      steps.forEach((s, i) => { t += `<text x="1384" y="${180 + i * 34}" font-size="16" text-anchor="end"><tspan font-weight="800" fill="#1f6d3d">${i + 1}.</tspan> ${esc(s.t)} <tspan fill="#777" font-size="13">(${s.pieces.length} قطعة${s.hardware.length ? ` · ${s.hardware.length} هاردوير` : ""})</tspan></text>`; });
+      t += `<text x="1384" y="${190 + steps.length * 34 + 10}" font-size="13" fill="#777" text-anchor="end">الأرقام على الصور هي أرقام الملصقات على القطع.</text>`;
+      pages.push({ title: `كتيب التجميع — ${u.code}`, svg: t });
+      for (let i = 0; i < steps.length; i++) {
+        const s = steps[i];
+        ui.asm = { id: u.id, step: i }; view.update(true);
+        const img = view.snapshot(760, 560, true);
+        let g = `<text x="1384" y="104" font-size="24" font-weight="800" text-anchor="end"><tspan fill="#1f6d3d">خطوة ${i + 1} من ${steps.length}</tspan> — ${esc(s.t)}</text>
+          <text x="1384" y="128" font-size="13" fill="#555" text-anchor="end">${esc(u.code)} ${esc(u.name)}</text>
+          <image href="${img}" x="40" y="150" width="760" height="560"/>
+          <foreignObject x="830" y="150" width="554" height="200"><div xmlns="http://www.w3.org/1999/xhtml" style="font: 15px/1.7 'IBM Plex Sans Arabic', Arial, sans-serif; direction: rtl; color: #222">${esc(s.d)}</div></foreignObject>`;
+        let y = 380;
+        if (s.pieces.length) {
+          g += `<rect x="830" y="${y - 20}" width="554" height="28" fill="#123f23"/><text x="1374" y="${y}" font-size="13" font-weight="700" fill="#fff" text-anchor="end">الرقم</text><text x="1290" y="${y}" font-size="13" font-weight="700" fill="#fff" text-anchor="end">القطعة</text><text x="980" y="${y}" font-size="13" font-weight="700" fill="#fff" text-anchor="end">المقاس</text>`; y += 26;
+          for (const pc of s.pieces.slice(0, 20)) { g += `<text x="1374" y="${y}" font-size="12.5" font-weight="700" text-anchor="end">${esc(pc.code || "")}</text><text x="1290" y="${y}" font-size="12.5" text-anchor="end">${esc(pc.name)}</text><text x="980" y="${y}" font-size="12.5" text-anchor="end">${n1(pc.lb.w)} × ${n1(pc.lb.h)}</text>`; y += 20; }
+          if (s.pieces.length > 20) { g += `<text x="1374" y="${y}" font-size="12" fill="#777" text-anchor="end">و${s.pieces.length - 20} قطعة تانية</text>`; y += 20; }
+        }
+        if (s.hardware.length) {
+          y += 10; g += `<text x="1374" y="${y}" font-size="14" font-weight="700" text-anchor="end">الهاردوير في الخطوة دي</text>`; y += 22;
+          for (const [k, v] of s.hardware.slice(0, 10)) { g += `<text x="1374" y="${y}" font-size="12.5" text-anchor="end">${esc(k)}: <tspan font-weight="700">${n1(v)}</tspan></text>`; y += 19; }
+        }
+        pages.push({ title: `كتيب التجميع — ${u.code}`, svg: g });
+      }
+    }
+  } finally {
+    Object.assign(state, { sel: keep.sel, whole: keep.whole, xray: keep.xray }); ui.asm = keep.asm; ui.explode = keep.explode; ui.cut = keep.cut;
+    view.update(true);
+  }
+  return pdfOut(pages, only ? `كتيب تجميع ${units[0].code}` : "كتيب التجميع", true);
+}
+
+// ================================================================== v46 — the client signs on the iPad
+function sigPadHtml() {
+  const a = state.project.approval;
+  if (a?.status === "approved" && a.sig) return `<div class="sigdone"><img src="${a.sig}" alt="التوقيع"><div><b>${ICON.check} اعتمد ${esc(a.name || "العميل")}</b><small>${new Date(a.at).toLocaleString("ar-EG")} · ${a.total ? money(a.total) + " ج.م" : ""} · ${a.units} وحدة</small>${a.stale ? `<small class="bad">التصميم اتغيّر بعد الاعتماد — خد اعتماد جديد.</small>` : ""}</div><button class="ghost2 sm" data-sigclear>إلغاء الاعتماد</button></div>`;
+  return `<div class="sigbox"><p class="hint">العميل قاعد معاك؟ يمضي هنا بصباعه على عرض السعر والتصميم الحالي، والتوقيع بيتحفظ في عرض السعر PDF مع التاريخ ورقم النسخة.</p>
+    <input class="signame" data-signame placeholder="اسم العميل" value="${esc(priceDefaults().client || "")}">
+    <canvas id="sigPad" width="600" height="200" aria-label="التوقيع"></canvas>
+    <div class="btnrow"><button class="primary" data-sigok>✍️ اعتمد التصميم وعرض السعر</button><button class="ghost2" data-sigwipe>امسح</button></div></div>`;
+}
+function sigPadInit(c) {
+  if (!c || c.dataset.ready) return;
+  c.dataset.ready = "1";
+  const g = c.getContext("2d");
+  g.lineWidth = 3; g.lineCap = "round"; g.lineJoin = "round"; g.strokeStyle = "#123f23";
+  let last = null;
+  const pt = (e) => { const r = c.getBoundingClientRect(); return [((e.clientX - r.left) / r.width) * c.width, ((e.clientY - r.top) / r.height) * c.height]; };
+  c.addEventListener("pointerdown", (e) => { last = pt(e); c.setPointerCapture(e.pointerId); c.dataset.inked = "1"; e.preventDefault(); });
+  c.addEventListener("pointermove", (e) => { if (!last) return; const p = pt(e); g.beginPath(); g.moveTo(...last); g.lineTo(...p); g.stroke(); last = p; });
+  const up = () => { last = null; };
+  c.addEventListener("pointerup", up); c.addEventListener("pointercancel", up);
+}
+function designHash() { return JSON.stringify(state.project.units.map((u) => [u.kind, u.params, u.libs])).length + ":" + state.project.units.length; }
+function signApprove() {
+  const c = $("#v-shop #sigPad");
+  if (!c?.dataset.inked) { alertBar("خلّي العميل يمضي الأول."); return; }
+  signApproveFrom(c, $("#v-shop [data-signame]")?.value);
+  drawShop();
+}
+/** the signature block at the end of the quote (and a flag if the design changed since) */
+function sigBlockSvg(y) {
+  const a = state.project.approval;
+  if (a?.status !== "approved" || !a.sig) return "";
+  const stale = a.hash && a.hash !== designHash();
+  return `<rect x="50" y="${y}" width="900" height="110" rx="10" fill="#f7f8f3" stroke="#cfd6c9"/><image href="${a.sig}" x="70" y="${y + 8}" width="280" height="94" preserveAspectRatio="xMidYMid meet"/>
+    <text x="930" y="${y + 36}" font-size="16" font-weight="800" text-anchor="end">اعتماد العميل${a.name ? `: ${esc(a.name)}` : ""}</text>
+    <text x="930" y="${y + 62}" font-size="13" fill="#555" text-anchor="end">${new Date(a.at).toLocaleString("ar-EG")} · ${a.no || ""} · ${a.units} وحدة${a.total ? ` · ${money(a.total)} ج.م` : ""}</text>
+    ${stale ? `<text x="930" y="${y + 88}" font-size="13" fill="#b4232c" text-anchor="end">⚠ التصميم اتعدّل بعد الاعتماد ده</text>` : `<text x="930" y="${y + 88}" font-size="13" fill="#1f6d3d" text-anchor="end">✓ مطابق للتصميم الحالي</text>`}`;
+}
+
+// ================================================================== v46 — presentation mode (showroom, in front of the client)
+function presentOn() {
+  if (!view.ready) { alertBar("الـ3D لسه بيحمّل"); return; }
+  ui.present = { orig: clone(state.project.units), lib: null, price: false, tab: state.tab, sel: state.sel };
+  state.sel = null;
+  ui.moveMode = false; ui.multi = null; ui.planOn = false; state.libOpen = false; state.tab = "design";
+  if (state.project.units.length) state.whole = true;
+  document.body.classList.add("present");
+  render(true);
+  renderPresent();
+  view.resize?.();
+  setTimeout(() => view.preset("fit"), 120);
+  if (!state.render) alertBar("💡 دوس «ريندر» لصورة واقعية — وممكن تلف المشهد بصباعك.");
+}
+function presentOff(keepFinish = false) {
+  if (!ui.present) return;
+  if (!keepFinish && ui.present.lib) { state.project.units = ui.present.orig; }
+  state.tab = ui.present.tab || "design"; state.sel = ui.present.sel && state.project.units.some((u) => u.id === ui.present.sel) ? ui.present.sel : state.project.units[0]?.id || null;
+  ui.present = null;
+  document.body.classList.remove("present");
+  $("#presentBar")?.remove();
+  save(); render(true); view.resize?.();
+}
+function renderPresent() {
+  if (!ui.present) return;
+  let bar = $("#presentBar");
+  if (!bar) { bar = document.createElement("div"); bar.id = "presentBar"; bar.className = "presentbar"; $(".stage").appendChild(bar); }
+  const o = state.project.clientOpts || { finishes: [] }, Q = cutData?.results ? quoteCalc() : null, B = brand();
+  const fin = ui.present.lib, delta = fin ? +(o.finishes.find((f) => f.lib === fin)?.delta || 0) : 0;
+  const views = state.project.views || [];
+  bar.innerHTML = `<div class="pb-top"><b>${esc(B.name)}</b><span>${esc(state.project.name)}</span><button class="pb-x" data-pexit aria-label="خروج">✕</button></div>
+    <div class="pb-row">
+      ${views.length ? `<span class="pb-grp">${views.map((v) => `<button data-pview="${v.id}">📷 ${esc(v.name)}</button>`).join("")}</span>` : ""}
+      <span class="pb-grp"><button data-pvp="iso">منظور</button><button data-pvp="front">قدام</button><button data-pvp="fit">الكل</button><button data-popen>${ui.presentOpen ? "🚪 اقفل الضلف" : "🚪 افتح الضلف"}</button><button data-prender class="${state.render ? "on" : ""}">✨ ريندر</button><button data-pturn>${ui.presentTurn ? "⏸ وقّف اللف" : "▶ لف تلقائي"}</button></span>
+      ${o.finishes.length ? `<span class="pb-grp"><button class="${!fin ? "on" : ""}" data-pfin="">اللون الحالي</button>${o.finishes.map((f) => `<button class="${fin === f.lib ? "on" : ""}" data-pfin="${esc(f.lib)}">${esc(f.name || f.lib)}${+f.delta ? ` <small>${+f.delta > 0 ? "+" : ""}${money(+f.delta)}</small>` : ""}</button>`).join("")}</span>` : ""}
+      <span class="pb-grp"><button data-pprice class="${ui.present.price ? "on" : ""}">💰 ${ui.present.price && Q ? `${money(Q.total + delta)} ج.م` : "السعر"}</button><button data-psign class="pb-sign">✍️ اعتمد</button>${fin ? `<button data-pkeep>✓ ثبّت اللون ده</button>` : ""}</span>
+    </div>`;
+}
+function presentFinish(lib) {
+  const p = ui.present; if (!p) return;
+  p.lib = lib || null;
+  state.project.units = lib ? applyFinish(p.orig, lib) : clone(p.orig);
+  view.update(); renderStrip(); renderPresent();
+}
+let presentRaf = 0;
+function presentTurn(on) {
+  ui.presentTurn = on;
+  cancelAnimationFrame(presentRaf);
+  if (!on) return;
+  const step = () => { if (!ui.present || !ui.presentTurn) return; view.orbit(0.25); presentRaf = requestAnimationFrame(step); };
+  step();
+}
+function presentSign() {
+  let box = $("#presentSign");
+  if (!box) { box = document.createElement("div"); box.id = "presentSign"; box.className = "libprev"; document.body.appendChild(box); }
+  box.hidden = false;
+  box.innerHTML = `<div class="lpcard" role="dialog" aria-modal="true"><div class="lphead"><b>✍️ اعتماد التصميم</b><button class="x" data-psx>×</button></div>${sigPadHtml()}</div>`;
+  sigPadInit(box.querySelector("#sigPad"));
+  box.onclick = (e) => {
+    if (e.target === box || e.target.closest("[data-psx]")) { box.hidden = true; box.innerHTML = ""; return; }
+    if (e.target.closest("[data-sigwipe]")) { const c = box.querySelector("#sigPad"); c.getContext("2d").clearRect(0, 0, c.width, c.height); delete c.dataset.inked; return; }
+    if (e.target.closest("[data-sigok]")) { const c = box.querySelector("#sigPad"); if (!c?.dataset.inked) { alertBar("خلّي العميل يمضي الأول."); return; } signApproveFrom(c, box.querySelector("[data-signame]")?.value); box.hidden = true; box.innerHTML = ""; renderPresent(); return; }
+    if (e.target.closest("[data-sigclear]")) { state.project.approval = null; save(); box.hidden = true; box.innerHTML = ""; return; }
+  };
+}
+function signApproveFrom(c, name) {
+  const Q = cutData?.results ? quoteCalc() : null;
+  const delta = ui.present?.lib ? +(state.project.clientOpts?.finishes?.find((f) => f.lib === ui.present.lib)?.delta || 0) : 0;
+  state.project.approval = { status: "approved", at: new Date().toISOString(), name: (name || "").trim(), sig: c.toDataURL("image/png"), total: (Q?.total || 0) + delta, units: state.project.units.length, hash: designHash(), finish: ui.present?.lib || null, no: `Q-${new Date().toISOString().slice(2, 10).replace(/-/g, "")}-${state.project.id.slice(0, 4).toUpperCase()}` };
+  const st = stagesOf(); st.approve = { done: new Date().toISOString(), by: state.project.approval.name || "العميل" };
+  if (ui.present?.lib) { ui.present.orig = clone(state.project.units); ui.present.lib = null; }
+  save(); renderSteps();
+  alertBar("✍️ اتعمد — التوقيع هيطلع في عرض السعر PDF.");
+}
+
 const EXPORTS = [
   ["ar", "شوفها في الأوضة (AR)", "على الآيباد/الآيفون: التصميم بيقف في الأوضة بمقاسه الحقيقي بالكاميرا — تلف حواليه مع العميل.", exportAR],
   ["video", "فيديو عرض التصميم", "فيديو 9 ثواني: الكاميرا بتلف حوالين التصميم والضلف بتتفتح، وفي الآخر لوجو المصنع — للعميل والسوشيال.", exportVideo],
@@ -8456,6 +9009,9 @@ const EXPORTS = [
   ["csv", "قايمة القطع CSV", "ملف بسيط يتفتح في أي برنامج تقطيع (OpenCutList / CutList Optimizer) أو Excel.", exportCsv],
   ["cutpdf", "خطة القص PDF", "رسمة كل لوح بأرقام القطع، وقايمة القطع اللي عليه وترتيب القص — للورشة.", exportCutPdf],
   ["labels", "الملصقات PDF", "ملصق لكل قطعة: الرقم الكبير، الرسمة بالشريط والأخرام، QR وباركود بنفس الرقم.", exportLabelsPdf],
+  ["unitdwg", "رسومات التصنيع لكل وحدة PDF", "ورقة لكل وحدة للورشة: الواجهة بأرقام القطع، المسقط والقطاع بالمقاسات، جدول القطع بالخامة والشريط، والهاردوير.", () => exportUnitDrawings()],
+  ["asmpdf", "كتيب التجميع بالصور PDF", "لكل وحدة: صورة 3D لكل خطوة تجميع (القاعدة، الأجناب، الظهر، الأرفف، الأدراج، الضلف) مع القطع والهاردوير بتاعة الخطوة — للفني في الورشة أو عند العميل.", () => exportAsmBooklet()],
+  ["purchase", "قايمة الطلبيات PDF", "كل اللي تشتريه للمشروع: ألواح بالعدد، شريط بالمتر، هاردوير، رخام وزجاج، أجهزة — مقسّمة بالمورّد وبخانة ✓.", exportPurchasePdf],
   ["drawings", "المساقط والواجهات PDF", "المسقط الأفقي بالمقاسات، وواجهة كل حيطة بالوحدات والشبابيك ونقط الكهربا، وجدول النقط.", exportDrawingsPdf],
   ["asm", "ملخص الوحدات ودليل التجميع PDF", "لكل وحدة: صفحة ملخص (مقاسات، خامات، هاردوير، وزن) وصفحة لكل خطوة تجميع بصورة وأرقام القطع.", () => exportAssemblyPdf()],
   ["cnc", "ملفات CNC بالتخريم (DXF لكل قطعة)", "كل قطعة في ملف بالمليمتر: الحدود، والأخرام والكبب والمفاحير على طبقات باسم القطر والعمق — بتتفتح في برامج المكن (woodWOP · bSolid · Alphacam · الراوتر الصيني) + جدول العمليات.", exportCnc],
@@ -8589,4 +9145,4 @@ if (location.hash === "#survey") { svFrom = "home"; SurveyUI.open("list"); }
 matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", () => { applyLook(); view.update(); });
 applyLook();
 const DEV = location.protocol === "http:" && /^(localhost|127\.0\.0\.1)$/.test(location.hostname);
-if (DEV) window.__dbg = { view, plan, R, render: (x) => render(x), ak: (t) => kitchenProposals(t), applyK: (u) => applyKitchen(u, null), checks: () => designChecks(), merge: (a, b) => mergeInto(a, b), get ui() { return ui; }, layout: asmLayout, libUnit, libSet, thumbs, openStudio: (u, x) => openStudio(u, x), elev: (u) => unitElevSvg(u), get state() { return state; } };
+if (DEV) window.__dbg = { view, plan, R, render: (x) => render(x), ak: (t) => kitchenProposals(t), applyK: (u) => applyKitchen(u, null), checks: () => designChecks(), merge: (a, b) => mergeInto(a, b), get ui() { return ui; }, layout: asmLayout, libUnit, libSet, thumbs, openStudio: (u, x) => openStudio(u, x), exportUnitDrawings, exportPurchasePdf, exportPurchaseXlsx, renderPop, libAdd, exportQuotePdf, exportAsmBooklet, presentOn, presentOff, renderPresent, elev: (u) => unitElevSvg(u), get state() { return state; } };

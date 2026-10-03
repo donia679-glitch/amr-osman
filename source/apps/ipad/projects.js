@@ -31,7 +31,7 @@ const lsSave = (m) => { try { localStorage.setItem(LS, JSON.stringify(m)); } cat
 
 /** survey state for the home list: measured, still measuring (something typed), or none */
 export const srvOf = (sv) => (sv?.status === "measured" ? "measured" : sv?.draft?.walls?.some((w) => +w.L > 0) ? "measuring" : null);
-const summary = (r) => ({ id: r.id, name: r.name, updatedAt: r.updatedAt || "", units: r.project?.units?.length || 0, room: !!r.project?.room, stages: r.project?.stages || null, variants: r.project?.variants?.length || 0, srv: srvOf(r.project?.survey) });
+const summary = (r) => ({ id: r.id, name: r.name, updatedAt: r.updatedAt || "", units: r.project?.units?.length || 0, room: !!r.project?.room, stages: r.project?.stages || null, total: r.project?.quoteTotal || 0, variants: r.project?.variants?.length || 0, srv: srvOf(r.project?.survey) });
 
 /** newest first */
 export async function list() {

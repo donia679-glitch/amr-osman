@@ -38,6 +38,11 @@ cd /home/claude/novera-app && python3 tools/build_pwa.py && python3 tools/build_
 - Kitchen units: base depth 58 includes the door (inset, face at y=0); corner units get their depth from `cornerFit()` in app.js unless set by hand.
 
 ## History (latest first)
+- v46 (phase 1+2 of the "strongest app" plan): brand identity pop (logo/name/phone/terms → every PDF via brandHead/brandFoot); shop drawings per unit (exportUnitDrawings, projSvg);
+  purchase list by supplier (purchaseData/purchaseHtml, suppliers in prices, WhatsApp/PDF/Excel); extra clash checks (hob vs window/door/hood/gas, socket near sink, reach, fridge corner, oven height, tall vs window);
+  step bar status lines (stepStatus); timeline (autoSchedule, P.lead, projectPulse) + home dashboard tiles (homeDash) + pulse strip on cards; hardware stock (state.hwStock, takeStock);
+  assembly booklet PDF (exportAsmBooklet, snapshots per asm step); client e-signature (sigPad*, project.approval, sigBlockSvg in quote); presentation mode (presentOn/Off, #presentBar, finishes, price, sign).
+  Phase 3 still to do: designer by words, usage simulation/work triangle view, lighting plan, live waste hint, machine exports (Cutrite/Ardis/MPR/BPP), appliances catalog, finish compare, in-app barcode scanner, command palette, props levels, studio tool groups.
 - v45: library 3D thumbnails + preview popup (turn, open doors, size/pieces) + quick "＋"; «✨ تصميمات ذكية» sets (library.js `SMART`, added lined up);
   corner unit depth matches the straight units (L legs = depth − door, diagonal cut = leg − depth; L counter/kick to the door face);
   move a unit by holding a gold corner dot (snaps corner-to-corner / wall corners); wall paint in the studio (paint tool + swatches) and "all walls" applies at once;
