@@ -1,0 +1,481 @@
+// =============================================================================
+// CutOptimizer — port of the plugin's lib/cut_optimizer.rb (v182).
+// Guillotine multi-bin packing + deterministic local search. Same inputs give
+// the same plan as the SketchUp plugin (RNG and rounding are Ruby-exact).
+// =============================================================================
+import { RubyRandom } from "../core/rubyRandom.ts";
+import { rround, sortBy, minBy, sum } from "../core/rubyMath.ts";
+
+export type Fit = "bssf" | "baf" | "blsf" | "bl";
+export type Split = "maxarea" | "strips" | "sas" | "minarea" | "las" | "cols";
+
+export interface CutPart {
+  name?: string;
+  w: number;
+  h: number;
+  rotate?: boolean | null;
+}
+
+export interface CutOptions {
+  sheetW: number;
+  sheetH: number;
+  kerf?: number;
+  trim?: number;
+  rotate?: boolean;
+  remnants?: [number, number][];
+  minOffcut?: [number, number];
+  effort?: number;
+  /** seconds; the plugin uses 12. Set Infinity for fully deterministic runs. */
+  timeCap?: number;
+}
+
+export interface Placement {
+  name: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  rotated: boolean;
+  orig_w: number;
+  orig_h: number;
+  index: number;
+}
+export interface Offcut { x: number; y: number; w: number; h: number }
+export interface CutStep {
+  stage: number;
+  dir: "h" | "v";
+  from_w: number;
+  from_h: number;
+  size: number;
+  at: number;
+  x: number;
+  y: number;
+}
+export interface Sheet {
+  stock: "sheet" | "remnant";
+  w: number;
+  h: number;
+  placements: Placement[];
+  offcuts: Offcut[];
+  cuts: CutStep[];
+  util: number;
+}
+export interface CutResult {
+  sheets: Sheet[];
+  oversized: { name: string; w: number; h: number; index: number }[];
+  stats: {
+    sheets: number;
+    remnants_used: number;
+    parts: number;
+    lower_bound: number;
+    utilization: number;
+    runs: number;
+    ms: number;
+    fit: Fit | null;
+    split: Split | null;
+  };
+}
+
+const EPS = 1e-6;
+export const FITS: Fit[] = ["bssf", "baf", "blsf", "bl"];
+export const SPLITS: Split[] = ["maxarea", "strips", "sas", "minarea", "las", "cols"];
+type Item = [number, number, boolean, number]; // w, h, rot, original index
+const ORDERS: ((p: Item) => number)[] = [
+  (p) => -(p[0] * p[1]),
+  (p) => -Math.max(p[0], p[1]) * 1e4 - Math.min(p[0], p[1]),
+  (p) => -Math.min(p[0], p[1]) * 1e4 - Math.max(p[0], p[1]),
+  (p) => -(p[0] + p[1]),
+  (p) => -p[0] * 1e4 - p[1],
+  (p) => -p[1] * 1e4 - p[0],
+];
+
+interface Node {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  cut: ["h" | "v", number] | null;
+  kids: [Node, Node] | null;
+  part: number | null;
+  rotated?: boolean;
+}
+interface Bin {
+  w: number;
+  h: number;
+  stock: "sheet" | "remnant";
+  root: Node;
+  free: Node[];
+  used: number;
+  ids: number[];
+}
+interface Packed {
+  bins: Bin[];
+  full: number;
+  remnants_used: number;
+  sq: number;
+  last_util: number;
+  order?: number[];
+  fit?: Fit;
+  split?: Split;
+}
+interface Ctx {
+  uw: number;
+  uh: number;
+  kerf: number;
+  remnants: [number, number][];
+  min_dim: number;
+}
+
+const now = () => (typeof performance !== "undefined" ? performance.now() : Date.now()) / 1000;
+
+// ------------------------------------------------------------------ API
+const memo = new Map<string, CutResult>();
+
+export function optimize(parts: CutPart[], opts: CutOptions): CutResult {
+  const { timeCap: _t, ...rest } = opts;
+  const key = JSON.stringify([parts.map((p) => [String(p.name ?? ""), +p.w, +p.h, p.rotate ?? null]), rest]);
+  const hit = memo.get(key);
+  if (hit) return hit;
+  const res = compute(parts, opts);
+  while (memo.size > 30) memo.delete(memo.keys().next().value as string);
+  memo.set(key, res);
+  return res;
+}
+
+export function compute(parts: CutPart[], opts: CutOptions): CutResult {
+  const t0 = now();
+  const kerf = opts.kerf ?? 0.4;
+  const trim = opts.trim ?? 0;
+  const rotate = opts.rotate ?? true;
+  const remnants = opts.remnants ?? [];
+  const minOffcut = opts.minOffcut ?? [30, 10];
+  const effort = opts.effort ?? 1.0;
+  const timeCap = opts.timeCap ?? 12;
+
+  const uw = opts.sheetW - 2 * trim;
+  const uh = opts.sheetH - 2 * trim;
+  const list: Item[] = [];
+  const oversized: CutResult["oversized"] = [];
+  parts.forEach((p, i) => {
+    const w = +p.w;
+    const h = +p.h;
+    if (w <= EPS || h <= EPS) return;
+    const rot = rotate && p.rotate !== false;
+    let fits = (w <= uw + EPS && h <= uh + EPS) || (rot && h <= uw + EPS && w <= uh + EPS);
+    fits ||= remnants.some((r) => (w <= r[0] + EPS && h <= r[1] + EPS) || (rot && h <= r[0] + EPS && w <= r[1] + EPS));
+    if (fits) list.push([w, h, rot, i]);
+    else oversized.push({ name: String(p.name ?? ""), w, h, index: i });
+  });
+  const ctx: Ctx = {
+    uw,
+    uh,
+    kerf,
+    remnants: remnants.map((r) => [+r[0], +r[1]]),
+    min_dim: list.length ? Math.min(...list.map((a) => Math.min(a[0], a[1]))) : 1.0,
+  };
+
+  let best: Packed | null = null;
+  let runs = 0;
+  const consider = (order: number[], fit: Fit, split: Split): Packed => {
+    const res = pack(list, order, fit, split, ctx);
+    runs++;
+    if (best === null || better(res, best)) best = { ...res, order, fit, split };
+    return res;
+  };
+
+  if (list.length) {
+    const idx = list.map((_, i) => i);
+    for (const key of ORDERS) {
+      const order = sortBy(idx, (i) => [key(list[i]), i]);
+      for (const f of FITS) for (const s of SPLITS) consider(order, f, s);
+      if (now() - t0 > timeCap * 0.4) break;
+    }
+
+    const rng = new RubyRandom(list.length * 7919 + rround(uw * 100));
+    const budget = rround(effort * Math.min(Math.max(Math.trunc(60000 / Math.max(list.length, 1)), 60), 900));
+    let cur = best as unknown as Packed;
+    const lb = lowerBound(list, ctx);
+    for (let it = 0; it < budget; it++) {
+      if (now() - t0 > timeCap) break;
+      if ((best as unknown as Packed).full <= lb) break;
+      const order = mutate(cur, rng);
+      const fit = rng.float() < 0.85 ? cur.fit! : FITS[rng.int(FITS.length)];
+      const split = rng.float() < 0.85 ? cur.split! : SPLITS[rng.int(SPLITS.length)];
+      const res: Packed = { ...consider(order, fit, split), order, fit, split };
+      if (better(res, cur) || !better(cur, res)) cur = res;
+      if (it % 40 === 0) cur = best as unknown as Packed;
+    }
+  }
+  return finish(best, list, parts, oversized, ctx, trim, minOffcut, runs, now() - t0);
+}
+
+export function lowerBound(list: Item[], ctx: Ctx): number {
+  const area = sum(list.map((a) => a[0] * a[1]));
+  const rem = sum(ctx.remnants.map((r) => r[0] * r[1]));
+  return Math.max(Math.ceil((area - rem) / (ctx.uw * ctx.uh) - 1e-9), 0);
+}
+
+function better(a: Packed, b: Packed): boolean {
+  if (a.full !== b.full) return a.full < b.full;
+  if (a.remnants_used !== b.remnants_used) return a.remnants_used < b.remnants_used;
+  return a.sq > b.sq + 1e-9;
+}
+
+// ------------------------------------------------------------------ search
+function mutate(cur: Packed, rng: RubyRandom): number[] {
+  let order = cur.order!.slice();
+  const n = order.length;
+  if (n < 2) return order;
+  const c = rng.int(10);
+  if (c <= 2) {
+    const weak = minBy(cur.bins, (b) => b.used / (b.w * b.h));
+    if (weak) {
+      const ids = weak.ids;
+      const set = new Set(ids);
+      order = [...rng.shuffle(ids), ...order.filter((x) => !set.has(x))];
+    }
+  } else if (c <= 5) {
+    const i = rng.int(n);
+    const j = rng.int(n);
+    const t = order[i];
+    order[i] = order[j];
+    order[j] = t;
+  } else if (c <= 7) {
+    const i = rng.int(n);
+    const [el] = order.splice(i, 1);
+    order.splice(rng.int(n), 0, el);
+  } else {
+    const i = rng.int(n);
+    const len = Math.min(rng.range(1, Math.max(Math.trunc(n / 4), 2)), n - i);
+    const blk = order.splice(i, len);
+    order.splice(rng.int(order.length + 1), 0, ...blk);
+  }
+  return order;
+}
+
+// ------------------------------------------------------------------ packing
+const node = (x: number, y: number, w: number, h: number): Node => ({ x, y, w, h, cut: null, kids: null, part: null });
+
+function newBin(w: number, h: number, stock: Bin["stock"]): Bin {
+  const root = node(0, 0, w, h);
+  return { w, h, stock, root, free: [root], used: 0, ids: [] };
+}
+
+interface Cand { score: number; rect: Node; pw: number; ph: number; rotated: boolean; bin: Bin }
+
+function pack(list: Item[], order: number[], fit: Fit, split: Split, ctx: Ctx): Packed {
+  const kerf = ctx.kerf;
+  const bins: Bin[] = [];
+  const remLeft = ctx.remnants.slice();
+  for (const pi of order) {
+    const [pw0, ph0, rot] = list[pi];
+    let best: Cand | null = null;
+    bins.forEach((b, bi) => {
+      for (const r of b.free) {
+        best = tryRect(r, pw0, ph0, false, fit, bi, best, b);
+        if (rot) best = tryRect(r, ph0, pw0, true, fit, bi, best, b);
+      }
+    });
+    if (!best) {
+      let cand: { r: [number, number]; i: number } | undefined;
+      remLeft.forEach((r, i) => {
+        const [rw, rh] = r;
+        const ok = (pw0 <= rw + EPS && ph0 <= rh + EPS) || (rot && ph0 <= rw + EPS && pw0 <= rh + EPS);
+        if (ok && (!cand || rw * rh < cand.r[0] * cand.r[1])) cand = { r, i };
+      });
+      let b: Bin;
+      if (cand) {
+        const c = cand as { r: [number, number]; i: number };
+        remLeft.splice(c.i, 1);
+        b = newBin(c.r[0], c.r[1], "remnant");
+      } else {
+        b = newBin(ctx.uw, ctx.uh, "sheet");
+      }
+      bins.push(b);
+      best = tryRect(b.root, pw0, ph0, false, fit, bins.length - 1, null, b);
+      if (rot) best = tryRect(b.root, ph0, pw0, true, fit, bins.length - 1, best, b);
+      if (!best) continue;
+    }
+    place(best, pi, split, kerf, ctx.min_dim);
+  }
+  const full = bins.filter((b) => b.stock === "sheet").length;
+  const utils = bins.map((b) => b.used / (b.w * b.h));
+  const sheetsU = bins.filter((b) => b.stock === "sheet").map((b) => b.used / (b.w * b.h));
+  return {
+    bins,
+    full,
+    remnants_used: bins.length - full,
+    sq: sum(utils.map((u) => u * u)),
+    last_util: sheetsU.length ? Math.min(...sheetsU) : 0,
+  };
+}
+
+function tryRect(r: Node, pw: number, ph: number, rotated: boolean, fit: Fit, bi: number, best: Cand | null, bin: Bin): Cand | null {
+  if (pw > r.w + EPS || ph > r.h + EPS) return best;
+  const lw = r.w - pw;
+  const lh = r.h - ph;
+  const short = lw < lh ? lw : lh;
+  const long = lw < lh ? lh : lw;
+  let score: number;
+  switch (fit) {
+    case "bssf": score = short * 1e4 + long; break;
+    case "blsf": score = long * 1e4 + short; break;
+    case "baf": score = (r.w * r.h - pw * ph) * 1e3 + short; break;
+    default: score = (r.y + ph) * 1e4 + r.x;
+  }
+  score += bi * 1e-3;
+  if (best && best.score <= score) return best;
+  return { score, rect: r, pw, ph, rotated, bin };
+}
+
+function splitHorizontalFirst(split: Split, w: number, h: number, pw: number, ph: number, kerf: number): boolean {
+  const lw = w - pw;
+  const lh = h - ph;
+  switch (split) {
+    case "strips": return true;
+    case "cols": return false;
+    case "sas": return lw < lh;
+    case "las": return lw >= lh;
+    default: {
+      const hBig = Math.max(w * Math.max(lh - kerf, 0), Math.max(lw - kerf, 0) * ph);
+      const vBig = Math.max(Math.max(lw - kerf, 0) * h, pw * Math.max(lh - kerf, 0));
+      return split === "maxarea" ? hBig >= vBig : hBig < vBig;
+    }
+  }
+}
+
+function place(best: Cand, pi: number, split: Split, kerf: number, minDim: number): void {
+  const r = best.rect;
+  const b = best.bin;
+  const { pw, ph } = best;
+  b.free = b.free.filter((f) => f !== r);
+  const fresh: Node[] = [];
+  let piece: Node;
+  if (splitHorizontalFirst(split, r.w, r.h, pw, ph, kerf)) {
+    let strip = r;
+    if (r.h - ph > kerf + EPS) {
+      strip = node(r.x, r.y, r.w, ph);
+      const rest = node(r.x, r.y + ph + kerf, r.w, r.h - ph - kerf);
+      r.cut = ["h", r.y + ph];
+      r.kids = [strip, rest];
+      fresh.push(rest);
+    }
+    piece = strip;
+    if (strip.w - pw > kerf + EPS) {
+      piece = node(strip.x, strip.y, pw, ph);
+      const right = node(strip.x + pw + kerf, strip.y, strip.w - pw - kerf, ph);
+      strip.cut = ["v", strip.x + pw];
+      strip.kids = [piece, right];
+      fresh.push(right);
+    }
+  } else {
+    let col = r;
+    if (r.w - pw > kerf + EPS) {
+      col = node(r.x, r.y, pw, r.h);
+      const rest = node(r.x + pw + kerf, r.y, r.w - pw - kerf, r.h);
+      r.cut = ["v", r.x + pw];
+      r.kids = [col, rest];
+      fresh.push(rest);
+    }
+    piece = col;
+    if (col.h - ph > kerf + EPS) {
+      piece = node(col.x, col.y, pw, ph);
+      const below = node(col.x, col.y + ph + kerf, pw, col.h - ph - kerf);
+      col.cut = ["h", col.y + ph];
+      col.kids = [piece, below];
+      fresh.push(below);
+    }
+  }
+  piece.part = pi;
+  piece.w = pw;
+  piece.h = ph;
+  piece.rotated = best.rotated;
+  for (const f of fresh) if (f.w >= minDim - EPS && f.h >= minDim - EPS) b.free.push(f);
+  b.used += pw * ph;
+  b.ids.push(pi);
+}
+
+// ------------------------------------------------------------------ result
+function finish(
+  best: Packed | null, list: Item[], parts: CutPart[], oversized: CutResult["oversized"], ctx: Ctx,
+  trim: number, minOffcut: [number, number], runs: number, secs: number,
+): CutResult {
+  const sheets: Sheet[] = [];
+  if (best) {
+    for (const b of best.bins) {
+      const places: Placement[] = [];
+      walkParts(b.root, (n) => {
+        const it = list[n.part!];
+        places.push({
+          name: String(parts[it[3]].name ?? ""),
+          x: rround(n.x + trim, 3), y: rround(n.y + trim, 3),
+          w: rround(n.w, 3), h: rround(n.h, 3),
+          rotated: !!n.rotated, orig_w: it[0], orig_h: it[1], index: it[3],
+        });
+      });
+      const [lo, sh] = minOffcut.map(Number).sort((a, b) => b - a);
+      const offcuts: Offcut[] = [];
+      walkLeaves(b.root, (n) => {
+        if (n.part !== null) return;
+        const a = Math.max(n.w, n.h);
+        const c = Math.min(n.w, n.h);
+        if (a >= lo && c >= sh) offcuts.push({ x: rround(n.x + trim, 2), y: rround(n.y + trim, 2), w: rround(n.w, 1), h: rround(n.h, 1) });
+      });
+      const extra = b.stock === "sheet" ? 2 * trim : 0;
+      sheets.push({
+        stock: b.stock,
+        w: rround(b.w + extra, 2),
+        h: rround(b.h + extra, 2),
+        placements: places,
+        offcuts: sortBy(offcuts, (o) => -(o.w * o.h)),
+        cuts: cutSteps(b.root, trim),
+        util: rround(b.used / (b.w * b.h), 4),
+      });
+    }
+  }
+  const area = sum(list.map((a) => a[0] * a[1]));
+  const full = sheets.filter((s) => s.stock === "sheet").length;
+  return {
+    sheets,
+    oversized,
+    stats: {
+      sheets: full,
+      remnants_used: sheets.length - full,
+      parts: list.length,
+      lower_bound: list.length ? lowerBound(list, ctx) : 0,
+      utilization: full > 0 ? rround(area / (full * ctx.uw * ctx.uh), 4) : 0,
+      runs,
+      ms: Math.round(secs * 1000),
+      fit: best ? (best as Packed).fit ?? null : null,
+      split: best ? (best as Packed).split ?? null : null,
+    },
+  };
+}
+
+function walkParts(n: Node, cb: (n: Node) => void): void {
+  if (n.kids) n.kids.forEach((k) => walkParts(k, cb));
+  else if (n.part !== null) cb(n);
+}
+
+function walkLeaves(n: Node, cb: (n: Node) => void): void {
+  if (n.kids) n.kids.forEach((k) => walkLeaves(k, cb));
+  else cb(n);
+}
+
+function cutSteps(root: Node, trim: number): CutStep[] {
+  const steps: CutStep[] = [];
+  const rec = (n: Node, depth: number) => {
+    if (!n.cut) return;
+    const [dir, at] = n.cut;
+    const size = dir === "h" ? at - n.y : at - n.x;
+    steps.push({
+      stage: depth, dir,
+      from_w: rround(n.w, 1), from_h: rround(n.h, 1),
+      size: rround(size, 1), at: rround(at + trim, 2),
+      x: rround(n.x + trim, 2), y: rround(n.y + trim, 2),
+    });
+    n.kids!.forEach((k) => rec(k, depth + 1));
+  };
+  rec(root, 1);
+  return steps;
+}

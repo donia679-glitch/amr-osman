@@ -1,0 +1,14 @@
+{
+  "name": "novera-studio",
+  "version": "1.0.0",
+  "description": "NOVERA Studio app — engine ported from the Kitchen Unit Designer SketchUp plugin (plugin = source of truth)",
+  "type": "module",
+  "scripts": {
+    "parity:gen": "ruby parity/ruby/gen_presets.rb && ruby parity/ruby/dump_cut.rb && ruby parity/ruby/dump_panel.rb 600",
+    "test": "node --test packages/engine/test/cut.parity.test.ts packages/engine/test/panel.parity.test.ts packages/engine/test/sketchup.parity.test.ts packages/engine/test/kitchen.parity.test.ts",
+    "typecheck": "tsc -p tsconfig.json",
+    "parity:kitchen": "OUT=parity/fixtures/kitchen_v188.json ruby parity/ruby/dump_kitchen.rb && python3 parity/compare_kitchen_real.py parity/fixtures/kitchen_v188.json parity/fixtures/kitchen_sketchup.json",
+    "gen:kitchen-config": "ruby parity/ruby/gen_kitchen_config.rb"
+  },
+  "private": true
+}

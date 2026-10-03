@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>الضمان والصيانة</title>
+<style>
+  :root { --brand: #123f23; --gold: #d9a63a; --ink: #18201b; --muted: #5f6b63; --bg: #f3f1ea; --card: #fff; --line: #e1ddd2; }
+  @media (prefers-color-scheme: dark) { :root { --ink: #eef1ec; --muted: #a7b3aa; --bg: #0f1612; --card: #18211b; --line: #2a362e; } }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.6 -apple-system, "IBM Plex Sans Arabic", "Segoe UI", Tahoma, sans-serif; }
+  header { background: var(--brand); color: #fff; padding: 22px 16px 26px; text-align: center; }
+  .mark { display: inline-grid; place-items: center; width: 52px; height: 52px; border-radius: 14px; background: var(--gold); color: var(--brand); font-weight: 800; font-size: 28px; }
+  header h1 { margin: 10px 0 2px; font-size: 22px; }
+  header p { margin: 0; color: #cfe0d4; font-size: 14px; }
+  main { max-width: 560px; margin: -14px auto 30px; padding: 0 16px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 16px; margin-bottom: 12px; }
+  .code { font-size: 30px; font-weight: 800; color: var(--brand); }
+  @media (prefers-color-scheme: dark) { .code { color: var(--gold); } }
+  .kv { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; font-size: 15px; }
+  .kv span { color: var(--muted); }
+  h2 { font-size: 17px; margin: 0 0 8px; }
+  ul { margin: 0; padding-inline-start: 20px; }
+  li { margin: 4px 0; }
+  .btns { display: grid; gap: 10px; }
+  .btn { display: block; text-align: center; text-decoration: none; padding: 14px; border-radius: 14px; font-weight: 700; font-size: 16px; }
+  .btn.p { background: #1f8f4e; color: #fff; }
+  .btn.s { background: transparent; color: var(--ink); border: 1.5px solid var(--line); }
+  .bad { text-align: center; padding: 40px 16px; color: var(--muted); }
+  small { color: var(--muted); }
+</style>
+</head>
+<body>
+<header><span class="mark">N</span><h1 id="f">NOVERA</h1><p>الضمان والصيانة</p></header>
+<main id="m"><div class="bad">بيفتح…</div></main>
+<script>
+(function () {
+  var CARE = {
+    k: ["امسح الضلف والكونتر بقماشة مبلولة ومية وصابون خفيف، ونشّف على طول.", "ما تسيبش مية على الحروف أو جنب الحوض — الرطوبة أكتر حاجة بتبوّظ الخشب.", "استخدم الشفاط وقت الطبخ عشان البخار والدهون ما يتجمعوش على العلويات.", "ما تحطش حاجة سخنة على الكونتر مباشرة — استخدم قاعدة.", "لو ضلفة نزلت أو بقت مش مظبوطة، المفصلات بتتظبط بمفك — أو كلّمنا."],
+    d: ["ما تحملش الشماعة أكتر من طاقتها (حوالي 30 كجم للمتر).", "سيب الضلف تقفل لوحدها — ما تخبطهاش.", "امسح بقماشة ناشفة أو مبلولة سنة، من غير منظفات قوية.", "لو عندك ليد بحساس وما بيشتغلش، اتأكد من الكهربا الأول وبعدين كلّمنا."],
+    b: ["الحمام فيه رطوبة: هوّي المكان بعد الشاور.", "نشّف المية من على السطح والحروف على طول.", "ما تستخدمش منظفات فيها كلور على الخشب أو المراية.", "لو فيه تسريب تحت الحوض اقفل المحبس وكلّمنا فورًا."],
+    f: ["امسح بقماشة ناشفة أو مبلولة سنة.", "بعّدها عن الشمس المباشرة والسخان.", "ما تحطش أحمال تقيلة على الأرفف الطويلة.", "لو مسمار أو مفصلة فكّت، كلّمنا قبل ما تتسع."]
+  };
+  var esc = function (s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); };
+  var m = document.getElementById("m");
+  var d = null;
+  try {
+    var raw = (location.hash.match(/d=([^&]+)/) || [])[1];
+    var b = raw.replace(/-/g, "+").replace(/_/g, "/");
+    d = JSON.parse(decodeURIComponent(escape(atob(b + "===".slice((b.length + 3) % 4)))));
+  } catch (e) { d = null; }
+  if (!d) { m.innerHTML = '<div class="card bad">الكود ده مش مقروء. كلّم المصنع اللي ركّبلك.</div>'; return; }
+  document.getElementById("f").textContent = d.f || "NOVERA";
+  document.title = (d.f || "NOVERA") + " — ضمان " + (d.c || "");
+  var phone = String(d.p || "").replace(/[^0-9+]/g, "");
+  var intl = phone.replace(/^\+/, "").replace(/^0/, "20");
+  var wa = function (t) { return "https://wa.me/" + intl + "?text=" + encodeURIComponent(t); };
+  var care = CARE[d.k] || CARE.f;
+  var h = '<div class="card"><div class="code">' + esc(d.c) + '</div><div style="font-size:18px;font-weight:700">' + esc(d.n) + '</div><small>' + esc(d.pr) + '</small>' +
+    '<div class="kv" style="margin-top:12px">' + (d.dm ? '<span>المقاس</span><b>' + esc(d.dm) + ' سم</b>' : "") + (d.m ? '<span>الخامات</span><b>' + esc(d.m) + '</b>' : "") +
+    '<span>تاريخ التركيب</span><b>' + esc(d.dt) + '</b>' + (d.w ? '<span>الضمان</span><b>' + esc(d.w) + '</b>' : "") + '</div></div>' +
+    '<div class="card"><h2>طريقة الاستعمال والعناية</h2><ul>' + care.map(function (c) { return "<li>" + esc(c) + "</li>"; }).join("") + '</ul></div>';
+  if (phone) {
+    h += '<div class="card btns"><a class="btn p" href="' + wa("طلب صيانة للوحدة " + d.c + " — " + d.n + " (" + d.pr + ")") + '">🛠 اطلب صيانة على واتساب</a>' +
+      '<a class="btn s" href="' + wa("عايز وحدة زي " + d.c + " — " + d.n) + '">✨ عايز وحدة زيها</a>' +
+      '<a class="btn s" href="tel:' + esc(phone) + '">📞 اتصل ' + esc(d.p) + '</a></div>';
+  }
+  h += '<p style="text-align:center"><small>من صناعة ' + esc(d.f || "NOVERA") + ' · NOVERA Studio</small></p>';
+  m.innerHTML = h;
+})();
+</script>
+</body>
+</html>
