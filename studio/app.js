@@ -19,6 +19,8 @@ import * as Lib from "./projects.js";
 import * as Decor from "./decor.js";
 import * as More from "./library.js";
 import * as Obs from "./obstacles.js";
+import * as SurveyUI from "./survey_ui.js";
+import * as Media from "./media.js";
 
 const APP_URL = "https://claude.ai/artifact/EP8c8LmBNS8d3EqLcDioXi";
 const APP_VERSION = "1.0";
@@ -200,7 +202,7 @@ async function cloudSave() {
   cloud.dirty = false;
   const p = state.project;
   try {
-    await cloud.db.doc(`data/users/${cloud.me}/p_${p.id}`).set({ name: p.name, units: p.units, room: p.room || null, mats: p.mats || [], updatedAt: new Date().toISOString() });
+    await cloud.db.doc(`data/users/${cloud.me}/p_${p.id}`).set({ name: p.name, units: p.units, room: p.room || null, mats: p.mats || [], stages: p.stages || null, survey: p.survey || null, updatedAt: new Date().toISOString() });
     setCloud(cloud.dirty ? "pending" : "saved");
   } catch (e) {
     setCloud(e?.code === "quota_exceeded" ? "full" : "error");
@@ -772,7 +774,8 @@ app.innerHTML = `
   <section id="v-work" class="parts" hidden></section>
 </main>
 <div id="pop" class="pop" hidden></div>
-<div id="home" class="home" hidden></div>`;
+<div id="home" class="home" hidden></div>
+<section id="survey" class="sv" hidden></section>`;
 
 $(".tabs").addEventListener("click", (e) => {
   const b = e.target.closest("[data-tab]");
@@ -1305,6 +1308,8 @@ $("#home").addEventListener("click", async (e) => {
     state.project.units.push(u); state.sel = u.id; state.libOpen = false; save(); render(true);
     return;
   }
+  if (b.hasAttribute("data-hsurvey")) { svFrom = "home"; SurveyUI.open("list"); return; }
+  if (d.hsv) { svFrom = "home"; await openProject(d.hsv, true); SurveyUI.open("steps"); return; }
   if (b.hasAttribute("data-hlook")) { ui.pop = "look"; renderPop(); return; }
   if (b.hasAttribute("data-habout")) { ui.pop = "about"; renderPop(); return; }
   if (d.hopen) { await openProject(d.hopen); return; }
@@ -1323,6 +1328,7 @@ $("#home").addEventListener("change", async (e) => {
     const d = JSON.parse(await e.target.files[0].text());
     const p = d.project || d;
     if (!Array.isArray(p.units)) throw new Error("bad");
+    for (const [mid, m] of Object.entries(d.media || {})) await Media.put(m.d, { id: mid, type: m.t, dur: m.dur, pid: p.id });
     await Lib.put(state.project).catch(() => {});
     state.project = { ...p, id: uid(), name: (p.name || "مشروع") + " (مستورد)" };
     for (const m of state.project.mats || []) Mat.register(m);
@@ -3225,6 +3231,7 @@ function renderPop() {
     const k = ui.roomKind || "rect";
     const pr = Room.PRESETS[k];
     h = `<div class="popbox" role="dialog" aria-label="أوضة جاهزة"><div class="libhead"><h2>أوضة جاهزة بالمقاسات</h2><button class="x" data-close aria-label="قفل">×</button></div>
+      <button class="primary big svfromroom" data-svroom>📐 رفع المقاسات خطوة بخطوة (في الموقع)</button>
       <p class="hint">المقاسات من جوه (من وش الحيطة لوش الحيطة) بالسنتيمتر — تقدر تعدّل أي حيطة بعد كده أو تسحب أركانها.</p>
       <div class="roomkinds">${Object.entries(Room.PRESETS).map(([key, v]) => `<button class="rk ${key === k ? "on" : ""}" data-rk="${key}">${roomIcon(key)}<span>${esc(v.label)}</span></button>`).join("")}</div>
       <div class="grid2">${pr.fields.map(([f, l, dv]) => `<label class="f"><span>${esc(l)}</span><input type="text" inputmode="decimal" data-numf data-rf="${f}" value="${ui.roomDims?.[f] ?? dv}"></label>`).join("")}
@@ -3282,6 +3289,7 @@ $("#pop").addEventListener("change", async (e) => {
       const d = JSON.parse(await e.target.files[0].text());
       const p = d.project || d;
       if (!Array.isArray(p.units)) throw new Error("bad");
+      for (const [mid, m] of Object.entries(d.media || {})) await Media.put(m.d, { id: mid, type: m.t, dur: m.dur, pid: p.id });
       if (cloud.dirty) await cloudSave();
       state.project = { ...p, id: uid(), name: (p.name || "مشروع") + " (مستورد)" };
       state.sel = state.project.units[0]?.id ?? null;
@@ -3450,6 +3458,7 @@ $("#pop").addEventListener("click", async (e) => {
     ui.pop = null; renderPop(); save(); renderChips(); renderProps(); plan.render(); view.update();
     return;
   }
+  if (ui.pop === "room" && b.hasAttribute("data-svroom")) { ui.pop = null; renderPop(); svFrom = "design"; SurveyUI.open("steps"); return; }
   if (ui.pop === "room") {
     const grab = () => { ui.roomDims = {}; $("#pop").querySelectorAll("[data-rf]").forEach((i) => { ui.roomDims[i.dataset.rf] = +i.value; }); };
     if (d.rk) { grab(); ui.roomKind = d.rk; renderPop(); return; }
@@ -3472,7 +3481,7 @@ $("#pop").addEventListener("click", async (e) => {
     const snap = await cloud.db.doc(`data/users/${cloud.me}/p_${d.openproj}`).get();
     if (!snap.exists) return;
     const v = snap.data();
-    state.project = { id: d.openproj, name: v.name, units: v.units || [], ...(v.room ? { room: v.room } : {}), mats: v.mats || [] };
+    state.project = { id: d.openproj, name: v.name, units: v.units || [], ...(v.room ? { room: v.room } : {}), mats: v.mats || [], ...(v.stages ? { stages: v.stages } : {}), ...(v.survey ? { survey: v.survey } : {}) };
     for (const m of state.project.mats) Mat.register(m);
     state.sel = state.project.units[0]?.id ?? null;
     ui.pop = null;
@@ -3498,15 +3507,15 @@ async function saveNow() {
   const b = $("#saveBtn"); b.classList.add("ok"); setTimeout(() => b.classList.remove("ok"), 1500);
 }
 /** switch to another project (from this device, or the account when it is newer there) */
-async function openProject(id) {
-  if (id === state.project.id) { closeHome(); return; }
+async function openProject(id, quiet = false) {
+  if (id === state.project.id) { if (!quiet) closeHome(); return; }
   await Lib.put(state.project).catch(() => {});
   if (cloud.dirty) await cloudSave();
   let rec = await Lib.get(id).catch(() => null), p = rec?.project || null;
   if (cloud.db && cloud.me) {
     try {
       const snap = await cloud.db.doc(`data/users/${cloud.me}/p_${id}`).get();
-      if (snap.exists && (!rec || (snap.data().updatedAt || "") > (rec.updatedAt || ""))) { const v = snap.data(); p = { id, name: v.name, units: v.units || [], ...(v.room ? { room: v.room } : {}), mats: v.mats || [] }; }
+      if (snap.exists && (!rec || (snap.data().updatedAt || "") > (rec.updatedAt || ""))) { const v = snap.data(); p = { id, name: v.name, units: v.units || [], ...(v.room ? { room: v.room } : {}), mats: v.mats || [], ...(v.stages ? { stages: v.stages } : {}), ...(v.survey ? { survey: v.survey } : {}) }; }
     } catch { /* offline: keep the local copy */ }
   }
   if (!p) { alertBar("المشروع ده مش موجود."); return; }
@@ -3541,13 +3550,13 @@ window.noveraRoomScan = (data) => {
   } catch (err) { alertBar(err?.message?.length < 80 ? err.message : "ما قدرتش أقرا المسح — جرّب تمسح تاني ببطء."); }
 };
 window.noveraScanError = (msg) => alertBar(msg);
-function closeHome() { $("#home").hidden = true; document.body.classList.remove("athome"); setTimeout(() => view.resize?.(), 50); renderSteps(); if (!state.tourDone && ui.mode === "owner") setTimeout(() => startTour(), 900); }
+function closeHome() { $("#home").hidden = true; document.body.classList.remove("athome"); setTimeout(() => view.resize?.(), 50); renderSteps(); if (!state.tourDone && ui.mode === "owner") setTimeout(() => { if (!document.body.classList.contains("insurvey")) startTour(); }, 900); }
 async function allProjects() {
   const local = await Lib.list().catch(() => []);
   const map = new Map(local.map((x) => [x.id, { ...x, where: "device" }]));
   if (cloud.db && cloud.me) {
     await refreshProjects();
-    for (const c of ui.projects || []) { const l = map.get(c.id); if (!l) map.set(c.id, { ...c, units: null, where: "cloud" }); else if ((c.updatedAt || "") > l.updatedAt) map.set(c.id, { ...l, updatedAt: c.updatedAt, where: "both" }); else l.where = "both"; }
+    for (const c of ui.projects || []) { const l = map.get(c.id); if (!l) map.set(c.id, { ...c, units: null, where: "cloud" }); else if ((c.updatedAt || "") > l.updatedAt) map.set(c.id, { ...l, updatedAt: c.updatedAt, srv: c.srv ?? l.srv, stages: c.stages ?? l.stages, where: "both" }); else l.where = "both"; }
   }
   return [...map.values()].sort((a, b) => (b.updatedAt || "").localeCompare(a.updatedAt || ""));
 }
@@ -3562,19 +3571,19 @@ async function showHome() {
   el.innerHTML = `<div class="homein">
     <div class="homehead"><span class="mark big">N</span><div><b>NOVERA Studio</b><small>تصميم وتصنيع المطابخ والأثاث</small></div></div>
     <div class="homenew"><input id="homeName" placeholder="اسم المشروع الجديد (مثلاً: مطبخ أ. محمد — التجمع)" aria-label="اسم المشروع الجديد"><button class="primary" data-hnew>＋ مشروع جديد</button></div>
-    <div class="homeacts"><button class="ghost2" data-hlast>↩ كمّل «${esc(state.project.name)}»</button><label class="ghost2 filebtn">📂 افتح ملف مشروع (JSON)<input type="file" id="homeImp" accept=".json,application/json" hidden></label><button class="ghost2" data-hcut>✂ كت ليست بمقاساتك</button><button class="ghost2" data-hlook>🎨 الألوان والمظهر</button><button class="ghost2" data-habout>ⓘ عن التطبيق</button></div>
-    <h3>المشاريع</h3>
+    <div class="homeacts"><button class="primary" data-hsurvey>📐 رفع مقاسات</button><button class="ghost2" data-hlast>↩ كمّل «${esc(state.project.name)}»</button><label class="ghost2 filebtn">📂 افتح ملف مشروع (JSON)<input type="file" id="homeImp" accept=".json,application/json" hidden></label><button class="ghost2" data-hcut>✂ كت ليست بمقاساتك</button><button class="ghost2" data-hlook>🎨 الألوان والمظهر</button><button class="ghost2" data-habout>ⓘ عن التطبيق</button></div>
+    <h3>المشاريع${list.filter((x) => x.srv === "measured" && !x.stages?.design?.done).length ? ` <span class="hstage svwait">📐 ${list.filter((x) => x.srv === "measured" && !x.stages?.design?.done).length} مستني تصميم</span>` : ""}</h3>
     <div class="homelist">${list.map((x) => `<div class="hcard ${x.id === state.project.id ? "cur" : ""}"><button class="hopen" data-hopen="${x.id}"><b>${esc(x.name)}</b>
-      ${x.stages && Object.values(x.stages).some((v) => v?.done) ? `<span class="hstage">🧭 ${esc(stageNow({ stages: x.stages }).cur)}</span>` : ""}
+      ${x.srv === "measured" && !x.stages?.design?.done ? `<span class="hstage svwait">📐 اترفع — مستني تصميم</span>` : x.srv === "measuring" ? `<span class="hstage">📐 الرفع لسه شغال</span>` : x.stages && Object.values(x.stages).some((v) => v?.done) ? `<span class="hstage">🧭 ${esc(stageNow({ stages: x.stages }).cur)}</span>` : ""}
       <small>${x.units != null ? `${x.units} وحدة · ` : ""}${x.variants > 1 ? `${x.variants} نسخ · ` : ""}${when(x.updatedAt)}${x.where === "cloud" ? " · أونلاين" : x.where === "both" ? " · على الجهاز وأونلاين" : ""}</small></button>
-      <button class="hdel danger sm" data-hdel="${x.id}" aria-label="امسح ${esc(x.name)}">${ICON.trash}</button></div>`).join("") || `<p class="hint">مفيش مشاريع لسه — ابدأ مشروع جديد.</p>`}</div>
+      ${x.srv ? `<button class="hdel sm" data-hsv="${x.id}" title="شاشة الرفع" aria-label="شاشة الرفع">📐</button>` : ""}<button class="hdel danger sm" data-hdel="${x.id}" aria-label="امسح ${esc(x.name)}">${ICON.trash}</button></div>`).join("") || `<p class="hint">مفيش مشاريع لسه — ابدأ مشروع جديد.</p>`}</div>
     <p class="hint">المشاريع بتتحفظ لوحدها وانت شغال، وتقدر تدوس 💾 حفظ في أي وقت. خد نسخة احتياطي من تصدير ← المشروع (JSON).</p></div>`;
 }
 async function refreshProjects() {
   if (!cloud.db || !cloud.me) return;
   try {
     const qs = await cloud.db.collection(`data/users/${cloud.me}`).orderBy("updatedAt", "desc").limit(100).get();
-    ui.projects = qs.docs.filter((s) => s.id.startsWith("p_")).map((s) => ({ id: s.id.slice(2), name: s.data().name, updatedAt: s.data().updatedAt }));
+    ui.projects = qs.docs.filter((s) => s.id.startsWith("p_")).map((s) => { const v = s.data(); return { id: s.id.slice(2), name: v.name, updatedAt: v.updatedAt, srv: Lib.srvOf(v.survey), stages: v.stages || null, room: !!v.room }; });
     if (!ui.projects.find((x) => x.id === state.project.id)) ui.projects.unshift({ id: state.project.id, name: state.project.name, updatedAt: "" });
   } catch { /* keep the old list */ }
   if (ui.pop === "projects") renderPop();
@@ -6405,8 +6414,12 @@ async function exportImage() {
   for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
   return Exp.deliver(cloud.downloads, `${fileBase()} — صورة.png`, bytes);
 }
-function exportProject() {
-  const data = { app: "NOVERA Studio", version: 1, exportedAt: new Date().toISOString(), project: state.project };
+async function exportProject() {
+  const sv = state.project.survey;
+  const ids = sv ? [...(sv.photos || []), ...(sv.draft?.walls || []).flatMap((w) => w.photos || []), ...(sv.notes || []).map((n) => n.audio), sv.sign?.client, sv.sign?.tech, ...Object.values(sv.meta || {}).map((m) => m.orig)].filter(Boolean) : [];
+  const media = {};
+  for (const id of new Set(ids)) { const r = await Media.get(id, cloud); if (r) media[id] = { d: r.data, t: r.type, dur: r.dur || 0 }; }
+  const data = { app: "NOVERA Studio", version: 1, exportedAt: new Date().toISOString(), project: state.project, ...(ids.length ? { media } : {}) };
   return Exp.deliver(cloud.downloads, `${fileBase()} — مشروع.json`, JSON.stringify(data, null, 1));
 }
 /** what the SketchUp plugin needs to rebuild the design (v187: Extensions ‹ استيراد تصميم من تطبيق NOVERA) */
@@ -7262,7 +7275,7 @@ async function boot() {
     if (s.exists && s.data().updatedAt) {
       const v = s.data();
       const localAt = state.savedAt || "";
-      if (!localAt || v.updatedAt > localAt) { state.project = { id: state.project.id, name: v.name, units: v.units || [] }; if (!state.project.units.find((u) => u.id === state.sel)) state.sel = state.project.units[0]?.id ?? null; render(true); }
+      if (!localAt || v.updatedAt > localAt) { state.project = { id: state.project.id, name: v.name, units: v.units || [], ...(v.room ? { room: v.room } : {}), mats: v.mats || [], ...(v.stages ? { stages: v.stages } : {}), ...(v.survey ? { survey: v.survey } : {}) }; if (!state.project.units.find((u) => u.id === state.sel)) state.sel = state.project.units[0]?.id ?? null; render(true); }
       setCloud("saved");
     } else {
       const qs = await db.collection(`data/users/${cloud.me}`).orderBy("updatedAt", "desc").limit(1).get();
@@ -7284,7 +7297,26 @@ persist = function () { state.savedAt = new Date().toISOString(); _persist(); };
 const _render = render;
 let lastPid = state.project.id;
 render = function (refit) { _render(refit); if (state.project.id !== lastPid) { lastPid = state.project.id; watchOwnerShared(); } };
+// ---- the surveyor's own screen (survey_ui.js) — separate from the design screen
+let svFrom = "home";
+SurveyUI.init({
+  get state() { return state; }, get cloud() { return cloud; },
+  save, saveNow, alertBar, pdfOut,
+  newProject: (n) => newProject(n), openProject: (id, q) => openProject(id, q),
+  listProjects: () => allProjects(),
+  getProject: async (id) => { if (id === state.project.id) return state.project; const r = await Lib.get(id).catch(() => null); if (r?.project) return r.project;
+    if (cloud.db && cloud.me) { try { const sn = await cloud.db.doc(`data/users/${cloud.me}/p_${id}`).get(); if (sn.exists) return { id, ...sn.data() }; } catch { /* offline */ } } return null; },
+  elevSvg: (id) => { const e = plan.elevSvg(id); if (!e) return ""; const i = e.indexOf(">", e.indexOf("<svg")); return e.slice(0, i + 1).replace(/<svg (?![^>]*xmlns=)/, '<svg xmlns="http://www.w3.org/2000/svg" ') + `<style>${PLAN_PRINT_CSS}</style>` + e.slice(i + 1); },
+  roomChanged: () => { ui.planSel = null; plan.vb = null; state.whole = true; },
+  cloudSync: () => { if (cloud.db && cloud.me) { cloudSave(); Media.sync(cloud); } },
+  openDesign: () => { closeHome(); state.tab = "design"; ui.planOn = true; render(true); },
+  onExit: () => { if (svFrom === "home") showHome(); else render(true); },
+  onFinish: () => showHome(),
+});
+// back online: send what waited (the project and the survey photos / voice notes)
+addEventListener("online", () => { if (cloud.db && cloud.me) { if (cloud.dirty || ui.cloud === "error") cloudSave(); Media.sync(cloud); } });
 boot();
+if (location.hash === "#survey") { svFrom = "home"; SurveyUI.open("list"); }
 matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", () => { applyLook(); view.update(); });
 applyLook();
 window.__dbg = { view, plan, R, render: (x) => render(x), checks: () => designChecks(), merge: (a, b) => mergeInto(a, b), get ui() { return ui; }, layout: asmLayout, elev: (u) => unitElevSvg(u), get state() { return state; } };

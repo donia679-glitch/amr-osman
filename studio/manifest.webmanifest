@@ -27,5 +27,18 @@
    "type": "image/png",
    "purpose": "maskable"
   }
+ ],
+ "shortcuts": [
+  {
+   "name": "رفع مقاسات",
+   "short_name": "رفع",
+   "url": "./#survey",
+   "icons": [
+    {
+     "src": "icons/icon-192.png",
+     "sizes": "192x192"
+    }
+   ]
+  }
  ]
 }
