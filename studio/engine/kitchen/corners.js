@@ -408,7 +408,10 @@ export class LShapeCornerUnitBuilder extends PlainBuilder {
         const z1b = h - t;
         if (z1b <= z0b)
             return;
-        const bm = this.backMaterial();
+        const bm0 = this.backMaterial();
+        // leg 1's back is a full-thickness board (leg 2's back butts into its groove): cut it from the carcass
+        // board, not from an 18 mm sheet of the back material (that made a whole extra sheet group)
+        const bm = orientation === "along_x" ? this.carcassMaterial() : bm0;
         if (orientation === "along_x") {
             const x0 = 0;
             const x1 = legLen - t + bg;

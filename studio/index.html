@@ -7,7 +7,7 @@
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <style>html,body{margin:0;padding:0}body{min-height:100vh;min-height:100dvh}</style>
-<script>window.NOVERA_BUILD = "2026-10-03 21:28";</script>
+<script>window.NOVERA_BUILD = "2026-10-03 22:25";</script>
 </head>
 <body>
 <meta charset="utf-8">
@@ -411,7 +411,8 @@ label.chk { display: inline-flex; align-items: center; gap: 6px; font-size: 13px
 .pitem.on > button:first-child { border-color: var(--brand); }
 .pitem small { color: var(--muted); }
 .popbox .f { margin-bottom: 8px; }
-.toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--bar); color: #fff; padding: 10px 16px; border-radius: 10px; z-index: 90; }
+.toast { position: fixed; top: calc(108px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); background: var(--bar); color: #fff; padding: 10px 16px; border-radius: 10px; z-index: 90; pointer-events: none; max-width: min(640px, calc(100vw - 32px)); text-align: center; box-shadow: 0 6px 20px rgba(0,0,0,.25); }
+body.indraw .toast { top: calc(64px + env(safe-area-inset-top)); }
 
 /* dressing editor */
 .sec-ed { border: 1px solid var(--line); border-radius: 12px; padding: 8px 10px; margin-bottom: 10px; }
@@ -809,6 +810,16 @@ body.insurvey #app > :not(#survey):not(#pop) { visibility: hidden; }
 .kpkeys button.kfn { background: var(--bg); font-size: 20px; }
 .kpkeys button.kgo { background: var(--brand); color: var(--brand-ink); border-color: var(--brand); font-size: 16px; }
 .kpkeys button.hit { filter: brightness(.88); }
+.kpextra { display: none; grid-template-columns: repeat(5, minmax(0, 1fr)); margin-top: 8px; }
+.kpad.extra .kpextra { display: grid; }
+.kpextra button { min-height: 44px; font-size: 15px; }
+/* in the drawing studio the pad sits beside the drawing, above its footer (the size box and axis locks stay visible) */
+@media (min-width: 700px) {
+  .kpad.side { inset-inline: auto 12px; bottom: 120px; width: 340px; border: 1px solid var(--line); border-radius: 18px; padding: 8px 10px 10px; }
+  html[dir="ltr"] .kpad.side { inset-inline: auto 12px; }
+  .kpad.side .kpkeys button { min-height: 48px; font-size: 21px; }
+  .kpad.side .kpextra button { min-height: 40px; font-size: 13.5px; }
+}
 body.kpad-on #props, body.kpad-on .svbody, body.kpad-on .popbox, body.kpad-on .svpopbox { padding-bottom: calc(var(--kpad-h, 300px) + 12px); }
 @media (max-height: 560px) { .kpkeys button { min-height: 42px; font-size: 20px; } }
 
@@ -942,9 +953,9 @@ html.lang-en .dsl.tip { transform: translate(10px, -150%); }
 .dshandles { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
 .dsh { position: absolute; pointer-events: auto; transform: translate(-50%, -50%); border: 2px solid #fff; box-shadow: 0 2px 8px rgba(0,0,0,.3); cursor: grab; touch-action: none; padding: 0; font: inherit; }
 .dsh.mv { width: 34px; height: 34px; border-radius: 50%; color: #fff; font-size: 17px; font-weight: 800; display: grid; place-items: center; }
-.dsh.rs { width: 16px; height: 16px; border-radius: 4px; }
+.dsh.rs { width: 16px; height: 16px; border-radius: 4px; z-index: 3; }
 .dsh.ax0 { background: #e0413a; } .dsh.ax1 { background: #2f9e44; } .dsh.ax2 { background: #2f6fdf; }
-.dsh.dm { background: #fff; color: #1d211c; border: 1.5px solid currentColor; border-radius: 7px; font-size: 12px; font-weight: 800; padding: 1px 7px; box-shadow: 0 1px 4px rgba(0,0,0,.18); direction: ltr; cursor: text; }
+.dsh.dm { z-index: 2; transform: translate(-50%, -165%); background: #fff; color: #1d211c; border: 1.5px solid currentColor; border-radius: 7px; font-size: 12px; font-weight: 800; padding: 1px 7px; box-shadow: 0 1px 4px rgba(0,0,0,.18); direction: ltr; cursor: text; }
 .dsh.dm.ax0 { color: #c0342e; } .dsh.dm.ax1 { color: #23803a; } .dsh.dm.ax2 { color: #2558bd; }
 .dsh.dm.on { background: #ffe9a8; }
 .dsh.rt { width: 32px; height: 32px; border-radius: 50%; background: #1d211c; color: #fff; font-size: 17px; display: grid; place-items: center; }

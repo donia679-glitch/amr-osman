@@ -55,7 +55,7 @@ export function parseLen(s) {
   let note = "";
   if (unit === "mm") { v /= 10; note = "مم ← سم"; }
   else if (unit === "m") { v *= 100; note = "متر ← سم"; }
-  else if (!unit && v > 0 && v <= 12 && /\./.test(num)) { v *= 100; note = `اتحسبت ${r1(v)} سم (كتبتها بالمتر)`; }
+  else if (!unit && v > 0 && v < 8 && /\.\d{1,3}$/.test(num)) { /* 3.45 = metres; 10.5 (a sill, a gap) stays cm */ v *= 100; note = `اتحسبت ${r1(v)} سم (كتبتها بالمتر)`; }
   return { v: r1(v), note };
 }
 

@@ -43,9 +43,13 @@ const AR_DIG = { "٠": "0", "١": "1", "٢": "2", "٣": "3", "٤": "4", "٥": "5
 document.addEventListener("input", (e) => {
   const t = e.target;
   if (!(t instanceof HTMLInputElement) || !t.hasAttribute("data-numf")) return;
-  const v = t.value, nv = v.replace(/[٠-٩۰-۹٫،]/g, (c) => AR_DIG[c]).replace(/,/g, ".");
+  // money: a comma groups thousands (1,500 = 1500); sizes: a comma is the decimal point (1,8 = 1.8)
+  const money = t.hasAttribute("data-price") || t.hasAttribute("data-money");
+  const v = t.value, nv = money ? v.replace(/[٠-٩۰-۹٫]/g, (c) => AR_DIG[c]).replace(/[,،٬\s]/g, "") : v.replace(/[٠-٩۰-۹٫،]/g, (c) => AR_DIG[c]).replace(/,/g, ".");
   if (nv !== v) { const at = t.selectionStart; t.value = nv; try { t.setSelectionRange(at, at); } catch { /* not focused */ } }
 }, true);
+/** a money amount as typed: 1,500 · ١٬٥٠٠ · 1 500 → 1500 */
+const moneyNum = (v) => { const t = String(v ?? "").trim().replace(/[٠-٩۰-۹٫]/g, (c) => AR_DIG[c]).replace(/[,،٬\s]/g, "").replace(/[^0-9.\-]/g, ""); const n = parseFloat(t); return Number.isFinite(n) ? n : 0; };
 const toNum = (v) => { const t = String(v ?? "").trim().replace(/[٠-٩۰-۹٫،,]/g, (c) => AR_DIG[c]).replace(/[^0-9.\-]/g, ""); const n = parseFloat(t); return Number.isFinite(n) ? n : 0; };
 const uid = () => Math.random().toString(36).slice(2, 10);
 const clone = (o) => JSON.parse(JSON.stringify(o));
@@ -77,7 +81,7 @@ const LIB_GROUPS = [
   ["زجاج ومرايا", (k) => /^(glass_|mirror)/.test(k)], ["معادن", (k) => /^(alu_|stainless|copper)/.test(k)],
   ["أخرى", (k) => /^(mdf_raw|back_panel)/.test(k)],
 ];
-const STONE = (k) => /^(marble_|quartz_|terrazzo|concrete_|glass_|mirror)/.test(k || "");
+const STONE = (k) => /^(marble_|quartz_|terrazzo|concrete_|glass_|mirror)/.test(k || "") || ["stone", "metal", "glass"].includes(Mat.get(k)?.kind); // a photo material of stone / metal / glass too
 const hexRgb = (rgb) => "#" + rgb.map((c) => c.toString(16).padStart(2, "0")).join("");
 
 // ------------------------------------------------------------------ dressing starters
@@ -202,13 +206,15 @@ function histUI() {
   if (r) r.disabled = !hist.redo.length;
 }
 function save() { clearTimeout(saveTimer); saveTimer = setTimeout(persist, 250); }
+// leaving the app (home button, app switcher, closing the tab): write what is waiting right away
+for (const ev of ["pagehide", "visibilitychange"]) addEventListener(ev, () => { if (ev === "visibilitychange" && !document.hidden) return; if (saveTimer) { clearTimeout(saveTimer); saveTimer = 0; try { persist(); } catch { /* */ } } });
 async function cloudSave() {
   if (cloud.saving) { cloud.saveT = setTimeout(cloudSave, 800); return; }
   cloud.saving = true;
   cloud.dirty = false;
   const p = state.project;
   try {
-    await cloud.db.doc(`data/users/${cloud.me}/p_${p.id}`).set({ name: p.name, units: p.units, room: p.room || null, mats: p.mats || [], stages: p.stages || null, survey: p.survey || null, updatedAt: new Date().toISOString() });
+    await cloud.db.doc(`data/users/${cloud.me}/p_${p.id}`).set({ name: p.name, units: p.units, room: p.room || null, mats: p.mats || [], stages: p.stages || null, survey: p.survey || null, variants: p.variants || null, variant: p.variant || null, updatedAt: new Date().toISOString() });
     setCloud(cloud.dirty ? "pending" : "saved");
   } catch (e) {
     setCloud(e?.code === "quota_exceeded" ? "full" : "error");
@@ -568,7 +574,8 @@ function adaptPieces(u) {
       const L = +r.l, W = +r.w, T = +r.t;
       if (x + L > rowMax && x > 0) { x = 0; y += rowD + 6; rowD = 0; }
       parts.push({ name: (r.name || `قطعة ${ri + 1}`) + (q > 1 ? ` (${i + 1}/${q})` : ""), material: key, cut_piece: true, role: "panel", row: ri,
-        label: { w: L, h: W, t: T, banded: { bottom: !!r.band?.l1, top: !!r.band?.l2, left: !!r.band?.w1, right: !!r.band?.w2 }, grain: !!r.grain },
+        // same convention as every other part: h = the length (along the grain), w = the width across it
+        label: { w: W, h: L, t: T, banded: { left: !!r.band?.l1, right: !!r.band?.l2, bottom: !!r.band?.w1, top: !!r.band?.w2 }, grain: !!r.grain },
         box: { x0: x, x1: x + L, y0: y, y1: y + W, z0: 0, z1: T } });
       x += L + 6; rowD = Math.max(rowD, W);
     }
@@ -585,6 +592,12 @@ function modelOffset(m) {
   for (const s of m.solids || []) { const b = DG.solidBox(s); lo[0] = Math.min(lo[0], b.x0); lo[1] = Math.min(lo[1], b.y0); lo[2] = Math.min(lo[2], b.z0); }
   for (const w of m.sweeps || []) for (const P of w.path) for (let i = 0; i < 3; i++) lo[i] = Math.min(lo[i], P[i]);
   return lo.map((v) => (isFinite(v) ? -v : 0));
+}
+/** before the user moves a unit by hand: every other unit stays where it stands now (they used to re-flow and
+ *  jump to other walls while one was being dragged) */
+function pinOthers(id) {
+  const poses = projectPoses(state.project);
+  for (const u of state.project.units) { if (u.id === id || u.pos) continue; const L = poses.get(u.id); if (L?.wall) u.pos = { wall: L.wall, s: Math.round(L.s * 10) / 10 }; }
 }
 /** a stored (Arabic) text shown inside an input: translated in English mode (input values aren't translated by the page layer) */
 const trv = (v) => (I18n.isEn() ? I18n.tr(v) : v);
@@ -674,7 +687,13 @@ function openStudio(u, extra = {}) {
     matName: (k) => PANEL_MATS[k] || k,
     onDone: (model, name, x = {}) => {
       // walls, doors, windows and MEP points drawn in the studio are the project's room
-      if (x.roomChanged) { state.project.room = x.room && x.room.pts?.length >= 2 ? x.room : null; if (state.project.room) { state.whole = true; ui.planOn = false; plan.vb = null; } }
+      if (x.roomChanged) {
+        const old = state.project.room, nr = x.room && x.room.pts?.length >= 2 ? x.room : null;
+        // walls that are not the old ones any more: units placed on them go back onto the new walls
+        if (!nr || !old || !nr.walls.some((w) => old.walls?.some((o) => o.id === w.id))) for (const u of state.project.units) delete u.pos;
+        else for (const u of state.project.units) if (u.pos?.wall && !nr.walls.some((w) => w.id === u.pos.wall)) delete u.pos;
+        state.project.room = nr; if (nr) { state.whole = true; ui.planOn = false; plan.vb = null; }
+      }
       const empty = !model.solids.length && !model.sweeps.length && !model.sketches.length;
       if (u && state.project.units.includes(u)) { u.params = { ...u.params, model, template: "free" }; u.name = name || u.name; }
       else if (!empty) { const nu = { id: uid(), kind: "panel", name: name || "تصميم حر", params: { template: "free", model, materials: {} } }; state.project.units.push(nu); state.sel = nu.id; }
@@ -1096,6 +1115,7 @@ $("#libBtn").addEventListener("click", () => { state.libOpen = !state.libOpen; r
   };
   const startDrag = (e, id) => {
     if (id !== state.sel) { state.sel = id; save(); renderStrip(); renderChips(); renderProps(); }
+    pinOthers(id);
     const u = selUnit(), L = view.poses?.get(id), hit = view.floorAt(e.clientX, e.clientY);
     if (!u || !L || !hit) return;
     const box = localBox(R(u));
@@ -1496,6 +1516,14 @@ $("#home").addEventListener("click", async (e) => {
   if (b.hasAttribute("data-hlook")) { ui.pop = "look"; renderPop(); return; }
   if (b.hasAttribute("data-habout")) { ui.pop = "about"; renderPop(); return; }
   if (d.hopen) { await openProject(d.hopen); return; }
+  if (d.hdup) {
+    // a copy of a project (to try another design for the same client, or as a starting point for a new one)
+    if (d.hdup === state.project.id) await Lib.put(state.project).catch(() => {});
+    const rec = await Lib.get(d.hdup).catch(() => null), src = rec?.project || (d.hdup === state.project.id ? state.project : null);
+    if (!src) { alertBar("مالقتش المشروع ده على الجهاز"); return; }
+    const cp = clone(src); cp.id = uid(); cp.name = `${src.name} (نسخة)`; delete cp.stages; delete cp.shared;
+    await Lib.put(cp); showHome(); alertBar(`اتعملت نسخة: «${cp.name}»`); return;
+  }
   if (d.hdel) {
     if (d.armed !== "1") { d.armed = "1"; b.classList.add("armed"); b.textContent = "أكّد المسح"; return; }
     if (d.hdel === state.project.id) { alertBar("ده المشروع المفتوح — افتح مشروع تاني الأول عشان تمسحه."); return; }
@@ -1514,7 +1542,8 @@ $("#home").addEventListener("change", async (e) => {
     if (!Array.isArray(p.units)) throw new Error("bad");
     for (const [mid, m] of Object.entries(d.media || {})) await Media.put(m.d, { id: mid, type: m.t, dur: m.dur, pid: p.id });
     await Lib.put(state.project).catch(() => {});
-    state.project = { ...p, id: uid(), name: (p.name || "مشروع") + " (مستورد)" };
+    const have = await Lib.get(p.id).catch(() => null);
+    state.project = { ...p, id: p.id && !have ? p.id : uid(), name: (p.name || "مشروع") + " (مستورد)" };
     for (const m of state.project.mats || []) Mat.register(m);
     state.sel = state.project.units[0]?.id ?? null; state.tab = "design";
     closeHome(); save(); render(true);
@@ -1937,7 +1966,12 @@ $("#chips").addEventListener("click", async (e) => {
       const c = Room.centerOf(L, box);
       const rot = (L.rot || 0) - ((+d.rot || 90) * Math.PI) / 180;
       const pose = Room.snapPose([], box, c, rot, [], rowOf(u, R(u)));
-      u.pos = { x: pose.x, z: pose.z, rot };
+      // turned back to face the room the way its wall does (a full turn or 2 × 90): it goes back onto that wall
+      const wall = u.wallBefore && roomSegs(state.project).find((g) => g.id === u.wallBefore.wall);
+      const wrot = wall ? Room.rotFor(wall.n) : null, same = (a, b) => Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b))) < 0.01;
+      if (L.wall) u.wallBefore = { wall: L.wall, s: L.s };
+      if (wall && same(rot, wrot)) { u.pos = { wall: u.wallBefore.wall, s: u.wallBefore.s }; delete u.wallBefore; }
+      else u.pos = { x: pose.x, z: pose.z, rot };
     }
     save();
     renderChips();
@@ -2277,7 +2311,7 @@ function defaultsPop() {
       <div class="btnrow"><button class="ghost2" data-defapply>طبّقها على وحدات المطبخ في المشروع ده</button></div></details>
     <details><summary>🧱 الأوضة والحيطان</summary><div class="grid2">${nf("room.t", "سمك الحيطة", D0.room.t, Room.WALL_T)}${nf("room.h", "ارتفاع السقف", D0.room.h, Room.WALL_H)}</div></details>
     <details><summary>💰 التسعير</summary><div class="grid2"><label class="f"><span>حساب الخامة</span><select data-def="price.mode"><option value="area" ${P.mode === "area" ? "selected" : ""}>بمسطح القطع (م²) لكل وحدة</option><option value="sheets" ${P.mode !== "area" ? "selected" : ""}>بعدد الألواح من خطة القص</option></select></label>${nf("price.waste", "نسبة الهالك % (بالمسطح)", P.waste)}${nf("price.defaultSheet", "سعر اللوح (أي خامة ملهاش سعر)", P.defaultSheet)}${nf("price.band", "سعر متر الشريط", P.band)}
-      ${nf("price.laborUnit", "مصنعية الوحدة", P.laborUnit)}${nf("price.laborM2", "مصنعية المتر المربع", P.laborM2)}${nf("price.install", "التركيب للمشروع", P.install)}${nf("price.margin", "نسبة المكسب %", P.margin)}
+      ${nf("price.laborUnit", "مصنعية الوحدة", P.laborUnit)}${nf("price.laborM2", "مصنعية المتر المربع", P.laborM2)}${nf("price.install", "التركيب للمشروع", P.install)}${nf("price.margin", "نسبة الربح على التكلفة %", P.margin)}
       ${nf("price.validity", "صلاحية عرض السعر (يوم)", P.validity)}<label class="f"><span>مدة التنفيذ</span><input data-deft="price.delivery" value="${esc(trv(P.delivery || ""))}"></label>
       <label class="f full"><span>الضمان</span><input data-deft="price.warranty" value="${esc(trv(P.warranty || ""))}"></label><label class="f full"><span>شروط ثابتة في كل عرض سعر</span><input data-deft="price.notes" value="${esc(P.notes || "")}"></label></div>
       <p class="hint">أسعار كل خامة وكل بند هاردوير بتتظبط من «الورشة والعميل» وبتفضل محفوظة لكل المشاريع.</p></details>
@@ -2308,7 +2342,7 @@ function setDefault(path, v) {
   state.settingsAt = new Date().toISOString();
   const D0 = userDefs(), [a, ...rest] = path.split(".");
   if (a === "price") { const P = priceDefaults(); P[rest[0]] = v; return; }
-  if (a === "cut") { state.cutOpts ??= {}; if (v === "" || v == null) delete state.cutOpts[rest[0]]; else state.cutOpts[rest[0]] = v; cutKey = ""; return; }
+  if (a === "cut") { state.cutOpts ??= {}; const lim = CUT_OK[rest[0]]; if (v === "" || v == null || (lim && (!Number.isFinite(+v) || +v < lim[0] || +v > lim[1]))) state.cutOpts[rest[0]] = CUT_DEF[rest[0]] ?? state.cutOpts[rest[0]]; else state.cutOpts[rest[0]] = v; cutKey = ""; return; }
   if (a === "labelFmt") { state.labelFmt = v; return; }
   if (a === "handle") { D0.handle = v; return; }
   let o = D0;
@@ -2538,7 +2572,8 @@ props.addEventListener("change", (e) => {
   if (room && (t.dataset.rp || t.dataset.rc)) {
     if (t.dataset.rp) {
       const pt = room.points.find((x) => x.id === ui.planSel.id);
-      if (t.dataset.rp === "kind") { pt.kind = t.value; pt.z = Room.MEP_KINDS[t.value][2]; } else pt[t.dataset.rp] = +t.value || 0;
+      if (t.dataset.rp === "kind") { pt.kind = t.value; pt.z = Room.MEP_KINDS[t.value][2]; } else pt[t.dataset.rp] = toNum(t.value) || 0;
+      Room.clampPoint(room, pt);
     } else { const c = room.columns.find((x) => x.id === ui.planSel.id); c[t.dataset.rc] = +t.value || 0; }
     save(); renderProps(); plan.render(); view.update();
     return;
@@ -2555,7 +2590,8 @@ props.addEventListener("change", (e) => {
     else {
       const o = room.openings.find((x) => x.id === ui.planSel.id);
       if (t.dataset.ro === "kind") { o.kind = t.value; if (o.kind === "window" && !o.sill) { o.sill = 100; o.h = 120; } if (o.kind === "door") { o.sill = 0; o.h = 210; } }
-      else o[t.dataset.ro] = Math.max(0, +t.value || 0);
+      else o[t.dataset.ro] = Math.max(0, toNum(t.value) || 0);
+      Room.clampOpening(room, o);
     }
     save(); renderProps(); plan.render(); view.update();
     return;
@@ -3339,7 +3375,7 @@ function pieceTag(THREE, pt, ucode) {
   const g = c.getContext("2d"), tint = ROW_TINTS[(pt.row || 0) % ROW_TINTS.length];
   g.fillStyle = tint; g.globalAlpha = 0.16; g.fillRect(0, 0, cw, ch);
   g.globalAlpha = 1; g.strokeStyle = tint; g.lineWidth = Math.max(3, Math.min(cw, ch) * 0.04); g.strokeRect(g.lineWidth / 2, g.lineWidth / 2, cw - g.lineWidth, ch - g.lineWidth);
-  const dims = `${n1(pt.label.w)}×${n1(pt.label.h)}`;
+  const dims = `${n1(pt.label.h)}×${n1(pt.label.w)}`; // length × width, like every list and label
   let fs = Math.min(ch / 3.6, cw / (Math.max(dims.length, 6) * 0.6));
   g.fillStyle = "#14201a"; g.textAlign = "center"; g.textBaseline = "middle"; g.direction = "rtl";
   g.font = `700 ${fs}px "IBM Plex Sans Arabic", system-ui, sans-serif`;
@@ -3469,7 +3505,7 @@ const dimTags = {
   },
   target() {
     const u = selUnit();
-    if (!u || ui.mode !== "owner" || state.tab !== "design" || ui.planOn || ui.asm || ui.xdraw || ui.xmove || view.final?.active || document.body.classList.contains("fs")) return null;
+    if (!u || ui.mode !== "owner" || state.tab !== "design" || ui.planOn || ui.asm || ui.xdraw || ui.xmove || ui.moveMode || ui.multi || view.final?.active || document.body.classList.contains("fs")) return null; // moving units: the size tags would sit under the finger
     const r = R(u);
     if (!r.ok) return null;
     const d = this.dims(u, r);
@@ -3786,7 +3822,10 @@ $("#pop").addEventListener("change", async (e) => {
       if (!Array.isArray(p.units)) throw new Error("bad");
       for (const [mid, m] of Object.entries(d.media || {})) await Media.put(m.d, { id: mid, type: m.t, dur: m.dur, pid: p.id });
       if (cloud.dirty) await cloudSave();
-      state.project = { ...p, id: uid(), name: (p.name || "مشروع") + " (مستورد)" };
+      // keep the project's id when it isn't on this device (QR codes already printed on its labels still lead here)
+      const have = await Lib.get(p.id).catch(() => null);
+      state.project = { ...p, id: p.id && !have && p.id !== state.project.id ? p.id : uid(), name: (p.name || "مشروع") + " (مستورد)" };
+      for (const m of state.project.mats || []) Mat.register(m);
       state.sel = state.project.units[0]?.id ?? null;
       ui.pop = null; renderPop(); save(); render(true);
       alertBar("اتفتح المشروع المستورد.");
@@ -3896,10 +3935,18 @@ $("#pop").addEventListener("click", async (e) => {
     if (b.hasAttribute("data-akall")) {
       const tier = AK_TIERS[ui.akTier || "std"].label;
       const first = ui.akProps[0];
-      ui.akProps.forEach((pr, i) => { if (i) { const keep = state.project.units.filter((u) => u.kind !== "kitchen"); addVariant([...keep, ...pr.units], `${pr.name.split(" — ")[0]} · ${tier}`); } });
-      const cur = variants().find((v) => v.id === state.project.variant);
-      cur.name = `${first.name.split(" — ")[0]} · ${tier}`;
-      applyKitchen(first.units, null);
+      const keep = state.project.units.filter((u) => u.kind !== "kitchen");
+      // the user's own kitchen stays as it is in its own version; the proposals become new versions next to it
+      if (state.project.units.some((u) => u.kind === "kitchen")) {
+        const made = ui.akProps.map((pr) => addVariant([...keep, ...pr.units], `${pr.name.split(" — ")[0]} · ${tier}`));
+        save(); switchVariant(made[0].id);
+        alertBar("اتعملت النسخ الجديدة جنب تصميمك — تصميمك الأصلي فاضل في نسخته زي ما هو");
+      } else {
+        ui.akProps.forEach((pr, i) => { if (i) addVariant([...keep, ...pr.units], `${pr.name.split(" — ")[0]} · ${tier}`); });
+        const cur = variants().find((v) => v.id === state.project.variant);
+        cur.name = `${first.name.split(" — ")[0]} · ${tier}`;
+        applyKitchen(first.units, null);
+      }
       ui.pop = "variants"; renderPop();
       return;
     }
@@ -4047,7 +4094,7 @@ async function openProject(id, quiet = false) {
   if (cloud.db && cloud.me) {
     try {
       const snap = await cloud.db.doc(`data/users/${cloud.me}/p_${id}`).get();
-      if (snap.exists && (!rec || (snap.data().updatedAt || "") > (rec.updatedAt || ""))) { const v = snap.data(); p = { id, name: v.name, units: v.units || [], ...(v.room ? { room: v.room } : {}), mats: v.mats || [], ...(v.stages ? { stages: v.stages } : {}), ...(v.survey ? { survey: v.survey } : {}) }; }
+      if (snap.exists && (!rec || (snap.data().updatedAt || "") > (rec.updatedAt || ""))) { const v = snap.data(); p = { id, name: v.name, units: v.units || [], ...(v.room ? { room: v.room } : {}), mats: v.mats || [], ...(v.stages ? { stages: v.stages } : {}), ...(v.survey ? { survey: v.survey } : {}), ...(v.variants ? { variants: v.variants, variant: v.variant } : rec?.project?.variants ? { variants: rec.project.variants, variant: rec.project.variant } : {}) }; }
     } catch { /* offline: keep the local copy */ }
   }
   if (!p) { alertBar("المشروع ده مش موجود."); return; }
@@ -4118,7 +4165,7 @@ async function showHome() {
     <div class="homelist">${shown.map((x) => `<div class="hcard ${x.id === state.project.id ? "cur" : ""}"><button class="hopen" data-hopen="${x.id}"><b>${esc(x.name)}</b>
       ${x.srv === "measured" && !x.stages?.design?.done ? `<span class="hstage svwait">📐 اترفع — مستني تصميم</span>` : x.srv === "measuring" ? `<span class="hstage">📐 الرفع لسه شغال</span>` : x.stages && Object.values(x.stages).some((v) => v?.done) ? `<span class="hstage">🧭 ${esc(stageNow({ stages: x.stages }).cur)}</span>` : ""}
       <small>${x.units != null ? `${x.units} وحدة · ` : ""}${x.variants > 1 ? `${x.variants} نسخ · ` : ""}${when(x.updatedAt)}${x.where === "cloud" ? " · أونلاين" : x.where === "both" ? " · على الجهاز وأونلاين" : ""}</small></button>
-      ${x.srv ? `<button class="hdel sm" data-hsv="${x.id}" title="شاشة الرفع" aria-label="شاشة الرفع">📐</button>` : ""}<button class="hdel danger sm" data-hdel="${x.id}" aria-label="امسح ${esc(x.name)}">${ICON.trash}</button></div>`).join("") || `<p class="hint">${q || f !== "all" ? "مفيش مشاريع بالبحث ده." : "مفيش مشاريع لسه — ابدأ مشروع جديد."}</p>`}</div>
+      ${x.srv ? `<button class="hdel sm" data-hsv="${x.id}" title="شاشة الرفع" aria-label="شاشة الرفع">📐</button>` : ""}<button class="hdel sm" data-hdup="${x.id}" title="اعمل نسخة من المشروع" aria-label="نسخة من ${esc(x.name)}">⧉</button><button class="hdel danger sm" data-hdel="${x.id}" aria-label="امسح ${esc(x.name)}">${ICON.trash}</button></div>`).join("") || `<p class="hint">${q || f !== "all" ? "مفيش مشاريع بالبحث ده." : "مفيش مشاريع لسه — ابدأ مشروع جديد."}</p>`}</div>
     <h3 class="hsec">أدوات</h3>
     <div class="homeacts"><label class="ghost2 filebtn">📂 افتح ملف مشروع<input type="file" id="homeImp" accept=".json,application/json" hidden></label><button class="ghost2" data-hdefs>⚙ الإعدادات الافتراضية</button><button class="ghost2" data-hlook>🎨 المظهر والكيبورد</button><button class="ghost2" data-habout>ⓘ عن التطبيق</button><button class="ghost2" data-hlang data-noi18n>🌐 ${I18n.lang === "en" ? "عربي" : "English"}</button></div>
     <p class="hint">المشاريع بتتحفظ لوحدها وانت شغال. خد نسخة احتياطي من ☰ ← تصدير ← نسخة من المشروع.</p></div>`;
@@ -4221,10 +4268,14 @@ const plan = {
     if (b.x0 > b.x1) { b.x0 = 0; b.x1 = 700; b.z0 = 0; b.z1 = 500; }
     const pad = Math.max(60, (b.x1 - b.x0 + b.z1 - b.z0) * 0.08);
     const host = this.host();
-    const ar = (host.clientWidth || 800) / (host.clientHeight || 600);
+    // the buttons floating over the top of the plan: fit the room into the part of the plan below them
+    const ch = $("#chips"), hr = host.getBoundingClientRect(), cr = ch && !ch.hidden ? ch.getBoundingClientRect() : null;
+    const HH = host.clientHeight || 600, top = cr && cr.height ? Math.max(0, Math.min(HH * 0.45, cr.bottom - hr.top + 6)) : 0;
+    const ar = (host.clientWidth || 800) / Math.max(1, HH - top);
     let w = b.x1 - b.x0 + 2 * pad, h = b.z1 - b.z0 + 2 * pad;
     if (w / h < ar) w = h * ar; else h = w / ar;
-    this.vb = { x: (b.x0 + b.x1) / 2 - w / 2, y: (b.z0 + b.z1) / 2 - h / 2, w, h };
+    const hAll = (h * HH) / Math.max(1, HH - top), topCm = (top * hAll) / HH;
+    this.vb = { x: (b.x0 + b.x1) / 2 - w / 2, y: (b.z0 + b.z1) / 2 - h / 2 - topCm, w, h: hAll };
   },
   render() {
     const host = this.host();
@@ -4524,6 +4575,7 @@ const plan = {
       a.moved = true;
       plan.render();
     } else if (a.kind === "unit") {
+      if (!a.pinned) { a.pinned = true; pinOthers(a.u.id); }
       a.pose = Room.snapPose(a.segs, a.box, [p[0] + a.off[0], p[1] + a.off[1]], a.rot, a.others, a.row);
       a.u.pos = a.pose.wall ? { wall: a.pose.wall, s: a.pose.s } : { x: a.pose.x, z: a.pose.z, rot: a.pose.rot };
       a.moved = true;
@@ -4561,6 +4613,7 @@ function finishDraw(close) {
       state.project.room = { pts, closed: !!close && pts.length >= 3, walls: [], openings: [] };
       const n = state.project.room.closed ? pts.length : pts.length - 1;
       for (let i = 0; i < n; i++) state.project.room.walls.push(Room.newWallMeta());
+      for (const u of state.project.units) delete u.pos; // a new room: the units go onto its walls again
       state.whole = true;
     }
   }
@@ -5422,7 +5475,7 @@ function cutGroups(project) {
     const { lb } = pc;
     if (STONE(pc.lib) || /^(alu_|stainless|copper)/.test(pc.lib || "") || ["glass", "mirror", "frame", "door_frame_alu", "rail"].includes(pc.pt.material) || /ألومنيوم|المونيوم|معدن/.test(pc.mname || "")) { outside.push(pc); continue; }
     const layers = thick.some((t) => Math.abs(t - lb.t) < 0.01) ? [lb.t] : Catalog.laminationFor(lb.t) || [lb.t];
-    const wood = (pc.lib || "").startsWith("wood_");
+    const wood = (pc.lib || "").startsWith("wood_") || !!lb.grain; // wood, or a part marked «grain: don't turn»
     layers.forEach((t, li) => {
       const key = `${pc.mname} — ${Math.round(t * 10)} مم`;
       if (!groups.has(key)) groups.set(key, { key, color: pc.color, parts: [] });
@@ -5449,11 +5502,19 @@ function groupSheet(g) {
 let worker = null;
 try { worker = new Worker(new URL("./cutworker.js", import.meta.url), { type: "module" }); } catch { worker = null; }
 let cutReq = 0, cutData = null, cutKey = "";
+/** cut settings always usable numbers (an empty or mistyped box used to put every part on its own sheet) */
+const CUT_DEF = { sheetW: 244, sheetH: 122, kerf: 0.4, trim: 1 };
+const CUT_OK = { sheetW: [50, 600], sheetH: [30, 400], kerf: [0, 1.5], trim: [0, 5] };
+function cutOptsSafe() {
+  const o = (state.cutOpts ??= {});
+  for (const [k, [lo, hi]] of Object.entries(CUT_OK)) { const v = +o[k]; o[k] = Number.isFinite(v) && v >= lo && v <= hi && !(k.startsWith("sheet") && v <= 0) ? v : CUT_DEF[k]; }
+  return o;
+}
 function runCut(after) {
   const { groups, outside } = cutGroups(state.project);
-  const o = state.cutOpts;
+  const o = cutOptsSafe();
   const opts = { sheetW: +o.sheetW, sheetH: +o.sheetH, kerf: +o.kerf, trim: +o.trim };
-  for (const g of groups) { g.remnants = o.useStock === false ? [] : (state.stock?.[g.key]?.remnants || []).map((r) => [+r.w, +r.h]); g.sheet = groupSheet(g); }
+  for (const g of groups) { g.remnants = o.useStock === false ? [] : (state.stock?.[g.key]?.remnants || []).filter((r) => r.from !== state.project.id && +r.w > 0 && +r.h > 0).map((r) => [+r.w, +r.h]); g.sheet = groupSheet(g); }
   const key = JSON.stringify([groups.map((g) => [g.key, g.parts, g.remnants, g.sheet]), opts]);
   if (key === cutKey && cutData && !cutData.busy) { after ? after() : drawCut(); return; }
   cutKey = key;
@@ -5579,9 +5640,13 @@ $("#v-cut").addEventListener("click", async (e) => {
   if (!b) return;
   if (b.hasAttribute("data-leftcopy")) { try { await navigator.clipboard.writeText(leftoversText()); b.textContent = "اتنسخ ✓"; } catch { alertBar("ما قدرتش أنسخ — صدّر Excel وفيه شيت البواقي."); } return; }
   if (b.hasAttribute("data-leftstock")) {
+    // the offcuts this project WILL leave: kept for the next projects (this one can't cut from its own offcuts),
+    // and pressing again replaces them instead of adding them twice
     let n = 0;
-    for (const x of leftovers()) { const st = stockOf(x.key); for (const o of x.list) { st.remnants.push({ id: uid(), w: Math.round(o.w), h: Math.round(o.h) }); n++; } }
-    save(); alertBar(`اتضاف ${n} باقي للمخزن (الورشة والعميل ← المخزن).`); return;
+    const pid = state.project.id, list = leftovers();
+    for (const k of Object.keys(state.stock || {})) state.stock[k].remnants = (state.stock[k].remnants || []).filter((r) => r.from !== pid);
+    for (const x of list) { const st = stockOf(x.key); for (const o of x.list) { st.remnants.push({ id: uid(), w: Math.round(o.w), h: Math.round(o.h), from: pid, fromName: state.project.name }); n++; } }
+    save(); alertBar(`اتضاف ${n} باقي للمخزن — هيتستخدموا في المشاريع الجاية (الورشة والعميل ← المخزن).`); return;
   }
 });
 $("#v-cut").addEventListener("change", (e) => {
@@ -5595,7 +5660,12 @@ $("#v-cut").addEventListener("change", (e) => {
   }
   const k = e.target.dataset.co;
   if (!k) return;
-  state.cutOpts[k] = +e.target.value;
+  const raw = String(e.target.value).trim(), v = toNum(raw), lim = CUT_OK[k];
+  if (lim && (raw === "" || !Number.isFinite(v) || v < lim[0] || v > lim[1])) {
+    alertBar(raw === "" ? "الخانة دي مينفعش تبقى فاضية — رجعت للقيمة اللي كانت" : `القيمة لازم تبقى بين ${lim[0]} و ${lim[1]}`);
+    e.target.value = state.cutOpts[k] ?? CUT_DEF[k]; return;
+  }
+  state.cutOpts[k] = lim ? v : +e.target.value;
   save();
   runCut();
 });
@@ -5719,7 +5789,7 @@ function labelsHtml(pieces, pid, sheets, fmt) {
     const b = pc.lb.banded;
     const bands = pc.pt.band_all_sides ? "شريط: كل الحروف" : `شريط: ${["left", "right", "bottom", "top"].filter((k) => b[k]).length} حرف`;
     const holes = (pc.pt.holes || []).length;
-    return `<div class="lab"><div class="top"><span class="big">${esc(pc.key)}</span><b>${esc(pc.pt.name)}</b><span class="dim">${n1(pc.lb.w)} × ${n1(pc.lb.h)} × ${n1(pc.lb.t)}</span></div>
+    return `<div class="lab"><div class="top"><span class="big">${esc(pc.key)}</span><b>${esc(pc.pt.name)}</b><span class="dim">${n1(pc.lb.h)} × ${n1(pc.lb.w)} × ${n1(pc.lb.t)}</span></div>
       <div class="mid"><div class="dia">${pieceSvg(pc, 1)}</div><div class="side">${qrSvg(pieceUrl(pid, pc.key), 62)}</div></div>
       <div class="bc">${barcodeSvg(pc.key, 38, 5)}</div>
       <div class="bot"><span><b>${esc(pc.ucode)}</b> ${esc(pc.unit)}</span><span>${esc(pc.mname)}</span><span>${bands}${holes ? ` · ${holes} خرم` : ""}</span><span>${esc(sheets[pc.key] || "")}</span></div></div>`;
@@ -5813,7 +5883,7 @@ function drawShop() {
   const sheets = sheetIndex();
   for (const pc of pieces.slice(0, 24)) {
     const st = prog[pc.key] || 0;
-    h += `<div class="labcard"><div class="lt"><span class="ucode">${esc(pc.key)}</span><b>${esc(pc.pt.name)}</b><span class="num">${n1(pc.lb.w)}×${n1(pc.lb.h)}</span></div><div class="lm">${pieceSvg(pc, 1)}<span class="qr">${qrSvg(pieceUrl(pid, pc.key), 56)}</span></div>
+    h += `<div class="labcard"><div class="lt"><span class="ucode">${esc(pc.key)}</span><b>${esc(pc.pt.name)}</b><span class="num">${n1(pc.lb.h)}×${n1(pc.lb.w)}</span></div><div class="lm">${pieceSvg(pc, 1)}<span class="qr">${qrSvg(pieceUrl(pid, pc.key), 56)}</span></div>
       ${(() => { const gi = grooveInfo(pc); return gi ? `<div class="lgr">${esc(gi.short)}</div>` : ""; })()}
       <div class="lb"><span>${esc(pc.unit)}</span><span>${esc(sheets[pc.key] || pc.mname)}</span></div><div class="stg">${STAGES.map((s, i) => `<i class="${i < st ? "on" : ""}">${s}</i>`).join("")}</div></div>`;
   }
@@ -5847,7 +5917,7 @@ $("#v-shop").addEventListener("change", (e) => {
   if (t.dataset.price || t.dataset.pricet) {
     const P = priceDefaults();
     if (t.dataset.pricet) P[t.dataset.pricet] = t.value;
-    else { const [a, b] = t.dataset.price.split(/\.(.+)/); if (b) { P[a] ??= {}; P[a][b] = +t.value || 0; } else P[a] = +t.value || 0; }
+    else { const [a, b] = t.dataset.price.split(/\.(.+)/), val = Math.max(0, moneyNum(t.value)); if (b) { P[a] ??= {}; P[a][b] = val; } else P[a] = val; }
     save();
     drawShop();
   }
@@ -5912,6 +5982,7 @@ async function publishShared() {
 /** keep the client's copy up to date when the stages change (only once it was shared) */
 function syncShared() { if (!cloud.db || !ui.sharedAt) return; clearTimeout(ui.syncT); ui.syncT = setTimeout(() => publishShared(), 800); }
 function alertBar(t) {
+  document.querySelectorAll("body > .toast").forEach((x) => x.remove()); // one message at a time, never piling up
   const d = document.createElement("div");
   d.className = "toast";
   d.textContent = t;
@@ -6037,7 +6108,7 @@ function drawWork() {
     const st = prog[pc.key] || 0;
     const b = pc.lb.banded;
     el.innerHTML = `<div class="wk-piece"><button class="ghost2" data-back>${ICON.cycle} كل القطع</button>
-      <section class="mgroup"><div class="mg-h"><h3>${esc(pc.pt.name)}</h3><span class="pill">${n1(pc.lb.w)} × ${n1(pc.lb.h)}</span></div>
+      <section class="mgroup"><div class="mg-h"><h3>${esc(pc.pt.name)}</h3><span class="pill">${n1(pc.lb.h)} × ${n1(pc.lb.w)}</span></div>
       <div class="kv"><span>الوحدة</span><b>${esc(pc.unit)}</b><span>الخامة</span><b>${esc(pc.mname)}</b><span>السمك</span><b>${n1(pc.lb.t * 10)} مم</b>
       <span>الشريط</span><b>${pc.pt.band_all_sides ? "كل الحروف" : ["left", "right", "bottom", "top"].filter((k) => b[k]).map((k) => ({ left: "شمال", right: "يمين", bottom: "تحت", top: "فوق" })[k]).join("، ") || "من غير"}</b>
       <span>الأخرام</span><b>${(pc.pt.holes || []).length}</b>${(() => { const gi = grooveInfo(pc); return gi ? `<span>المفحار</span><b>${esc(gi.text.replace(/^مفحار /, ""))}</b>` : ""; })()}<span>الكود</span><b class="num">${esc(pc.key)}</b></div>
@@ -6050,7 +6121,7 @@ function drawWork() {
   let h = `<div class="cuthead"><div><h2>الورشة — ${esc(sp.name)}</h2><p class="hint">صوّر QR الملصق، أو اختار القطعة من هنا.</p></div><span class="pill">${done} / ${pieces.length} خلصت</span></div><div class="wk-list">`;
   for (const pc of pieces) {
     const st = prog[pc.key] || 0;
-    h += `<button class="wk-row" data-piece="${pc.key}"><span><b><span class="ucode">${esc(pc.key)}</span>${esc(pc.pt.name)}</b><small>${esc(pc.unit)} · ${esc(pc.mname)}</small></span><span class="num">${n1(pc.lb.w)}×${n1(pc.lb.h)}</span><span class="stg">${STAGES.map((s, i) => `<i class="${i < st ? "on" : ""}">${s}</i>`).join("")}</span></button>`;
+    h += `<button class="wk-row" data-piece="${pc.key}"><span><b><span class="ucode">${esc(pc.key)}</span>${esc(pc.pt.name)}</b><small>${esc(pc.unit)} · ${esc(pc.mname)}</small></span><span class="num">${n1(pc.lb.h)}×${n1(pc.lb.w)}</span><span class="stg">${STAGES.map((s, i) => `<i class="${i < st ? "on" : ""}">${s}</i>`).join("")}</span></button>`;
   }
   el.innerHTML = h + `</div>`;
 }
@@ -6202,6 +6273,8 @@ function designChecks(project = state.project) {
     if (big.length) add("e", `${u.code} ${u.name}: ${big.slice(0, 3).join("، ")} — أكبر من أي لوح (لحد 366×183 أو 280×207). قسّم الوحدة لوحدتين أو صغّر المقاس.`, u.id);
     if (thin.length) add("w", `${u.code} ${u.name}: شرايح رفيعة قوي ${thin.slice(0, 2).join("، ")} — صعب تتقص على المنشار، الأحسن بروفايل أو تزوّد الفيلر.`, u.id);
   }
+  // units the walls had no room for: they stand in the middle of the floor
+  for (const it of items) if (it.pose.unplaced && room) add("w", `${label(it)}: مالقتش مكان على الحيطان (الحيطان مليانة أو قصيرة) — اتحطت في نص الأوضة. حرّكها لمكانها أو صغّر وحدات تانية.`, it.u.id);
   swingChecks(items, add, room, label);
   // overlaps (same height band)
   const band = (it) => (it.row === "upper" ? [140, 230] : it.row === "lower" ? [0, 90] : it.row === "free" ? [0, 80] : [0, 240]);
@@ -6726,8 +6799,8 @@ function quoteCalc() {
         if (uid0) unitMat.set(uid0, (unitMat.get(uid0) || 0) + pa * wf * pm);
       }
       const q = Math.round(a * wf * 100) / 100;
-      lines.push({ k: "m2", key: g.key, label: `${g.key} (${n1(a)} م² + ${+P.waste || 0}% هالك)`, qty: q, unit: "م²", price: Math.round(pm), total: q * pm });
-      mat += q * pm;
+      lines.push({ k: "m2", key: g.key, label: `${g.key} (${n1(a)} م² + ${+P.waste || 0}% هالك)`, qty: q, unit: "م²", price: Math.round(pm), total: a * wf * pm });
+      mat += a * wf * pm; // unrounded: the units' rows add up to exactly this
     } else {
       const n = cutData.results[g.key].sheets.filter((s) => s.stock !== "remnant").length, pr = +P.sheets[g.key] || +P.defaultSheet || 0;
       lines.push({ k: "sheet", key: g.key, label: `ألواح ${g.key}`, qty: n, unit: "لوح", price: pr, total: n * pr });
@@ -6747,6 +6820,27 @@ function quoteCalc() {
   }
   const band = bandM * (+P.band || 0);
   lines.push({ k: "band", label: "شريط حواف", qty: Math.round(bandM * 10) / 10, unit: "م", price: +P.band || 0, total: band });
+  // bought from other suppliers: glass / mirror / stone / metal pieces (by m²) and the countertops (by running metre)
+  const unitOut = new Map(), addU = (id, v) => id && unitOut.set(id, (unitOut.get(id) || 0) + v);
+  const outBy = new Map();
+  for (const pc of cutData.outside || []) {
+    const a = ((+pc.lb?.w || 0) * (+pc.lb?.h || 0)) / 10000, k = pc.mname || "خامة من مورّد";
+    const o = outBy.get(k) || { a: 0, list: [] }; o.a += a; o.list.push([codeOf.get(String(pc.key).split("-")[0]), a]); outBy.set(k, o);
+  }
+  P.out ??= {};
+  for (const [k, o] of outBy) {
+    const pr = +P.out[k] || 0, q = Math.round(o.a * 100) / 100;
+    lines.push({ k: "out", key: k, label: `${k} (من المورّد)`, qty: q, unit: "م²", price: pr, total: q * pr });
+    mat += q * pr; for (const [id, a] of o.list) addU(id, a * pr);
+  }
+  let ctrM = 0;
+  for (const u of state.project.units) {
+    const r = R(u); if (!r.ok) continue;
+    let m = 0;
+    for (const x of r.meshes || []) if (x.box && /كونتر|countertop/i.test(`${x.name || ""} ${x.mat || ""}`)) { const w = x.box.x1 - x.box.x0, d = x.box.y1 - x.box.y0; m += (w > 75 && d > 75 ? w + d - 60 : Math.max(w, d)) / 100; }
+    if (m > 0) { ctrM += m; addU(u.id, m * (+P.ctr || 0)); }
+  }
+  if (ctrM > 0) { const q = Math.round(ctrM * 100) / 100; lines.push({ k: "ctr", label: "كونتر (رخام / كوارتز) — متر طولي", qty: q, unit: "م", price: +P.ctr || 0, total: q * (+P.ctr || 0) }); mat += q * (+P.ctr || 0); }
   const hw = hardwareTotals();
   let hwT = 0;
   for (const [k, q] of Object.entries(hw)) { const pr = +P.hw[k] || 0; lines.push({ k: "hw", key: k, label: k, qty: q, unit: "", price: pr, total: q * pr }); hwT += q * pr; }
@@ -6766,10 +6860,20 @@ function quoteCalc() {
       let hwU = 0;
       for (const [k, q] of Object.entries(r.hardware || {})) hwU += q * (+P.hw[k] || 0);
       const a = unitArea.get(u.id) || 0;
-      const c = (unitMat.get(u.id) || 0) + r.banding * (+P.band || 0) + hwU + (+P.laborUnit || 0) + a * (+P.laborM2 || 0) + (area ? ((+P.install || 0) * a) / area : 0);
+      const c = (unitMat.get(u.id) || 0) + (unitOut.get(u.id) || 0) + r.banding * (+P.band || 0) + hwU + (+P.laborUnit || 0) + a * (+P.laborM2 || 0) + (area ? ((+P.install || 0) * a) / area : 0);
       return { u, price: c * (1 + (+P.margin || 0) / 100), cost: c, area: a };
     });
-  } else perUnit = state.project.units.filter((u) => unitArea.has(u.id)).map((u) => ({ u, price: area ? (total * unitArea.get(u.id)) / area : total / Math.max(1, units), area: unitArea.get(u.id) }));
+  } else {
+    // by sheets: the boards are shared out by each unit's surface, but its own banding, hardware and labour stay its own
+    const sheetMat = mat - [...unitOut.values()].reduce((a, v) => a + v, 0);
+    perUnit = state.project.units.filter((u) => unitArea.has(u.id)).map((u) => {
+      const r = R(u), a = unitArea.get(u.id) || 0;
+      let hwU = 0;
+      for (const [k, q] of Object.entries(r.hardware || {})) hwU += q * (+P.hw[k] || 0);
+      const c = (area ? (sheetMat * a) / area : sheetMat / Math.max(1, units)) + (unitOut.get(u.id) || 0) + r.banding * (+P.band || 0) + hwU + (+P.laborUnit || 0) + a * (+P.laborM2 || 0) + (area ? ((+P.install || 0) * a) / area : 0);
+      return { u, price: c * (1 + (+P.margin || 0) / 100), cost: c, area: a };
+    });
+  }
   return { lines, mat, band, hwT, labor, cost, total, perUnit, area, waste, byArea };
 }
 function quoteHtml() {
@@ -6782,20 +6886,28 @@ function quoteHtml() {
     ${Q.byArea ? `<div class="grid3">${pin("waste", P.waste, "نسبة الهالك %")}</div>` : ""}
     <div class="tblwrap"><table class="tbl"><thead><tr><th>البند</th><th>الكمية</th><th>سعر الوحدة</th><th>الإجمالي</th></tr></thead><tbody>`;
   for (const L of Q.lines) {
-    const k = L.k === "sheet" ? `sheets.${L.key}` : L.k === "m2" ? `m2.${L.key}` : L.k === "hw" ? `hw.${L.key}` : "band";
+    const k = L.k === "sheet" ? `sheets.${L.key}` : L.k === "m2" ? `m2.${L.key}` : L.k === "hw" ? `hw.${L.key}` : L.k === "out" ? `out.${L.key}` : L.k === "ctr" ? "ctr" : "band";
     const typed = L.k === "m2" ? +P.m2?.[L.key] > 0 : true;
     h += `<tr><td>${esc(L.label)}${L.k === "m2" ? `<br><small class="hint">سعر اللوح <input class="pin sm" type="text" inputmode="decimal" data-numf data-price="sheets.${esc(L.key)}" value="${P.sheets[L.key] || ""}" placeholder="${P.defaultSheet || 0}"></small>` : ""}</td><td class="num">${L.qty} ${L.unit}</td><td><input class="pin" type="text" inputmode="decimal" data-numf data-price="${esc(k)}" value="${typed ? L.price || "" : ""}" placeholder="${L.k === "m2" ? L.price || 0 : 0}"></td><td class="num">${money(L.total)}</td></tr>`;
   }
   h += `</tbody></table></div><div class="grid3">${pin("laborUnit", P.laborUnit, "مصنعية لكل وحدة")}${pin("laborM2", P.laborM2, "مصنعية لكل م² خشب")}${pin("install", P.install, "تركيب ونقل (مقطوعية)")}</div>
-    <div class="kv"><span>خامات</span><b>${money(Q.mat + Q.band)}</b><span>هاردوير</span><b>${money(Q.hwT)}</b><span>مصنعية وتركيب</span><b>${money(Q.labor)}</b><span>التكلفة</span><b>${money(Q.cost)}</b><span>سعر البيع</span><b>${money(Q.total)}</b><span>مكسبك</span><b class="profit">${money(Q.total - Q.cost)}${Q.total ? ` (${Math.round(((Q.total - Q.cost) / Q.total) * 100)}%)` : ""}</b>${Q.waste != null ? `<span>هالك الألواح</span><b>${Q.waste}%</b>` : ""}</div>
+    <div class="kv"><span>خامات</span><b>${money(Q.mat + Q.band)}</b><span>هاردوير</span><b>${money(Q.hwT)}</b><span>مصنعية وتركيب</span><b>${money(Q.labor)}</b><span>التكلفة</span><b>${money(Q.cost)}</b><span>سعر البيع</span><b>${money(Q.total)}</b><span>مكسبك</span><b class="profit">${money(Q.total - Q.cost)}${Q.total && Q.cost ? ` (${Math.round(((Q.total - Q.cost) / Q.cost) * 100)}% على التكلفة · ${Math.round(((Q.total - Q.cost) / Q.total) * 100)}% من سعر البيع)` : ""}</b>${Q.waste != null ? `<span>هالك الألواح</span><b>${Q.waste}%</b>` : ""}</div>
     <details ${Q.byArea ? "open" : ""}><summary>سعر كل وحدة${Q.byArea ? " (من مسطح قطعها)" : ""}</summary><div class="tblwrap"><table class="tbl"><thead><tr><th>الوحدة</th><th>المسطح</th>${Q.byArea ? "<th>التكلفة</th>" : ""}<th>السعر</th><th>سعر المتر</th></tr></thead><tbody>
       ${Q.perUnit.map(({ u, price, cost, area }) => `<tr><td><b>${esc(u.code || "")}</b> ${esc(u.name)}</td><td class="num">${n1(area || 0)} م²</td>${Q.byArea ? `<td class="num">${money(cost)}</td>` : ""}<td class="num"><b>${money(price)}</b></td><td class="num">${area ? money(price / area) : "—"}</td></tr>`).join("")}</tbody></table></div></details>
     <div class="grid3">${pin("defaultSheet", P.defaultSheet, "سعر اللوح لأي خامة مش متسعّرة")}<label class="f"><span>اسم المصنع (في العروض والفيديو والضمان)</span><input data-pricet="factory" value="${esc(P.factory || "")}" placeholder="NOVERA"></label><label class="f"><span>رقم التليفون / واتساب</span><input data-pricet="phone" inputmode="tel" value="${esc(P.phone || "")}" placeholder="010xxxxxxxx"></label></div>
-    <div class="grid3">${pin("margin", P.margin, "هامش الربح %")}<label class="f"><span>اسم العميل</span><input data-pricet="client" value="${esc(P.client)}"></label>${pin("validity", P.validity, "العرض ساري (يوم)")}</div>
+    <div class="grid3">${pin("margin", P.margin, "نسبة الربح على التكلفة %")}<label class="f"><span>اسم العميل</span><input data-pricet="client" value="${esc(P.client)}"></label>${pin("validity", P.validity, "العرض ساري (يوم)")}</div>
     <div class="grid2"><label class="f"><span>مدة التنفيذ</span><input data-pricet="delivery" value="${esc(trv(P.delivery))}"></label><label class="f"><span>الضمان</span><input data-pricet="warranty" value="${esc(trv(P.warranty))}"></label></div>
     <label class="f"><span>ملاحظات تظهر في العرض</span><input data-pricet="notes" value="${esc(P.notes)}"></label>
     <div class="btnrow"><button class="primary" data-quote>عرض سعر PDF للعميل</button><span class="hint" id="quoteMsg"></span></div></section>`;
   return h;
+}
+/** the small line at the foot of a label: unit, material and — always — the sheet number (shortened in the middle, never cut off) */
+function labelFoot(pc, sheets) {
+  const sh = sheets[pc.key] ? I18n.tr(sheets[pc.key].split(" · ")[0]) : "";
+  let mid = I18n.tr(`${pc.ucode} ${pc.unit} · ${pc.mname}`);
+  const room = 50 - (sh ? sh.length + 3 : 0);
+  if (mid.length > room) mid = mid.slice(0, Math.max(10, room - 1)) + "…";
+  return sh ? `${mid} · ${sh}` : mid;
 }
 async function exportQuotePdf() {
   await cutReady();
@@ -6810,20 +6922,26 @@ async function exportQuotePdf() {
   try { if (view.ready && state.project.units.length) { const keep = state.whole; state.whole = true; view3 = view.snapshot(900, 480, true); state.whole = keep; view.update(true); } } catch { view3 = ""; }
   let y = 170;
   if (view3) { t += `<image href="${view3}" x="50" y="${y}" width="900" height="480"/>`; y += 500; }
-  t += `<rect x="50" y="${y}" width="900" height="36" fill="#123f23"/><text x="935" y="${y + 24}" font-size="15" font-weight="700" fill="#fff" text-anchor="end">الوحدة</text><text x="520" y="${y + 24}" font-size="15" font-weight="700" fill="#fff" text-anchor="middle">المقاس (سم)</text><text x="70" y="${y + 24}" font-size="15" font-weight="700" fill="#fff">السعر (ج.م)</text>`;
-  y += 36;
+  // the table carries on onto more pages (it used to stop after ~20 units while the total counted them all)
+  const pages = [], LIM = 1300;
+  const headRow = () => { t += `<rect x="50" y="${y}" width="900" height="36" fill="#123f23"/><text x="935" y="${y + 24}" font-size="15" font-weight="700" fill="#fff" text-anchor="end">الوحدة</text><text x="520" y="${y + 24}" font-size="15" font-weight="700" fill="#fff" text-anchor="middle">المقاس (سم)</text><text x="70" y="${y + 24}" font-size="15" font-weight="700" fill="#fff">السعر (ج.م)</text>`; y += 36; };
+  const newPage = () => { pages.push(t); t = `<text x="940" y="112" font-size="22" font-weight="800" text-anchor="end">عرض سعر — تابع</text><text x="60" y="112" font-size="15" fill="#555">${esc(state.project.name)} · ${esc(no)}</text>`; y = 150; };
+  headRow();
   Q.perUnit.forEach(({ u, price }, i) => {
-    if (y > 1250) return;
+    if (y > LIM) { newPage(); headRow(); }
     const r = R(u);
     t += `<rect x="50" y="${y}" width="900" height="30" fill="${i % 2 ? "#f4f5f0" : "#fff"}"/><text x="935" y="${y + 20}" font-size="14" text-anchor="end"><tspan font-weight="800">${esc(u.code)}</tspan>  ${esc(u.name)}</text><text x="520" y="${y + 20}" font-size="14" text-anchor="middle" direction="ltr">${dimsText(u, r)}</text><text x="70" y="${y + 20}" font-size="14" font-weight="700">${money(price)}</text>`;
     y += 30;
   });
   y += 14;
+  const termsN = 3 + (P.notes ? 1 : 0);
+  if (y + 70 + termsN * 24 > LIM + 60) newPage();
   t += `<rect x="50" y="${y}" width="900" height="44" fill="#d9a63a"/><text x="935" y="${y + 29}" font-size="19" font-weight="800" text-anchor="end">الإجمالي</text><text x="70" y="${y + 29}" font-size="20" font-weight="800">${money(Q.total)} ج.م</text>`;
   y += 70;
   const terms = [`مدة التنفيذ: ${P.delivery}`, `الضمان: ${P.warranty}`, "الأسعار شاملة الخامات والهاردوير والتصنيع والتركيب حسب التصميم المرفق.", ...(P.notes ? [P.notes] : [])];
   terms.forEach((x, i) => { t += `<text x="940" y="${y + i * 24}" font-size="14" text-anchor="end">• ${esc(x)}</text>`; });
-  const bytes = await Exp.pdfFromSvgPages([pageFrame(t, { title: "عرض سعر" })], { title: `عرض سعر — ${state.project.name}` });
+  pages.push(t);
+  const bytes = await Exp.pdfFromSvgPages(pages.map((pg, k) => pageFrame(pg, { title: "عرض سعر", page: pages.length > 1 ? k + 1 : 0, pages: pages.length > 1 ? pages.length : 0 })), { title: `عرض سعر — ${state.project.name}` });
   return Exp.deliver(cloud.downloads, `${fileBase()} — عرض سعر.pdf`, bytes);
 }
 
@@ -6870,7 +6988,7 @@ async function exportXlsx() {
   for (const u of state.project.units) { const r = R(u); if (r.ok) units.push([unitCode(u), u.name, r.label || "", dimsText(u, r), r.pieces, r.banding, r.doors, r.drawers]); }
   const mats = new Map();
   for (const pc of projectPieces(state.project)) {
-    const k = `${pc.mname}|${pc.lb.t}`;
+    const k = `${pc.mname}|${Math.round(pc.lb.t * 100) / 100}`; // 1.7999999 and 1.8 are the same board
     const m = mats.get(k) || { name: pc.mname, t: pc.lb.t, n: 0, area: 0 };
     m.n++; m.area += (pc.lb.w * pc.lb.h) / 10000;
     mats.set(k, m);
@@ -6980,7 +7098,7 @@ async function exportLabelsPdf() {
       ${(() => { const gi = grooveInfo(pc); return gi ? `${nest(dia, 3 * s, 13 * s, 36 * s, 14.5 * s)}<text x="${W - 2 * s}" y="${29.6 * s}" font-size="${2.35 * s}" font-weight="800" fill="#8a5a00" text-anchor="end">${esc(gi.short)}</text>` : nest(dia, 3 * s, 13 * s, 36 * s, 17 * s); })()}
       ${qr ? nest(qr, W - 19 * s, 10 * s, 16 * s, 16 * s) : ""}
       ${nest(barcodeSvg(pc.key, 38, 5), 11 * s, 30.5 * s, 38 * s, 4.5 * s)}
-      <text x="${W - 2 * s}" y="${38.2 * s}" font-size="${2.2 * s}" text-anchor="end" fill="#333">${esc(`${pc.ucode} ${pc.unit} · ${pc.mname}${sheets[pc.key] ? " · " + sheets[pc.key].split(" · ")[0] : ""}`.slice(0, 52))}</text></g>`;
+      <text x="${W - 2 * s}" y="${38.2 * s}" font-size="${2.2 * s}" text-anchor="end" fill="#333">${esc(labelFoot(pc, sheets))}</text></g>`;
   };
   const pages = [];
   if (state.labelFmt === "roll") {
@@ -7082,7 +7200,7 @@ async function exportDxf() {
  */
 async function exportCnc() {
   const pieces = projectPieces(state.project);
-  const files = [], rows = [["رقم القطعة", "الوحدة", "القطعة", "الخامة", "الطول مم", "العرض مم", "السمك مم", "أخرام", "كبب مفصلات", "مفاحير", "ملاحظات"]];
+  const files = [], rows = [["رقم القطعة", "الوحدة", "القطعة", "الخامة", "X مم (العرض في الملصق)", "Y مم (الطول في الملصق)", "السمك مم", "أخرام", "كبب مفصلات", "مفاحير", "ملاحظات"]];
   const mm = (v) => Math.round(v * 100) / 10;
   for (const pc of pieces) {
     const { pt, lb } = pc;
@@ -7142,7 +7260,7 @@ async function exportCnc() {
   if (!files.length) throw new Error("مفيش قطع خشب في المشروع");
   files.push({ name: "عمليات CNC.csv", data: Exp.csv(rows) });
   files.push({ name: "اقراني.txt", data: "NOVERA Studio — ملفات CNC\r\n\r\nكل قطعة في ملف DXF لوحدها بالمليمتر، مقسومة فولدرات حسب الخامة والسمك.\r\n" +
-    "الطبقات (Layers):\r\n  OUTLINE  حدود القطعة (الطول على X والعرض على Y زي الملصق)\r\n  DRILL_V_D8_Z12  خرم رأسي قطره 8 وعمقه 12 مم (الرقمين في اسم الطبقة)\r\n" +
+    "الطبقات (Layers):\r\n  OUTLINE  حدود القطعة (العرض اللي في الملصق على X والطول على Y)\r\n  DRILL_V_D8_Z12  خرم رأسي قطره 8 وعمقه 12 مم (الرقمين في اسم الطبقة)\r\n" +
     "  DRILL_V_D35_Z13  كبة مفصلة\r\n  GROOVE_W7_Z8  مفحار عرضه 7 وعمقه 8 مم\r\n  POCKET_BACK_Z12  حفر مقبض بلت إن من ضهر الوش (العمق في الاسم بالمم)\r\n  POCKET_FRONT_Z8  حفر من وش القطعة بالعمق ده (من ورشة الرسم)\r\n  CUTOUT  تفريغة جوه القطعة (قص كامل)\r\n  TEXT  رقم القطعة (مش للتشغيل)\r\n\r\nفي برنامج المكنة: اربط كل طبقة بالعدة المناسبة مرة واحدة واحفظها كقالب.\r\n" });
   return Exp.deliver(cloud.downloads, `${fileBase()} — CNC.zip`, Exp.zip(files));
 }

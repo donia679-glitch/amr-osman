@@ -158,7 +158,7 @@ function build() {
       <button class="dsb snapbtn on" data-ds="snapmenu" title="المغناطيس (Snap)">🧲 مغناطيس</button>
       <select id="dsStep" class="dssel" aria-label="الشبكة"><option value="0">شبكة: من غير</option><option value="0.1">شبكة 1 مم</option><option value="0.5">شبكة 5 مم</option><option value="1">شبكة 1 سم</option><option value="5">شبكة 5 سم</option><option value="10">شبكة 10 سم</option></select>
       <span class="dshint" id="dsHint"></span>
-      <label class="dsvcb"><span id="dsVcbL">المقاس</span><input id="dsVcb" data-keypad data-kpsolo autocomplete="off" placeholder="—"></label>
+      <label class="dsvcb"><span id="dsVcbL">المقاس</span><input id="dsVcb" data-keypad data-kpsolo data-kpextra data-neg autocomplete="off" placeholder="—"></label>
       <span class="dsgrp dskeys"><button class="dsb" data-vk=",">,</button><button class="dsb" data-vk="x">x</button><button class="dsb" data-vk="/">/</button><button class="dsb" data-vk="s">s</button><button class="dsb primary" data-vk="enter">↵</button><button class="dsb" data-ds="esc" title="الغي الخطوة">✕</button></span>
     </footer>`;
   host.appendChild(el);
@@ -203,7 +203,7 @@ function build() {
   el.addEventListener("input", onInput);
   el.querySelector("#dsVcb").addEventListener("focus", (e) => { if (!e.target.dataset.typed) e.target.value = ""; });
   el.querySelector("#dsVcb").addEventListener("input", (e) => { e.target.dataset.typed = "1"; });
-  el.querySelector("#dsVcb").addEventListener("blur", (e) => { delete e.target.dataset.typed; });
+  el.querySelector("#dsVcb").addEventListener("blur", (e) => { delete e.target.dataset.typed; setTimeout(() => { if (document.activeElement !== e.target && ui.dimEdit != null) { ui.dimEdit = null; vcbSet("", "المقاس"); need(); } }, 400); });
   el.querySelector("#dsVcb").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); vcbEnter(); } else if (e.key === "Escape") { cancelStep(); } });
   window.addEventListener("resize", () => { if (alive) resize(); });
   window.addEventListener("keydown", (e) => {
@@ -262,7 +262,7 @@ function modelBox() {
 function setView(kind, distHint) {
   if (!ctl) return;
   const b = modelBox(), c = b.getCenter(new THREE.Vector3()), size = b.getSize(new THREE.Vector3());
-  const r = distHint || Math.max(size.x, size.y, size.z, 60) * 1.9;
+  const r = (distHint || Math.max(size.x, size.y, size.z, 60) * 1.9) * aspK();
   const dirs = { iso: [1, 0.85, 1.25], top: [0, 1, 0.0001], front: [0, 0, 1], back: [0, 0, -1], right: [1, 0, 0], left: [-1, 0, 0] };
   const d = new THREE.Vector3(...dirs[kind]).normalize();
   if (kind !== "iso" && !ui.ortho) { ui.ortho = true; swapCam(); }
@@ -282,10 +282,12 @@ function swapCam() {
   if (ctl) { ctl.object = cam; ctl.update(); }
   need();
 }
+/** a tall (portrait) view needs the camera further back for the same model to fit across */
+function aspK() { const v = el?.querySelector("#dsView"); const a = v ? v.clientWidth / Math.max(1, v.clientHeight) : 1; return a < 1 ? Math.min(1.8, 1 / a) : 1; }
 function zoomExtents() {
   if (!ctl) return;
   const b = modelBox(), c = b.getCenter(new THREE.Vector3()), size = b.getSize(new THREE.Vector3());
-  const r = Math.max(size.x, size.y, size.z, 40) * 1.8;
+  const r = Math.max(size.x, size.y, size.z, 40) * 1.8 * aspK();
   const d = cam.position.clone().sub(ctl.target).normalize();
   ctl.target.copy(c); cam.position.copy(c).addScaledVector(d, r); fitOrtho(r); cam.lookAt(c); ctl.update(); need();
 }
@@ -514,6 +516,8 @@ function pickAny(cx, cy) {
   // a tap on a wall near a socket / window / door means that thing, not the wall under it
   if (m?.ref?.startsWith("W:")) { const near = roomNearPick(cx, cy); if (near) m = near; }
   const k = pickSketch(cx, cy);
+  // a text or a dimension label right under the finger beats the board behind it
+  for (const L of labelList) { if (!L.ref || /^[EW]:/.test(L.ref)) continue; const a = scr(L.p); if (Math.hypot(a[0] - cx, a[1] - cy) < 16) return { ref: L.ref, d: 0 }; }
   if (k && (!m || k.dist == null || k.dist <= m.dist + 0.5 || k.d != null)) return k;
   if (m) return m;
   // guides / dims / texts near the pointer
@@ -587,13 +591,18 @@ function inferCore(cx, cy, opts = {}) {
   const sn = SN();
   const pr = (touchy ? 1.35 : 1) * (sn.on ? sn.strength : 0.0001);
   let best = null;
+  // what surface is under the finger: corners hidden behind it (the far side of a board) don't snap
+  const under = sn.on ? pickMesh(cx, cy) : null, rO = ray.ray.origin.clone(), rD = ray.ray.direction.clone();
+  const hidden = (P) => { if (!under || ui.xray) return false; const v = T3(P).sub(rO); return v.dot(rD) > under.dist + 0.8; };
   for (const q of sn.on ? snapPoints() : []) {
     if ((q.kind === "end" && !sn.end) || (q.kind === "mid" && !sn.mid) || (q.kind === "center" && !sn.center)) continue;
     const s = scr(q.p);
     if (s[2] > 1) continue;
     const d = Math.hypot(s[0] - cx, s[1] - cy);
-    const pri = q.kind === "end" ? 0 : q.kind === "center" ? 1 : q.kind === "mid" ? 2 : 3;
-    if (d < POINT_R * pr && (!best || pri < best.pri || (pri === best.pri && d < best.d))) best = { ...q, d, pri };
+    if (d >= POINT_R * pr || hidden(q.p)) continue;
+    // a corner wins over a middle when they are about as close, but the one right under the finger wins
+    const score = d + (q.kind === "end" ? 0 : q.kind === "center" ? 4 : q.kind === "mid" ? 7 : 10);
+    if (!best || score < best.score) best = { ...q, d, score };
   }
   let res = null;
   if (best && (!opts.plane || Math.abs(G.toPlane(opts.plane, best.p)[2]) < 0.6)) res = { p: [...best.p], kind: best.kind, sid: best.sid, kid: best.kid, vi: best.vi, loop: best.loop, w: best.w, seg: best.seg };
@@ -604,6 +613,7 @@ function inferCore(cx, cy, opts = {}) {
     for (const i of axes) {
       const c = closestOnLine(opts.anchor, AX[i], cx, cy);
       if (!c) continue;
+      if (i === 2 && ui.axis == null && c.p[2] < -0.05 && opts.anchor[2] > -0.05) continue; // never "down through the floor" by accident
       const s = scr(c.p), d = Math.hypot(s[0] - cx, s[1] - cy);
       if ((ui.axis != null || d < AXIS_R * pr) && (!ab || d < ab.d)) ab = { p: c.p, d, axis: i };
     }
@@ -793,7 +803,11 @@ function onDown(e) {
     if (ctl) { ctl.touches.ONE = -1; ctl.mouseButtons.LEFT = -1; }
   }
   press = { xy, moved: false, consumed: false };
-  if (ui.tool === "eraser") { eraseDrag = true; eraseAt(...xy); press.consumed = true; return; }
+  if (ui.tool === "eraser") {
+    press.consumed = true;
+    if (e.pointerType === "touch") { press.eraseAt = xy; return; } // wait: a second finger means a pinch, not an erase
+    eraseDrag = true; eraseAt(...xy); return;
+  }
   const t = TOOL[ui.tool];
   if (t?.wantsDown && t.wantsDown()) {
     if (e.pointerType === "touch") press.pending = xy; // a second finger may still come (then it was a pinch)
@@ -809,13 +823,17 @@ function onMove(e) {
   if (press?.box) { boxDraw(press.xy, xy); return; }
   if (touchy && press && !["select", "orbit", "pan", "eraser", "paint"].includes(ui.tool)) { loupe = xy; need(); } else loupe = null;
   if (press?.pending && press.moved) { const t0 = TOOL[ui.tool]; t0?.click(press.pending); press.pending = null; press.consumed = true; }
-  if (ui.tool === "eraser") { if (eraseDrag && press) eraseAt(...xy); else hoverErase(...xy); return; }
+  if (ui.tool === "eraser") {
+    if (press?.eraseAt && press.moved && !eraseDrag) { eraseDrag = true; eraseAt(...press.eraseAt); press.eraseAt = null; }
+    if (eraseDrag && press) eraseAt(...xy); else hoverErase(...xy); return;
+  }
   if (e.pointerType === "touch" && !press) return;
   TOOL[ui.tool]?.hover?.(xy);
 }
 function onUp(e) {
   downs.delete(e.pointerId);
   const p = press; press = null; eraseDrag = false; if (loupe) { loupe = null; need(); }
+  if (p?.eraseAt && downs.size === 0) { eraseAt(...p.eraseAt); return; }
   if (p?.box) { boxFinish(p.xy, [e.clientX, e.clientY]); return; }
   if (ui.tool === "select" && ctl) { ctl.touches.ONE = -1; ctl.mouseButtons.LEFT = -1; }
   if (!p || p.orbit) { if (p?.orbit && ui.tool === "select" && Math.hypot(e.clientX - p.xy[0], e.clientY - p.xy[1]) < 6) { ui.sel.clear(); ui.editGroup = null; rebuild(); renderUI(); } return; }
@@ -876,10 +894,10 @@ TOOL.line = {
   },
   vcb(v) {
     const st = ui.st;
-    if (!st || !st.hover || v.v == null) return;
-    const d = G.norm(G.sub(st.hover, st.last)); if (!isFinite(d[0])) return;
+    if (!st || v.v == null) return;
+    const d = typedDir(st.hover, st.last, st.wpts);
     const P = G.add(st.last, G.mul(d, v.v));
-    st.wpts.push(P); st.last = P; overlayLine();
+    st.wpts.push(P); st.last = P; st.hover = null; overlayLine();
   },
   enter() { if (ui.st?.wpts.length >= 2) finishLine(false); },
 };
@@ -912,6 +930,15 @@ function finishLine(closed) {
     else { const pa = { id: uid(), pts: W.map((P) => P.map(G.r2)), closed }; M.paths.push(pa); ui.sel = new Set(["p:" + pa.id]); }
   });
   overlay();
+}
+/** the direction a typed length goes: towards the finger / pointer if it has moved, else the locked axis,
+ *  else straight on from the last segment, else along the red axis (on a touch screen there is no hover) */
+function typedDir(hover, last, pts, flat = false) {
+  if (hover && G.dist(hover, last) > 0.05) { const d = G.norm(G.sub(hover, last)); if (flat) d[2] = 0; if (G.len(d) > 1e-6) return G.norm(d); }
+  if (ui.axis != null && !(flat && ui.axis === 2)) return AX[ui.axis];
+  if (pts?.length >= 2) { const d = G.sub(pts.at(-1), pts.at(-2)); if (flat) d[2] = 0; if (G.len(d) > 1e-6) return G.norm(d); }
+  setMsg("الطول راح على المحور الأحمر — عشان اتجاه تاني اقفل محور (X / Y / Z تحت) أو اسحب صباعك ناحية الاتجاه");
+  return [1, 0, 0];
 }
 /** add a drawing; open ones whose ends meet join up, and a chain that closes becomes a closed shape */
 function addSketch(k) {
@@ -1344,7 +1371,7 @@ TOOL.move = {
   },
   vcb(v) {
     const st = ui.st;
-    if (st && v.v != null && st.dv) { commitMove(G.mul(G.norm(st.dv), v.v)); return; }
+    if (st && v.v != null) { const dv = st.dv && G.len(st.dv) > 1e-6 ? G.norm(st.dv) : typedDir(null, st.a, null); commitMove(G.mul(dv, v.v)); return; }
     if (st && v.list && v.list.length === 3) { commitMove(v.list); return; }
     // after a copy: "x5" more copies, "/5" divide the distance
     const lm = ui.lastMove;
@@ -1393,7 +1420,7 @@ TOOL.rotate = {
     const st = ui.st;
     const inf = infer(...xy, st ? { anchor: st.c, plane: st.plane } : {});
     if (!st) {
-      if (!ui.sel.size) { const hit = pickAny(...xy); if (!hit) { setMsg("اختار اللي عايز تلفه الأول"); return; } let ref = hit.ref; const s = ref.startsWith("s:") && M.solids.find((x) => "s:" + x.id === ref); if (s?.group) ref = "G:" + s.group; ui.sel.add(ref); rebuild(); }
+      if (!ui.sel.size) { const hit = pickAny(...xy) || (inf.sid ? { ref: "s:" + inf.sid } : inf.kid ? { ref: "k:" + inf.kid } : null); if (!hit) { setMsg("اختار اللي عايز تلفه الأول"); return; } let ref = hit.ref; const s = ref.startsWith("s:") && M.solids.find((x) => "s:" + x.id === ref); if (s?.group) ref = "G:" + s.group; ui.sel.add(ref); rebuild(); }
       const k = ui.axis != null ? AX[ui.axis] : inf.kind === "face" && inf.face ? G.norm(inf.face.n) : [0, 0, 1];
       ui.st = { c: inf.p, k, plane: G.planeFromNormal(inf.p, k), refs: selRefs() };
       return;
@@ -1442,7 +1469,7 @@ TOOL.scale = {
     const st = ui.st;
     const inf = infer(...xy, st ? { anchor: st.c } : {});
     if (!st) {
-      if (!ui.sel.size) { const hit = pickAny(...xy); if (!hit) { setMsg("اختار اللي عايز تكبّره الأول"); return; } let ref = hit.ref; const s = ref.startsWith("s:") && M.solids.find((x) => "s:" + x.id === ref); if (s?.group) ref = "G:" + s.group; ui.sel.add(ref); rebuild(); }
+      if (!ui.sel.size) { const hit = pickAny(...xy) || (inf.sid ? { ref: "s:" + inf.sid } : inf.kid ? { ref: "k:" + inf.kid } : null); if (!hit) { setMsg("اختار اللي عايز تكبّره الأول"); return; } let ref = hit.ref; const s = ref.startsWith("s:") && M.solids.find((x) => "s:" + x.id === ref); if (s?.group) ref = "G:" + s.group; ui.sel.add(ref); rebuild(); }
       ui.st = { c: inf.p, refs: selRefs() }; return;
     }
     if (!st.r) { if (G.dist(inf.p, st.c) < 0.2) return; st.r = inf.p; return; }
@@ -1570,8 +1597,8 @@ TOOL.dim = {
 };
 function offsetFor(st, P) { const d = G.norm(G.sub(st.b, st.a)), v = G.sub(P, st.a); return G.sub(v, G.mul(d, G.dot(v, d))); }
 TOOL.text = {
-  click(xy) { const inf = infer(...xy, {}); ui.st = { p: inf.p }; const i = el.querySelector("#dsVcb"); i.removeAttribute("data-keypad"); i.value = ""; i.placeholder = "اكتب النص واضغط ↵"; el.querySelector("#dsVcbL").textContent = "النص"; setTimeout(() => i.focus(), 30); overlay(() => oMarker(inf)); },
-  raw(txt) { const st = ui.st; ui.st = null; const i = el.querySelector("#dsVcb"); i.setAttribute("data-keypad", ""); i.placeholder = "—"; if (!st || !txt.trim()) return; edit(() => M.texts.push({ id: uid(), p: st.p, s: txt.trim() })); overlay(); },
+  click(xy) { const inf = infer(...xy, {}); ui.st = { p: inf.p }; const i = el.querySelector("#dsVcb"); i.removeAttribute("data-keypad"); i.inputMode = "text"; i.value = ""; i.placeholder = "اكتب النص واضغط ↵"; el.querySelector("#dsVcbL").textContent = "النص"; i.focus(); /* now, inside the tap: iPadOS opens the keyboard only then */ overlay(() => oMarker(inf)); },
+  raw(txt) { const st = ui.st; ui.st = null; const i = el.querySelector("#dsVcb"); i.setAttribute("data-keypad", ""); i.placeholder = "—"; i.inputMode = "decimal"; if (!st || !txt.trim()) return; edit(() => M.texts.push({ id: uid(), p: st.p, s: txt.trim() })); overlay(); },
 };
 // ---- paint / eraser
 TOOL.paint = {
@@ -1612,17 +1639,23 @@ function edit(fn) {
   if (ui.rsel && !roomEnt(ui.rsel)) ui.rsel = null;
   rebuild(); renderUI();
 }
-function undo() { if (!hist.u.length) return; hist.r.push(JSON.stringify(M)); M = JSON.parse(hist.u.pop()); ui.st = null; ui.sel.clear(); ui.rsel = null; rebuild(); overlay(); renderUI(); }
-function redo() { if (!hist.r.length) return; hist.u.push(JSON.stringify(M)); M = JSON.parse(hist.r.pop()); ui.st = null; ui.sel.clear(); ui.rsel = null; rebuild(); overlay(); renderUI(); }
-function vcbNormal() { const i = el?.querySelector("#dsVcb"); if (i && !i.hasAttribute("data-keypad")) { i.setAttribute("data-keypad", ""); i.placeholder = "—"; } }
-function cancelStep() { restoreRoomDrag(); ui.st = null; vcbNormal(); overlay(); vcbSet(""); }
+function undo() {
+  // a line / wall being drawn: ↶ takes back its last point (and the drawing in progress) — never a finished step
+  if (ui.st) { if (ui.st.wpts?.length > 1) confirmAct("back"); else cancelStep(); return; }
+  if (!hist.u.length) return; hist.r.push(JSON.stringify(M)); M = JSON.parse(hist.u.pop()); ui.st = null; keepSel(); rebuild(); overlay(); renderUI();
+}
+/** after undo / redo: keep what is still there selected */
+function keepSel() { for (const r of [...ui.sel]) if (!(r.startsWith("G:") ? M.groups.some((g) => "G:" + g.id === r) : ent(r))) ui.sel.delete(r); if (ui.rsel && !roomEnt(ui.rsel)) ui.rsel = null; }
+function redo() { if (!hist.r.length) return; hist.u.push(JSON.stringify(M)); M = JSON.parse(hist.r.pop()); ui.st = null; keepSel(); rebuild(); overlay(); renderUI(); }
+function vcbNormal() { const i = el?.querySelector("#dsVcb"); if (i && !i.hasAttribute("data-keypad")) { i.setAttribute("data-keypad", ""); i.placeholder = "—"; i.inputMode = "decimal"; } }
+function cancelStep() { restoreRoomDrag(); ui.st = null; ui.dimEdit = null; vcbNormal(); overlay(); vcbSet(""); }
 function delSel() { if (ui.rsel) { const r = ui.rsel.ref; edit(() => delRoomRef(r)); return; } if (!ui.sel.size) return; edit(() => { for (const r of [...ui.sel]) delEnt(r); ui.sel.clear(); }); }
 function setTool(t) {
   if (ui.tool === "text" && ui.st) TOOL.text.raw("");
   if (ui.tool === "line" && ui.st?.wpts?.length >= 2) finishLine(false);
   if (ui.tool === "wall" && ui.st?.wpts?.length >= 2) finishWall(false);
   restoreRoomDrag();
-  ui.tool = t; ui.st = null; vcbNormal(); ui.tapeLast = null;
+  ui.tool = t; ui.st = null; ui.dimEdit = null; vcbNormal(); ui.tapeLast = null;
   overlay(); applyControls(); vcbSet("", "المقاس"); renderLabelsList();
   if (t === "wall" && !M.room && !M.solids.length && !M.sketches.length) setView("top", 900);
   if (t === "wall" && !M.room) setMsg("دوس أول ركن على الأرض، وبعدين كل ركن — أو اكتب الطول بعد ما تحدد الاتجاه");
@@ -1694,13 +1727,16 @@ function addBoard(w, h, t, orient) {
     const pl = orient === "v" ? { o: [0, 0, 0], u: [1, 0, 0], v: [0, 0, 1] } : orient === "s" ? { o: [0, 0, 0], u: [0, 1, 0], v: [0, 0, 1] } : { o: [0, 0, 0], u: [1, 0, 0], v: [0, 1, 0] };
     // vertical boards: normal −y / +x — place them so they stand on the ground at the origin
     const s = { id: uid(), name: `لوح ${M.solids.length + 1}`, mat: ui.mat, plane: orient === "v" ? { ...pl, o: [0, t, 0] } : pl, outer: G.rect(0, 0, w, h), holes: [], pockets: [], depth: t };
+    s.plane.o = G.add(s.plane.o, [freeX(), 0, 0]);
     M.solids.push(s); ui.sel = new Set(["s:" + s.id]);
   });
   zoomExtents();
 }
+/** quick adds go beside what is already drawn, never inside it */
+function freeX() { let x = -Infinity; for (const s of M.solids) x = Math.max(x, G.solidBox(s).x1); return isFinite(x) ? Math.ceil(x + 10) : 0; }
 function addBox(W, H, D, t, back) {
   edit(() => {
-    const gid = uid(); M.groups.push({ id: gid, name: `صندوق ${f1(W)}×${f1(H)}×${f1(D)}` });
+    const gid = uid(), x0 = freeX(); M.groups.push({ id: gid, name: `صندوق ${f1(W)}×${f1(H)}×${f1(D)}` });
     const S = (name, mat, plane, w, h, d) => ({ id: uid(), name, mat, plane, outer: G.rect(0, 0, w, h), holes: [], pockets: [], depth: d, group: gid });
     const inD = back ? D - 0.6 : D;
     M.solids.push(
@@ -1710,6 +1746,7 @@ function addBox(W, H, D, t, back) {
       S("سقف", "carcass", { o: [t, 0, H - t], u: [1, 0, 0], v: [0, 1, 0] }, W - 2 * t, inD, t),
     );
     if (back) M.solids.push(S("ظهر", "back", { o: [0, D, 0], u: [1, 0, 0], v: [0, 0, 1] }, W, H, 0.6));
+    if (x0) for (const s of M.solids) if (s.group === gid) s.plane.o = G.add(s.plane.o, [x0, 0, 0]);
     ui.sel = new Set(["G:" + gid]);
   });
   zoomExtents();
@@ -1934,7 +1971,7 @@ function onChange(e) {
       else if (d.sp === "band") s.band = !!v;
       else if (d.sp === "grain") { if (v) s.grain = v; else delete s.grain; }
       else if (d.sp === "depth" && num > 0.05) s.depth = num;
-      else if (["x", "y", "z"].includes(d.sp) && isFinite(num)) { const b = G.solidBox(s), i = "xyz".indexOf(d.sp), cur = [b.x0, b.y0, b.z0][i], dv = [0, 0, 0]; dv[i] = num - cur; s.plane.o = G.add(s.plane.o, dv); }
+      else if (["x", "y", "z"].includes(d.sp) && String(v).trim() !== "" && isFinite(num)) { const b = G.solidBox(s), i = "xyz".indexOf(d.sp), cur = [b.x0, b.y0, b.z0][i], dv = [0, 0, 0]; dv[i] = num - cur; s.plane.o = G.add(s.plane.o, dv); }
       else if ((d.sp === "w" || d.sp === "h") && num > 0.1) { const b = G.bbox2(s.outer); s.outer = d.sp === "w" ? G.rect(b[0], b[1], b[0] + num, b[3]) : G.rect(b[0], b[1], b[2], b[1] + num); }
     });
   }
@@ -2010,7 +2047,14 @@ function handleDown(e) {
   e.preventDefault(); e.stopPropagation();
   const d = b.dataset;
   if (d.hdm != null) { ui.dimEdit = +d.hdm; const i = el.querySelector("#dsVcb"); i.value = ""; el.querySelector("#dsVcbL").textContent = ["العرض (X)", "العمق (Y)", "الارتفاع (Z)"][ui.dimEdit]; i.focus(); need(); return; }
-  if (d.hrt != null) { rotSel90(+d.hrt); return; }
+  if (d.hrt != null) {
+    // turn on lift, and only for a clean single tap (a pinch that starts here must not turn the board)
+    const pid = e.pointerId, x0 = e.clientX, y0 = e.clientY; let spoiled = false;
+    const other = (ev) => { if (ev.pointerId !== pid) spoiled = true; };
+    const lift = (ev) => { if (ev.pointerId !== pid) return; window.removeEventListener("pointerup", lift, true); window.removeEventListener("pointerdown", other, true); if (!spoiled && Math.hypot(ev.clientX - x0, ev.clientY - y0) < 10) rotSel90(+d.hrt); };
+    window.addEventListener("pointerdown", other, true); window.addEventListener("pointerup", lift, true);
+    return;
+  }
   const box = selBox(); if (!box) return;
   const ax = d.hmv != null ? +d.hmv : +d.hrs.split(",")[0], side = d.hrs != null ? +d.hrs.split(",")[1] : null;
   const L = BL(box), Hh = BH(box), c = L.map((v, i) => (v + Hh[i]) / 2);
@@ -2019,8 +2063,12 @@ function handleDown(e) {
   if (!c0) return;
   try { b.setPointerCapture(e.pointerId); } catch { /* */ }
   b.classList.add("drag");
-  hdrag = { kind: d.hmv != null ? "move" : "size", ax, side, base, t0: c0.t, snap: JSON.stringify(M), refs: selRefs(), box, d: 0, labelAt: base };
+  hdrag = { kind: d.hmv != null ? "move" : "size", ax, side, base, t0: c0.t, snap: JSON.stringify(M), refs: selRefs(), box, d: 0, labelAt: base, pid: e.pointerId };
+  // a second finger = the camera (pinch): the handle lets go and the board goes back
+  const second = (ev) => { if (!hdrag || ev.pointerId === hdrag.pid) return; hdrag.d = 0; up({ pointerId: hdrag.pid }); };
+  window.addEventListener("pointerdown", second, true);
   const mv = (ev) => {
+    if (ev.pointerId !== hdrag?.pid) return;
     const q = closestOnLine(hdrag.base, AX[hdrag.ax], ev.clientX, ev.clientY);
     if (!q) return;
     let dd = q.t - hdrag.t0;
@@ -2035,8 +2083,9 @@ function handleDown(e) {
     live = [{ p: hdrag.labelAt, t: hdrag.label, cls: "len" }];
     rebuild();
   };
-  const up = () => {
-    window.removeEventListener("pointermove", mv); window.removeEventListener("pointerup", up); window.removeEventListener("pointercancel", up);
+  const up = (ev) => {
+    if (!hdrag || (ev && ev.pointerId !== hdrag.pid)) return;
+    window.removeEventListener("pointermove", mv); window.removeEventListener("pointerup", up); window.removeEventListener("pointercancel", up); window.removeEventListener("pointerdown", second, true);
     const st = hdrag; hdrag = null; live = [];
     if (st.d) { hist.u.push(st.snap); hist.r = []; } else M = JSON.parse(st.snap);
     // a tap (no drag) on a stretch square of one board picks that face
@@ -2576,8 +2625,8 @@ TOOL.wall = {
   hover(xy) { const st = ui.st, inf = wallInfer(xy, st); if (st) st.hover = inf.p; overlayWall(inf); },
   vcb(v) {
     const st = ui.st;
-    if (!st || !st.hover || !(v.v > 0)) return;
-    const d = G.norm(G.sub(st.hover, st.last)); if (!isFinite(d[0]) || G.len(G.sub(st.hover, st.last)) < 1e-6) return;
+    if (!st || !(v.v > 0)) return;
+    const d = typedDir(st.hover, st.last, st.wpts, true);
     const P = G.add(st.last, G.mul(d, v.v)); P[2] = 0;
     st.wpts.push(P); st.last = P; st.hover = null; overlayWall();
   },
@@ -2788,9 +2837,11 @@ function roomChange(t) {
       if (d.rp === "kind") { e.kind = v; Object.assign(e, { h: OPEN_DEF[v].h, sill: OPEN_DEF[v].sill }); }
       else if ((d.rp === "w" || d.rp === "h") && num > 1) e[d.rp] = num;
       else if ((d.rp === "sill" || d.rp === "at") && isFinite(num) && num >= 0) e[d.rp] = num;
+      Room.clampOpening(M.room, e);
     } else {
       if (d.rp === "kind" && Room.MEP_KINDS[v]) { e.kind = v; e.z = Room.MEP_KINDS[v][2]; }
       else if ((d.rp === "at" || d.rp === "z") && isFinite(num) && num >= 0) e[d.rp] = num;
+      Room.clampPoint(M.room, e);
     }
   });
 }

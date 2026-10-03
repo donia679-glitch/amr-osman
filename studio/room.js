@@ -220,7 +220,19 @@ export function arrange(room, items) {
       const pose = poseOnWall(byId.get(p.wall), +p.s || 0, it.box);
       out.set(it.id, pose);
       block(p.wall, it.row, pose.s, pose.s + it.box.x1 - it.box.x0);
-    } else if (p.x != null) out.set(it.id, { x: +p.x, z: +p.z, rot: +p.rot || 0, wall: null });
+    } else if (p.x != null) {
+      const pose = { x: +p.x, z: +p.z, rot: +p.rot || 0, wall: null };
+      out.set(it.id, pose);
+      // a unit placed by hand still takes its place on any wall it stands against (others won't slide into it)
+      const fp = footprint(pose, it.box);
+      for (const seg of segs) {
+        const { S, e } = runStart(seg);
+        const off = fp.map((q) => dot(sub(q, seg.A), seg.n)), along = fp.map((q) => dot(sub(q, S), e));
+        if (Math.min(...off) > 25 || Math.max(...off) < -1) continue;
+        const a = Math.max(0, Math.min(...along)), b = Math.min(seg.L, Math.max(...along));
+        if (b - a > 1) block(seg.id, it.row === "free" ? "lower" : it.row, a, b);
+      }
+    }
   }
   // corners
   const corners = [];
@@ -233,11 +245,13 @@ export function arrange(room, items) {
     corners.push([inc, nx]);
   }
   if (!room) corners.splice(0, corners.length, [segs[1], segs[0]]);
-  let ci = 0;
+  // each row has its own corners: the base corner unit and the wall corner unit share the same room corner
+  const ci = { lower: 0, upper: 0 };
   for (const it of items) {
     if (out.has(it.id) || !it.corner) continue;
-    const c = corners[ci++];
-    if (!c) break;
+    const rk = it.row === "upper" ? "upper" : "lower";
+    const c = corners[ci[rk]++];
+    if (!c) continue;
     const [inc, outS] = c;
     out.set(it.id, poseInCorner(inc, outS));
     // the corner unit takes box.y1 along the outgoing wall and box.x1 along the incoming one
@@ -290,7 +304,7 @@ export function arrange(room, items) {
   freeX = (b.x0 + b.x1) / 2 - Math.max(0, total) / 2;
   for (const it of free) {
     const w = it.box.x1 - it.box.x0, dpt = it.box.y1 - it.box.y0;
-    out.set(it.id, { x: freeX - it.box.x0, z: cz + dpt / 2 + it.box.y0, rot: 0, wall: null, free: true });
+    out.set(it.id, { x: freeX - it.box.x0, z: cz + dpt / 2 + it.box.y0, rot: 0, wall: null, free: true, unplaced: it.row !== "free" });
     freeX += w + 40;
   }
   return out;
@@ -343,9 +357,23 @@ export function setWallLength(room, segIndex, L) {
   const cur = len(sub(B, A));
   if (cur < 1e-6 || !(L > 1)) return;
   const dv = mul(sub(B, A), L / cur - 1);
-  if (room.closed && j === 0) { pts[i] = sub(pts[i], dv); return; } // closing wall: move its start
-  const last = room.closed ? pts.length - 1 : pts.length - 1;
-  for (let k = j; k <= last; k++) pts[k] = add(pts[k], dv);
+  const n = pts.length;
+  if (room.closed) {
+    // a closed room: move the corners after this wall up to the wall that runs back the other way, so that
+    // wall gets longer too and the room keeps its shape (a 400×350 room becomes 450×350, not a slanted one)
+    const d0 = mul(sub(B, A), 1 / cur);
+    for (let m = 1; m < n; m++) {
+      const a = (j + m - 1) % n, b = (j + m) % n;
+      const e = sub(pts[b], pts[a]), el = len(e);
+      if (el > 1e-6 && dot(e, d0) / el < -0.999) {
+        for (let k = 0; k < m; k++) { const q = (j + k) % n; const v = add(pts[q], dv); pts[q] = [r1(v[0]), r1(v[1])]; }
+        return;
+      }
+      if (b === i) break;
+    }
+    if (j === 0) { pts[i] = sub(pts[i], dv); return; } // closing wall: move its start
+  }
+  for (let k = j; k <= n - 1; k++) { const v = add(pts[k], dv); pts[k] = [r1(v[0]), r1(v[1])]; }
 }
 /** drawing: snap a point to 5 cm and to angle steps from the previous point (stepDeg 0 = free) */
 export function snapDraw(prev, p, grid = 5, stepDeg = 45) {
@@ -406,6 +434,24 @@ export function addOpening(room, wallId, kind) {
   const o = { id: uid(), wall: wallId, kind, w, h: kind === "door" ? 210 : 120, sill: kind === "door" ? 0 : 100, at: Math.max(0, r1((seg.L - w) / 2)) };
   room.openings.push(o);
   return o;
+}
+/** keep a door / window inside its wall (width, place along it, sill and height) */
+export function clampOpening(room, o) {
+  const seg = segments(room).find((s) => s.id === o.wall);
+  if (!seg) return o;
+  o.w = r1(Math.max(10, Math.min(+o.w || 0, seg.L)));
+  o.at = r1(Math.max(0, Math.min(+o.at || 0, seg.L - o.w)));
+  o.sill = r1(Math.max(0, Math.min(+o.sill || 0, seg.h - 10)));
+  o.h = r1(Math.max(10, Math.min(+o.h || 0, seg.h - o.sill)));
+  return o;
+}
+/** keep an electrical / plumbing point on its wall */
+export function clampPoint(room, p) {
+  const seg = segments(room).find((s) => s.id === p.wall);
+  if (!seg) return p;
+  p.at = r1(Math.max(0, Math.min(+p.at || 0, seg.L)));
+  p.z = r1(Math.max(0, Math.min(+p.z || 0, seg.h)));
+  return p;
 }
 export function removeWall(room, segIndex) {
   const w = room.walls[segIndex];

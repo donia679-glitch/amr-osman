@@ -51,7 +51,8 @@ function build() {
       ${K("4", "4")}${K("5", "5")}${K("6", "6")}${K("minus", "−", "kfn")}
       ${K("1", "1")}${K("2", "2")}${K("3", "3")}${K("plus", "+", "kfn")}
       ${K(".", ".", "")}${K("0", "0")}${K("clear", "مسح", "kfn")}${K("next", "التالي ↵", "kgo")}
-    </div>`;
+    </div>
+    <div class="kpkeys kpextra">${K("neg", "± سالب", "kfn")}${K(",", ",", "kfn")}${K("x", "× نسخ", "kfn")}${K("/", "÷ قسّم", "kfn")}${K("s", "أضلاع s", "kfn")}</div>`;
   // keep the focus in the field: keys never take it
   pad.addEventListener("pointerdown", (e) => { e.preventDefault(); const b = e.target.closest("button"); if (b) press(b.dataset.k, b); });
   pad.addEventListener("click", (e) => e.preventDefault());
@@ -65,6 +66,10 @@ function show(t) {
   if (!pad) build();
   cur = t; fresh = true;
   pad.querySelector(".kplabel").textContent = labelOf(t);
+  // the drawing studio's size box: sizes like 60,40 · x5 · /4 · 24s · −2 (a cut), and the pad off to the side
+  const ex = t.hasAttribute("data-kpextra");
+  pad.classList.toggle("extra", ex);
+  pad.classList.toggle("side", !!t.closest("#drawStudio"));
   sync();
   pad.classList.add("on");
   document.body.classList.add("kpad-on");
@@ -129,7 +134,13 @@ function press(k, b) {
     setTimeout(() => { pendingSel = null; if (!nx.isConnected && sel) { const again = document.querySelector(sel); if (again && document.activeElement !== again) { again.focus(); again.select?.(); } } }, 80);
     return;
   }
+  if ((k === "plus" || k === "minus") && cur.hasAttribute("data-kpextra")) { // typing a sign, not stepping
+    let v = String(cur.value ?? ""); if (fresh) { v = ""; fresh = false; }
+    put(k === "minus" ? (v.startsWith("-") ? v : "-" + v) : v.replace(/^-/, "")); return;
+  }
   if (k === "plus" || k === "minus") { step(k === "plus" ? 1 : -1); return; }
+  if (k === "neg") { let v = String(cur.value ?? ""); if (fresh) { v = ""; fresh = false; } put(v.startsWith("-") ? v.slice(1) : "-" + v); return; }
+  if (k === "," || k === "x" || k === "/" || k === "s") { let v = String(cur.value ?? ""); if (fresh && k !== ",") { v = ""; } fresh = false; put(v + k); return; }
   let v = String(cur.value ?? "");
   if (fresh && /^[\d.]$/.test(k)) { v = ""; fresh = false; } // the first key replaces the old number
   fresh = false;

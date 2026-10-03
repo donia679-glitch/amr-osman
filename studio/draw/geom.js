@@ -140,6 +140,28 @@ export function offset(l, d) {
     const k = Math.min(4, 1 / Math.max(0.25, m[0] * n1[0] + m[1] * n1[1]));
     out.push([b[0] + m[0] * d * k, b[1] + m[1] * d * k]);
   }
+  return d < 0 ? untangle(L.map((p) => [...p]), out, d) : out;
+}
+/** an inward offset of short edges (a rounded corner) flips them over: drop each flipped edge and meet its
+ *  neighbours' offset lines instead, so the result stays a simple loop (a sharp corner where the arc vanished) */
+function untangle(L, out, d) {
+  const line = (j) => { const n = L.length, a = L[j], b = L[(j + 1) % n], e = norm2d([b[0] - a[0], b[1] - a[1]]); return { p: [a[0] + e[1] * d, a[1] - e[0] * d], e }; };
+  for (let guard = 0; guard < 400 && out.length > 3; guard++) {
+    const n = out.length;
+    let bad = -1;
+    for (let i = 0; i < n; i++) {
+      const j = (i + 1) % n, oe = [out[j][0] - out[i][0], out[j][1] - out[i][1]], le = [L[j][0] - L[i][0], L[j][1] - L[i][1]];
+      if (oe[0] * le[0] + oe[1] * le[1] <= 1e-9) { bad = i; break; }
+    }
+    if (bad < 0) break;
+    const i = bad, j = (i + 1) % n, A = line((i - 1 + n) % n), B = line(j);
+    const den = A.e[0] * B.e[1] - A.e[1] * B.e[0];
+    let X;
+    if (Math.abs(den) < 1e-9) X = [(out[i][0] + out[j][0]) / 2, (out[i][1] + out[j][1]) / 2];
+    else { const t = ((B.p[0] - A.p[0]) * B.e[1] - (B.p[1] - A.p[1]) * B.e[0]) / den; X = [A.p[0] + A.e[0] * t, A.p[1] + A.e[1] * t]; }
+    // edge i (from L[i] to L[j]) disappears: L[j] goes, out[i] becomes the meeting point
+    out[i] = X; out.splice(j, 1); L.splice(j, 1);
+  }
   return out;
 }
 const norm2d = (v) => { const l = Math.hypot(v[0], v[1]) || 1; return [v[0] / l, v[1] / l]; };
