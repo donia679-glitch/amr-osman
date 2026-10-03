@@ -114,6 +114,7 @@ const B = (o) => ({ ...o });
 export const KITCHEN = {
   k_base2: { label: "سفلية ضلفتين 60", desc: "60×72 سم، رفين، سكلو وكونتر.", params: B({ shelf_count: 2 }) },
   k_base_drawers: { label: "سفلية 3 أدراج", desc: "أدراج بصناديق ومجاري، 60 سم.", params: B({ door_type: "drawers", drawer_count: 3, include_drawer_boxes: true, include_shelves: false }) },
+  k_base_kick_drawer: { label: "سفلية ضلفتين + درج وزرة", desc: "60 سم، درج واطي مكان السكلو (سكلو 12 سم).", params: B({ shelf_count: 1, toe_kick_height: 12, toe_kick_drawer: true, include_drawer_boxes: true }) },
   k_drawer_doors: { label: "درج + ضلفتين 80", desc: "درج علوي وضلفتين تحت.", params: B({ width: 80, door_type: "drawer_top_two_doors_bottom", drawer_count: 1, shelf_count: 1 }) },
   k_sink: { label: "وحدة حوض 80", desc: "فتحة حوض في الكونتر وفتحة سيفون في القاعدة.", params: B({ width: 80, include_sink_cutout: true, include_ptrap_opening: true, include_shelves: false }) },
   k_wall2: { label: "علوية ضلفتين 80", desc: "حائط 70 سم، عمق 32، رفين.", params: B({ unit_type: "wall", width: 80, height: 70, depth: 32, include_toe_kick: false, shelf_count: 2 }) },

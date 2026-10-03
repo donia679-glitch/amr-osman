@@ -52,8 +52,12 @@ export class CarcassBuilder {
         group.setAttribute("KUD", "is_kitchen_unit", true);
         this.unitId = group.entityID;
         const e = group.entities;
-        if (this.toeKick())
-            this.buildKick(e);
+        if (this.toeKick()) {
+            if (this.kickDrawer())
+                this.buildKickDrawer(e);
+            else
+                this.buildKick(e);
+        }
         this.buildSides(e);
         this.buildBottom(e);
         this.buildTop(e);
@@ -178,6 +182,13 @@ export class CarcassBuilder {
     }
     kickApronT() {
         return pcm(this.p["toe_kick_apron_thickness"]);
+    }
+    /** v191: a drawer in the plinth space instead of the kick (base / tall units with a kick) */
+    kickDrawer() {
+        return this.toeKick() && this.unitType() !== "wall" && truthy(this.p["toe_kick_drawer"]);
+    }
+    kickDrawerFloorGap() {
+        return cm(rmax(toF(this.p["toe_kick_drawer_floor_gap"] ?? 1.0), 0));
     }
     topValance() {
         return truthy(this.p["include_top_valance"]);
@@ -326,6 +337,47 @@ export class CarcassBuilder {
         this.ctx.labels.add(this.unitId, this.unitGroupName(), "وزرة سكلو", this.width(), this.kickH(), y1 - y0, {
             banded: { ...NO_BAND }, material: this.carcassMaterialName(),
         });
+    }
+    /**
+     * درج الوزرة: بدل السكلو، جنبين سكلو (بيشيلوا المجرى) + وش درج على مستوى الضلف + علبة درج واطية
+     * تحت قاعدة الوحدة. لو المسافة صغيرة على درج (أقل من 6 سم وش) بيرجع للسكلو العادي.
+     */
+    buildKickDrawer(e) {
+        const pt = this.panelT();
+        const kh = this.kickH();
+        const overlay = this.doorPosition() === "overlay";
+        const edgeGap = overlay ? this.doorGapOverlay() : this.doorGapInset();
+        const fy0 = overlay ? -this.frontT() : 0;
+        const fy1 = overlay ? 0 : this.frontT();
+        const fx0 = overlay ? edgeGap : pt + edgeGap;
+        const fx1 = overlay ? this.width() - edgeGap : this.width() - pt - edgeGap;
+        const fz0 = this.kickDrawerFloorGap();
+        const fz1 = kh + edgeGap - this.doorBottomExtension() - this.drawerGap();
+        if (fz1 - fz0 < cm(6.0) || fx1 - fx0 < cm(15.0) || this.width() <= 2 * pt) {
+            this.buildKick(e);
+            return;
+        }
+        const L = this.ctx.labels;
+        const ug = this.unitGroupName();
+        // the two plinth runners (same line as the sides) carry the slides
+        const ry0 = overlay ? 0 : fy1;
+        for (const [nm, x0] of [["جنب سكلو شمال", 0], ["جنب سكلو يمين", this.width() - pt]]) {
+            const k = createBox(this.ctx, e, nm, x0, ry0, 0, x0 + pt, this.depth(), kh, this.carcassMaterial());
+            assignLayer(this.ctx, k, TAGS.kick);
+            L.add(this.unitId, ug, nm, this.depth() - ry0, kh, pt, { banded: { ...NO_BAND }, material: this.carcassMaterialName() });
+        }
+        const label = "درج وزرة";
+        const group = e.addGroup();
+        group.name = label;
+        const sub = group.entities;
+        const f = createBox(this.ctx, sub, label, fx0, fy0, fz0, fx1, fy1, fz1, this.frontColor());
+        assignLayer(this.ctx, f, TAGS.front);
+        if (this.edgeBandingEnabled())
+            bandAllSideEdges(this.ctx, f, this.edgeBandingMaterial());
+        this.recordDoorLabel(label, fx0, fx1, fz0, fz1, null);
+        if (this.drawerBoxesEnabled())
+            this.buildDrawerBox(sub, pt, this.width() - pt, fy1, fz0, rmax(kh - cm(0.5), fz0 + cm(2.0)), label);
+        tagDrawerSlide(group, this.drawerSlideBase());
     }
     // ---------------------------------------------------------------- sides
     buildSides(e) {

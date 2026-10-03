@@ -1621,7 +1621,7 @@ function renderChips() {
     if (p.include_shelves) h += stepChip("shelf_count", "أرفف", p.shelf_count, 1);
     h += cycleChip("door_position", "التركيب", "K_POS", p.door_position);
     h += cycleChip("kud_handles.type", "المقبض", "K_HANDLES", p.kud_handles?.type || "none");
-    if (p.unit_type !== "wall") h += togChip("include_toe_kick", "سكلو", p.include_toe_kick);
+    if (p.unit_type !== "wall") h += togChip("include_toe_kick", "سكلو", p.include_toe_kick) + (p.include_toe_kick ? togChip("toe_kick_drawer", "درج وزرة", p.toe_kick_drawer) : "");
     h += togChip("include_assembly_holes", "أليتا", p.include_assembly_holes);
   } else if (u.kind === "dressing") {
     h += stepChip("width", "العرض", n1(p.width)) + stepChip("height", "الارتفاع", n1(p.height));
@@ -2027,11 +2027,13 @@ function kitchenProps(p) {
     <div class="bools">${boolF("include_shelves", "أرفف", p.include_shelves)}${boolF("include_vertical_dividers", "قواطيع رأسية", p.include_vertical_dividers)}${boolF("include_led_marker", "مجرى ليد في الجنب", p.include_led_marker)}${boolF("assembly_shelves_fixed", "أرفف ثابتة بأليتا", p.assembly_shelves_fixed)}</div></details>`;
   h += `<details><summary>الهيكل والتجميع</summary><div class="grid2">${numF("panel_thickness", "سمك الخشب", p.panel_thickness, 0.1)}${numF("back_panel_thickness", "سمك الظهر", p.back_panel_thickness, 0.1)}
     ${numF("back_groove_depth", "دخول الظهر في المفحار", p.back_groove_depth, 0.1)}${numF("back_rear_offset", "بعد الظهر عن الآخر", p.back_rear_offset, 0.1)}${selF("top_style", "الرأس", KU.K_TOP, p.top_style)}
-    ${p.include_toe_kick ? numF("toe_kick_height", "ارتفاع السكلو", p.toe_kick_height) + numF("toe_kick_setback", "رجوع السكلو", p.toe_kick_setback) + selF("toe_kick_style", "شكل السكلو", KU.K_KICK, p.toe_kick_style)
+    ${p.include_toe_kick && p.toe_kick_drawer && p.unit_type !== "wall" ? numF("toe_kick_height", "ارتفاع السكلو (= درج الوزرة)", p.toe_kick_height) + numF("toe_kick_drawer_floor_gap", "خلوص درج الوزرة عن الأرض", p.toe_kick_drawer_floor_gap ?? 1, 0.1) : ""}
+    ${p.include_toe_kick && !(p.toe_kick_drawer && p.unit_type !== "wall") ? numF("toe_kick_height", "ارتفاع السكلو", p.toe_kick_height) + numF("toe_kick_setback", "رجوع السكلو", p.toe_kick_setback) + selF("toe_kick_style", "شكل السكلو", KU.K_KICK, p.toe_kick_style)
       + (p.toe_kick_style === "segments" ? numF("toe_kick_segment_width", "أقصى عرض لقطعة السكلو", p.toe_kick_segment_width) + numF("toe_kick_segment_gap", "الفاصل بين القطع", p.toe_kick_segment_gap, 0.1) : numF("toe_kick_apron_thickness", "سمك الوزرة", p.toe_kick_apron_thickness, 0.1)) : ""}
     ${p.top_style === "rails" ? numF("top_rail_width", "عرض شريط الرأس", p.top_rail_width) + numF("top_rail_front_inset", "رجوع الشريط الأمامي", p.top_rail_front_inset, 0.1) : ""}
     ${p.include_wall_cleat ? numF("wall_cleat_height", "ارتفاع الكليت", p.wall_cleat_height) : ""}${p.include_bottom_valance ? numF("bottom_valance_height", "ارتفاع وزرة الليد السفلية", p.bottom_valance_height) : ""}</div>
-    <div class="bools">${boolF("include_toe_kick", "سكلو", p.include_toe_kick)}${boolF("include_edge_banding", "شريط حواف", p.include_edge_banding)}${boolF("include_assembly_holes", "أليتا (كام لوك)", p.include_assembly_holes)}
+    ${p.include_toe_kick && p.toe_kick_drawer && p.unit_type !== "wall" ? `<p class="hint full">درج الوزرة: وش على مستوى الضلف + علبة واطية تحت قاعدة الوحدة على جنبين سكلو بيشيلوا المجرى. السكلو ${+p.toe_kick_height || 10} سم ← وش ${n1(Math.max(0, (+p.toe_kick_height || 10) - (+p.toe_kick_drawer_floor_gap || 1) - (+p.drawer_gap || 0.3)))} سم تقريباً. خلّي السكلو 12 سم أو أكتر عشان الدرج يبقى مفيد.</p>` : ""}
+    <div class="bools">${boolF("include_toe_kick", "سكلو", p.include_toe_kick)}${p.include_toe_kick && p.unit_type !== "wall" ? boolF("toe_kick_drawer", "درج مكان الوزرة", p.toe_kick_drawer) : ""}${boolF("include_edge_banding", "شريط حواف", p.include_edge_banding)}${boolF("include_assembly_holes", "أليتا (كام لوك)", p.include_assembly_holes)}
     ${boolF("include_end_panel", "تقفيلة نهاية", p.include_end_panel)}${boolF("include_top_valance", "أورزة علوية", p.include_top_valance)}${boolF("include_wall_cleat", "كليت تعليق", p.include_wall_cleat)}${boolF("include_bottom_valance", "وزرة ليد سفلية", p.include_bottom_valance)}</div></details>`;
   if (p.include_assembly_holes) {
     h += `<details open><summary>مقاسات الأليتا (سم)</summary><div class="grid2">${numF("assembly_hole_diameter", "قطر خرم الدوبل", p.assembly_hole_diameter, 0.1)}${numF("assembly_edge_distance", "البعد عن الحرف", p.assembly_edge_distance, 0.1)}
