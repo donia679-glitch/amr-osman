@@ -854,7 +854,7 @@ $("#steps").addEventListener("click", (e) => {
     box?.scrollIntoView({ block: "start", behavior: "smooth" });
   }, 120);
   if (k === "room") { state.tab = "design"; ui.planOn = true; ui.planView = "plan"; state.libOpen = false; }
-  else if (k === "design") { state.tab = "design"; ui.planOn = false; state.whole = true; if (!state.project.units.length) state.libOpen = true; }
+  else if (k === "design") { state.tab = "design"; ui.planOn = false; state.whole = true; }
   else if (k === "mats") {
     state.tab = "design"; ui.planOn = false;
     if (!state.sel && state.project.units[0]) state.sel = state.project.units[0].id;
@@ -3832,7 +3832,7 @@ async function newProject(name) {
   await Lib.put(state.project).catch(() => {});
   if (cloud.dirty) await cloudSave();
   state.project = { id: uid(), name: (name || "").trim() || "مشروع جديد", units: [] };
-  state.sel = null; state.libOpen = true; state.tab = "design";
+  state.sel = null; state.libOpen = false; state.tab = "design";
   ui.planSel = null; ui.multi = null; ui.asm = null;
   closeHome();
   ui.pop = null; renderPop();
@@ -7649,7 +7649,7 @@ function render(refit = false) {
   $("#projName").textContent = state.project.name;
   document.querySelectorAll(".tabs [data-tab]").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === state.tab)));
   for (const t of ["design", "cut", "parts", "shop"]) $(`#v-${t}`).hidden = ui.mode !== "owner" || state.tab !== t;
-  $("#v-design").classList.toggle("lib-open", !!state.libOpen || !state.project.units.length);
+  $("#v-design").classList.toggle("lib-open", !!state.libOpen);
   if (ui.mode !== "owner") return;
   if (state.tab === "design") {
     $("#view3d").hidden = !!ui.planOn;
