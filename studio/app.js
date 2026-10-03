@@ -29,6 +29,16 @@ const DEVELOPER = { name: "م. عمرو عثمان", company: "NOVERA", phone: "
 const $ = (s, el = document) => el.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 const n1 = (v) => (Math.round(v * 10) / 10).toString();
+/** a number typed in any keyboard: Arabic-Indic digits, Arabic/European decimal comma */
+const AR_DIG = { "٠": "0", "١": "1", "٢": "2", "٣": "3", "٤": "4", "٥": "5", "٦": "6", "٧": "7", "٨": "8", "٩": "9", "۰": "0", "۱": "1", "۲": "2", "۳": "3", "۴": "4", "۵": "5", "۶": "6", "۷": "7", "۸": "8", "۹": "9", "٫": ".", "،": ".", ",": "." };
+// every number field is a text field that turns Arabic-Indic digits and commas into plain numbers as you type
+document.addEventListener("input", (e) => {
+  const t = e.target;
+  if (!(t instanceof HTMLInputElement) || !t.hasAttribute("data-numf")) return;
+  const v = t.value, nv = v.replace(/[٠-٩۰-۹٫،]/g, (c) => AR_DIG[c]).replace(/,/g, ".");
+  if (nv !== v) { const at = t.selectionStart; t.value = nv; try { t.setSelectionRange(at, at); } catch { /* not focused */ } }
+}, true);
+const toNum = (v) => { const t = String(v ?? "").trim().replace(/[٠-٩۰-۹٫،,]/g, (c) => AR_DIG[c]).replace(/[^0-9.\-]/g, ""); const n = parseFloat(t); return Number.isFinite(n) ? n : 0; };
 const uid = () => Math.random().toString(36).slice(2, 10);
 const clone = (o) => JSON.parse(JSON.stringify(o));
 const STORE = "novera-studio-v2";
@@ -132,15 +142,57 @@ function loadLocal() {
 // cloud (db) — set up after the page renders
 const cloud = { db: null, user: null, me: null, comments: null, downloads: null, saveT: 0, saving: false, dirty: false };
 function persist() {
+  histTrack();
   try { localStorage.setItem(STORE, JSON.stringify(state)); } catch { /* storage unavailable */ }
   if (ui.mode === "owner" && state.project) Lib.put(state.project).then(() => { ui.savedAt = Date.now(); }).catch(() => {});
-  if (!cloud.db || !cloud.me || ui.mode !== "owner") return;
+  if (!cloud.db || !cloud.me || ui.mode !== "owner") {
+    // no cloud: still show that the work was just kept, for a moment
+    if (ui.mode === "owner") { const el = $("#cloud"); if (el) { el.innerHTML = `${ICON.check || "✓"}<span>اتحفظ ✓</span>`; el.dataset.s = "saved"; clearTimeout(persist.t); persist.t = setTimeout(() => setCloud("local"), 1600); } }
+    return;
+  }
   cloud.dirty = true;
   clearTimeout(cloud.saveT);
   cloud.saveT = setTimeout(cloudSave, 1500);
   setCloud("pending");
 }
 let saveTimer = 0;
+// ---- undo / redo: a snapshot of the project after every change (custom material images are not copied)
+const hist = { undo: [], redo: [], last: null, pid: null, busy: false };
+const snapOf = (p) => JSON.stringify({ ...p, mats: undefined });
+function histTrack() {
+  const p = state.project;
+  if (!p || ui.mode !== "owner") return;
+  const cur = snapOf(p);
+  if (hist.pid !== p.id) { hist.pid = p.id; hist.undo = []; hist.redo = []; hist.last = cur; histUI(); return; }
+  if (hist.busy) { hist.last = cur; hist.busy = false; histUI(); return; }
+  if (cur === hist.last) return;
+  if (hist.last) hist.undo.push(hist.last);
+  if (hist.undo.length > 80) hist.undo.shift();
+  hist.redo = [];
+  hist.last = cur;
+  histUI();
+}
+function histGo(dir) {
+  clearTimeout(saveTimer);
+  histTrack(); // anything still waiting to be saved becomes a step first
+  const from = dir < 0 ? hist.undo : hist.redo, to = dir < 0 ? hist.redo : hist.undo;
+  if (!from.length) return;
+  to.push(hist.last);
+  const snap = from.pop();
+  const mats = state.project.mats;
+  state.project = { ...JSON.parse(snap), ...(mats ? { mats } : {}) };
+  hist.last = snap; hist.busy = true;
+  if (!state.project.units.find((u) => u.id === state.sel)) state.sel = state.project.units[0]?.id ?? null;
+  ui.multi = null; ui.asm = null; ui.planSel = null;
+  persist(); render(true); if (ui.planOn) plan.render();
+  alertBar(dir < 0 ? "↶ رجعت خطوة" : "↷ رجعت الخطوة تاني");
+  histUI();
+}
+function histUI() {
+  const u = $("#undoBtn"), r = $("#redoBtn");
+  if (u) u.disabled = !hist.undo.length;
+  if (r) r.disabled = !hist.redo.length;
+}
 function save() { clearTimeout(saveTimer); saveTimer = setTimeout(persist, 250); }
 async function cloudSave() {
   if (cloud.saving) { cloud.saveT = setTimeout(cloudSave, 800); return; }
@@ -356,14 +408,14 @@ function extraProps(u, r) {
     <div class="btnrow">${Object.entries(XKIND).map(([k, l]) => `<button class="chip ${ui.xdraw === k ? "on" : ""}" data-xdraw="${k}">${l}</button>`).join("")}${ui.xdraw ? `<button class="ghost2" data-xdraw="">✓ خلصت رسم</button>` : ""}</div>
     <div class="btnrow"><button class="ghost2" data-xauto="shelf">+ رف في النص</button><button class="ghost2" data-xauto="divider">+ قاطوع في النص</button><button class="ghost2" data-xauto="board">+ لوح حر</button></div>`;
   list.forEach((q, i) => {
-    const N = (f, l) => `<label class="f"><span>${l}</span><input type="number" inputmode="decimal" step="0.5" data-xnum="${i}.${f}" value="${q[f] ?? 0}"></label>`;
+    const N = (f, l) => `<label class="f"><span>${l}</span><input type="text" inputmode="decimal" data-numf step="0.5" data-xnum="${i}.${f}" value="${q[f] ?? 0}"></label>`;
     h += `<div class="zone-ed"><div class="zh"><input data-xtext="${i}.name" value="${esc(q.name || "")}" aria-label="اسم القطعة"><button data-xdup="${i}" class="sm" aria-label="نسخة">${ICON.copy}</button><button data-xdel="${i}" class="danger sm" aria-label="شيل القطعة">${ICON.trash}</button></div>
       <div class="grid3">${N("w", "العرض (س)")}${N("d", "العمق (ص)")}${N("h", "الارتفاع (ع)")}${N("x", "مكانها س")}${N("y", "مكانها ص")}${N("z", "مكانها ع")}</div>
       <div class="nudge">${["x", "y", "z"].map((a) => `<span>${{ x: "⇆", y: "⇅ عمق", z: "↕" }[a]}<button class="sm" data-xnudge="${i},${a},-1">−1</button><button class="sm" data-xnudge="${i},${a},1">+1</button></span>`).join("")}
       <label class="f inl"><span>الخامة</span><select data-xsel="${i}.material">${Object.entries(mats).map(([k, l]) => `<option value="${k}" ${k === q.material ? "selected" : ""}>${esc(l)}</option>`).join("")}</select></label></div>
       <div class="nudge"><button class="sm" data-xrot="${i},w,d" title="لف القطعة أفقي 90°">↻ لف أفقي</button><button class="sm" data-xrot="${i},d,h" title="وقّفها أو نيّمها على العمق">⤒ قلب على العمق</button><button class="sm" data-xrot="${i},w,h" title="وقّفها أو نيّمها على العرض">⇱ قلب على العرض</button></div>
       <div class="grid3"><label class="f"><span>✂ قصة ركن (شكل L)</span><select data-xcut="${i}.c"><option value="">من غير</option>${Object.entries(cutCorners(q).o).map(([k, l]) => `<option value="${k}" ${q.cut?.c === k ? "selected" : ""}>${esc(l)}</option>`).join("")}</select></label>
-      ${q.cut?.c ? `<label class="f"><span>طول القصة</span><input type="number" inputmode="decimal" step="0.5" data-xcut="${i}.a" value="${q.cut.a ?? 10}"></label><label class="f"><span>عرض القصة</span><input type="number" inputmode="decimal" step="0.5" data-xcut="${i}.b" value="${q.cut.b ?? 10}"></label>` : ""}</div></div>`;
+      ${q.cut?.c ? `<label class="f"><span>طول القصة</span><input type="text" inputmode="decimal" data-numf step="0.5" data-xcut="${i}.a" value="${q.cut.a ?? 10}"></label><label class="f"><span>عرض القصة</span><input type="text" inputmode="decimal" data-numf step="0.5" data-xcut="${i}.b" value="${q.cut.b ?? 10}"></label>` : ""}</div></div>`;
   });
   if (list.length) h += `<div class="btnrow"><button class="chip ${ui.xmove ? "on" : ""}" data-xmove>✋ حرّك القطع بالصباع في الـ3D</button>${ui.xmove ? `<select id="xmoveAx" class="chip"><option value="">اتجاه: تلقائي (على سمكها)</option><option value="0" ${ui.xmoveAx === "0" ? "selected" : ""}>⇆ شمال/يمين</option><option value="2" ${ui.xmoveAx === "2" ? "selected" : ""}>↕ فوق/تحت</option><option value="1" ${ui.xmoveAx === "1" ? "selected" : ""}>⇅ قدام/ورا</option></select>` : ""}</div>`;
   // free-board units can be merged into another unit (their boards become its extra pieces)
@@ -526,10 +578,10 @@ function piecesProps(u) {
     <div class="pcs">${rows.map((r, i) => `<div class="pcrow" data-pi="${i}">
       <div class="pchead"><b class="num">${i + 1}</b><input data-pf="name" value="${esc(r.name || "")}" placeholder="اسم القطعة (جنب، رف، باب…)"><button class="danger sm" data-pdel="${i}" aria-label="امسح القطعة">${ICON.trash}</button></div>
       <div class="pcgrid">
-        <label><span>الطول</span><input type="number" inputmode="decimal" step="0.1" data-pf="l" value="${r.l}"></label>
-        <label><span>العرض</span><input type="number" inputmode="decimal" step="0.1" data-pf="w" value="${r.w}"></label>
-        <label><span>السمك</span><input type="number" inputmode="decimal" step="0.1" data-pf="t" value="${r.t}"></label>
-        <label><span>العدد</span><input type="number" inputmode="numeric" step="1" min="1" data-pf="qty" value="${r.qty}"></label>
+        <label><span>الطول</span><input type="text" inputmode="decimal" data-numf step="0.1" data-pf="l" value="${r.l}"></label>
+        <label><span>العرض</span><input type="text" inputmode="decimal" data-numf step="0.1" data-pf="w" value="${r.w}"></label>
+        <label><span>السمك</span><input type="text" inputmode="decimal" data-numf step="0.1" data-pf="t" value="${r.t}"></label>
+        <label><span>العدد</span><input type="text" inputmode="decimal" data-numf inputmode="numeric" step="1" min="1" data-pf="qty" value="${r.qty}"></label>
       </div>
       <label class="pcmat"><span>الخامة</span><select data-pf="lib">${libOpts(r.lib)}</select></label>
       <div class="pcband">${[["l1", "ط١"], ["l2", "ط٢"], ["w1", "ع١"], ["w2", "ع٢"]].map(([k, l]) => `<label><input type="checkbox" data-pb="${k}" ${r.band?.[k] ? "checked" : ""}>${l}</label>`).join("")}<label><input type="checkbox" data-pf="grain" ${r.grain ? "checked" : ""}>ألياف (ما تلفّش)</label></div>
@@ -672,6 +724,7 @@ app.innerHTML = `
   <div class="brand"><span class="mark" aria-hidden="true">N</span><b>NOVERA</b><span class="studio">Studio</span></div>
   <button id="homeBtn" class="projbtn" aria-label="الشاشة الرئيسية" title="المشاريع">🏠</button>
   <button id="projBtn" class="projbtn">${ICON.folder}<span id="projName"></span></button>
+  <span class="undogrp"><button id="undoBtn" class="projbtn" aria-label="تراجع" title="تراجع (⌘Z)" disabled>↶</button><button id="redoBtn" class="projbtn" aria-label="إعادة" title="إعادة (⇧⌘Z)" disabled>↷</button></span>
   <button id="saveBtn" class="projbtn savebtn" aria-label="حفظ">💾<span>حفظ</span></button>
   <button id="expBtn" class="projbtn">${ICON.share}<span>تصدير</span></button>
   <button id="lookBtn" class="projbtn" aria-label="الألوان والمظهر">🎨</button>
@@ -684,6 +737,7 @@ app.innerHTML = `
     <button data-tab="shop" role="tab"><span class="tl">الورشة والعميل</span><span class="ts">ورشة</span></button>
   </nav>
 </header>
+<nav id="steps" class="steps" aria-label="خطوات الشغل"></nav>
 <main id="views">
   <section id="v-design" class="design">
     <aside id="lib" class="lib"></aside>
@@ -727,12 +781,103 @@ $(".tabs").addEventListener("click", (e) => {
   save();
   render(true);
 });
+// ---- first-run tour: a few cards pointing at the real buttons
+const TOUR = [
+  ["#steps", "أهلاً بيك في NOVERA Studio 👋", "الشغل كله 6 خطوات فوق: الأوضة ← التصميم ← الخامات ← السعر ← العميل ← الورشة. دوس على أي خطوة توديك عليها، والعلامة ✓ معناها إنها خلصت."],
+  ['#steps [data-step0="room"]', "① ابدأ بالأوضة", "ارسم الحيطان بصباعك، أو اختار أوضة جاهزة بالمقاسات، أو امسحها بكاميرا الآيباد. الأبواب والشبابيك والأعمدة بتتحط عليها."],
+  ["#libBtn", "② صمّم", "من المكتبة ضيف أي وحدة جاهزة — أو من الأوضة دوس \"✨ صمّملي المطبخ\" ويطلعلك 3 اقتراحات بأسعارها في ثانية."],
+  ["#view3d", "✋ عدّل بصباعك", "دوس على الوحدة: هتلاقي مقاساتها جنبها في الـ3D — دوس على أي رقم وغيّره، أو اسحب الدايرة ⇔ تعرّضها. وفي الإعدادات خانة بحث تلاقي بيها أي حاجة."],
+  [".undogrp", "↶ غلطت؟ ولا يهمك", "زرار التراجع بيرجّع أي خطوة — أو المس الشاشة بصباعين مرة واحدة. وبتلات صوابع ترجّع الخطوة تاني."],
+  ['#steps [data-step0="price"]', "④ السعر ⑥ الورشة", "عرض السعر ومكسبك بيتحسب لوحده، وبعدها خطة القص والملصقات بالباركود للورشة. بالتوفيق! 🎉"],
+];
+function startTour(i = 0) {
+  let el = $("#tour");
+  if (!el) { el = document.createElement("div"); el.id = "tour"; document.body.appendChild(el); }
+  const st = TOUR[i];
+  if (!st) { el.remove(); state.tourDone = true; save(); return; }
+  const [sel, title, text] = st;
+  const tg = document.querySelector(sel);
+  const r = tg && tg.offsetParent !== null ? tg.getBoundingClientRect() : null;
+  const pad = 6;
+  const ring = r ? `<div class="tring" style="left:${r.left - pad}px;top:${r.top - pad}px;width:${r.width + 2 * pad}px;height:${r.height + 2 * pad}px"></div>` : "";
+  const below = !r || r.top < innerHeight / 2;
+  const cy = r ? (below ? Math.min(r.bottom + 14, innerHeight - 230) : Math.max(r.top - 220, 10)) : innerHeight / 2 - 110;
+  el.innerHTML = `${ring}<div class="tcard" role="dialog" aria-label="${esc(title)}" style="top:${cy}px"><b>${esc(title)}</b><p>${esc(text)}</p>
+    <div class="trow"><span>${i + 1} / ${TOUR.length}</span><button class="ghost2" data-tskip>تخطّي</button><button class="primary" data-tnext>${i === TOUR.length - 1 ? "يلا نبدأ" : "التالي ←"}</button></div></div>`;
+  el.onclick = (e) => {
+    if (e.target.closest("[data-tnext]")) startTour(i + 1);
+    else if (e.target.closest("[data-tskip]")) startTour(TOUR.length);
+  };
+}
+document.addEventListener("click", (e) => { if (e.target.closest("[data-tour]")) { ui.pop = null; renderPop(); startTour(0); } });
+// ---- the job, step by step: ① room ② design ③ materials ④ price ⑤ client ⑥ workshop
+const STEPS = [["room", "الأوضة"], ["design", "التصميم"], ["mats", "الخامات"], ["price", "السعر"], ["client", "العميل"], ["shop", "الورشة"]];
+function stepNow() {
+  if (state.tab === "cut" || state.tab === "parts") return "shop";
+  if (state.tab === "shop") return ui.stepAt === "client" ? "client" : ui.stepAt === "shop" ? "shop" : "price";
+  if (ui.planOn) return "room";
+  return ui.stepAt === "mats" ? "mats" : "design";
+}
+function stepDone(k) {
+  const p = state.project;
+  if (k === "room") return !!p.room?.pts?.length;
+  if (k === "design") return p.units.length > 0;
+  if (k === "mats") return p.units.some((u) => Object.keys(u.libs || {}).length);
+  if (k === "price") return !!(state.prices && Object.keys(state.prices.sheets || {}).length);
+  if (k === "client") return !!(ui.sharedAt || p.sharedAt || p.approval);
+  return !!p.stockTaken || (p.stages && Object.keys(p.stages).length > 1);
+}
+function renderSteps() {
+  const el = $("#steps");
+  if (!el) return;
+  el.hidden = ui.mode !== "owner";
+  const now = stepNow();
+  el.innerHTML = STEPS.map(([k, l], i) => `<button data-step0="${k}" class="${k === now ? "on" : ""} ${stepDone(k) ? "done" : ""}"><b>${stepDone(k) && k !== now ? "✓" : i + 1}</b><span>${l}</span></button>`).join('<i aria-hidden="true"></i>');
+}
+$("#steps").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-step0]");
+  if (!b) return;
+  const k = b.dataset.step0;
+  ui.stepAt = k;
+  const scrollTo = (sel, txt) => setTimeout(() => {
+    const host = $(sel);
+    const h = [...(host?.querySelectorAll("h3, summary") || [])].find((x) => x.textContent.includes(txt));
+    const box = h?.closest("details, section") || h;
+    if (box?.tagName === "DETAILS") box.open = true;
+    box?.scrollIntoView({ block: "start", behavior: "smooth" });
+  }, 120);
+  if (k === "room") { state.tab = "design"; ui.planOn = true; ui.planView = "plan"; state.libOpen = false; }
+  else if (k === "design") { state.tab = "design"; ui.planOn = false; state.whole = true; if (!state.project.units.length) state.libOpen = true; }
+  else if (k === "mats") {
+    state.tab = "design"; ui.planOn = false;
+    if (!state.sel && state.project.units[0]) state.sel = state.project.units[0].id;
+    scrollTo("#props", "الخامات");
+    if (state.project.units.length) alertBar("اختار وحدة ودوس على أي خامة تغيّرها — وتقدر تطبّقها على كل الوحدات من نفس المكان.");
+  }
+  else if (k === "price") { state.tab = "shop"; scrollTo("#v-shop", "الأسعار"); }
+  else if (k === "client") { state.tab = "shop"; scrollTo("#v-shop", "العميل"); }
+  else { state.tab = "cut"; }
+  save(); render(true);
+});
 $("#libBtn").addEventListener("click", () => { state.libOpen = !state.libOpen; render(); });
 {
   // tap a unit to select it; drag the selected unit along the floor — it snaps to walls and neighbours
   let down = null, drag = null, ptDrag = null;
   const host = $("#view3d");
   let press = 0;
+  // ---- two-finger tap = undo, three-finger tap = redo (like the drawing apps on iPad)
+  const taps = new Map();
+  let tapT = 0;
+  host.addEventListener("pointerdown", (e) => { if (e.pointerType !== "touch") return; if (!taps.size) tapT = performance.now(); taps.set(e.pointerId, [e.clientX, e.clientY, 0]); }, true);
+  host.addEventListener("pointermove", (e) => { const t = taps.get(e.pointerId); if (t) t[2] = Math.max(t[2], Math.hypot(e.clientX - t[0], e.clientY - t[1])); }, true);
+  const tapEnd = (e) => {
+    if (!taps.has(e.pointerId)) return;
+    const n = taps.size, still = [...taps.values()].every((t) => t[2] < 12), quick = performance.now() - tapT < 320;
+    if (n >= 2 && still && quick && ui.mode === "owner") { taps.clear(); histGo(n === 2 ? -1 : 1); return; }
+    taps.delete(e.pointerId);
+  };
+  host.addEventListener("pointerup", tapEnd, true);
+  host.addEventListener("pointercancel", (e) => taps.delete(e.pointerId), true);
   // ---- drag a drawn/merged piece with the finger (along its thickness, or the axis picked)
   let xdrag = null;
   host.addEventListener("pointerdown", (e) => {
@@ -1186,6 +1331,12 @@ $("#home").addEventListener("change", async (e) => {
     alertBar("اتفتح المشروع المستورد.");
   } catch { alertBar("الملف ده مش نسخة مشروع من NOVERA Studio."); }
 });
+$("#undoBtn").addEventListener("click", () => histGo(-1));
+$("#redoBtn").addEventListener("click", () => histGo(1));
+addEventListener("keydown", (e) => {
+  if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== "z" || e.target.closest?.("input,textarea,select")) return;
+  e.preventDefault(); histGo(e.shiftKey ? 1 : -1);
+});
 $("#projBtn").addEventListener("click", async () => { ui.pop = "projects"; renderPop(); ui.projects = (await allProjects()).map((x) => ({ id: x.id, name: x.name, updatedAt: x.updatedAt })); if (ui.pop === "projects") renderPop(); });
 $("#expBtn").addEventListener("click", () => { ui.pop = "export"; renderPop(); });
 $("#aboutBtn").addEventListener("click", () => { ui.pop = "about"; renderPop(); });
@@ -1619,7 +1770,7 @@ $("#chips").addEventListener("click", async (e) => {
 });
 
 // ------------------------------------------------------------------ properties
-const numF = (path, label, v, step = 0.5) => `<label class="f"><span>${esc(label)}</span><input type="number" inputmode="decimal" step="${step}" data-num="${path}" value="${v ?? ""}"></label>`;
+const numF = (path, label, v, step = 0.5) => `<label class="f"><span>${esc(label)}</span><input type="text" inputmode="decimal" autocomplete="off" data-inc="${step}" data-numf data-num="${path}" value="${v ?? ""}"></label>`;
 const autoF = (path, label, v) => `<label class="f"><span>${esc(label)}</span><input inputmode="decimal" placeholder="تلقائي" data-auto="${path}" value="${v === "auto" || v == null ? "" : v}"></label>`;
 const selF = (path, label, opts, v) => `<label class="f"><span>${esc(label)}</span><select data-sel="${path}">${Object.entries(opts).map(([k, t]) => `<option value="${k}" ${k === String(v) ? "selected" : ""}>${esc(t)}</option>`).join("")}</select></label>`;
 const textF = (path, label, v, ph = "") => `<label class="f"><span>${esc(label)}</span><input data-text="${path}" placeholder="${esc(ph)}" value="${esc(v ?? "")}"></label>`;
@@ -1631,7 +1782,7 @@ function drawProps() {
   const dirs = [["→", 0], ["↘", 45], ["↓", 90], ["↙", 135], ["←", 180], ["↖", 225], ["↑", 270], ["↗", 315]];
   return `<div class="ph"><h2 class="uname">رسم الحيطان</h2></div>
     <p class="hint">${pts.length ? `حطيت ${pts.length} ${pts.length === 1 ? "نقطة" : "نقط"}. اكتب طول الحيطة الجاية واختار اتجاهها، أو دوس على المسقط.` : "دوس على المسقط عشان تحط أول ركن، أو ابدأ من النص بالأرقام."}</p>
-    <details open><summary>الحيطة الجاية بالمقاس</summary><div class="grid2"><label class="f"><span>الطول (سم)</span><input id="drawLen" type="number" inputmode="decimal" value="${ui.drawLen || 300}"></label></div>
+    <details open><summary>الحيطة الجاية بالمقاس</summary><div class="grid2"><label class="f"><span>الطول (سم)</span><input id="drawLen" type="text" inputmode="decimal" data-numf value="${ui.drawLen || 300}"></label></div>
     <div class="dirgrid">${dirs.map(([t, a]) => `<button class="ghost2" data-drawdir="${a}" aria-label="اتجاه ${a} درجة">${t}</button>`).join("")}</div>
     <p class="hint">المقاس من الوش الداخلي للحيطة. لما ترجع لأول نقطة الأوضة بتتقفل لوحدها.</p></details>`;
 }
@@ -1641,8 +1792,8 @@ function finishEditor(spec, attr, fallback, finishes = Mat.FINISHES) {
   const mats = Mat.all();
   let h = `<div class="grid2"><label class="f"><span>التشطيب</span><select data-${attr}="finish">${Object.entries(finishes).map(([k, t]) => `<option value="${k}" ${k === f ? "selected" : ""}>${t}</option>`).join("")}</select></label>`;
   if (f !== "photo") h += `<label class="f"><span>اللون</span><input type="color" data-${attr}="color" value="${spec.color || fallback}"></label>`;
-  if (f === "tile") h += `<label class="f"><span>مقاس البلاطة (سم)</span><input type="number" inputmode="decimal" data-${attr}="size" value="${spec.size || 60}"></label>`;
-  if (f === "wood") h += `<label class="f"><span>طول اللوح (سم)</span><input type="number" inputmode="decimal" data-${attr}="size" value="${spec.size || 120}"></label>`;
+  if (f === "tile") h += `<label class="f"><span>مقاس البلاطة (سم)</span><input type="text" inputmode="decimal" data-numf data-${attr}="size" value="${spec.size || 60}"></label>`;
+  if (f === "wood") h += `<label class="f"><span>طول اللوح (سم)</span><input type="text" inputmode="decimal" data-numf data-${attr}="size" value="${spec.size || 120}"></label>`;
   if (f === "photo") h += mats.length ? `<label class="f"><span>الخامة</span><select data-${attr}="mat"><option value="">— اختار —</option>${mats.map((m) => `<option value="${m.id}" ${m.id === spec.mat ? "selected" : ""}>${esc(m.name)}</option>`).join("")}</select></label>` : `<p class="hint full">اعمل خامة من صورة الأول من أي وحدة (الخامات ← خامة جديدة من صورة).</p>`;
   h += `</div>`;
   if (f === "paint") h += `<div class="paints">${Mat.PAINTS.map((c) => `<button style="background:${c}" data-${attr}col="${c}" aria-label="${c}"></button>`).join("")}</div>`;
@@ -1664,7 +1815,7 @@ function roomOverview() {
 function roomProps() {
   const room = state.project.room, sel = ui.planSel;
   const segs = Room.segments(room);
-  const rf = (k, label, v, step = 1) => `<label class="f"><span>${esc(label)}</span><input type="number" inputmode="decimal" step="${step}" data-rw="${k}" value="${v ?? ""}"></label>`;
+  const rf = (k, label, v, step = 1) => `<label class="f"><span>${esc(label)}</span><input type="text" inputmode="decimal" data-numf step="${step}" data-rw="${k}" value="${v ?? ""}"></label>`;
   if (sel.kind === "wall") {
     const k = segs.findIndex((g) => g.id === sel.id), sg = segs[k];
     if (!sg) return "";
@@ -1676,11 +1827,11 @@ function roomProps() {
       <div class="grid2"><button class="add" data-rwsplit>قسّم الحيطة نصين</button></div></details>
       <details open><summary>اللون والتشطيب</summary>${finishEditor(sg.wall, "rwf", "#f3f1ea")}<button class="add" data-rwall>طبّق التشطيب ده على كل الحيطان</button></details>
       <details ${sg.wall.band?.on ? "open" : ""}><summary>تكسية جزء من الحيطة</summary><div class="bools"><label class="f b"><input type="checkbox" data-rwb="on" ${sg.wall.band?.on ? "checked" : ""}><span>فيه تكسية (زي اللي بين الكونتر والعلوي)</span></label></div>
-        ${sg.wall.band?.on ? `<div class="grid2"><label class="f"><span>من ارتفاع</span><input type="number" inputmode="decimal" data-rwb="z0" value="${sg.wall.band.z0 ?? 90}"></label><label class="f"><span>لحد ارتفاع</span><input type="number" inputmode="decimal" data-rwb="z1" value="${sg.wall.band.z1 ?? 145}"></label></div>${finishEditor(sg.wall.band, "rwb", "#e7e2d6")}` : ""}</details>
+        ${sg.wall.band?.on ? `<div class="grid2"><label class="f"><span>من ارتفاع</span><input type="text" inputmode="decimal" data-numf data-rwb="z0" value="${sg.wall.band.z0 ?? 90}"></label><label class="f"><span>لحد ارتفاع</span><input type="text" inputmode="decimal" data-numf data-rwb="z1" value="${sg.wall.band.z1 ?? 145}"></label></div>${finishEditor(sg.wall.band, "rwb", "#e7e2d6")}` : ""}</details>
       <details open><summary>الأبواب والشبابيك (${ops.length})</summary>${ops.map((o) => `<button class="mrow" data-selopen="${o.id}"><span><b>${o.kind === "door" ? "باب" : "شباك"} ${n1(o.w)} × ${n1(o.h)}</b><small>على بعد ${n1(o.at)} سم من أول الحيطة</small></span>${ICON.cycle}</button>`).join("")}
       <div class="grid2"><button class="add" data-roomop="door">${ICON.plus}باب</button><button class="add" data-roomop="window">${ICON.plus}شباك</button></div></details>`;
   }
-  const nf = (k, label, v) => `<label class="f"><span>${esc(label)}</span><input type="number" inputmode="decimal" step="1" data-rp="${k}" value="${v ?? ""}"></label>`;
+  const nf = (k, label, v) => `<label class="f"><span>${esc(label)}</span><input type="text" inputmode="decimal" data-numf step="1" data-rp="${k}" value="${v ?? ""}"></label>`;
   if (sel.kind === "pt") {
     const pt = (room.points || []).find((x) => x.id === sel.id);
     if (!pt) return "";
@@ -1701,14 +1852,15 @@ function roomProps() {
   }
   const o = (room.openings || []).find((x) => x.id === sel.id);
   if (!o) return "";
-  const of = (k, label, v) => `<label class="f"><span>${esc(label)}</span><input type="number" inputmode="decimal" step="1" data-ro="${k}" value="${v ?? ""}"></label>`;
+  const of = (k, label, v) => `<label class="f"><span>${esc(label)}</span><input type="text" inputmode="decimal" data-numf step="1" data-ro="${k}" value="${v ?? ""}"></label>`;
   return `<div class="ph"><h2 class="uname">${o.kind === "door" ? "باب" : "شباك"}</h2><div class="pa"><button data-rodel class="danger" title="امسح" aria-label="امسح">${ICON.trash}</button></div></div>
     <details open><summary>المقاسات</summary><div class="grid2">${selF("__kind", "النوع", { door: "باب", window: "شباك" }, o.kind).replace('data-sel="__kind"', 'data-ro="kind"')}
     ${of("w", "العرض", o.w)}${of("h", "الارتفاع", o.h)}${o.kind === "window" ? of("sill", "ارتفاع الجلسة من الأرض", o.sill) : ""}${of("at", "البعد عن أول الحيطة", r1(o.at))}</div>
     <p class="hint">تقدر تسحبه على الحيطة في المسقط. الوحدات السفلية مش بتتحط قدام الأبواب، والعلوية مش بتتحط قدام الشبابيك.</p></details>`;
 }
 const r1 = Room.r1;
-function renderProps() {
+function renderProps() { renderProps0(); propsMode($("#props")); }
+function renderProps0() {
   const u = selUnit();
   const el = $("#props");
   if (ui.planOn && ui.planTool === "draw") { el.innerHTML = drawProps(); return; }
@@ -1722,7 +1874,7 @@ function renderProps() {
     <div class="tplname"><span class="ucode">${esc(unitCode(u))}</span>${esc(r.label || (u.kind === "dressing" ? "دريسنج" : u.kind === "kitchen" ? "وحدة مطبخ" : ""))}</div>`;
   if (r.ok) h += `<div class="stats"><div><b>${r.pieces}</b><span>قطعة</span></div><div><b>${r.banding}</b><span>م شريط</span></div><div><b>${r.doors}</b><span>ضلفة</span></div><div><b>${r.drawers}</b><span>درج</span></div></div>`;
   if (ui.asm?.id === u.id) { el.innerHTML = asmProps(u); return; }
-  if (r.ok && wholeView()) h += `<div class="grid2"><label class="f"><span>↕ رفع الوحدة من الأرض (سم)</span><input type="number" inputmode="decimal" step="1" min="0" data-ulift value="${+u.lift || 0}"></label></div>
+  if (r.ok && wholeView()) h += `<div class="grid2"><label class="f"><span>↕ رفع الوحدة من الأرض (سم)</span><input type="text" inputmode="decimal" data-numf step="1" min="0" data-ulift value="${+u.lift || 0}"></label></div>
     <p class="hint">زيادة على ارتفاعها العادي — مثلاً وحدة على قاعدة أو رف معلّق. الوحدات العلوية للمطبخ ارتفاعها من "التعليق من الأرض".</p>`;
   if (u.kind === "pieces") { el.innerHTML = h + (r.ok ? summaryHtml(u) : "") + piecesProps(u); return; }
   if (u.kind === "kitchen" && r.ok) h += applianceField(u, p) + organizerField(u, r);
@@ -2078,24 +2230,32 @@ props.addEventListener("change", (e) => {
     save(); renderProps(); view.update();
     return;
   }
-  if (d.ulift !== undefined) { u.lift = Math.max(0, +t.value || 0); save(); renderChips(); view.update(); if (ui.planOn) plan.render(); return; }
+  if (d.ulift !== undefined) { u.lift = Math.max(0, toNum(t.value)); save(); renderChips(); view.update(); if (ui.planOn) plan.render(); return; }
   if (t.id === "xmoveAx") { ui.xmoveAx = t.value; return; }
   if (d.xcut) {
     const [i, f] = d.xcut.split(".");
-    setExtra(u, (l) => { const q = l[+i]; if (!q) return; if (f === "c") { if (!t.value) delete q.cut; else q.cut = { a: 10, b: 10, ...(q.cut || {}), c: t.value }; } else { q.cut = { ...(q.cut || {}), [f]: Math.max(0, +t.value || 0) }; } });
+    setExtra(u, (l) => { const q = l[+i]; if (!q) return; if (f === "c") { if (!t.value) delete q.cut; else q.cut = { a: 10, b: 10, ...(q.cut || {}), c: t.value }; } else { q.cut = { ...(q.cut || {}), [f]: Math.max(0, toNum(t.value)) }; } });
     return;
   }
   if (d.xnum || d.xtext || d.xsel) {
     const [i, f] = (d.xnum || d.xtext || d.xsel).split(".");
-    setExtra(u, (l) => { if (!l[+i]) return; l[+i][f] = d.xnum ? Math.max(f === "w" || f === "d" || f === "h" ? 0.1 : -1e4, +t.value || 0) : t.value; });
+    setExtra(u, (l) => { if (!l[+i]) return; l[+i][f] = d.xnum ? Math.max(f === "w" || f === "d" || f === "h" ? 0.1 : -1e4, toNum(t.value)) : t.value; });
     return;
   }
-  if (d.num) setParams(u, (p) => setPath(p, d.num, t.value === "" ? 0 : +t.value));
-  else if (d.auto) setParams(u, (p) => setPath(p, d.auto, t.value.trim() === "" ? "auto" : +t.value));
+  if (d.num) setParams(u, (p) => setPath(p, d.num, t.value === "" ? 0 : toNum(t.value)));
+  else if (d.auto) setParams(u, (p) => setPath(p, d.auto, t.value.trim() === "" ? "auto" : toNum(t.value)));
   else if (d.sel) setParams(u, (p) => setPath(p, d.sel, d.sel === "doors.layout" ? t.value : t.value));
   else if (d.bool) setParams(u, (p) => setPath(p, d.bool, t.checked));
   else if (d.text) setParams(u, (p) => setPath(p, d.text, t.value));
 });
+props.addEventListener("input", (e) => { if (e.target.id === "propQ") { ui.propQ = e.target.value; filterProps(); } }, true);
+props.addEventListener("click", (e) => {
+  const b = e.target.closest("[data-padv]");
+  if (!b) return;
+  e.stopImmediatePropagation();
+  state.propsAdv = b.dataset.padv === "1"; save(); renderProps();
+  if (state.propsAdv && b.classList.contains("advmore")) $("#props").querySelector("details.advhid, details[data-basic='0']")?.scrollIntoView({ block: "start", behavior: "smooth" });
+}, true);
 props.addEventListener("input", (e) => {
   if (e.target.id !== "unitName") return;
   selUnit().name = e.target.value;
@@ -2477,7 +2637,7 @@ function organizerField(u, r) {
       const lay = cur !== "none" && cur !== "eng" ? insertLayout(cur, d.W, d.D, u.insertOpts?.[d.i]) : { v: [], h: [] };
       h += `<div class="drw"><div class="drwh"><b>درج ${d.i}${d.i === 1 ? " (تحت)" : d.i === drs.length ? " (فوق)" : ""}</b><small>من جوه ${n1(d.W)}×${n1(d.D)} · ارتفاع الوش ${n1(d.H)}</small></div>
         <div class="drwb">${insertSvg(d.W, d.D, lay.v, lay.h)}<div class="inschips">${Object.entries(INSERTS).map(([k, x]) => `<button class="chip ${cur === k ? "on" : ""}" data-ins="${d.i}|${k}">${x.icon} ${esc(x.label)}</button>`).join("")}</div></div>
-        ${cur === "grid" ? `<div class="grid2"><label class="f"><span>عدد الخانات بالعرض</span><input type="number" min="1" max="8" data-insc="${d.i}" value="${u.insertOpts?.[d.i]?.cols || 3}"></label><label class="f"><span>بالعمق</span><input type="number" min="1" max="8" data-insr="${d.i}" value="${u.insertOpts?.[d.i]?.rows || 2}"></label></div>` : ""}</div>`;
+        ${cur === "grid" ? `<div class="grid2"><label class="f"><span>عدد الخانات بالعرض</span><input type="text" inputmode="decimal" data-numf min="1" max="8" data-insc="${d.i}" value="${u.insertOpts?.[d.i]?.cols || 3}"></label><label class="f"><span>بالعمق</span><input type="text" inputmode="decimal" data-numf min="1" max="8" data-insr="${d.i}" value="${u.insertOpts?.[d.i]?.rows || 2}"></label></div>` : ""}</div>`;
     }
   } else if (!drs.length && !ORGS[u.org]) h += `<p class="hint">الوحدة دي ملهاش أدراج. خلّي "الضلف" أدراج عشان تقسّمها، أو اختار منظّم سحب تحت.</p>`;
   const fits = Object.entries(ORGS).filter(([, o]) => o.fit(p));
@@ -2769,6 +2929,152 @@ function applyLibTo(u, key, lib) {
     setParams(u, (p) => { p.materials[key] = lib ? { name: nm(lib), skm: "" } : { name: "", skm: "" }; });
   } else setParams(u, (p) => { p.materials ??= {}; p.materials[key] = lib ? { lib } : {}; });
 }
+// ---- the settings panel: "basic" shows only what most units need, search finds any field
+const BASIC_SECTIONS = ["المقاسات", "المقاسات والنظام", "الوحدة", "الواجهة", "من جوه", "الخامات", "الأقسام (من الشمال لليمين)", "الواجهة (من تحت لفوق)", "الألواح", "اللون والتشطيب", "🧩 التقسيمات الداخلية", "الأوضة", "كل الحيطان"];
+const normAr = (t) => String(t || "").toLowerCase().replace(/[أإآ]/g, "ا").replace(/ة/g, "ه").replace(/ى/g, "ي").replace(/[ًٌٍَُِّْـ]/g, "");
+function propsMode(el) {
+  if (!el || !selUnit() || el.querySelector(".emptyp")) return;
+  const adv = !!state.propsAdv;
+  const bar = document.createElement("div");
+  bar.className = "propsbar";
+  bar.innerHTML = `<input id="propQ" type="search" placeholder="🔍 دوّر في الإعدادات: مفصلة، سكلو، ليد…" aria-label="دوّر في الإعدادات" value="${esc(ui.propQ || "")}">
+    <div class="seg"><button data-padv="0" class="${adv ? "" : "on"}">أساسي</button><button data-padv="1" class="${adv ? "on" : ""}">كل الإعدادات</button></div>`;
+  const head = el.querySelector(".stats") || el.querySelector(".tplname");
+  (head ? head.after(bar) : el.prepend(bar));
+  const top = [...el.children].filter((x) => x.tagName === "DETAILS");
+  let hidden = 0;
+  for (const d of top) {
+    const t = d.querySelector(":scope > summary")?.textContent.trim() || "";
+    const basic = BASIC_SECTIONS.some((k) => t === k || t.startsWith(k + " ") || t.startsWith("إعدادات "));
+    d.dataset.basic = basic ? "1" : "0";
+    if (!adv && !basic) { d.classList.add("advhid"); hidden++; }
+  }
+  if (!adv && hidden) {
+    const more = document.createElement("button");
+    more.className = "add advmore"; more.dataset.padv = "1";
+    more.textContent = `⚙ كل الإعدادات (${hidden} قسم كمان: الكبب، الأليتا، الليد، الأورزة، خلع العمود، رسم القطع…)`;
+    el.append(more);
+  }
+  filterProps(el);
+}
+function filterProps(el = $("#props")) {
+  const q = normAr(ui.propQ || "").trim();
+  // loose Arabic match: "مفصلة" finds "المفصلات", "درج" finds "الأدراج"
+  const words = q.split(/\s+/).filter(Boolean).map((w) => (w.length > 3 ? w.replace(/^ال/, "").replace(/(ه|ات|ين|ون)$/, "") : w)).map((w) => (w === "درج" ? "در" : w));
+  const fields = el.querySelectorAll("label.f, .bools > label, .bools > .b, .zone-ed, .btnrow, .mrow");
+  el.classList.toggle("searching", !!words.length);
+  let found = 0;
+  for (const f of fields) {
+    const hit = !words.length || words.every((w) => normAr(f.textContent).includes(w));
+    f.classList.toggle("qhid", !hit);
+    if (hit && words.length) found++;
+  }
+  for (const d of el.querySelectorAll("details")) {
+    const sumHit = words.length && words.every((w) => normAr(d.querySelector(":scope > summary")?.textContent).includes(w));
+    if (sumHit) d.querySelectorAll(".qhid").forEach((x) => x.classList.remove("qhid"));
+    const any = !words.length || sumHit || [...d.querySelectorAll("label.f, .bools > label, .bools > .b, .zone-ed, .btnrow, .mrow")].some((x) => !x.classList.contains("qhid"));
+    d.classList.toggle("qhid", !any);
+    if (words.length && any) { if (!d.dataset.wasOpen) d.dataset.wasOpen = d.open ? "1" : "0"; d.open = true; }
+    else if (!words.length && d.dataset.wasOpen) { d.open = d.dataset.wasOpen === "1"; delete d.dataset.wasOpen; }
+  }
+  let none = el.querySelector(".qnone");
+  if (words.length && !found && ![...el.querySelectorAll("details")].some((d) => !d.classList.contains("qhid"))) {
+    if (!none) { none = document.createElement("p"); none.className = "hint qnone"; el.querySelector(".propsbar")?.after(none); }
+    none.textContent = "مفيش إعداد بالاسم ده للوحدة دي.";
+  } else none?.remove();
+}
+// ---- direct editing in 3D: the selected unit's sizes float next to it — tap one to type a new value,
+// or drag the round handle on its side to make it wider / narrower
+const dimTags = {
+  el: null, drag: null,
+  dims(u, r) {
+    const p = r.params || {};
+    if (u.kind === "kitchen") return KU.dimsFor(p).slice(0, 3);
+    if (u.kind === "pieces" || p.template === "free") return [];
+    return [["width", "العرض"], ["height", "الارتفاع"], ["depth", "العمق"]];
+  },
+  target() {
+    const u = selUnit();
+    if (!u || ui.mode !== "owner" || state.tab !== "design" || ui.planOn || ui.asm || ui.xdraw || ui.xmove || view.final?.active || document.body.classList.contains("fs")) return null;
+    const r = R(u);
+    if (!r.ok) return null;
+    const d = this.dims(u, r);
+    if (d.length < 3) return null;
+    const g = (view.pickables || []).find((o) => o.userData.unitId === u.id);
+    return g ? { u, r, d, g } : null;
+  },
+  place(v) {
+    const host = v.host;
+    if (!this.el) {
+      this.el = document.createElement("div");
+      this.el.className = "dimtags";
+      host.appendChild(this.el);
+      this.el.addEventListener("pointerdown", (e) => this.down(e));
+      this.el.addEventListener("click", (e) => this.click(e));
+    }
+    if (this.editing) return;
+    const t = this.target();
+    if (!t) { this.el.innerHTML = ""; this.cur = null; return; }
+    const { u, r, d, g } = t;
+    const T = v.three, b = localBox(r);
+    const bs = r.meshes ? r.meshes.map((m) => m.box) : r.parts.filter((x) => x.box).map((x) => x.box);
+    const z0 = Math.min(...bs.map((x) => x.z0)), z1 = Math.max(...bs.map((x) => x.z1));
+    const rc = v.ren.domElement.getBoundingClientRect(), hr = host.getBoundingClientRect();
+    const scr = (x, y, z) => { const q = g.localToWorld(new T.Vector3(x, z, -y)).project(v.cam); return q.z > 1 ? null : [rc.left - hr.left + (q.x + 1) / 2 * rc.width, rc.top - hr.top + (1 - q.y) / 2 * rc.height]; };
+    const xm = (b.x0 + b.x1) / 2, ym = (b.y0 + b.y1) / 2, zm = (z0 + z1) / 2;
+    const pts = [scr(xm, b.y0, z1 + 4), scr(b.x0 - 5, b.y0, zm), scr(b.x1 + 3, ym, z1 + 2)];
+    const hd = scr(b.x1, b.y0, zm), hd0 = scr(b.x0, b.y0, zm);
+    const p = r.params || {};
+    const key = JSON.stringify([u.id, pts.map((x) => x && x.map(Math.round)), d.map(([k]) => p[k])]);
+    if (key === this.cur) return;
+    this.cur = key;
+    this.t = { u, d, hd, hd0 };
+    let h = "";
+    d.forEach(([k, l], i) => { const q = pts[i]; if (q) h += `<button class="dtag" data-dk="${k}" style="left:${q[0]}px;top:${q[1]}px" title="${esc(l)} — دوس عشان تغيّره">${esc(n1(+p[k] || 0))}<small>${esc(l)}</small></button>`; });
+    if (hd && hd0 && Math.hypot(hd[0] - hd0[0], hd[1] - hd0[1]) > 40) h += `<span class="dhandle" style="left:${hd[0]}px;top:${hd[1]}px" title="اسحب عشان تغيّر ${esc(d[0][1])}">⇔</span>`;
+    this.el.innerHTML = h;
+  },
+  click(e) {
+    const b = e.target.closest(".dtag");
+    if (!b || !this.t) return;
+    const k = b.dataset.dk, u = this.t.u, p = R(u).params;
+    this.editing = true;
+    b.innerHTML = `<input type="text" inputmode="decimal" value="${n1(+p[k] || 0)}" aria-label="${esc(b.title)}">`;
+    const inp = b.querySelector("input");
+    inp.focus(); inp.select();
+    const done = (ok) => {
+      if (!this.editing) return;
+      this.editing = false; this.cur = null;
+      const v = toNum(inp.value);
+      if (ok && v > 0 && v !== +p[k]) setParams(u, (q) => { q[k] = v; });
+      else view.dirty = true;
+    };
+    inp.addEventListener("keydown", (ev) => { if (ev.key === "Enter") done(true); if (ev.key === "Escape") done(false); });
+    inp.addEventListener("blur", () => done(true));
+  },
+  down(e) {
+    const hdl = e.target.closest(".dhandle");
+    if (!hdl || !this.t) return;
+    e.preventDefault(); e.stopPropagation();
+    const { u, d, hd, hd0 } = this.t, k = d[0][0], p = R(u).params, w0 = +p[k] || 0;
+    const L = Math.hypot(hd[0] - hd0[0], hd[1] - hd0[1]), dir = [(hd[0] - hd0[0]) / L, (hd[1] - hd0[1]) / L], ppc = L / Math.max(w0, 1);
+    const x0 = e.clientX, y0 = e.clientY;
+    view.ctl.enabled = false;
+    const tag = this.el.querySelector(`[data-dk="${k}"]`);
+    let w = w0;
+    const mv = (ev) => {
+      w = Math.max(10, Math.round(w0 + ((ev.clientX - x0) * dir[0] + (ev.clientY - y0) * dir[1]) / ppc));
+      if (tag) tag.firstChild.textContent = n1(w);
+      hdl.style.transform = `translate(calc(-50% + ${(w - w0) * ppc * dir[0]}px), calc(-50% + ${(w - w0) * ppc * dir[1]}px))`;
+    };
+    const up = () => {
+      removeEventListener("pointermove", mv, true); removeEventListener("pointerup", up, true); removeEventListener("pointercancel", up, true);
+      view.ctl.enabled = true; this.cur = null;
+      if (w !== w0) setParams(u, (q) => { q[k] = w; }); else view.dirty = true;
+    };
+    addEventListener("pointermove", mv, true); addEventListener("pointerup", up, true); addEventListener("pointercancel", up, true);
+  },
+};
 function mySavePop() {
   const it = ui.myrenId ? state.myUnits.find((x) => x.id === ui.myrenId) : null;
   const u = it ? null : state.project.units.find((x) => x.id === ui.mysaveId);
@@ -2878,6 +3184,7 @@ function renderPop() {
     h = `<div class="popbox about" role="dialog" aria-label="عن التطبيق"><div class="libhead"><h2>عن التطبيق</h2><button class="x" data-close aria-label="قفل">×</button></div>
       <div class="abhead"><span class="mark big">N</span><div><b>NOVERA Studio</b><small>الإصدار ${APP_VERSION}${window.NOVERA_BUILD ? ` · تحديث ${window.NOVERA_BUILD}` : ""}</small></div></div>
       <p>تطبيق لتصميم وتصنيع المطابخ والدريسنج وغرف النوم ووحدات الأثاث من الألواح — من أول رسم الأوضة لحد القص والتجميع في الورشة.</p>
+      <div class="btnrow"><button class="primary" data-tour>▶ الجولة التعريفية (دقيقة)</button></div>
       <ul class="feat">
         <li>وحدات بمحرّك البلجن نفسه (Kitchen Unit Designer) — نفس القطع والمقاسات اللي في سكتش أب بالظبط.</li>
         <li>رسم الحيطان بالمقاسات أو بالإيد أو من مسح الكاميرا، أبواب وشبابيك، ونقط كهربا وسباكة وغاز.</li>
@@ -2920,9 +3227,9 @@ function renderPop() {
     h = `<div class="popbox" role="dialog" aria-label="أوضة جاهزة"><div class="libhead"><h2>أوضة جاهزة بالمقاسات</h2><button class="x" data-close aria-label="قفل">×</button></div>
       <p class="hint">المقاسات من جوه (من وش الحيطة لوش الحيطة) بالسنتيمتر — تقدر تعدّل أي حيطة بعد كده أو تسحب أركانها.</p>
       <div class="roomkinds">${Object.entries(Room.PRESETS).map(([key, v]) => `<button class="rk ${key === k ? "on" : ""}" data-rk="${key}">${roomIcon(key)}<span>${esc(v.label)}</span></button>`).join("")}</div>
-      <div class="grid2">${pr.fields.map(([f, l, dv]) => `<label class="f"><span>${esc(l)}</span><input type="number" inputmode="decimal" data-rf="${f}" value="${ui.roomDims?.[f] ?? dv}"></label>`).join("")}
-      <label class="f"><span>سمك الحيطة</span><input type="number" inputmode="decimal" data-rf="t" value="${ui.roomDims?.t ?? Room.WALL_T}"></label>
-      <label class="f"><span>ارتفاع الحيطة</span><input type="number" inputmode="decimal" data-rf="h" value="${ui.roomDims?.h ?? Room.WALL_H}"></label></div>
+      <div class="grid2">${pr.fields.map(([f, l, dv]) => `<label class="f"><span>${esc(l)}</span><input type="text" inputmode="decimal" data-numf data-rf="${f}" value="${ui.roomDims?.[f] ?? dv}"></label>`).join("")}
+      <label class="f"><span>سمك الحيطة</span><input type="text" inputmode="decimal" data-numf data-rf="t" value="${ui.roomDims?.t ?? Room.WALL_T}"></label>
+      <label class="f"><span>ارتفاع الحيطة</span><input type="text" inputmode="decimal" data-numf data-rf="h" value="${ui.roomDims?.h ?? Room.WALL_H}"></label></div>
       ${state.project.room ? `<p class="hint">ده هيستبدل الحيطان الحالية.</p>` : ""}
       <div class="btnrow"><button class="primary" data-mkroom>اعمل الحيطان ورصّ الوحدات</button>${state.project.room ? `<button class="ghost2 danger" data-rmroom>امسح الحيطان</button>` : ""}</div>
       <h3>أو من مسح الأوضة بالكاميرا (LiDAR)</h3>
@@ -3234,7 +3541,7 @@ window.noveraRoomScan = (data) => {
   } catch (err) { alertBar(err?.message?.length < 80 ? err.message : "ما قدرتش أقرا المسح — جرّب تمسح تاني ببطء."); }
 };
 window.noveraScanError = (msg) => alertBar(msg);
-function closeHome() { $("#home").hidden = true; document.body.classList.remove("athome"); setTimeout(() => view.resize?.(), 50); }
+function closeHome() { $("#home").hidden = true; document.body.classList.remove("athome"); setTimeout(() => view.resize?.(), 50); renderSteps(); if (!state.tourDone && ui.mode === "owner") setTimeout(() => startTour(), 900); }
 async function allProjects() {
   const local = await Lib.list().catch(() => []);
   const map = new Map(local.map((x) => [x.id, { ...x, where: "device" }]));
@@ -3729,12 +4036,20 @@ const view = {
         if (this.final.active) { this.final.tick(); return; }
         if (this.recording) return;
         const moved = this.ctl.update();
-        if (!moved && !this.dirty) return;
-        this.dirty = false;
+        if (!moved && !this.dirty && !this.camDirty) return;
+        // shadows only change with the scene, never with the camera: re-draw the shadow map only then
+        if (this.dirty) this.ren.shadowMap.needsUpdate = true;
+        this.dirty = false; this.camDirty = false;
         this.cutaway();
-        if (this.usePost()) this.postFx.render(); else this.ren.render(this.scene, this.cam);
+        // while a finger turns the camera: skip the heavy ambient-occlusion pass, add it back when it stops
+        if (this.usePost() && !this.interacting) this.postFx.render(); else this.ren.render(this.scene, this.cam);
+        dimTags.place(this);
       };
-      this.ctl.addEventListener("change", () => { this.dirty = true; });
+      this.ren.shadowMap.autoUpdate = false;
+      this.ren.shadowMap.needsUpdate = true;
+      this.ctl.addEventListener("change", () => { this.camDirty = true; });
+      this.ctl.addEventListener("start", () => { clearTimeout(this.calmT); this.interacting = true; });
+      this.ctl.addEventListener("end", () => { clearTimeout(this.calmT); this.calmT = setTimeout(() => { this.interacting = false; this.camDirty = true; }, 220); });
       loop();
       this.update(true);
     } catch {
@@ -4574,7 +4889,7 @@ function drawCut() {
   const el = $("#v-cut");
   const o = state.cutOpts;
   let h = `<div class="cuthead"><div><h2>خطة القص — ${esc(state.project.name)}</h2><p class="hint">كل خامة وسمك لوحدها، بنفس محرك القص بتاع البلاجن (قصات جيلوتين تتنفذ على المنشار).</p></div>
-    <div class="cutopts">${[["sheetW", "طول اللوح", 1], ["sheetH", "عرض اللوح", 1], ["kerf", "سلاح المنشار", 0.05], ["trim", "تشذيب الحرف", 0.5]].map(([k, l, s]) => `<label class="f"><span>${l}</span><input type="number" step="${s}" data-co="${k}" value="${o[k]}"></label>`).join("")}</div></div>`;
+    <div class="cutopts">${[["sheetW", "طول اللوح", 1], ["sheetH", "عرض اللوح", 1], ["kerf", "سلاح المنشار", 0.05], ["trim", "تشذيب الحرف", 0.5]].map(([k, l, s]) => `<label class="f"><span>${l}</span><input type="text" inputmode="decimal" data-numf step="${s}" data-co="${k}" value="${o[k]}"></label>`).join("")}</div></div>`;
   if (!cutData || cutData.busy) { el.innerHTML = h + `<div class="busy"><span class="spin" aria-hidden="true"></span>بيحسب أحسن توزيع للقطع…</div>`; return; }
   const { groups, outside, results } = cutData;
   let sheets = 0, lb = 0;
@@ -5649,13 +5964,13 @@ function quoteCalc() {
 function quoteHtml() {
   const P = priceDefaults(), Q = quoteCalc();
   if (!Q) return `<section class="mgroup"><div class="mg-h"><h3>الأسعار وعرض السعر</h3></div><div class="busy"><span class="spin" aria-hidden="true"></span>بيحسب الألواح…</div></section>`;
-  const pin = (k, v, label, step = 1) => `<label class="f"><span>${esc(label)}</span><input type="number" inputmode="decimal" step="${step}" data-price="${esc(k)}" value="${v ?? ""}"></label>`;
+  const pin = (k, v, label, step = 1) => `<label class="f"><span>${esc(label)}</span><input type="text" inputmode="decimal" data-numf step="${step}" data-price="${esc(k)}" value="${v ?? ""}"></label>`;
   let h = `<section class="mgroup"><div class="mg-h"><h3>الأسعار وعرض السعر</h3><span class="pill">${money(Q.total)} ج.م</span></div>
     <p class="hint">اكتب أسعارك مرة واحدة وهتتحفظ لكل المشاريع. عدد الألواح من خطة القص، والشريط والهاردوير من التصميم.</p>
     <div class="tblwrap"><table class="tbl"><thead><tr><th>البند</th><th>الكمية</th><th>سعر الوحدة</th><th>الإجمالي</th></tr></thead><tbody>`;
   for (const L of Q.lines) {
     const k = L.k === "sheet" ? `sheets.${L.key}` : L.k === "hw" ? `hw.${L.key}` : "band";
-    h += `<tr><td>${esc(L.label)}</td><td class="num">${L.qty} ${L.unit}</td><td><input class="pin" type="number" inputmode="decimal" data-price="${esc(k)}" value="${L.price || ""}" placeholder="0"></td><td class="num">${money(L.total)}</td></tr>`;
+    h += `<tr><td>${esc(L.label)}</td><td class="num">${L.qty} ${L.unit}</td><td><input class="pin" type="text" inputmode="decimal" data-numf data-price="${esc(k)}" value="${L.price || ""}" placeholder="0"></td><td class="num">${money(L.total)}</td></tr>`;
   }
   h += `</tbody></table></div><div class="grid3">${pin("laborUnit", P.laborUnit, "مصنعية لكل وحدة")}${pin("laborM2", P.laborM2, "مصنعية لكل م² خشب")}${pin("install", P.install, "تركيب ونقل (مقطوعية)")}</div>
     <div class="kv"><span>خامات</span><b>${money(Q.mat + Q.band)}</b><span>هاردوير</span><b>${money(Q.hwT)}</b><span>مصنعية وتركيب</span><b>${money(Q.labor)}</b><span>التكلفة</span><b>${money(Q.cost)}</b><span>سعر البيع</span><b>${money(Q.total)}</b><span>مكسبك</span><b class="profit">${money(Q.total - Q.cost)}${Q.total ? ` (${Math.round(((Q.total - Q.cost) / Q.total) * 100)}%)` : ""}</b>${Q.waste != null ? `<span>هالك الألواح</span><b>${Q.waste}%</b>` : ""}</div>
@@ -6505,9 +6820,9 @@ function stockHtml() {
     const fullNeed = res.sheets.filter((s) => s.stock !== "remnant").length;
     const b = Math.max(0, fullNeed - (+st.sheets || 0));
     if (b) buy.push([g.key, b, +P.sheets[g.key] || 0]);
-    h += `<tr><td>${esc(g.key)}</td><td class="num">${fullNeed}</td><td><input class="pin" type="number" min="0" inputmode="numeric" data-stsheets="${esc(g.key)}" value="${st.sheets || 0}"></td><td class="num"><b>${b}</b></td>
+    h += `<tr><td>${esc(g.key)}</td><td class="num">${fullNeed}</td><td><input class="pin" type="text" inputmode="decimal" data-numf min="0" inputmode="numeric" data-stsheets="${esc(g.key)}" value="${st.sheets || 0}"></td><td class="num"><b>${b}</b></td>
       <td><div class="remlist">${st.remnants.map((r) => `<span class="rem">${r.w}×${r.h}<button data-remdel="${esc(g.key)}|${r.id}" aria-label="شيل">×</button></span>`).join("")}
-      <span class="remadd"><input type="number" inputmode="decimal" placeholder="طول" data-remw="${esc(g.key)}"><input type="number" inputmode="decimal" placeholder="عرض" data-remh="${esc(g.key)}"><button class="ghost2" data-remadd="${esc(g.key)}">＋</button></span></div></td></tr>`;
+      <span class="remadd"><input type="text" inputmode="decimal" data-numf placeholder="طول" data-remw="${esc(g.key)}"><input type="text" inputmode="decimal" data-numf placeholder="عرض" data-remh="${esc(g.key)}"><button class="ghost2" data-remadd="${esc(g.key)}">＋</button></span></div></td></tr>`;
     void need;
   }
   h += `</tbody></table></div>`;
@@ -6732,6 +7047,8 @@ const EXPORTS = [
 // ------------------------------------------------------------------ render
 function render(refit = false) {
   ensureCodes(state.project);
+  if (hist.pid !== state.project?.id) histTrack();
+  renderSteps();
   $("#projName").textContent = state.project.name;
   document.querySelectorAll(".tabs [data-tab]").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === state.tab)));
   for (const t of ["design", "cut", "parts", "shop"]) $(`#v-${t}`).hidden = ui.mode !== "owner" || state.tab !== t;
