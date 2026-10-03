@@ -5073,6 +5073,44 @@ function labelsHtml(pieces, pid, sheets, fmt) {
 }
 
 // ------------------------------------------------------------------ shop tab (owner): share + labels + progress
+// ---- the client picks the look himself: finishes the owner allows, each with its price difference
+const FRONT_KEY = { kitchen: "front", dressing: "door", panel: "front" };
+function clientOpts() { return (state.project.clientOpts ??= { finishes: [], show: true }); }
+function clientOptsHtml(appr) {
+  const o = state.project.clientOpts || { finishes: [], show: true };
+  const libs = [...Object.entries(Catalog.LIB).map(([k, v]) => [k, v[0]]), ...Mat.all().map((m) => [m.id, m.name])];
+  let h = `<details ${o.finishes.length ? "open" : ""}><summary>🎨 العميل يختار لون الضلف بنفسه${o.finishes.length ? ` · ${o.finishes.length}` : ""}</summary>
+    <p class="hint">ضيف الألوان/الخامات اللي تقبل تشتغلها، وفرق سعر كل واحدة عن التصميم الحالي. العميل بيقلّب بينهم في اللينك، الـ3D والسعر بيتغيروا قدامه، ولما يعتمد اختياره بيوصلك هنا.</p>`;
+  o.finishes.forEach((f, i) => {
+    h += `<div class="zone-ed"><div class="grid3"><label class="f"><span>الاسم</span><input data-cof="${i}.name" value="${esc(f.name || "")}" placeholder="أبيض مط"></label>
+      <label class="f"><span>الخامة</span><select data-cof="${i}.lib">${libs.map(([k, l]) => `<option value="${k}" ${k === f.lib ? "selected" : ""}>${esc(l)}</option>`).join("")}</select></label>
+      <label class="f"><span>فرق السعر (ج.م، + أو −)</span><input type="text" inputmode="decimal" data-numf data-cof="${i}.delta" value="${f.delta ?? 0}"></label></div>
+      <button class="danger sm" data-cofdel="${i}" aria-label="شيل">${ICON.trash}</button></div>`;
+  });
+  h += `<div class="btnrow"><button class="ghost2" data-cofadd>+ لون/خامة</button><label class="chk"><input type="checkbox" data-cofshow ${o.show !== false ? "checked" : ""}> اعرض السعر الإجمالي للعميل</label></div>`;
+  if (appr?.finish) {
+    const f = o.finishes.find((x) => x.id === appr.finish);
+    h += `<p class="okmsg">${ICON.check} العميل اختار: <b>${esc(appr.finishName || f?.name || "")}</b>${appr.total ? ` — ${money(appr.total)} ج.م` : ""}</p>${f ? `<button class="primary" data-cofapply="${f.id}">طبّق اختياره على التصميم</button>` : ""}`;
+  }
+  return h + `</details>`;
+}
+function applyFinish(units, lib) {
+  return units.map((u) => { const k = FRONT_KEY[u.kind]; return k ? { ...u, libs: { ...(u.libs || {}), [k]: lib } } : u; });
+}
+/** production at a glance: every stage's count and every unit's progress, from the workers' QR scans */
+function prodBoard(pieces, prog) {
+  if (!pieces.length) return "";
+  const st = STAGES.map((_, i) => pieces.filter((pc) => (prog[pc.key] || 0) > i).length);
+  let h = `<div class="prodst">${STAGES.map((l, i) => `<div><b>${st[i]}</b><span>${l}</span><i style="--p:${Math.round((st[i] / pieces.length) * 100)}%"></i></div>`).join("")}</div><div class="produ">`;
+  const by = new Map();
+  for (const pc of pieces) { const k = pc.ucode + " " + pc.unit; const a = by.get(k) || []; a.push(pc); by.set(k, a); }
+  for (const [k, list] of by) {
+    const sum = list.reduce((a, pc) => a + Math.min(4, prog[pc.key] || 0), 0), pct = Math.round((sum / (list.length * 4)) * 100);
+    const slow = list.filter((pc) => (prog[pc.key] || 0) === 0).length;
+    h += `<div class="pu"><span>${esc(k)}</span><i style="--p:${pct}%"></i><b>${pct}%</b>${slow && pct > 0 ? `<small>${slow} قطعة لسه ما اتقصتش</small>` : ""}</div>`;
+  }
+  return h + `</div>`;
+}
 function drawShop() {
   const el = $("#v-shop");
   const pid = state.project.id;
@@ -5085,11 +5123,13 @@ function drawShop() {
   <div class="shopgrid">
     <section class="mgroup"><div class="mg-h"><h3>العميل</h3>${appr?.status === "approved" ? `<span class="pill">${ICON.check} اتعمد ${appr.at ? new Date(appr.at).toLocaleDateString("ar-EG") : ""}${appr.variantName ? ` — اختار «${esc(appr.variantName)}»` : ""}</span>` : `<span class="pill soft">لسه ما اتعمدش</span>`}</div>
       <p class="hint">بيتبعت نسخة من التصميم دلوقتي. لو عدّلت بعد كده دوس "حدّث النسخة المبعوتة".</p>
+      ${clientOptsHtml(appr)}
       ${online ? `<div class="btnrow"><button class="primary" data-publish="client">${ICON.share}${ui.sharedAt ? "حدّث النسخة المبعوتة" : "جهّز لينك العميل"}</button></div>
       ${ui.sharedAt ? linkBox(`${APP_URL}#c-${pid}`) : ""}` : `<p class="e">المشاركة محتاجة تفتح التطبيق وانت مسجّل دخول.</p>`}
     </section>
     <section class="mgroup"><div class="mg-h"><h3>الورشة</h3><span class="pill soft">${doneN} / ${pieces.length} قطعة خلصت</span></div>
       <p class="hint">كل ملصق عليه QR. العامل يصوّره بكاميرا الموبايل، تفتحله القطعة ويعلّم المرحلة اللي خلصها.</p>
+      ${prodBoard(pieces, prog)}
       <div class="btnrow"><label class="f"><span>مقاس الملصقات</span><select id="labelFmt"><option value="a4" ${state.labelFmt === "a4" ? "selected" : ""}>A4 — 21 ملصق في الورقة</option><option value="roll" ${state.labelFmt === "roll" ? "selected" : ""}>رول 60×40 مم</option></select></label>
       <button class="primary" data-labels>ملف الملصقات PDF</button></div>
       ${online ? `<div class="btnrow"><button class="ghost2" data-publish="work">${ICON.share}${ui.sharedAt ? "حدّث نسخة الورشة" : "جهّز لينك الورشة"}</button></div>${ui.sharedAt ? linkBox(`${APP_URL}#w-${pid}`) : ""}` : ""}
@@ -5125,6 +5165,13 @@ $("#v-shop").addEventListener("change", (e) => {
     save(); drawShop(); syncShared();
     return;
   }
+  if (t.dataset.cof) {
+    const [i, f] = t.dataset.cof.split(".");
+    const o = clientOpts(), it = o.finishes[+i];
+    if (it) { it[f] = f === "delta" ? toNum(t.value) : t.value; if (f === "lib" && !it.name) it.name = Catalog.LIB[t.value]?.[0] || Mat.get(t.value)?.name || ""; }
+    save(); syncShared(); drawShop(); return;
+  }
+  if (t.hasAttribute?.("data-cofshow")) { clientOpts().show = t.checked; save(); syncShared(); return; }
   if (t.dataset.price || t.dataset.pricet) {
     const P = priceDefaults();
     if (t.dataset.pricet) P[t.dataset.pricet] = t.value;
@@ -5150,6 +5197,16 @@ $("#v-shop").addEventListener("click", async (e) => {
   if (b.hasAttribute("data-stocktake")) { takeStock(!!state.project.stockTaken); alertBar(state.project.stockTaken ? "اتخصم من المخزن واتضافت البواقي الجديدة." : "رجعت الكميات زي ما كانت."); runCut(() => drawShop()); return; }
   if (b.dataset.copy) {
     try { await navigator.clipboard.writeText(b.dataset.copy); b.textContent = "اتنسخ"; } catch { b.previousElementSibling.select(); }
+  } else if (b.hasAttribute("data-cofadd")) {
+    const o = clientOpts(), u0 = state.project.units[0];
+    const cur = u0 ? R(u0).libOf?.(FRONT_KEY[u0.kind]) : null;
+    o.finishes.push({ id: uid(), name: cur ? (Catalog.LIB[cur]?.[0] || "") : "", lib: cur || "hpl_white", delta: 0 });
+    save(); syncShared(); drawShop();
+  } else if (b.dataset.cofdel != null) {
+    clientOpts().finishes.splice(+b.dataset.cofdel, 1); save(); syncShared(); drawShop();
+  } else if (b.dataset.cofapply) {
+    const f = clientOpts().finishes.find((x) => x.id === b.dataset.cofapply);
+    if (f) { state.project.units = applyFinish(state.project.units, f.lib); save(); render(true); alertBar(`اتطبّق «${f.name}» على ضلف كل الوحدات.`); }
   } else if (b.dataset.publish) {
     b.disabled = true;
     await publishShared();
@@ -5174,7 +5231,8 @@ async function publishShared() {
   const p = state.project;
   try {
     const vs = (p.variants || []).length > 1 ? p.variants.map((v) => ({ id: v.id, name: v.name, units: variantUnits(v) })) : null;
-    await cloud.db.doc(`shared/${p.id}`).set({ name: p.name, units: p.units, room: p.room || null, mats: p.mats || [], variants: vs, variant: p.variant || null, stages: p.stages || {}, sharedAt: new Date().toISOString() });
+    await cloud.db.doc(`shared/${p.id}`).set({ name: p.name, units: p.units, room: p.room || null, mats: p.mats || [], variants: vs, variant: p.variant || null, stages: p.stages || {}, sharedAt: new Date().toISOString(),
+      clientOpts: p.clientOpts?.finishes?.length ? { finishes: p.clientOpts.finishes, show: p.clientOpts.show !== false, base: Math.round(quoteCalc()?.total || 0) } : null });
     ui.sharedAt = new Date().toISOString();
   } catch { alertBar("ما قدرتش أبعت النسخة — جرّب تاني."); }
 }
@@ -5241,6 +5299,14 @@ function clientSide() {
       h += `</div>`;
     }
   }
+  const co = sp.clientOpts;
+  if (co?.finishes?.length) {
+    ui.clientFinish ??= appr?.finish || null;
+    const f = co.finishes.find((x) => x.id === ui.clientFinish);
+    h += `<h3 class="sub">اختار لون الضلف</h3><div class="cfin">${co.finishes.map((x) => { const L = Catalog.LIB[x.lib], m = !L && Mat.get(x.lib);
+      return `<button data-cfin="${x.id}" class="${x.id === ui.clientFinish ? "on" : ""}"><i style="background:${m ? `url('${m.img}') center/cover` : L?.[2] || "#ccc"}"></i><span>${esc(x.name || L?.[0] || "")}</span>${co.show && +x.delta ? `<small>${+x.delta > 0 ? "+" : "−"}${money(Math.abs(+x.delta))}</small>` : ""}</button>`; }).join("")}</div>`;
+    if (co.show && co.base) h += `<p class="ctotal">الإجمالي: <b>${money(co.base + (+f?.delta || 0))} ج.م</b></p>`;
+  }
   h += `<div class="approve">${appr?.status === "approved" ? `<p class="okmsg">${ICON.check} التصميم اتعمد. شكراً!</p>` : `<button class="primary big" data-approve>اعتماد التصميم</button>`}
     <button class="ghost2 big" data-note>عندي ملاحظة</button><p class="hint" id="clMsg"></p></div>`;
   $(".cl-side").innerHTML = h;
@@ -5248,10 +5314,23 @@ function clientSide() {
 $("#v-client").addEventListener("click", async (e) => {
   const b = e.target.closest("button");
   if (!b) return;
+  if (b.dataset.cfin) {
+    const sp = ui.sharedProject, f = sp.clientOpts?.finishes?.find((x) => x.id === b.dataset.cfin);
+    if (!f) return;
+    ui.clientFinish = f.id;
+    sp.__base ??= sp.units;
+    sp.units = applyFinish(sp.__base, f.lib);
+    ui.clientUnit = sp.units.find((x) => x.id === ui.clientUnit?.id) || sp.units[0];
+    clientSide(); view.update(true);
+    return;
+  }
   if (b.dataset.cvar) {
     const sp = ui.sharedProject, v = sp.variants.find((x) => x.id === b.dataset.cvar);
     if (!v) return;
-    ui.clientVar = v.id; sp.units = v.units; ui.clientUnit = sp.units[0] || null; ui.clientWhole = sp.units.length > 1;
+    ui.clientVar = v.id; sp.units = v.units; sp.__base = v.units;
+    const cf = sp.clientOpts?.finishes?.find((x) => x.id === ui.clientFinish);
+    if (cf) sp.units = applyFinish(v.units, cf.lib);
+    ui.clientUnit = sp.units[0] || null; ui.clientWhole = sp.units.length > 1;
     clientSide(); view.update(true);
     return;
   }
@@ -5260,7 +5339,9 @@ $("#v-client").addEventListener("click", async (e) => {
   else if (b.hasAttribute("data-approve")) {
     try {
       const cv = ui.sharedProject.variants?.find((x) => x.id === ui.clientVar);
-      await cloud.db.doc(`approvals/${ui.sharedPid}`).set({ status: "approved", by: cloud.me || null, at: new Date().toISOString(), ...(cv ? { variant: cv.id, variantName: cv.name } : {}) });
+      const co = ui.sharedProject.clientOpts, cf = co?.finishes?.find((x) => x.id === ui.clientFinish);
+      await cloud.db.doc(`approvals/${ui.sharedPid}`).set({ status: "approved", by: cloud.me || null, at: new Date().toISOString(), ...(cv ? { variant: cv.id, variantName: cv.name } : {}),
+        ...(cf ? { finish: cf.id, finishName: cf.name, total: co.base ? co.base + (+cf.delta || 0) : null } : {}) });
     } catch { $("#clMsg").textContent = "الاعتماد محتاج صلاحية \"مساهم\" على اللينك — اكتب ملاحظة بالموافقة بدل كده."; }
   } else if (b.hasAttribute("data-note")) {
     const r = cloud.comments ? await cloud.comments.openComposer({ element: $(".cl-side") }).catch(() => null) : null;
@@ -5392,7 +5473,7 @@ function swingChecks(items, add, room, label) {
   const zr = (it) => { const r = R(it.u), lift = +it.u.lift || 0; const bs = r.meshes ? r.meshes.map((m) => m.box) : r.parts.filter((p) => p.box).map((p) => p.box); return [Math.min(...bs.map((b) => b.z0)) + lift, Math.max(...bs.map((b) => b.z1)) + lift]; };
   const zo = (a, b) => Math.min(a[1], b[1]) - Math.max(a[0], b[0]) > 1;
   const paths = new Map(items.map((it) => [it.id, openPaths(it)]));
-  const said = new Set();
+  const said = new Set(), both = [];
   const once = (key, lvl, txt, id) => { if (said.has(key)) return; said.add(key); add(lvl, txt, id); };
   const walls = room ? Room.segments(room).map((sg) => [sg.A, sg.B]) : [];
   const cols = (room?.columns || []).map((c) => [[c.x, c.z], [c.x + c.w, c.z], [c.x + c.w, c.z + c.d], [c.x, c.z + c.d]]);
@@ -5408,9 +5489,11 @@ function swingChecks(items, add, room, label) {
         for (const q of paths.get(B.id) || []) {
           if (!zo(p.z, q.z)) continue;
           const qSegs = q.kind === "door" ? q.segs : q.poly.map((x, i) => [x, q.poly[(i + 1) % q.poly.length]]);
-          const pair = [A.id + p.name, B.id + q.name].sort().join("|");
-          if (pSegs.some(([a, b]) => qSegs.some(([c, d]) => segX(a, b, c, d))))
-            once(pair, "n", `${label(A)} (${p.name}) و${label(B)} (${q.name}) بيخبطوا في بعض لو اتفتحوا مع بعض.`, A.id);
+          const pair = [A.id, B.id].sort().join("|");
+          if (!said.has(pair) && pSegs.some(([a, b]) => qSegs.some(([c, d]) => segX(a, b, c, d)))) {
+            said.add(pair);
+            both.push({ id: A.id, txt: `${label(A)} و${label(B)}: ${p.name} و${q.name} بيخبطوا في بعض لو اتفتحوا في نفس الوقت — افتح واحدة بس في المرة أو حط فيلر بينهم.`, short: `${A.u.code}↔${B.u.code}` });
+          }
         }
       }
       // walls and columns
@@ -5418,6 +5501,8 @@ function swingChecks(items, add, room, label) {
       if (cols.some((c) => pSegs.some(([a, b]) => segHitsPoly(a, b, shrink(c, 0.5))))) once(`${A.id}|${p.name}|col`, "w", `${label(A)}: ${p.name} بيخبط في العمود وهو بيتفتح.`, A.id);
     }
   }
+  if (both.length <= 3) for (const x of both) add("n", x.txt, x.id);
+  else add("n", `${both.length} أماكن فيها ضلف أو أدراج بيخبطوا في بعض لو اتفتحوا في نفس الوقت (أغلبها جنب الزوايا): ${both.map((x) => x.short).join("، ")} — عادي في المطابخ، بس الأحسن تحط فيلر 3–5 سم جنب الزوايا.`, both[0].id);
 }
 function designChecks(project = state.project) {
   const out = [];
@@ -6256,6 +6341,62 @@ async function exportDxf() {
   }
   return Exp.deliver(cloud.downloads, `${fileBase()} — DXF.zip`, Exp.zip(files));
 }
+/**
+ * CNC: one DXF per board in millimetres, as most nesting / CAM software reads them (Homag woodWOP DXF import,
+ * Biesse bSolid, Alphacam, Chinese routers): the outline on OUTLINE, every drill on a layer that carries its
+ * diameter and depth (DRILL_V_D8_Z12 = vertical, Ø8, 12 deep), hinge cups on DRILL_V_D35_Z13, back grooves
+ * as a closed pocket on GROOVE_W7_Z8, the piece number on TEXT. + one CSV listing the operations per piece.
+ */
+async function exportCnc() {
+  const pieces = projectPieces(state.project);
+  const files = [], rows = [["رقم القطعة", "الوحدة", "القطعة", "الخامة", "الطول مم", "العرض مم", "السمك مم", "أخرام", "كبب مفصلات", "مفاحير", "ملاحظات"]];
+  const mm = (v) => Math.round(v * 100) / 10;
+  for (const pc of pieces) {
+    const { pt, lb } = pc;
+    if (["glass", "mirror", "frame", "door_frame_alu", "rail", "led"].includes(pt.material)) continue;
+    if (/^(alu_|stainless|copper|glass_|mirror)/.test(pc.lib || "")) continue;
+    const u = state.project.units[pc.unitIdx], p = R(u).params || {};
+    const W = mm(lb.w), H = mm(lb.h), T = mm(lb.t);
+    const d = new Exp.Dxf(4);
+    d.rect(0, 0, W, H, "OUTLINE");
+    let nh = 0, nc = 0, ng = 0;
+    for (const ho of pt.holes || []) {
+      const dia = mm(ho.d || (ho.kind === "cam" ? 1.5 : ho.kind === "pin" ? 0.5 : 0.8));
+      const z = ho.kind === "cam" ? 13 : ho.kind === "pin" || dia <= 5 ? 10 : Math.min(12, Math.max(8, Math.round(T * 0.65)));
+      d.circle(Math.round(ho.w * W * 10) / 10, Math.round(ho.h * H * 10) / 10, dia / 2, `DRILL_V_D${dia}_Z${z}`);
+      nh++;
+    }
+    const dl = pt.door_label;
+    if (dl?.hinge_ratios?.length) {
+      const e = mm(+p.hinge_cup_edge_distance || 2.2);
+      for (const r of dl.hinge_ratios) {
+        const [x, y] = dl.hinge_side === "top" ? [r * W, H - e] : [dl.hinge_side === "right" ? W - e : e, r * H];
+        d.circle(Math.round(x * 10) / 10, Math.round(y * 10) / 10, 17.5, "DRILL_V_D35_Z13");
+        // the two screw holes of the hinge arm (45 mm apart, 9.5 mm behind the cup centre)
+        nc++;
+      }
+    }
+    if (lb.groove) {
+      const gw = Math.round(((+p.back_panel_thickness || 0.6) * 10 + 1) * 10) / 10, gz = Math.round((+p.back_groove_depth || 0.8) * 10 * 10) / 10;
+      const g = lb.groove;
+      if (g.axis === "vertical") { const x = g.ratio * W; d.rect(Math.round((x - gw / 2) * 10) / 10, 0, gw, H, `GROOVE_W${gw}_Z${gz}`); }
+      else { const y = g.ratio * H; d.rect(0, Math.round((y - gw / 2) * 10) / 10, W, gw, `GROOVE_W${gw}_Z${gz}`); }
+      ng++;
+    }
+    d.text(4, H + 6, 8, `${pc.key}  ${pt.name}  ${W}x${H}x${T}`, "TEXT");
+    const note = [pt.note, ...(pt.checks || [])].filter(Boolean).join(" | ");
+    if (/تفريغة|قصة ركن|اتقصّت/.test(note)) d.text(4, -12, 6, "CUT-OUT: see label / شوف الملصق", "TEXT");
+    const safe = (t) => String(t).replace(/[\\/:*?"<>|]+/g, " ").trim();
+    files.push({ name: `${safe(pc.mname)} ${T}mm/${safe(pc.key)}.dxf`, data: d.toString() });
+    rows.push([pc.key, pc.unit, pt.name, pc.mname, W, H, T, nh, nc, ng, note]);
+  }
+  if (!files.length) throw new Error("مفيش قطع خشب في المشروع");
+  files.push({ name: "عمليات CNC.csv", data: Exp.csv(rows) });
+  files.push({ name: "اقراني.txt", data: "NOVERA Studio — ملفات CNC\r\n\r\nكل قطعة في ملف DXF لوحدها بالمليمتر، مقسومة فولدرات حسب الخامة والسمك.\r\n" +
+    "الطبقات (Layers):\r\n  OUTLINE  حدود القطعة (الطول على X والعرض على Y زي الملصق)\r\n  DRILL_V_D8_Z12  خرم رأسي قطره 8 وعمقه 12 مم (الرقمين في اسم الطبقة)\r\n" +
+    "  DRILL_V_D35_Z13  كبة مفصلة\r\n  GROOVE_W7_Z8  مفحار عرضه 7 وعمقه 8 مم\r\n  TEXT  رقم القطعة (مش للتشغيل)\r\n\r\nفي برنامج المكنة: اربط كل طبقة بالعدة المناسبة مرة واحدة واحفظها كقالب.\r\n" });
+  return Exp.deliver(cloud.downloads, `${fileBase()} — CNC.zip`, Exp.zip(files));
+}
 async function exportImage() {
   if (!view.ready) throw new Error("العرض 3D مش جاهز");
   const url = view.snapshot(1920, 1080);
@@ -7037,6 +7178,7 @@ const EXPORTS = [
   ["labels", "الملصقات PDF", "ملصق لكل قطعة: الرقم الكبير، الرسمة بالشريط والأخرام، QR وباركود بنفس الرقم.", exportLabelsPdf],
   ["drawings", "المساقط والواجهات PDF", "المسقط الأفقي بالمقاسات، وواجهة كل حيطة بالوحدات والشبابيك ونقط الكهربا، وجدول النقط.", exportDrawingsPdf],
   ["asm", "ملخص الوحدات ودليل التجميع PDF", "لكل وحدة: صفحة ملخص (مقاسات، خامات، هاردوير، وزن) وصفحة لكل خطوة تجميع بصورة وأرقام القطع.", () => exportAssemblyPdf()],
+  ["cnc", "ملفات CNC بالتخريم (DXF لكل قطعة)", "كل قطعة في ملف بالمليمتر: الحدود، والأخرام والكبب والمفاحير على طبقات باسم القطر والعمق — بتتفتح في برامج المكن (woodWOP · bSolid · Alphacam · الراوتر الصيني) + جدول العمليات.", exportCnc],
   ["dxf", "ملفات DXF (CNC / أوتوكاد)", "كل لوح بقطعه وأرقامها كرسمة DXF، والمسقط — في ملف ZIP.", exportDxf],
   ["skp", "سكتش أب (موديل + ملف البلجن)", "ملف ZIP فيه موديل .dae يتفتح في أي سكتش أب، وملف للبلجن (187) يبني الوحدات الحقيقية بإعداداتها والحيطان ونقط الكهربا — عشان تكمّل شغل عليه.", exportSketchUp],
   ["png", "صورة التصميم", "صورة 1920×1080 من العرض 3D الحالي.", exportImage],

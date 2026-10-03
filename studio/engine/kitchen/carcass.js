@@ -76,12 +76,8 @@ export class CarcassBuilder {
             group.transformBang(Transformation.translation([this.xOffset, 0, 0]));
         return group;
     }
-    applyObstacles(_e) {
-        const list = this.params["obstacles"];
-        const any = Array.isArray(list) && list.some((o) => o && typeof o === "object" && !Array.isArray(o) && toF(o["width"]) > 0 && toF(o["depth"]) > 0);
-        if (any)
-            this.ctx.puts("[KitchenUnitDesigner] obstacles warning: العوائق (عمود/ماسورة) لسه مش متاحة في التطبيق");
-    }
+    /** columns / ledges / pipes are cut by the app on the built meshes (apps/ipad/obstacles.js, same rules as lib/obstacles.rb) */
+    applyObstacles(_e) { }
     buildFrontContent(_e) {
         throw new RubyError("NotImplementedError", "يجب تنفيذ build_front_content في الفئة الفرعية");
     }

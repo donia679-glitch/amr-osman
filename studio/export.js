@@ -159,7 +159,8 @@ export async function pdfFromSvgPages(svgs, { landscape = false, title, scale = 
 
 // ------------------------------------------------------------------ DXF (R12)
 export class Dxf {
-  constructor() { this.ents = []; this.layers = new Set(["0"]); }
+  /** units: DXF $INSUNITS (5 = cm, 4 = mm for CNC files) */
+  constructor(units = 5) { this.ents = []; this.layers = new Set(["0"]); this.units = units; }
   layer(l) { this.layers.add(l); return l; }
   line(x1, y1, x2, y2, l = "0") { this.layer(l); this.ents.push(`0\nLINE\n8\n${l}\n10\n${x1}\n20\n${y1}\n30\n0\n11\n${x2}\n21\n${y2}\n31\n0`); }
   rect(x, y, w, h, l = "0") { this.line(x, y, x + w, y, l); this.line(x + w, y, x + w, y + h, l); this.line(x + w, y + h, x, y + h, l); this.line(x, y + h, x, y, l); }
@@ -168,7 +169,7 @@ export class Dxf {
   text(x, y, h, s, l = "0") { this.layer(l); this.ents.push(`0\nTEXT\n8\n${l}\n10\n${x}\n20\n${y}\n30\n0\n40\n${h}\n1\n${String(s).replace(/\n/g, " ")}`); }
   toString() {
     const lay = [...this.layers].map((l, i) => `0\nLAYER\n2\n${l}\n70\n0\n62\n${(i % 7) + 1}\n6\nCONTINUOUS`).join("\n");
-    return `0\nSECTION\n2\nHEADER\n9\n$ACADVER\n1\nAC1009\n9\n$INSUNITS\n70\n5\n0\nENDSEC\n0\nSECTION\n2\nTABLES\n0\nTABLE\n2\nLAYER\n70\n${this.layers.size}\n${lay}\n0\nENDTAB\n0\nENDSEC\n0\nSECTION\n2\nENTITIES\n${this.ents.join("\n")}\n0\nENDSEC\n0\nEOF\n`;
+    return `0\nSECTION\n2\nHEADER\n9\n$ACADVER\n1\nAC1009\n9\n$INSUNITS\n70\n${this.units}\n0\nENDSEC\n0\nSECTION\n2\nTABLES\n0\nTABLE\n2\nLAYER\n70\n${this.layers.size}\n${lay}\n0\nENDTAB\n0\nENDSEC\n0\nSECTION\n2\nENTITIES\n${this.ents.join("\n")}\n0\nENDSEC\n0\nEOF\n`;
   }
 }
 
