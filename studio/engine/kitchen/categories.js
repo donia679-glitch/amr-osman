@@ -39,6 +39,8 @@ export const ZONE_TYPES = {
 export class WardrobeUnitBuilder extends StandardUnitBuilder {
     buildFrontContent(e) {
         this.buildWardrobeZones(e);
+        if (this.slidingDoors())
+            this.buildSlidingDoors(e);
         this.buildTopValancePanel(e, this.innerOpening().x0, this.innerOpening().x1);
         this.buildBottomValancePanel(e, this.innerOpening().x0, this.innerOpening().x1);
     }
@@ -122,7 +124,7 @@ export class WardrobeUnitBuilder extends StandardUnitBuilder {
             this.buildZoneDrawers(e, x0, x1, z0, z1, Math.max(count, 1), label);
             return;
         }
-        if (spec.front !== "none")
+        if (spec.front !== "none" && !this.slidingDoors())
             this.buildFrontZone(e, x0, x1, z0, z1, spec.front, label);
         if (spec.content === "shelves")
             this.buildShelvesInRange(e, z0, z1, count, x0, x1, positions);
@@ -138,7 +140,15 @@ export class WardrobeUnitBuilder extends StandardUnitBuilder {
     }
     /** how far the drawer fronts of a zone sit back from the front edge (0 = flush, like the doors) */
     zoneDrawerSetback() {
-        return 0;
+        return this.slidingDoors() ? this.slidingDepth() : 0;
+    }
+    /** v190: dressing wardrobes can take sliding doors too (door_style "sliding", like the bedroom one) */
+    slidingDoors() {
+        return toS(this.p["door_style"]) === "sliding" || super.slidingDoors();
+    }
+    buildSlidingDoors(e) {
+        const o = this.activeZone();
+        this.buildSlidingPanels(e, o.x0, o.x1, o.z0, o.z1);
     }
     buildZoneDrawers(e, x0, x1, z0, z1, count, labelPrefix) {
         const overlay = this.doorPosition() === "overlay";
@@ -437,86 +447,10 @@ export class BlindCornerUnitBuilder extends CarcassBuilder {
 }
 /** lib/bedroom_wardrobe_builder.rb — note: its build_zone takes 4 arguments while the inherited
  *  zone loop passes 7, so the plugin raises ArgumentError for every bedroom wardrobe (kept as is). */
+/** lib/bedroom_wardrobe_builder.rb — sliding doors now live in WardrobeUnitBuilder / CarcassBuilder (v190) */
 export class BedroomWardrobeBuilder extends WardrobeUnitBuilder {
-    buildFrontContent(e) {
-        if (this.slidingDoors()) {
-            this.buildWardrobeZones(e);
-            this.buildSlidingDoors(e);
-            this.buildTopValancePanel(e, this.innerOpening().x0, this.innerOpening().x1);
-            this.buildBottomValancePanel(e, this.innerOpening().x0, this.innerOpening().x1);
-        }
-        else
-            super.buildFrontContent(e);
-    }
-    /** v186: same signature as the parent (columns + prefix) — v185 had 4 parameters and always raised */
-    buildZone(e, n, z0, z1, x0, x1, prefix = "") {
-        if (!this.slidingDoors())
-            return super.buildZone(e, n, z0, z1, x0, x1, prefix);
-        const spec = ZONE_TYPES[toS(this.p[`wardrobe_${prefix}zone${n}_type`])] ?? ZONE_TYPES.shelves_double;
-        const count = Math.min(Math.max(toI(this.p[`wardrobe_${prefix}zone${n}_count`]), 0), 20);
-        const positions = this.parseCustomPositions(this.p[`wardrobe_${prefix}zone${n}_positions`]);
-        if (spec.content === "drawers") {
-            this.buildZoneDrawers(e, x0, x1, z0, z1, Math.max(count, 1), `منطقة ${n} - `);
-            return;
-        }
-        if (spec.content === "shelves")
-            this.buildShelvesInRange(e, z0, z1, count, x0, x1, positions);
-        else if (spec.content === "rail")
-            this.buildZoneRail(e, z0, z1, x0, x1, positions);
-    }
-    slidingDoors() {
-        return toS(this.p["door_style"]) === "sliding";
-    }
-    /** v189: behind sliding doors the inside starts after both door tracks (+0.5 cm), so shelves and
-     *  drawers never touch the doors — they used to sit in the same plane as the first door */
-    slidingDepth() {
-        if (this.doorPosition() === "overlay")
-            return cm(0.5);
-        return 2 * this.frontT() + cm(0.6) + cm(0.5);
-    }
-    interiorDepthStart() {
-        return this.slidingDoors() ? this.slidingDepth() : super.interiorDepthStart();
-    }
-    zoneDrawerSetback() {
-        return this.slidingDoors() ? this.slidingDepth() : 0;
-    }
-    slidingPanelCount() {
-        return Math.min(Math.max(toI(this.p["sliding_panel_count"]), 2), 4);
-    }
-    slidingOverlap() {
-        return cm(2.0);
-    }
     unitGroupName() {
         const label = strip(toS(this.p["unit_label"]));
         return label === "" ? "دولاب غرفة نوم" : `دولاب غرفة نوم - ${label}`;
-    }
-    buildSlidingDoors(e) {
-        const o = this.activeZone();
-        const n = this.slidingPanelCount();
-        const totalW = o.x1 - o.x0;
-        if (totalW <= 0)
-            return;
-        const ov = this.slidingOverlap();
-        const pw = (totalW + (n - 1) * ov) / n;
-        const overlay = this.doorPosition() === "overlay";
-        for (let i = 0; i < n; i++) {
-            const x0 = o.x0 + i * (pw - ov);
-            const x1 = rmin(x0 + pw, o.x1 + (i === n - 1 ? 0 : ov));
-            // v189: every other panel runs in its own track, a full door thickness + 0.6 cm further back
-            // (they used to be 0.6 apart only, so two 1.8 cm doors shared the same space)
-            const track = (this.frontT() + cm(0.6)) * (i % 2);
-            const fy0 = overlay ? -this.frontT() - track : track;
-            const fy1 = fy0 + this.frontT();
-            const name = `باب سحاب ${i + 1}`;
-            const pnl = createBox(this.ctx, e, name, x0, fy0, o.z0, x1, fy1, o.z1, this.frontColor());
-            assignLayer(this.ctx, pnl, TAGS.front);
-            if (this.edgeBandingEnabled())
-                bandAllSideEdges(this.ctx, pnl, this.edgeBandingMaterial());
-            const b = this.edgeBandingEnabled();
-            this.ctx.labels.add(this.unitId, this.unitGroupName(), name, x1 - x0, o.z1 - o.z0, this.frontT(), {
-                banded: { top: b, bottom: b, left: b, right: b }, material: materialLabelName(this.frontColor()),
-                note: "⚠ باب سحّاب — هيتركّب على سكة علوية/سفلية، مش مفصلات",
-            });
-        }
     }
 }

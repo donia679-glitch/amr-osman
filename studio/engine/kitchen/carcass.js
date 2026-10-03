@@ -740,7 +740,54 @@ export class CarcassBuilder {
     }
     // ---------------------------------------------------------------- shelves & dividers
     interiorDepthStart() {
+        if (this.slidingDoors())
+            return this.slidingDepth();
         return this.doorPosition() === "overlay" ? 0 : this.frontT();
+    }
+    // ---------------------------------------------------------------- v190: sliding doors (any unit)
+    /** door_type "sliding": the front is 2–4 panels on two tracks instead of hinged doors */
+    slidingDoors() {
+        return toS(this.p["door_type"]) === "sliding";
+    }
+    /** behind sliding doors the inside starts after both tracks (+0.5 cm), so shelves never touch the doors */
+    slidingDepth() {
+        if (this.doorPosition() === "overlay")
+            return cm(0.5);
+        return 2 * this.frontT() + cm(0.6) + cm(0.5);
+    }
+    slidingPanelCount() {
+        return Math.min(Math.max(toI(this.p["sliding_panel_count"]), 2), 4);
+    }
+    slidingOverlap() {
+        return cm(2.0);
+    }
+    /** n panels across x0..x1 overlapping 2 cm; every other one runs in the back track,
+     *  a full door thickness + 0.6 cm behind (in front of it when the doors are overlay) */
+    buildSlidingPanels(e, x0, x1, z0, z1, labelPrefix = "") {
+        const n = this.slidingPanelCount();
+        const totalW = x1 - x0;
+        if (totalW <= 0 || z1 <= z0)
+            return;
+        const ov = this.slidingOverlap();
+        const pw = (totalW + (n - 1) * ov) / n;
+        const overlay = this.doorPosition() === "overlay";
+        for (let i = 0; i < n; i++) {
+            const px0 = x0 + i * (pw - ov);
+            const px1 = rmin(px0 + pw, x1 + (i === n - 1 ? 0 : ov));
+            const track = (this.frontT() + cm(0.6)) * (i % 2);
+            const fy0 = overlay ? -this.frontT() - track : track;
+            const fy1 = fy0 + this.frontT();
+            const name = `${labelPrefix}باب سحاب ${i + 1}`;
+            const pnl = createBox(this.ctx, e, name, px0, fy0, z0, px1, fy1, z1, this.frontColor());
+            assignLayer(this.ctx, pnl, TAGS.front);
+            if (this.edgeBandingEnabled())
+                bandAllSideEdges(this.ctx, pnl, this.edgeBandingMaterial());
+            const b = this.edgeBandingEnabled();
+            this.ctx.labels.add(this.unitId, this.unitGroupName(), name, px1 - px0, z1 - z0, this.frontT(), {
+                banded: { top: b, bottom: b, left: b, right: b }, material: materialLabelName(this.frontColor()),
+                note: "⚠ باب سحّاب — هيتركّب على سكة علوية/سفلية، مش مفصلات",
+            });
+        }
     }
     shelfDepthEnd(y0) {
         return rmax(this.depth() - this.backT() - this.backRearOffset(), y0 + this.panelT());
@@ -1039,6 +1086,12 @@ export class CarcassBuilder {
                     tagDoorHinge(f, hx, fy0, fx, fy0, 0.0, -1.0);
                     this.recordDoorLabel(name, zx0, zx1, zz0, top, hinge);
                 }
+                break;
+            }
+            case "sliding": {
+                const top = rmax(zz1 - zoneRecess, zz0);
+                if (top > zz0)
+                    this.buildSlidingPanels(e, zx0, zx1, zz0, top, labelPrefix);
                 break;
             }
             case "double_glass":

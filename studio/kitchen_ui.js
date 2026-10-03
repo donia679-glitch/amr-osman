@@ -11,7 +11,7 @@ export const K_TYPES = { base: "سفلية", wall: "حائط", tall: "دولاب
 export const K_DOORS = {
   single: "ضلفة واحدة", double: "ضلفتين", drawer_top_two_doors_bottom: "درج + ضلفتين", drawers: "أدراج",
   flip_up: "قلاب", flip_up_double: "قلاب ضلفتين", single_glass: "زجاج (إطار خشب)", double_glass: "ضلفتين زجاج (خشب)",
-  single_glass_metal: "زجاج فريم معدن", double_glass_metal: "ضلفتين زجاج معدن", none: "مفتوحة",
+  single_glass_metal: "زجاج فريم معدن", double_glass_metal: "ضلفتين زجاج معدن", sliding: "سحّاب (جرّار)", none: "مفتوحة",
 };
 export const K_ZONE_DOORS = { single: "ضلفة واحدة", double: "ضلفتين", drawers: "أدراج", flip_up: "قلاب", none: "بدون" };
 export const K_POS = { inset: "داخلية", overlay: "خارجية" };
@@ -88,10 +88,8 @@ export function extraFields(p) {
     if (p.corner_style === "l_shape") f.push(["corner_angle", "الزاوية بين الرجلين", "num"], ["corner_notch_size", "قصة الركن (عمود)", "num"], ["corner_shelf_mode", "الأرفف", "choice", K_SHELF_MODE]);
     if (p.corner_style === "blind" || !p.corner_style) f.push(["corner_door_side", "مكان الضلفة", "choice", K_HINGE], ["include_edge_filler", "فيلر بين الضلفة والأعمى", "bool"]);
   } else if (cat === "wardrobe" || cat === "bedroom_wardrobe") {
-    if (cat === "bedroom_wardrobe") {
-      f.push(["door_style", "نوع الأبواب", "choice", { hinged: "مفصلات", sliding: "سحّاب" }]);
-      if (p.door_style === "sliding") f.push(["sliding_panel_count", "عدد ألواح السحّاب", "int"]);
-    }
+    f.push(["door_style", "نوع الأبواب", "choice", { hinged: "مفصلات", sliding: "سحّاب (جرّار)" }]);
+    if (p.door_style === "sliding") f.push(["sliding_panel_count", "عدد ألواح السحّاب (2–4)", "int"]);
     f.push(["wardrobe_column_count", "عدد الأعمدة", "choice", K_COLS]);
     const cols = Math.max(1, Math.min(3, +p.wardrobe_column_count || 1));
     for (let c = 1; c <= cols; c++) {
@@ -108,6 +106,7 @@ export function extraFields(p) {
     }
     f.push(["wardrobe_rail_diameter", "قطر الشماعة", "num"], ["wardrobe_rail_depth_offset", "بعد الشماعة عن الظهر", "num"]);
   }
+  if (p.door_type === "sliding" && p.door_style !== "sliding" && !f.some((x) => x[0] === "sliding_panel_count")) f.push(["sliding_panel_count", "عدد ألواح السحّاب (2–4)", "int"]);
   return f;
 }
 

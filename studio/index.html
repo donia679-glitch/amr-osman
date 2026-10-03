@@ -7,7 +7,7 @@
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <style>html,body{margin:0;padding:0}body{min-height:100vh;min-height:100dvh}</style>
-<script>window.NOVERA_BUILD = "2026-10-03 00:04";</script>
+<script>window.NOVERA_BUILD = "2026-10-03 07:12";</script>
 </head>
 <body>
 <meta charset="utf-8">
@@ -151,6 +151,20 @@ button { cursor: pointer; }
 .pin { width: 100px; height: 34px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel2); padding: 0 8px; }
 .advh { font-size: 13px; margin: 14px 0 6px; color: var(--ink); font-weight: 700; }
 .cards { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.nudge { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px; }
+.nudge span { display: inline-flex; gap: 2px; align-items: center; font-size: 12.5px; color: var(--muted); }
+.nudge .sm { min-height: 30px; min-width: 34px; padding: 0 6px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel2); color: var(--ink); }
+.nudge .f.inl { flex: 1; min-width: 140px; margin: 0; }
+.mergebox { display: flex; gap: 8px; align-items: end; margin-top: 8px; }
+.mergebox .f { flex: 1; margin: 0; }
+.mycard { position: relative; cursor: pointer; border-color: color-mix(in srgb, var(--gold, #d9a63a) 55%, var(--line)); }
+.mycard .myact { position: absolute; top: 6px; inset-inline-start: 6px; display: flex; gap: 4px; }
+.mycard .myact button { min-height: 28px; min-width: 28px; padding: 0 6px; font-size: 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); }
+.mycard .myact button.danger { color: #b3261e; }
+.mycard .myact button.armed { background: #b3261e; color: #fff; }
+.mygroup { font-size: 12.5px; font-weight: 700; color: var(--muted); margin-top: 4px; }
+.mytools { display: flex; gap: 8px; margin: 8px 0 4px; }
+.mytools .sm, .mytools .btnlike { white-space: nowrap; display: inline-flex; align-items: center; width: auto; min-height: 36px; font-size: 13px; padding: 6px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel2); color: var(--ink); cursor: pointer; }
 .card { text-align: right; border: 1px solid var(--line); background: var(--panel2); border-radius: 12px; padding: 10px; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .card b { font-size: 13px; font-weight: 600; line-height: 1.4; }
 .card small { color: var(--muted); font-size: 11.5px; line-height: 1.5; }

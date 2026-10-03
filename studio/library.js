@@ -8,6 +8,12 @@ const W = { unit_type: "wall", height: 70, depth: 32, include_toe_kick: false };
 const T = { unit_type: "tall", height: 220, depth: 58 };
 const ACC = (type, label, desc, o) => ({ label, desc, group: "مطابخ — إكسسوارات", params: { element_mode: "accessory", accessory_type: type, ...o } });
 export const KITCHEN = {
+  // v190: sliding (جرّار) fronts
+  k_slide_base100: { label: "سفلية سحّاب 100", desc: "ضلفتين جرّار على سكتين، رف.", group: "سحّاب (جرّار)", params: { width: 100, door_type: "sliding", sliding_panel_count: 2, shelf_count: 1 } },
+  k_slide_wall120: { label: "علوية سحّاب 120", desc: "ضلفتين جرّار علوية، رفين.", group: "سحّاب (جرّار)", params: { unit_type: "wall", width: 120, height: 70, depth: 32, include_toe_kick: false, door_type: "sliding", sliding_panel_count: 2, shelf_count: 2 } },
+  k_slide_tall150: { label: "دولاب تخزين سحّاب 150", desc: "طويل 220 بـ3 ألواح جرّار.", group: "سحّاب (جرّار)", params: { unit_type: "tall", width: 150, height: 220, depth: 58, door_type: "sliding", sliding_panel_count: 3, shelf_count: 4 } },
+  k_slide_dressing160: { label: "دولاب دريسنج سحّاب 160", desc: "أدراج تحت وشماعة فوق، ضلفتين جرّار.", group: "سحّاب (جرّار)", params: { unit_category: "wardrobe", unit_type: "tall", width: 160, height: 240, depth: 62, door_style: "sliding", sliding_panel_count: 2, wardrobe_zone_count: 2, wardrobe_zone1_type: "drawers", wardrobe_zone1_height: 70, wardrobe_zone1_count: 3, wardrobe_zone2_type: "rail_open" } },
+  k_slide_bed240: { label: "دولاب نوم سحّاب 240", desc: "4 ألواح جرّار، شماعات وأرفف.", group: "سحّاب (جرّار)", params: { unit_category: "bedroom_wardrobe", unit_type: "tall", width: 240, height: 260, depth: 64, door_style: "sliding", sliding_panel_count: 4, wardrobe_column_count: 2, wardrobe_zone_count: 2, wardrobe_zone1_type: "shelves_open", wardrobe_zone1_height: 110, wardrobe_zone1_count: 3, wardrobe_zone2_type: "rail_open", wardrobe_col2_zone_count: 1, wardrobe_col2_zone1_type: "rail_open" } },
   // base
   k_base1_45: { label: "سفلية ضلفة 45", desc: "ضلفة واحدة ورف.", group: "مطابخ — سفلي", params: { width: 45, door_type: "single", shelf_count: 1 } },
   k_base_tray30: { label: "سفلية 30 صواني / مناشف", desc: "ضلفة ضيقة من غير رف — للصواني والألواح.", group: "مطابخ — سفلي", params: { width: 30, door_type: "single", include_shelves: false } },

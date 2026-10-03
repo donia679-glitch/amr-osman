@@ -81,7 +81,7 @@ export function computeKitchen(input, opts = {}) {
             let mv = mover;
             const isDoorHere = !!e.getAttribute("KUD", "is_door", false);
             const isDrawerHere = !!e.getAttribute("KUD", "is_drawer", false);
-            const slideM = mv === null && !isDoorHere && !isDrawerHere ? /^باب سحاب (\d+)/.exec(e.name) : null;
+            const slideM = mv === null && !isDoorHere && !isDrawerHere ? /باب سحاب (\d+)$/.exec(e.name) : null;
             if (slideM) {
                 // sliding door: every second panel slides over its neighbour (towards -x)
                 const bb = e.definition.entities.bounds();
