@@ -7,7 +7,7 @@
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <style>html,body{margin:0;padding:0}body{min-height:100vh;min-height:100dvh}</style>
-<script>window.NOVERA_BUILD = "2026-10-03 18:56";</script>
+<script>window.NOVERA_BUILD = "2026-10-03 19:10";</script>
 </head>
 <body>
 <meta charset="utf-8">
@@ -869,6 +869,12 @@ body.indraw { overflow: hidden; }
 .dsl.dim { transform: translate(-50%, -50%); }
 .dsl.txt { direction: rtl; background: #fffbe8; transform: translate(-50%, -100%); }
 .dsl.on { outline: 2px solid #2f6fdf; }
+.dsl.mep { color: #fff; border-color: rgba(255,255,255,.7); transform: translate(-50%, -100%); direction: rtl; font-size: 11px; padding: 0 5px; }
+.dsleave { position: absolute; inset: 0; background: rgba(10,14,10,.45); display: flex; align-items: center; justify-content: center; z-index: 50; padding: 16px; }
+.dsleavebox { background: var(--panel, #fff); color: var(--ink, #1b1e1a); border-radius: 16px; padding: 18px 20px; max-width: 380px; width: 100%; box-shadow: 0 18px 50px rgba(0,0,0,.35); }
+.dsleavebox b { font-size: 17px; } .dsleavebox p { margin: 6px 0 14px; color: #666; }
+.dsleavebox .dsbtns { display: flex; flex-direction: column; gap: 8px; } .dsleavebox .dsb { width: 100%; min-height: 44px; font-size: 15px; }
+.dsb.danger { color: #b3261e; }
 .dsmsg { position: absolute; top: 10px; left: 50%; transform: translateX(-50%) translateY(-10px); background: #1d211c; color: #fff; border-radius: 10px; padding: 8px 14px; font-weight: 600; font-size: 13.5px; opacity: 0; pointer-events: none; transition: .2s; max-width: 90%; text-align: center; }
 .dsmsg.on { opacity: .95; transform: translateX(-50%); }
 .dssec { position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%); background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 6px 12px; }

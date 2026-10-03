@@ -5,6 +5,7 @@
 // Every flat solid becomes a board in the cut list, the labels and the CNC files (its real outline, holes and pockets).
 import * as THREE from "three";
 import * as G from "./geom.js";
+import * as Room from "../room.js";
 
 const MATS = { carcass: "الهيكل", front: "الضلف والواجهة", shelf: "الأرفف", accent: "الخامة المميزة", back: "الظهر" };
 const MCOL = { carcass: "#d9cfbf", front: "#b98a5a", shelf: "#e6dccb", accent: "#5f7464", back: "#efe7da" };
@@ -15,6 +16,7 @@ const TOOLS = [
   ["تشكيل", [["pushpull", "⇕", "سحب / زق"], ["offset", "⧈", "إزاحة"], ["follow", "➰", "اتبعني"], ["fillet", "◜", "تدوير ركن"], ["chamfer", "◸", "شطف ركن"]]],
   ["تعديل", [["move", "✥", "تحريك / نسخ"], ["rotate", "↻", "لف"], ["scale", "⇲", "تكبير / تصغير"]]],
   ["قياس", [["tape", "📏", "شريط قياس"], ["protractor", "∡", "منقلة"], ["dim", "↔", "أبعاد"], ["text", "T", "نص"]]],
+  ["حوائط", [["wall", "🧱", "حيطة"], ["door", "🚪", "باب"], ["window", "🪟", "شباك"], ["mep", "🔌", "مرافق"]]],
   ["تاني", [["paint", "🪣", "دهان"], ["eraser", "⌫", "ممحاة"]]],
 ];
 const TOOLNAME = Object.fromEntries(TOOLS.flatMap(([, l]) => l.map(([k, , n]) => [k, n])));
@@ -32,17 +34,21 @@ const HINT = {
   tape: "دوس من نقطة لنقطة: بيقيس ويسيب خط مساعد", protractor: "دوس المركز، البداية، وبعدين الزاوية: خط مساعد مايل",
   dim: "دوس نقطتين وبعدين مكان خط البعد", text: "دوس المكان واكتب النص في الخانة تحت", paint: "اختار الخامة من الجنب ودوس على اللوح",
   eraser: "دوس أو اسحب على اللي عايز تمسحه",
+  wall: "دوس على الأرض نقطة نقطة (الوش الداخلي للحيطة) · اكتب الطول · ارجع لأول نقطة تقفل الأوضة · دوس نفس النقطة تاني أو ↵ تخلّص",
+  door: "دوس على الحيطة مكان الباب — المقاسات من الجنب", window: "دوس على الحيطة مكان الشباك — المقاسات والجلسة من الجنب",
+  mep: "اختار النوع من الجنب (بريزة، مفتاح، تغذية، صرف، غاز…) ودوس على الحيطة مكانه",
 };
 const POINT_R = 18, EDGE_R = 12, AXIS_R = 14;
 
 let host = null, el = null, ctx = {};
-let ren, scene, camP, camO, cam, ctl, world, solidsG, sketchG, extraG, overG, labelsEl, grid;
+let ren, scene, camP, camO, cam, ctl, world, solidsG, sketchG, extraG, overG, roomG, labelsEl, grid;
+let startRoom = "null";
 let M = null, mname = "";
 let raf = 0, alive = false;
 const objs = new Map(); // entity ref → three object(s), for picking and ghosts
 const ui = { tool: "select", sel: new Set(), st: null, axis: null, plane: "auto", copy: false, xray: false, section: null, secPos: 0, ortho: false, mat: "carcass",
   segs: 32, sides: 6, filletR: 5, chamferD: 2, editGroup: null, face2d: null, info: null, addSel: false, lastPush: null, lastMove: null, thick: 1.8, panel: true, outline: false, msg: "",
-  step: 1, boxSel: false, recent: [], face: null,
+  step: 1, boxSel: false, recent: [], face: null, wallT: Room.WALL_T, wallH: Room.WALL_H, mepKind: "socket", rsel: null, showWalls: true,
   snap: { on: true, end: true, mid: true, center: true, edge: true, face: true, axis: true, par: true, align: true, angle: true, strength: 1.3 }, dimEdit: null, clip: null, arr: { n: 3, d: 40, ax: 0, pn: 6, pa: 360, px: 0, py: 0 }, alignAx: 0 };
 const hist = { u: [], r: [] };
 
@@ -98,16 +104,20 @@ const matName = (k) => ctx.matName?.(k) || MATS[k] || k;
 export function open(model, opts = {}) {
   ctx = opts;
   M = normalize(model ? G.clone(model) : newModel());
+  M.room = opts.room ? G.clone(opts.room) : null;
+  startRoom = JSON.stringify(M.room);
+  if (M.room?.walls?.[0]) { ui.wallT = +M.room.walls[0].t || Room.WALL_T; ui.wallH = +M.room.walls[0].h || Room.WALL_H; }
   mname = opts.name || "تصميم حر";
   hist.u = []; hist.r = [];
-  Object.assign(ui, { tool: "select", sel: new Set(), st: null, axis: null, plane: "auto", copy: false, editGroup: null, face2d: null, msg: "", panel: window.innerWidth > 900 });
+  Object.assign(ui, { tool: opts.tool || "select", sel: new Set(), st: null, axis: null, plane: "auto", copy: false, editGroup: null, face2d: null, msg: "", panel: window.innerWidth > 900 || !!opts.tool, rsel: null });
+  startJSON = JSON.stringify(M);
   if (!el) build();
   el.hidden = false;
   document.body.classList.add("indraw");
   alive = true;
   resize();
   rebuild();
-  if (M.solids.length || M.sketches.length) zoomExtents(); else setView("iso", 160);
+  if (M.solids.length || M.sketches.length || M.room?.pts?.length) zoomExtents(); else setView(opts.tool === "wall" ? "top" : "iso", opts.tool === "wall" ? 700 : 160);
   renderUI();
   loop();
 }
@@ -168,15 +178,15 @@ function build() {
   const sun = new THREE.DirectionalLight(0xffffff, 1.25); sun.position.set(300, 600, 400); scene.add(sun);
   const fill = new THREE.DirectionalLight(0xffffff, 0.35); fill.position.set(-400, 200, -300); scene.add(fill);
   world = new THREE.Group(); scene.add(world);
-  solidsG = new THREE.Group(); sketchG = new THREE.Group(); extraG = new THREE.Group(); overG = new THREE.Group();
-  world.add(solidsG, sketchG, extraG); scene.add(overG);
+  solidsG = new THREE.Group(); sketchG = new THREE.Group(); extraG = new THREE.Group(); overG = new THREE.Group(); roomG = new THREE.Group();
+  world.add(solidsG, sketchG, extraG, roomG); scene.add(overG);
   grid = new THREE.GridHelper(1000, 100, 0xc9ccc3, 0xe2e4dd); grid.material.transparent = true; grid.material.opacity = 0.45; grid.material.depthWrite = false; grid.renderOrder = -1; scene.add(grid);
   const axl = (d, c) => { const g = new THREE.BufferGeometry().setFromPoints([T3([0, 0, 0]), T3(G.mul(d, 600))]); return new THREE.Line(g, new THREE.LineBasicMaterial({ color: c })); };
   scene.add(axl([1, 0, 0], AXC[0]), axl([0, 1, 0], AXC[1]), axl([0, 0, 1], AXC[2]));
   import("three/addons/controls/OrbitControls.js").then(({ OrbitControls }) => {
     ctl = new OrbitControls(cam, ren.domElement);
     ctl.enableDamping = false; ctl.screenSpacePanning = true; ctl.zoomToCursor = true;
-    ctl.addEventListener("change", () => need());
+    ctl.addEventListener("change", () => { wallFade(); need(); });
     applyControls();
     setView("iso", 160);
   });
@@ -186,7 +196,7 @@ function build() {
   view.addEventListener("pointermove", onMove);
   view.addEventListener("pointerup", onUp);
   view.addEventListener("pointercancel", () => { downs.clear(); press = null; });
-  view.addEventListener("dblclick", (e) => { if (ui.tool === "line" && ui.st?.pts?.length >= 2) { finishLine(false); e.preventDefault(); } });
+  view.addEventListener("dblclick", (e) => { if (ui.tool === "line" && ui.st?.wpts?.length >= 2) { finishLine(false); e.preventDefault(); } if (ui.tool === "wall" && ui.st?.wpts?.length >= 2) { finishWall(false); e.preventDefault(); } });
   view.addEventListener("contextmenu", (e) => e.preventDefault());
   el.addEventListener("click", onClick);
   el.addEventListener("change", onChange);
@@ -245,7 +255,7 @@ function applyControls() {
 }
 function modelBox() {
   const b = new THREE.Box3();
-  for (const o of [solidsG, sketchG, extraG]) b.expandByObject(o);
+  for (const o of [solidsG, sketchG, extraG, roomG]) b.expandByObject(o);
   if (b.isEmpty()) b.set(new THREE.Vector3(-30, 0, -60), new THREE.Vector3(90, 15, 20));
   return b;
 }
@@ -329,7 +339,8 @@ function selected(ref) {
   return false;
 }
 function rebuild() {
-  clear(solidsG); clear(sketchG); clear(extraG); objs.clear();
+  clear(solidsG); clear(sketchG); clear(extraG); clear(roomG); objs.clear();
+  buildRoom();
   const clip = clipPlanes();
   for (const s of M.solids) {
     if (s.hidden) continue;
@@ -421,6 +432,7 @@ function renderLabelsList() {
   labelList = [];
   for (const d of M.dims) labelList.push({ p: G.lerp(G.add(d.a, d.o), G.add(d.b, d.o), 0.5), t: f1(G.dist(d.a, d.b)), cls: "dim", ref: "d:" + d.id });
   for (const t of M.texts) labelList.push({ p: t.p, t: t.s, cls: "txt", ref: "t:" + t.id });
+  roomLabels(labelList);
   placeLabels();
 }
 let live = []; // { p, t, cls }
@@ -433,7 +445,8 @@ function placeLabels() {
     const q = T3(L.p).project(cam);
     if (q.z > 1 || q.z < -1) continue;
     const x = ((q.x + 1) / 2) * w, y = ((1 - q.y) / 2) * h;
-    html += `<span class="dsl ${L.cls || ""} ${L.ref && ui.sel.has(L.ref) ? "on" : ""}" style="left:${x.toFixed(0)}px;top:${y.toFixed(0)}px">${esc(L.t)}</span>`;
+    const on = L.ref && (ui.sel.has(L.ref) || (ui.rsel && L.ref === ui.rsel.ref));
+    html += `<span class="dsl ${L.cls || ""} ${on ? "on" : ""}" style="left:${x.toFixed(0)}px;top:${y.toFixed(0)}px${L.bg ? `;background:${L.bg}` : ""}">${esc(L.t)}</span>`;
   }
   labelsEl.innerHTML = html;
   placeHandles();
@@ -458,6 +471,7 @@ function pickMesh(cx, cy) {
   const list = [];
   solidsG.children.forEach((o) => { if (o.isMesh) list.push(o); });
   extraG.children.forEach((o) => { if (o.isMesh) list.push(o); });
+  roomG.children.forEach((o) => { if (o.isMesh && o.userData.ref && o.visible && !(o.userData.wall && !o.userData.open && o.material.opacity < 0.5 && !ui.xray)) list.push(o); });
   const hits = ray.intersectObjects(list, false).filter((h) => !ui.section || clipPlanes()[0].distanceToPoint(h.point) >= -0.01);
   if (!hits.length) return null;
   const h = hits[0], ud = h.object.userData, fi = ud.tri2face?.[h.faceIndex];
@@ -530,6 +544,7 @@ function snapPoints() {
   for (const w of M.sweeps) for (const p of w.path) pts.push({ p, kind: "end", wid: w.id });
   for (const pa of M.paths) { pa.pts.forEach((p) => pts.push({ p, kind: "end", pid: pa.id })); for (let i = 0; i + 1 < pa.pts.length; i++) pts.push({ p: G.lerp(pa.pts[i], pa.pts[i + 1], 0.5), kind: "mid", pid: pa.id }); }
   pts.push({ p: [0, 0, 0], kind: "origin" });
+  for (const sg of roomSegs()) { pts.push({ p: P3(sg.A), kind: "end", room: true }, { p: P3(sg.B), kind: "end", room: true }, { p: P3(G.lerp([...sg.A, 0], [...sg.B, 0], 0.5)), kind: "mid", room: true }); }
   if (ui.st?.wpts) ui.st.wpts.forEach((p) => pts.push({ p, kind: "end", cur: true }));
   return pts;
 }
@@ -539,6 +554,7 @@ function snapEdges() {
   for (const k of M.sketches) { const W = k.pts.map((p) => G.toWorld(k.plane, p)); for (let i = 0; i + 1 < W.length + (k.closed ? 1 : 0); i++) segs.push({ a: W[i], b: W[(i + 1) % W.length], kid: k.id }); }
   for (const pa of M.paths) for (let i = 0; i + 1 < pa.pts.length + (pa.closed ? 1 : 0); i++) segs.push({ a: pa.pts[i], b: pa.pts[(i + 1) % pa.pts.length], pid: pa.id });
   for (const g of M.guides) if (g.kind !== "point") { const d = G.norm(G.sub(g.b, g.a)); segs.push({ a: G.add(g.a, G.mul(d, -800)), b: G.add(g.a, G.mul(d, 800)), guide: true }); }
+  for (const sg of roomSegs()) segs.push({ a: P3(sg.A), b: P3(sg.B), room: true });
   return segs;
 }
 const KLABEL = { end: "طرف", mid: "منتصف", center: "مركز", guide: "خط مساعد", origin: "نقطة الأصل", edge: "على الحرف", face: "على الوش", plane: "", axis: "" };
@@ -792,6 +808,8 @@ TOOL.select = {
     let ref = hit?.ref || null;
     if (ref?.startsWith("s:") && !ui.editGroup) { const s = M.solids.find((x) => "s:" + x.id === ref); if (s?.group) ref = "G:" + s.group; }
     if (ref?.startsWith("s:") && ui.editGroup) { const s = M.solids.find((x) => "s:" + x.id === ref); if (s?.group !== ui.editGroup) { ui.editGroup = null; if (s?.group) ref = "G:" + s.group; } }
+    ui.rsel = null;
+    if (ref && /^[WOE]:/.test(ref)) { ui.sel.clear(); ui.face = null; ui.rsel = { ref, kind: ref[0], id: ref.slice(2) }; rebuild(); renderUI(); return; }
     const prevFace = ui.face; ui.face = null;
     if (ref?.startsWith("s:") && hit.face && ui.sel.size === 1 && ui.sel.has(ref) && !ui.addSel) {
       // a second tap on the selected board: that one face
@@ -1254,6 +1272,8 @@ TOOL.move = {
         const s = M.solids.find((x) => x.id === inf.sid);
         if (inf.kind === "end" && (inf.loop === s.outer || s.holes.includes(inf.loop))) { ui.st = { mode: "vertex", s, loopIdx: inf.loop === s.outer ? -1 : s.holes.indexOf(inf.loop), vi: inf.vi, a: inf.p }; return; }
       }
+      const rh = !ui.sel.size && pickAny(...xy);
+      if (rh?.ref && /^[WOE]:/.test(rh.ref)) { ui.rsel = { ref: rh.ref, kind: rh.ref[0], id: rh.ref.slice(2) }; ui.st = { mode: "room", ref: rh.ref, a: inf.p, snap: JSON.stringify(M) }; rebuild(); renderUI(); return; }
       if (!ui.sel.size) {
         const hit = pickAny(...xy);
         if (!hit) { setMsg("اختار حاجة أو دوس عليها"); return; }
@@ -1271,6 +1291,11 @@ TOOL.move = {
   hover(xy) {
     const st = ui.st;
     const inf = infer(...xy, st ? { anchor: st.a } : {});
+    if (st?.mode === "room") {
+      M = JSON.parse(st.snap); st.dv = roomMove(st.ref, G.sub(inf.p, st.a)); rebuild();
+      overlay(() => { oMarker(inf); oLine([st.a, inf.p], 0x2f6fdf, true); if (st.dv && G.len(st.dv) > 0.05) live.push({ p: inf.p, t: f1(G.len(st.dv)), cls: "len" }); });
+      vcbSet(st.dv ? G.len(st.dv) : 0, "المسافة"); return;
+    }
     overlay(() => {
       oMarker(inf);
       if (!st) return;
@@ -1315,6 +1340,7 @@ function ghostOf(ref, P) {
 }
 function commitMove(dv) {
   const st = ui.st; ui.st = null;
+  if (st?.mode === "room") { M = JSON.parse(st.snap); if (G.len(dv) > 0.01) edit(() => roomMove(st.ref, dv)); else rebuild(); overlay(); return; }
   if (!st || G.len(dv) < 0.01) { overlay(); return; }
   edit(() => {
     if (st.mode === "vertex") { moveVertex(st.s, st, dv); st.s.outer = G.ccw(st.s.outer); return; }
@@ -1519,6 +1545,7 @@ function eraseAt(cx, cy) {
 function hoverErase(cx, cy) { const hit = pickAny(cx, cy); overlay(() => { if (hit?.ref) ghostOf(hit.ref, (P) => P); }); }
 function delEnt(ref) {
   if (ref.startsWith("G:")) { M.solids = M.solids.filter((s) => s.group !== ref.slice(2)); M.groups = M.groups.filter((g) => g.id !== ref.slice(2)); return; }
+  if (/^[WOE]:/.test(ref)) { delRoomRef(ref); return; }
   const k = ref[0], id = ref.slice(2);
   const key = { s: "solids", k: "sketches", p: "paths", w: "sweeps", g: "guides", d: "dims", t: "texts" }[k];
   if (key) M[key] = M[key].filter((x) => x.id !== id);
@@ -1533,17 +1560,22 @@ function edit(fn) {
   hist.u.push(snap); if (hist.u.length > 120) hist.u.shift();
   hist.r = [];
   for (const r of [...ui.sel]) if (!r.startsWith("G:") && !ent(r)) ui.sel.delete(r);
+  if (ui.rsel && !roomEnt(ui.rsel)) ui.rsel = null;
   rebuild(); renderUI();
 }
-function undo() { if (!hist.u.length) return; hist.r.push(JSON.stringify(M)); M = JSON.parse(hist.u.pop()); ui.st = null; ui.sel.clear(); rebuild(); overlay(); renderUI(); }
-function redo() { if (!hist.r.length) return; hist.u.push(JSON.stringify(M)); M = JSON.parse(hist.r.pop()); ui.st = null; ui.sel.clear(); rebuild(); overlay(); renderUI(); }
-function cancelStep() { ui.st = null; overlay(); vcbSet(""); }
-function delSel() { if (!ui.sel.size) return; edit(() => { for (const r of [...ui.sel]) delEnt(r); ui.sel.clear(); }); }
+function undo() { if (!hist.u.length) return; hist.r.push(JSON.stringify(M)); M = JSON.parse(hist.u.pop()); ui.st = null; ui.sel.clear(); ui.rsel = null; rebuild(); overlay(); renderUI(); }
+function redo() { if (!hist.r.length) return; hist.u.push(JSON.stringify(M)); M = JSON.parse(hist.r.pop()); ui.st = null; ui.sel.clear(); ui.rsel = null; rebuild(); overlay(); renderUI(); }
+function cancelStep() { restoreRoomDrag(); ui.st = null; overlay(); vcbSet(""); }
+function delSel() { if (ui.rsel) { const r = ui.rsel.ref; edit(() => delRoomRef(r)); return; } if (!ui.sel.size) return; edit(() => { for (const r of [...ui.sel]) delEnt(r); ui.sel.clear(); }); }
 function setTool(t) {
   if (ui.tool === "text" && ui.st) TOOL.text.raw("");
   if (ui.tool === "line" && ui.st?.wpts?.length >= 2) finishLine(false);
+  if (ui.tool === "wall" && ui.st?.wpts?.length >= 2) finishWall(false);
+  restoreRoomDrag();
   ui.tool = t; ui.st = null;
-  overlay(); applyControls(); vcbSet("", "المقاس");
+  overlay(); applyControls(); vcbSet("", "المقاس"); renderLabelsList();
+  if (t === "wall" && !M.room && !M.solids.length && !M.sketches.length) setView("top", 900);
+  if (t === "wall" && !M.room) setMsg("دوس أول ركن على الأرض، وبعدين كل ركن — أو اكتب الطول بعد ما تحدد الاتجاه");
   if (t === "follow" && ![...ui.sel].some((r) => r.startsWith("k:"))) setMsg("اختار البروفايل الأول (شكل مقفول)");
   renderUI();
 }
@@ -1657,6 +1689,7 @@ function sideHtml() {
   if (ui.face2d) h += `<div class="dsbox on2d"><b>✏️ بترسم شكل القطعة 2D</b><p class="hint">ارسم خطوط وأقواس ودواير على وشها، وبعدين بـ«سحب/زق» زق الشكل لجوه: تفريغ أو قصة من الحرف أو حفر. «تدوير ركن» و«شطف ركن» على أركانها.</p><button class="dsb" data-ds="exit2d">↩ رجوع للـ3D</button></div>`;
   const refs = selRefs(), solids = refs.filter((r) => r[0] === "s").map(ent).filter(Boolean);
   h += faceHtml();
+  h += roomHtml();
   const pal = Object.keys(MATS).map((k) => `<button class="dsmat ${ui.mat === k ? "on" : ""}" data-mat="${k}" title="${esc(matName(k))}"><i style="background:${matColor(k)}"></i><span>${esc(matName(k))}</span></button>`).join("");
   h += `<div class="dsbox"><div class="dsrow"><b>الاختيار</b><label class="dschk"><input type="checkbox" data-ds="addsel" ${ui.addSel ? "checked" : ""}> + اختيار متعدد</label></div>
     <div class="dsrow"><label class="dschk"><input type="checkbox" data-ds="copy" ${ui.copy ? "checked" : ""}> نسخة (مع التحريك واللف)</label></div>
@@ -1736,6 +1769,7 @@ function onClick(e) {
   if (d.tool) { setTool(d.tool); return; }
   if (d.view) { setView(d.view); renderUI(); return; }
   if (d.axis != null) { lockAxis(+d.axis); return; }
+  if (d.room) { roomAction(d.room, b); return; }
   if (d.mat) { ui.mat = d.mat; renderUI(); if (ui.sel.size) edit(() => selRefs().forEach((r) => { const x = ent(r); if (x && (r[0] === "s" || r[0] === "w")) x.mat = d.mat; })); return; }
   if (d.rot90 != null) { rotSel90(+d.rot90); return; }
   if (d.align != null) { alignSel(+el.querySelector("#dsAlAx").value, d.align); return; }
@@ -1749,8 +1783,11 @@ function onClick(e) {
     i.dataset.typed = "1"; i.value += d.vk; i.focus(); return;
   }
   switch (d.ds) {
-    case "done": ctx.onDone?.(G.clone(M), mname); close(); break;
-    case "cancel": if (!hist.u.length || confirmLeave()) { ctx.onCancel?.(); close(); } break;
+    case "done": finishDone(); break;
+    case "cancel": if (!changed()) { ctx.onCancel?.(); close(); } else leaveSheet(); break;
+    case "leavesave": el.querySelector(".dsleave")?.remove(); finishDone(); break;
+    case "leavedrop": el.querySelector(".dsleave")?.remove(); ctx.onCancel?.(); close(); break;
+    case "leaveback": el.querySelector(".dsleave")?.remove(); break;
     case "undo": undo(); break;
     case "redo": redo(); break;
     case "zoomx": zoomExtents(); break;
@@ -1794,7 +1831,21 @@ function onClick(e) {
     case "union": unionSel(); break;
   }
 }
-function confirmLeave() { return window.confirm ? window.confirm("هتقفل من غير ما تحفظ التعديلات؟") : true; }
+// closing with ✕: our own sheet (a web view inside the iPad app shows no confirm() box, so the old one never closed)
+let startJSON = "";
+const changed = () => JSON.stringify(M) !== startJSON;
+function leaveSheet() {
+  el.querySelector(".dsleave")?.remove();
+  const p = document.createElement("div"); p.className = "dsleave";
+  p.innerHTML = `<div class="dsleavebox"><b>تقفل ورشة الرسم؟</b><p>فيه تعديلات لسه ما اتحفظتش.</p>
+    <div class="dsbtns"><button class="dsb primary" data-ds="leavesave">💾 احفظ واقفل</button><button class="dsb danger" data-ds="leavedrop">اقفل من غير حفظ</button><button class="dsb" data-ds="leaveback">ارجع للرسم</button></div></div>`;
+  el.appendChild(p);
+}
+function finishDone() {
+  const m = G.clone(M), room = m.room || null; delete m.room;
+  ctx.onDone?.(m, mname, { room, roomChanged: JSON.stringify(room) !== startRoom });
+  close();
+}
 function showHelp() {
   let p = el.querySelector(".dshelp");
   if (p) { p.remove(); return; }
@@ -1804,6 +1855,7 @@ function showHelp() {
 function onChange(e) {
   const t = e.target, d = t.dataset;
   if (t.id === "dsStep") { ui.step = +t.value || 0; return; }
+  if (d.rp || d.rset) { roomChange(t); return; }
   if (t.dataset.snap) { const k = t.dataset.snap; ui.snap[k] = k === "strength" ? +t.value : t.checked; renderUI(); return; }
   if (t.id === "dsDxf" && t.files?.[0]) { importDxf(t.files[0]); t.value = ""; return; }
   if (t.dataset.ds === "boxsel") { ui.boxSel = t.checked; setMsg(ui.boxSel ? "اسحب في الفاضي: من الشمال لليمين = اللي جوه المربع كله · من اليمين للشمال = أي حاجة بيلمسها" : ""); return; }
@@ -2316,4 +2368,357 @@ function snapMenu() {
     <label class="dsf"><span>قوة الجذب</span><select data-snap="strength"><option value="0.8" ${sn.strength < 1 ? "selected" : ""}>خفيف</option><option value="1.3" ${sn.strength >= 1 && sn.strength < 1.8 ? "selected" : ""}>عادي</option><option value="2" ${sn.strength >= 1.8 ? "selected" : ""}>قوي (للصوابع)</option></select></label>
     <p class="hint">المس ركن أو منتصف أي خط الأول، وبعدين اتحرك: هيظهر خط بنفسجي لما تبقى على استقامته. الشبكة تحت بتخلي النقط الحرة تمشي بالسم.</p>`;
   el.querySelector("#dsView").appendChild(p);
+}
+
+// ================================================================== walls, doors, windows, MEP points (the project's room)
+// Plan coordinates are the app's room (x → right, z → towards the viewer); in the studio z_plan = −y, on the floor (z = 0).
+const P3 = (p, h = 0) => [p[0], -p[1], h];
+const P2 = (P) => [P[0], -P[1]];
+const FLOOR = () => ({ ...G.GROUND, o: [0, 0, 0] });
+const ROOMTOOLS = ["wall", "door", "window", "mep"];
+const wallEdgeMat = new THREE.LineBasicMaterial({ color: 0x6f6a5f, transparent: true });
+function roomSegs() { return M?.room?.pts?.length >= 2 ? Room.segments(M.room) : []; }
+const segById = (id) => roomSegs().find((s) => s.id === id);
+function roomEnt(rs) {
+  const r = M.room; if (!r || !rs) return null;
+  const list = rs.kind === "W" ? r.walls : rs.kind === "O" ? r.openings : r.points;
+  return (list || []).find((x) => x.id === rs.id) || null;
+}
+function delRoomRef(ref) {
+  const r = M.room; if (!r) return;
+  const k = ref[0], id = ref.slice(2);
+  if (k === "W") {
+    const i = r.walls.findIndex((w) => w.id === id); if (i < 0) return;
+    Room.removeWall(r, i);
+    r.points = (r.points || []).filter((p) => p.wall !== id);
+    if (!r.pts || r.pts.length < 2) M.room = null;
+  } else if (k === "O") r.openings = (r.openings || []).filter((o) => o.id !== id);
+  else if (k === "E") r.points = (r.points || []).filter((p) => p.id !== id);
+  if (ui.rsel?.ref === ref) ui.rsel = null;
+}
+/** a plan polygon between two heights → faces */
+function prism(poly2, z0, z1) {
+  const B = poly2.map((p) => P3(p, z0)), H = z1 - z0;
+  if (Math.abs(G.area(poly2)) < 0.01) return [];
+  const faces = [{ n: [0, 0, 1], outer: B.map((P) => G.add(P, [0, 0, H])) }, { n: [0, 0, -1], outer: B }];
+  const c = G.mul(B.reduce((a, P) => G.add(a, P), [0, 0, 0]), 1 / B.length);
+  for (let i = 0; i < B.length; i++) {
+    const a = B[i], b = B[(i + 1) % B.length];
+    if (G.dist(a, b) < 1e-3) continue;
+    let n = G.norm(G.cross(G.sub(b, a), [0, 0, 1]));
+    if (G.dot(n, G.sub(G.lerp(a, b, 0.5), c)) < 0) n = G.mul(n, -1);
+    faces.push({ n, outer: [a, b, G.add(b, [0, 0, H]), G.add(a, [0, 0, H])] });
+  }
+  return faces;
+}
+function wallFaces(room) {
+  const out = [];
+  for (const g of Room.wallGeom(room)) {
+    const faces = [];
+    for (const sp of Room.wallSpans(g.seg, room.openings || [])) if (sp.b - sp.a > 0.05 && sp.z1 - sp.z0 > 0.05) faces.push(...prism(Room.piecePoly(g, sp.a, sp.b), sp.z0, sp.z1));
+    out.push({ seg: g.seg, faces });
+  }
+  return out;
+}
+const onWall = (sg, x, z, off = 0) => P3([sg.A[0] + sg.d[0] * x + sg.n[0] * off, sg.A[1] + sg.d[1] * x + sg.n[1] * off], z);
+function buildRoom() {
+  const room = M.room;
+  if (!room?.pts?.length || !ui.showWalls) return;
+  const clip = clipPlanes();
+  for (const { seg: sg, faces } of wallFaces(room)) {
+    if (!faces.length) continue;
+    const ref = "W:" + sg.id, on = ui.rsel?.ref === ref;
+    const { geo } = triFaces(faces);
+    const mat = new THREE.MeshStandardMaterial({ color: on ? 0xc9d8f3 : 0xebe7de, roughness: 0.95, side: THREE.DoubleSide, transparent: true, opacity: ui.xray ? 0.3 : 1,
+      emissive: new THREE.Color(on ? 0x2f6fdf : 0x5a5650), emissiveIntensity: on ? 0.15 : 0.55, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1, clippingPlanes: clip });
+    const mesh = new THREE.Mesh(geo, mat);
+    const eg = new THREE.LineSegments(new THREE.EdgesGeometry(geo, 20), on ? selEdgeMat : wallEdgeMat.clone());
+    mesh.userData = { ref, wall: sg.id, A: sg.A, n: sg.n, edges: eg };
+    roomG.add(mesh, eg);
+  }
+  for (const o of room.openings || []) {
+    const sg = segById(o.wall); if (!sg) continue;
+    const ref = "O:" + o.id, on = ui.rsel?.ref === ref;
+    const a = Math.max(0, o.at), b = Math.min(sg.L, o.at + o.w); if (b - a < 1) continue;
+    const z0 = +o.sill || 0, z1 = Math.min(sg.h, z0 + o.h);
+    const rect = [onWall(sg, a, z0, 0.4), onWall(sg, b, z0, 0.4), onWall(sg, b, z1, 0.4), onWall(sg, a, z1, 0.4)];
+    const col = o.kind === "door" ? 0x8a6a3c : 0x2f86c4;
+    const { geo } = triFaces([{ n: G.norm([sg.n[0], -sg.n[1], 0]), outer: rect }]);
+    const pane = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: o.kind === "door" ? 0xd9c49c : 0x9fd0f0, transparent: true, opacity: on ? 0.75 : 0.45, side: THREE.DoubleSide, depthWrite: false }));
+    pane.userData = { ref, open: o.id, wall: sg.id };
+    roomG.add(pane, fatLine([...rect, rect[0]], on ? 0x2f6fdf : col, on ? 3.5 : 2.5, false, { order: 6 }));
+    if (o.kind === "door") {
+      const r = b - a, arc = [onWall(sg, a, 0.3, 0)];
+      for (let i = 0; i <= 14; i++) { const t = (i / 14) * (Math.PI / 2); arc.push(onWall(sg, a + Math.cos(t) * r, 0.3, Math.sin(t) * r)); }
+      arc.push(onWall(sg, a, 0.3, 0));
+      roomG.add(fatLine(arc, col, 1.6, false, { order: 6, opacity: 0.85 }));
+    }
+  }
+  for (const pt of room.points || []) {
+    const w = Room.pointWorld(room, pt); if (!w) continue;
+    const k = Room.MEP_KINDS[pt.kind] || Room.MEP_KINDS.socket, col = Room.MEP_SYS[k[1]][1], on = ui.rsel?.ref === "E:" + pt.id;
+    const m = new THREE.Mesh(new THREE.SphereGeometry(on ? 4.2 : 3.2, 14, 10), new THREE.MeshBasicMaterial({ color: on ? 0x2f6fdf : col }));
+    m.position.copy(T3(P3([w.x + w.n[0] * 1.5, w.z + w.n[1] * 1.5], pt.z)));
+    m.userData = { ref: "E:" + pt.id };
+    roomG.add(m);
+  }
+  wallFade();
+}
+function roomLabels(list) {
+  const room = M?.room; if (!room?.pts?.length || !ui.showWalls) return;
+  for (const pt of room.points || []) {
+    const w = Room.pointWorld(room, pt); if (!w) continue;
+    const k = Room.MEP_KINDS[pt.kind] || Room.MEP_KINDS.socket;
+    list.push({ p: P3([w.x + w.n[0] * 2, w.z + w.n[1] * 2], pt.z + 5), t: k[3], cls: "mep", ref: "E:" + pt.id, bg: Room.MEP_SYS[k[1]][1] });
+  }
+  if (ROOMTOOLS.includes(ui.tool) || ui.rsel) for (const sg of roomSegs()) {
+    const m = [(sg.A[0] + sg.B[0]) / 2 + sg.n[0] * 12, (sg.A[1] + sg.B[1]) / 2 + sg.n[1] * 12];
+    list.push({ p: P3(m, 1), t: f1(sg.L), cls: "dim", ref: "W:" + sg.id });
+  }
+}
+/** walls between the camera and the room turn see-through (a cut-away doll's house) */
+function wallFade() {
+  if (!roomG || !cam) return;
+  const C = P2(W3(cam.position)), top = cam.position.y > 0 && Math.abs(cam.getWorldDirection(new THREE.Vector3()).y) > 0.92;
+  for (const o of roomG.children) {
+    const u = o.userData; if (!u?.wall || !u.n || !o.isMesh || u.open) continue;
+    const outside = !top && (C[0] - u.A[0]) * u.n[0] + (C[1] - u.A[1]) * u.n[1] < -1;
+    const op = ui.xray ? 0.3 : outside ? 0.16 : 1;
+    o.material.opacity = op; o.material.depthWrite = op > 0.5;
+    if (u.edges?.material && u.edges.material !== selEdgeMat) { u.edges.material.opacity = outside ? 0.35 : 1; }
+  }
+}
+// ---- the wall tool: click corners on the floor
+function wallInfer(xy, st) {
+  const inf = infer(...xy, st ? { anchor: st.last, plane: FLOOR(), axes: [0, 1] } : { plane: FLOOR() });
+  inf.p = [inf.p[0], inf.p[1], 0];
+  return inf;
+}
+const near2d = (a, b, r = 1) => Math.hypot(a[0] - b[0], a[1] - b[1]) < r;
+TOOL.wall = {
+  wantsDown: () => !ui.st,
+  click(xy) {
+    const st = ui.st, inf = wallInfer(xy, st);
+    if (!st) {
+      const room = M.room?.pts?.length >= 2 ? M.room : null;
+      let p2 = P2(inf.p), from = null, close = null;
+      if (room && room.closed) { setMsg("الأوضة مقفولة — اختار أي حيطة وعدّلها من الجنب، أو امسح حيطة وكمّل من طرفها"); return; }
+      if (room) {
+        if (near2d(p2, room.pts.at(-1), 2)) { from = "end"; p2 = room.pts.at(-1); close = room.pts[0]; }
+        else if (near2d(p2, room.pts[0], 2)) { from = "start"; p2 = room.pts[0]; close = room.pts.at(-1); }
+        else { setMsg("كمّل من طرف الحيطان الموجودة (أول أو آخر نقطة) — الحيطان كلها سلسلة واحدة"); return; }
+      }
+      ui.st = { wpts: [P3(p2)], last: P3(p2), first: P3(p2), from, close: close && P3(close) };
+      overlayWall(inf); return;
+    }
+    const p = inf.p, target = st.from ? st.close : st.wpts.length >= 3 ? st.first : null;
+    if (target && G.dist(p, target) < 1 && st.wpts.length >= (st.from ? 2 : 3)) { st.wpts.push(target); finishWall(true); return; }
+    if (G.dist(p, st.last) < 0.5) { if (st.wpts.length >= 2) finishWall(false); return; }
+    st.wpts.push(p); st.last = p; overlayWall(inf);
+  },
+  hover(xy) { const st = ui.st, inf = wallInfer(xy, st); if (st) st.hover = inf.p; overlayWall(inf); },
+  vcb(v) {
+    const st = ui.st;
+    if (!st || !st.hover || !(v.v > 0)) return;
+    const d = G.norm(G.sub(st.hover, st.last)); if (!isFinite(d[0]) || G.len(G.sub(st.hover, st.last)) < 1e-6) return;
+    const P = G.add(st.last, G.mul(d, v.v)); P[2] = 0;
+    st.wpts.push(P); st.last = P; st.hover = null; overlayWall();
+  },
+  enter() { if (ui.st?.wpts.length >= 2) finishWall(false); },
+};
+function overlayWall(inf) {
+  const st = ui.st;
+  overlay(() => {
+    if (inf) oMarker(inf);
+    if (!st) return;
+    const W = st.hover ? [...st.wpts, st.hover] : st.wpts;
+    if (W.length > 1) {
+      oLine(W, 0x1d211c);
+      const pts = W.map(P2), tmp = { pts, closed: false, walls: pts.slice(1).map(() => Room.newWallMeta(ui.wallT, ui.wallH)), openings: [] };
+      oGhost(wallFaces(tmp).flatMap((x) => x.faces), 0x9a8c70);
+    }
+    if (st.hover) { liveLen(st.last, st.hover); vcbSet(G.dist(st.last, st.hover), "طول الحيطة"); }
+  });
+}
+function finishWall(closed) {
+  const st = ui.st; ui.st = null; overlay();
+  if (!st || st.wpts.length < 2) return;
+  const raw = st.wpts.map((P) => [Room.r1(P[0]), Room.r1(-P[1])]);
+  const pts2 = raw.filter((p, i) => i === 0 || Math.hypot(p[0] - raw[i - 1][0], p[1] - raw[i - 1][1]) > 0.5);
+  if (pts2.length < 2) return;
+  const meta = () => Room.newWallMeta(ui.wallT, ui.wallH);
+  edit(() => {
+    if (!st.from) {
+      if (closed) pts2.pop();
+      const isClosed = closed && pts2.length >= 3;
+      M.room = { pts: pts2, closed: isClosed, walls: Array.from({ length: isClosed ? pts2.length : pts2.length - 1 }, meta), openings: [], points: [], columns: M.room?.columns || [] };
+    } else {
+      const r = M.room, add = pts2.slice(1);
+      if (closed) add.pop();
+      if (st.from === "end") { r.pts.push(...add); r.walls.push(...Array.from({ length: add.length + (closed ? 1 : 0) }, meta)); }
+      else { r.pts = [...add.reverse(), ...r.pts]; r.walls = [...Array.from({ length: add.length }, meta), ...r.walls, ...(closed ? [meta()] : [])]; }
+      r.closed = !!closed && r.pts.length >= 3;
+    }
+  });
+  setMsg(closed ? "اتقفلت الأوضة ✓ — ضيف أبواب وشبابيك ومرافق من «حوائط»" : "اتعملت الحيطان ✓ — دوس على أي حيطة تعدّل طولها وسمكها");
+}
+// ---- doors, windows, MEP points: tap a wall
+function wallHit(xy) {
+  rayAt(...xy);
+  const meshes = roomG.children.filter((o) => o.isMesh && o.userData.wall && !o.userData.open && (o.material.opacity >= 0.5 || ui.xray));
+  const h = ray.intersectObjects(meshes, false)[0]; if (!h) return null;
+  const sg = segById(h.object.userData.wall); if (!sg) return null;
+  const P = W3(h.point), p2 = P2(P);
+  const at = (p2[0] - sg.A[0]) * sg.d[0] + (p2[1] - sg.A[1]) * sg.d[1];
+  return { sg, at: Math.max(0, Math.min(sg.L, at)), z: Math.max(0, P[2]), P };
+}
+const OPEN_DEF = { door: { w: 90, h: 210, sill: 0 }, window: { w: 120, h: 120, sill: 100 } };
+function openTool(kind) {
+  return {
+    click(xy) {
+      const hh = wallHit(xy);
+      if (!hh) { setMsg(M.room ? "دوس على حيطة" : "ارسم الحيطان الأول بأداة «حيطة»"); return; }
+      edit(() => {
+        M.room.openings ||= [];
+        const o = Room.addOpening(M.room, hh.sg.id, kind); if (!o) return;
+        o.at = Room.r1(Math.max(0, Math.min(hh.sg.L - o.w, hh.at - o.w / 2)));
+        ui.rsel = { ref: "O:" + o.id, kind: "O", id: o.id };
+      });
+      setMsg(kind === "door" ? "اتحط باب — عدّل عرضه وارتفاعه ومكانه من الجنب" : "اتحط شباك — عدّل مقاسه والجلسة من الجنب");
+    },
+    hover(xy) {
+      const hh = wallHit(xy);
+      overlay(() => {
+        if (!hh) return;
+        const d = OPEN_DEF[kind], a = Math.max(0, Math.min(hh.sg.L - d.w, hh.at - d.w / 2)), b = a + d.w;
+        const r = [onWall(hh.sg, a, d.sill, 0.6), onWall(hh.sg, b, d.sill, 0.6), onWall(hh.sg, b, d.sill + d.h, 0.6), onWall(hh.sg, a, d.sill + d.h, 0.6)];
+        oLine([...r, r[0]], 0x2f6fdf);
+        live.push({ p: onWall(hh.sg, a, d.sill + d.h + 6, 1), t: `${f1(a)} من أول الحيطة`, cls: "tip" });
+      });
+    },
+  };
+}
+TOOL.door = openTool("door");
+TOOL.window = openTool("window");
+TOOL.mep = {
+  click(xy) {
+    const hh = wallHit(xy);
+    if (!hh) { setMsg(M.room ? "دوس على حيطة" : "ارسم الحيطان الأول بأداة «حيطة»"); return; }
+    edit(() => { const p = Room.addPoint(M.room, hh.sg.id, ui.mepKind, Room.r1(hh.at)); if (p) ui.rsel = { ref: "E:" + p.id, kind: "E", id: p.id }; });
+    const k = Room.MEP_KINDS[ui.mepKind];
+    setMsg(`اتحطت ${k[0]} على ارتفاع ${k[2]} سم — غيّر الارتفاع والمكان من الجنب`);
+  },
+  hover(xy) {
+    const hh = wallHit(xy), k = Room.MEP_KINDS[ui.mepKind];
+    overlay(() => {
+      if (!hh) return;
+      const P = onWall(hh.sg, hh.at, k[2], 1.5);
+      oLine([onWall(hh.sg, hh.at, 0, 1), P], 0x2f6fdf, true);
+      const s = new THREE.Mesh(new THREE.SphereGeometry(3.5, 12, 8), new THREE.MeshBasicMaterial({ color: Room.MEP_SYS[k[1]][1], depthTest: false }));
+      s.position.copy(T3(P)); s.renderOrder = 12; overG.add(s);
+      live.push({ p: P, t: `${k[0]} · ${f1(hh.at)} من أول الحيطة · ارتفاع ${k[2]}`, cls: "tip" });
+    });
+  },
+};
+// ---- dragging walls / openings / points with «تحريك»
+function roomMove(ref, dv) {
+  const r = M.room; if (!r) return null;
+  const k = ref[0], id = ref.slice(2), dp = [dv[0], -dv[1]];
+  if (k === "W") {
+    const i = r.walls.findIndex((w) => w.id === id), sg = roomSegs().find((s) => s.id === id); if (i < 0 || !sg) return null;
+    const pr = dp[0] * sg.n[0] + dp[1] * sg.n[1], j = (i + 1) % r.pts.length;
+    for (const q of [i, j]) r.pts[q] = [Room.r1(r.pts[q][0] + sg.n[0] * pr), Room.r1(r.pts[q][1] + sg.n[1] * pr)];
+    return [sg.n[0] * pr, -sg.n[1] * pr, 0];
+  }
+  const e = (k === "O" ? r.openings : r.points)?.find((x) => x.id === id); if (!e) return null;
+  const sg = segById(e.wall); if (!sg) return null;
+  const al = dp[0] * sg.d[0] + dp[1] * sg.d[1];
+  e.at = Room.r1(Math.max(0, Math.min(sg.L - (k === "O" ? e.w : 0), e.at + al)));
+  if (k === "E") { e.z = Room.r1(Math.max(0, Math.min(sg.h, e.z + dv[2]))); return [sg.d[0] * al, -sg.d[1] * al, dv[2]]; }
+  return [sg.d[0] * al, -sg.d[1] * al, 0];
+}
+function restoreRoomDrag() { if (ui.st?.mode === "room") { M = JSON.parse(ui.st.snap); rebuild(); } }
+// ---- side panel
+const mepOpts = (v) => Object.entries(Room.MEP_SYS).map(([sys, [sn]]) => `<optgroup label="${esc(sn)}">${Object.entries(Room.MEP_KINDS).filter(([, k]) => k[1] === sys).map(([key, k]) => `<option value="${key}" ${key === v ? "selected" : ""}>${esc(k[0])} — ${k[2]} سم</option>`).join("")}</optgroup>`).join("");
+const numIn = (label, rp, v) => `<label><span>${label}</span><input type="text" inputmode="decimal" data-numf data-rp="${rp}" value="${f1(v)}"></label>`;
+function roomHtml() {
+  const room = M.room;
+  let h = "";
+  const rs = ui.rsel, e = roomEnt(rs);
+  if (rs && e) {
+    if (rs.kind === "W") {
+      const sg = segById(e.id);
+      if (sg) h += `<div class="dsbox"><div class="dsrow"><b>🧱 حيطة ${sg.i + 1}</b><button class="dsb" data-room="x">✕</button></div>
+        <div class="dsgrid">${numIn("الطول", "L", sg.L)}${numIn("السمك", "t", sg.t)}${numIn("الارتفاع", "h", sg.h)}</div>
+        <div class="dsrow"><label class="dschk"><input type="checkbox" data-rp="flip" ${e.flip ? "checked" : ""}> السمك للناحية التانية</label></div>
+        <div class="dsbtns"><button class="dsb" data-room="adddoor">🚪 + باب</button><button class="dsb" data-room="addwin">🪟 + شباك</button><button class="dsb" data-room="addpt">🔌 + ${esc(Room.MEP_KINDS[ui.mepKind][0])}</button><button class="dsb danger" data-room="del">🗑 امسح الحيطة</button></div>
+        <p class="hint">الطول بيتغيّر من آخر الحيطة. بأداة «تحريك» اسحب الحيطة كلها لقدام أو لورا والحيطان اللي جنبها بتمشي معاها.</p></div>`;
+    } else if (rs.kind === "O") {
+      const sg = segById(e.wall);
+      h += `<div class="dsbox"><div class="dsrow"><b>${e.kind === "door" ? "🚪 باب" : "🪟 شباك"}${sg ? ` — حيطة ${sg.i + 1}` : ""}</b><button class="dsb" data-room="x">✕</button></div>
+        <label class="dsf"><span>النوع</span><select data-rp="kind"><option value="door" ${e.kind === "door" ? "selected" : ""}>باب</option><option value="window" ${e.kind === "window" ? "selected" : ""}>شباك</option></select></label>
+        <div class="dsgrid">${numIn("العرض", "w", e.w)}${numIn("الارتفاع", "h", e.h)}${numIn("الجلسة", "sill", e.sill || 0)}${numIn("من أول الحيطة", "at", e.at)}</div>
+        ${sg ? `<p class="hint">من آخر الحيطة: ${f1(sg.L - e.at - e.w)} سم · اسحبه على الحيطة بأداة «تحريك».</p>` : ""}
+        <div class="dsbtns"><button class="dsb danger" data-room="del">🗑 امسحه</button></div></div>`;
+    } else {
+      const sg = segById(e.wall);
+      h += `<div class="dsbox"><div class="dsrow"><b>🔌 ${esc((Room.MEP_KINDS[e.kind] || Room.MEP_KINDS.socket)[0])}${sg ? ` — حيطة ${sg.i + 1}` : ""}</b><button class="dsb" data-room="x">✕</button></div>
+        <label class="dsf"><span>النوع</span><select data-rp="kind">${mepOpts(e.kind)}</select></label>
+        <div class="dsgrid">${numIn("من أول الحيطة", "at", e.at)}${numIn("الارتفاع من الأرض", "z", e.z)}</div>
+        <div class="dsbtns"><button class="dsb danger" data-room="del">🗑 امسحها</button></div></div>`;
+    }
+  }
+  const tools = ROOMTOOLS.includes(ui.tool);
+  if (tools || room?.pts?.length) {
+    const nW = roomSegs().length, nO = (room?.openings || []).length, nP = (room?.points || []).length;
+    h += `<details class="dsbox" ${tools ? "open" : ""}><summary>🧱 الحوائط والمرافق${nW ? ` (${nW} حيطة · ${nO} باب/شباك · ${nP} نقطة)` : ""}</summary>
+      <div class="dsgrid"><label><span>سمك الحيطان الجديدة</span><input type="text" inputmode="decimal" data-numf data-rset="wallT" value="${f1(ui.wallT)}"></label><label><span>الارتفاع</span><input type="text" inputmode="decimal" data-numf data-rset="wallH" value="${f1(ui.wallH)}"></label></div>
+      <label class="dsf"><span>نقطة المرافق</span><select data-rset="mepKind">${mepOpts(ui.mepKind)}</select></label>
+      <div class="dsbtns"><button class="dsb ${ui.tool === "wall" ? "on" : ""}" data-tool="wall">🧱 ارسم حيطان</button><button class="dsb" data-tool="door">🚪 باب</button><button class="dsb" data-tool="window">🪟 شباك</button><button class="dsb" data-tool="mep">🔌 مرافق</button></div>
+      ${nW ? "" : `<div class="dsgrid"><label><span>عرض الأوضة</span><input type="text" inputmode="decimal" data-numf id="rqW" value="400"></label><label><span>عمقها</span><input type="text" inputmode="decimal" data-numf id="rqD" value="350"></label></div><button class="dsb" data-room="rect">▭ أوضة مستطيلة بسرعة</button>`}
+      <div class="dsrow"><label class="dschk"><input type="checkbox" data-rset="showWalls" ${ui.showWalls ? "checked" : ""}> اظهر الحيطان</label>${nW ? `<button class="dsb danger" data-room="clear">امسح كل الحيطان</button>` : ""}</div>
+      <p class="hint">دي حيطان المشروع نفسها: بتظهر في المسقط والواجهات والـ3D، والمطبخ بيترص عليها. الحيطة اللي بينك وبين الأوضة بتبقى شفافة عشان تشوف جوه.</p></details>`;
+  }
+  return h;
+}
+function roomAction(kind) {
+  const rs = ui.rsel;
+  if (kind === "x") { ui.rsel = null; rebuild(); renderUI(); return; }
+  if (kind === "del") { delSel(); return; }
+  if (kind === "clear") { edit(() => { M.room = null; ui.rsel = null; }); setMsg("اتمسحت الحيطان — ↶ لو عايز ترجّعها"); return; }
+  if (kind === "rect") {
+    const w = +String(el.querySelector("#rqW")?.value).replace(/[^\d.]/g, "") || 400, d = +String(el.querySelector("#rqD")?.value).replace(/[^\d.]/g, "") || 350;
+    edit(() => { M.room = { ...Room.presetRoom("rect", { w, d, t: ui.wallT, h: ui.wallH }), points: [], columns: [] }; });
+    zoomExtents(); return;
+  }
+  if (!rs || rs.kind !== "W") return;
+  edit(() => {
+    if (kind === "adddoor" || kind === "addwin") { M.room.openings ||= []; const o = Room.addOpening(M.room, rs.id, kind === "adddoor" ? "door" : "window"); if (o) ui.rsel = { ref: "O:" + o.id, kind: "O", id: o.id }; }
+    else if (kind === "addpt") { const p = Room.addPoint(M.room, rs.id, ui.mepKind); if (p) ui.rsel = { ref: "E:" + p.id, kind: "E", id: p.id }; }
+  });
+}
+function roomChange(t) {
+  const d = t.dataset, v = t.type === "checkbox" ? t.checked : t.value, num = +String(v).replace(/[^\d.\-]/g, "");
+  if (d.rset) {
+    if (d.rset === "showWalls") { ui.showWalls = !!v; rebuild(); }
+    else if (d.rset === "mepKind") ui.mepKind = v;
+    else if (num > 0) ui[d.rset] = num;
+    renderUI(); return;
+  }
+  const rs = ui.rsel, e = roomEnt(rs); if (!e) return;
+  edit(() => {
+    if (rs.kind === "W") {
+      const i = M.room.walls.indexOf(e);
+      if (d.rp === "L" && num > 1) Room.setWallLength(M.room, i, num);
+      else if (d.rp === "flip") e.flip = !!v;
+      else if ((d.rp === "t" || d.rp === "h") && num > 0) e[d.rp] = num;
+    } else if (rs.kind === "O") {
+      if (d.rp === "kind") { e.kind = v; Object.assign(e, { h: OPEN_DEF[v].h, sill: OPEN_DEF[v].sill }); }
+      else if ((d.rp === "w" || d.rp === "h") && num > 1) e[d.rp] = num;
+      else if ((d.rp === "sill" || d.rp === "at") && isFinite(num) && num >= 0) e[d.rp] = num;
+    } else {
+      if (d.rp === "kind" && Room.MEP_KINDS[v]) { e.kind = v; e.z = Room.MEP_KINDS[v][2]; }
+      else if ((d.rp === "at" || d.rp === "z") && isFinite(num) && num >= 0) e[d.rp] = num;
+    }
+  });
 }

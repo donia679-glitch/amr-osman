@@ -656,17 +656,23 @@ function modelProps(u, r) {
     <p class="hint">${(m.solids || []).length} لوح${(m.sweeps || []).length ? ` · ${m.sweeps.length} بروفايل` : ""}${shaped ? ` · ${shaped} قطعة مشكّلة (CNC)` : ""}. كل لوح بيدخل القص والملصقات والأليتا وملفات الـCNC بشكله.</p>
     <div class="btnrow"><button class="primary" data-studio>✏️ افتح في ورشة الرسم</button></div></details>`;
 }
-function openStudio(u) {
+function openStudio(u, extra = {}) {
   const libs = (k) => panelLib(R(u).params || {}, k);
   Studio.open(u?.params?.model || null, {
     name: u?.name || I18n.tr("تصميم حر"),
+    room: state.project.room || null,
+    tool: extra.tool,
     matColor: (k) => { const l = u && libs(k); return l && Catalog.LIB[l] ? Catalog.LIB[l][2] : null; },
     matName: (k) => PANEL_MATS[k] || k,
-    onDone: (model, name) => {
+    onDone: (model, name, x = {}) => {
+      // walls, doors, windows and MEP points drawn in the studio are the project's room
+      if (x.roomChanged) state.project.room = x.room && x.room.pts?.length >= 2 ? x.room : null;
+      const empty = !model.solids.length && !model.sweeps.length && !model.sketches.length;
       if (u && state.project.units.includes(u)) { u.params = { ...u.params, model, template: "free" }; u.name = name || u.name; }
-      else { const nu = { id: uid(), kind: "panel", name: name || "تصميم حر", params: { template: "free", model, materials: {} } }; state.project.units.push(nu); state.sel = nu.id; }
+      else if (!empty) { const nu = { id: uid(), kind: "panel", name: name || "تصميم حر", params: { template: "free", model, materials: {} } }; state.project.units.push(nu); state.sel = nu.id; }
       state.libOpen = false; save(); render(true);
-      alertBar("اتحفظ التصميم ✓ — ألواحه في القص والملصقات وملفات الـCNC");
+      if (empty && !u) { if (x.roomChanged) alertBar("اتحفظت الحيطان ✓ — بقت حيطان المشروع في المسقط والواجهات والـ3D"); }
+      else alertBar(x.roomChanged ? "اتحفظ التصميم والحيطان ✓ — الألواح في القص والملصقات، والحيطان في المسقط" : "اتحفظ التصميم ✓ — ألواحه في القص والملصقات وملفات الـCNC");
     },
     saveLib: (model, name) => {
       const tmp = { id: uid(), kind: "panel", name: name || "تصميم حر", params: { template: "free", model, materials: u?.params?.materials || {} } };
@@ -1732,7 +1738,7 @@ function planChips() {
     if (n) h += `<button class="chip tog" data-drawundo>رجّع نقطة</button>`;
     return h + `<button class="chip tog" data-drawcancel>إلغاء</button>`;
   }
-  h += `<button class="chip" data-roompop>أوضة جاهزة بالمقاسات</button><button class="chip" data-draw>ارسم حيطان</button>`;
+  h += `<button class="chip" data-roompop>أوضة جاهزة بالمقاسات</button><button class="chip" data-draw>ارسم حيطان</button><button class="chip" data-wallstudio>🧱 ارسمها 3D في ورشة الرسم</button>`;
   if (sel?.kind === "wall") h += `<button class="chip tog" data-addop="door">+ باب</button><button class="chip tog" data-addop="window">+ شباك</button><button class="chip tog" data-mepop>+ كهربا / سباكة / غاز</button><button class="chip tog" data-elev>واجهة الحيطة</button>`;
   if (room) h += `<button class="chip tog" data-addcol>+ عمود</button>`;
   if (sel?.kind === "unit" || (state.sel && !sel)) h += `<span class="chip step zone"><span class="zl">لف الوحدة</span><button data-rot="-90">↺90</button><button data-rot="-15">↺15</button><button data-rot="15">↻15</button><button data-rot="90">↻90</button></span>`;
@@ -1848,6 +1854,7 @@ $("#chips").addEventListener("click", async (e) => {
     return;
   }
   if (b.hasAttribute("data-checks")) { ui.pop = "checks"; renderPop(); return; }
+  if (b.hasAttribute("data-wallstudio")) { openStudio(null, { tool: "wall" }); return; }
   if (b.hasAttribute("data-draw")) { ui.planTool = "draw"; const r = state.project.room; ui.draft = r && !r.closed ? [r.pts[r.pts.length - 1]] : []; renderChips(); renderProps(); plan.render(); return; }
   if (b.hasAttribute("data-drawdone")) { finishDraw(false); return; }
   if (b.hasAttribute("data-drawclose")) { finishDraw(true); return; }
