@@ -4191,5 +4191,16 @@
 "رأسي قدام": "Upright, front",
 "رأسي جنب": "Upright, side",
 "نايم": "Flat",
-"وتحتها لوح ليد": "with a LED board under it"
+"وتحتها لوح ليد": "with a LED board under it",
+"البواقي من المخزن": "Offcuts from stock",
+"البواقي الأول (توفّر ألواح)": "Offcuts first (saves sheets)",
+"أنا أختار البواقي": "I pick the offcuts",
+"من غير بواقي": "No offcuts",
+"دوس على أي باقي يعلّم عليه ✓ عشان خطة القص تستخدمه — اللي مش متعلّم مش هيتلمس.": "Tap an offcut to tick it ✓ so the cutting plan uses it — unticked ones are left alone.",
+"كل البواقي بتتستخدم الأول. دوس على باقي عشان تستبعده (بيبقى مشطوب).": "All offcuts are used first. Tap one to leave it out (it shows crossed out).",
+"خطة القص مش هتستخدم البواقي خالص — كله ألواح جديدة.": "The cutting plan won't use offcuts at all — all new sheets.",
+"باقي هيطلع من المشروع ده": "An offcut this project will leave",
+"مستخدم — دوس تستبعده": "Used — tap to leave it out",
+"مش مستخدم — دوس تستخدمه": "Not used — tap to use it",
+"(من المشروع ده)": "(from this project)"
 }

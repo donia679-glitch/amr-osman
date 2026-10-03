@@ -7,7 +7,7 @@
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <style>html,body{margin:0;padding:0}body{min-height:100vh;min-height:100dvh}</style>
-<script>window.NOVERA_BUILD = "2026-10-03 23:05";</script>
+<script>window.NOVERA_BUILD = "2026-10-03 23:17";</script>
 </head>
 <body>
 <meta charset="utf-8">
@@ -243,6 +243,11 @@ summary { font-weight: 600; cursor: pointer; padding: 4px 0 8px; list-style-posi
 .akcard button { grid-row: 1 / span 3; grid-column: 2; }
 .remlist { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
 .rem { display: inline-flex; align-items: center; gap: 2px; background: var(--panel2); border-radius: 8px; padding: 2px 6px; font-size: 12.5px; direction: ltr; }
+.rem .remtog { background: none; border: 0; padding: 4px 4px; font: inherit; color: inherit; cursor: pointer; min-height: 32px; }
+.rem.use { background: #dcefdc; outline: 1.5px solid #2f8a46; }
+.rem.nouse .remtog { color: var(--muted); text-decoration: line-through; }
+.rem.own { opacity: .65; }
+.rem small { font-size: 10.5px; color: var(--muted); }
 .rem button { border: 0; background: none; color: var(--err, #b42318); font-size: 15px; padding: 0 2px; }
 .remadd { display: inline-flex; gap: 3px; }
 .remadd input { width: 54px; font: inherit; font-size: 12.5px; padding: 4px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--ink); }

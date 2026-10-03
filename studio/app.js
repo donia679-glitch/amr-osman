@@ -5527,6 +5527,12 @@ function groupSheet(g) {
 let worker = null;
 try { worker = new Worker(new URL("./cutworker.js", import.meta.url), { type: "module" }); } catch { worker = null; }
 let cutReq = 0, cutData = null, cutKey = "";
+/** how the offcuts in stock are used: "first" (before new sheets), "pick" (only the ones I tick), "off" */
+const stockMode = () => state.cutOpts?.stockMode || (state.cutOpts?.useStock === false ? "off" : "first");
+/** is this offcut used by the cut plan of this project (never its own offcuts) */
+const remUsed = (r) => r.from !== state.project.id && +r.w > 0 && +r.h > 0 && (stockMode() === "first" ? r.use !== false : stockMode() === "pick" ? r.use === true : false);
+const STOCK_MODES = [["first", "البواقي الأول (توفّر ألواح)"], ["pick", "أنا أختار البواقي"], ["off", "من غير بواقي"]];
+const stockModeSel = (id) => `<label class="f"><span>البواقي من المخزن</span><select data-stockmode id="${id}">${STOCK_MODES.map(([k, l]) => `<option value="${k}" ${stockMode() === k ? "selected" : ""}>${l}</option>`).join("")}</select></label>`;
 /** cut settings always usable numbers (an empty or mistyped box used to put every part on its own sheet) */
 const CUT_DEF = { sheetW: 244, sheetH: 122, kerf: 0.4, trim: 1 };
 const CUT_OK = { sheetW: [50, 600], sheetH: [30, 400], kerf: [0, 1.5], trim: [0, 5] };
@@ -5539,7 +5545,7 @@ function runCut(after) {
   const { groups, outside } = cutGroups(state.project);
   const o = cutOptsSafe();
   const opts = { sheetW: +o.sheetW, sheetH: +o.sheetH, kerf: +o.kerf, trim: +o.trim };
-  for (const g of groups) { g.remnants = o.useStock === false ? [] : (state.stock?.[g.key]?.remnants || []).filter((r) => r.from !== state.project.id && +r.w > 0 && +r.h > 0).map((r) => [+r.w, +r.h]); g.sheet = groupSheet(g); }
+  for (const g of groups) { g.remnants = (state.stock?.[g.key]?.remnants || []).filter(remUsed).map((r) => [+r.w, +r.h]); g.sheet = groupSheet(g); }
   const key = JSON.stringify([groups.map((g) => [g.key, g.parts, g.remnants, g.sheet]), opts]);
   if (key === cutKey && cutData && !cutData.busy) { after ? after() : drawCut(); return; }
   cutKey = key;
@@ -5573,7 +5579,7 @@ function drawCut() {
   const el = $("#v-cut");
   const o = state.cutOpts;
   let h = `<div class="cuthead"><div><h2>خطة القص — ${esc(state.project.name)}</h2><p class="hint">كل خامة وسمك لوحدها، بنفس محرك القص بتاع البلاجن (قصات جيلوتين تتنفذ على المنشار).</p></div>
-    <div class="cutopts">${[["sheetW", "طول اللوح", 1], ["sheetH", "عرض اللوح", 1], ["kerf", "سلاح المنشار", 0.05], ["trim", "تشذيب الحرف", 0.5]].map(([k, l, s]) => `<label class="f"><span>${l}</span><input type="text" inputmode="decimal" data-numf step="${s}" data-co="${k}" value="${o[k]}"></label>`).join("")}</div></div>`;
+    <div class="cutopts">${[["sheetW", "طول اللوح", 1], ["sheetH", "عرض اللوح", 1], ["kerf", "سلاح المنشار", 0.05], ["trim", "تشذيب الحرف", 0.5]].map(([k, l, s]) => `<label class="f"><span>${l}</span><input type="text" inputmode="decimal" data-numf step="${s}" data-co="${k}" value="${o[k]}"></label>`).join("")}${stockModeSel("stockModeCut")}</div></div>`;
   if (!cutData || cutData.busy) { el.innerHTML = h + `<div class="busy"><span class="spin" aria-hidden="true"></span>بيحسب أحسن توزيع للقطع…</div>`; return; }
   const { groups, outside, results } = cutData;
   let sheets = 0, lb = 0;
@@ -5675,6 +5681,7 @@ $("#v-cut").addEventListener("click", async (e) => {
   }
 });
 $("#v-cut").addEventListener("change", (e) => {
+  if (e.target.hasAttribute?.("data-stockmode")) { state.cutOpts.stockMode = e.target.value; delete state.cutOpts.useStock; save(); runCut(); return; }
   if (e.target.id === "leftMin") { state.cutOpts ??= {}; state.cutOpts.leftMin = Math.max(5, toNum(e.target.value) || 30); save(); runCut(); return; }
   if (e.target.dataset.gsheet !== undefined) {
     const o = state.cutOpts; o.sheetFor ??= {};
@@ -5921,7 +5928,7 @@ $("#v-shop").addEventListener("change", (e) => {
   setTimeout(settingsPush, 0); // prices are account settings too
   const t = e.target;
   if (t.id === "labelFmt") { state.labelFmt = t.value; save(); return; }
-  if (t.id === "useStock") { state.cutOpts.useStock = t.checked; save(); runCut(() => drawShop()); return; }
+  if (t.hasAttribute?.("data-stockmode")) { state.cutOpts.stockMode = t.value; delete state.cutOpts.useStock; save(); runCut(() => drawShop()); return; }
   if (t.dataset.stsheets) { stockOf(t.dataset.stsheets).sheets = Math.max(0, Math.round(+t.value || 0)); save(); drawShop(); return; }
   const sk = t.dataset.stg || t.dataset.stgdate || t.dataset.stgby;
   if (sk) {
@@ -5954,6 +5961,11 @@ $("#v-shop").addEventListener("click", async (e) => {
   if (b.dataset.remadd) {
     const k = b.dataset.remadd, w = +document.querySelector(`[data-remw="${CSS.escape(k)}"]`)?.value, hh = +document.querySelector(`[data-remh="${CSS.escape(k)}"]`)?.value;
     if (w > 5 && hh > 5) { stockOf(k).remnants.push({ id: uid(), w, h: hh }); save(); runCut(() => drawShop()); }
+    return;
+  }
+  if (b.dataset.remtog) {
+    const [k, id] = b.dataset.remtog.split("|"), r = stockOf(k).remnants.find((x) => x.id === id);
+    if (r) { r.use = !remUsed(r); save(); runCut(() => drawShop()); }
     return;
   }
   if (b.dataset.remdel) { const [k, id] = b.dataset.remdel.split("|"); const st = stockOf(k); st.remnants = st.remnants.filter((r) => r.id !== id); save(); runCut(() => drawShop()); return; }
@@ -7868,7 +7880,8 @@ function stockHtml() {
   const P = priceDefaults();
   let h = `<section class="mgroup"><div class="mg-h"><h3>📦 المخزن والمشتريات</h3></div>
     <p class="hint">سجّل الألواح الكاملة والبواقي اللي عندك. خطة القص بتستخدم البواقي الأول${state.cutOpts.useStock === false ? " (مقفول دلوقتي)" : ""}، وبيطلعلك المحتاج تشتريه.</p>
-    <label class="f b"><input type="checkbox" id="useStock" ${state.cutOpts.useStock === false ? "" : "checked"}><span>استخدم البواقي في خطة القص</span></label>
+    <div class="grid2">${stockModeSel("stockModeShop")}</div>
+    <p class="hint">${stockMode() === "pick" ? "دوس على أي باقي يعلّم عليه ✓ عشان خطة القص تستخدمه — اللي مش متعلّم مش هيتلمس." : stockMode() === "first" ? "كل البواقي بتتستخدم الأول. دوس على باقي عشان تستبعده (بيبقى مشطوب)." : "خطة القص مش هتستخدم البواقي خالص — كله ألواح جديدة."}</p>
     <div class="tblwrap"><table class="tbl"><thead><tr><th>الخامة</th><th>محتاج</th><th>عندي ألواح</th><th>اشتري</th><th>البواقي</th></tr></thead><tbody>`;
   const buy = [];
   for (const g of cutData.groups) {
@@ -7878,7 +7891,7 @@ function stockHtml() {
     const b = Math.max(0, fullNeed - (+st.sheets || 0));
     if (b) buy.push([g.key, b, +P.sheets[g.key] || 0]);
     h += `<tr><td>${esc(g.key)}</td><td class="num">${fullNeed}</td><td><input class="pin" type="text" inputmode="decimal" data-numf min="0" inputmode="numeric" data-stsheets="${esc(g.key)}" value="${st.sheets || 0}"></td><td class="num"><b>${b}</b></td>
-      <td><div class="remlist">${st.remnants.map((r) => `<span class="rem">${r.w}×${r.h}<button data-remdel="${esc(g.key)}|${r.id}" aria-label="شيل">×</button></span>`).join("")}
+      <td><div class="remlist">${st.remnants.map((r) => { const own = r.from === state.project.id, on = remUsed(r); return `<span class="rem ${on ? "use" : "nouse"} ${own ? "own" : ""}"><button class="remtog" data-remtog="${esc(g.key)}|${r.id}" ${own || stockMode() === "off" ? "disabled" : ""} title="${own ? "باقي هيطلع من المشروع ده" : on ? "مستخدم — دوس تستبعده" : "مش مستخدم — دوس تستخدمه"}">${on ? "✓ " : ""}${r.w}×${r.h}${r.fromName && !own ? ` <small>${esc(r.fromName)}</small>` : own ? " <small>(من المشروع ده)</small>" : ""}</button><button data-remdel="${esc(g.key)}|${r.id}" aria-label="شيل">×</button></span>`; }).join("")}
       <span class="remadd"><input type="text" inputmode="decimal" data-numf placeholder="طول" data-remw="${esc(g.key)}"><input type="text" inputmode="decimal" data-numf placeholder="عرض" data-remh="${esc(g.key)}"><button class="ghost2" data-remadd="${esc(g.key)}">＋</button></span></div></td></tr>`;
     void need;
   }
