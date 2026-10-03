@@ -347,23 +347,26 @@ export class CarcassBuilder {
         const kh = this.kickH();
         const overlay = this.doorPosition() === "overlay";
         const edgeGap = overlay ? this.doorGapOverlay() : this.doorGapInset();
-        const fy0 = overlay ? -this.frontT() : 0;
-        const fy1 = overlay ? 0 : this.frontT();
+        // v191: the front can sit back from the doors' line (like the kick's setback)
+        const sb = cm(rmin(rmax(toF(this.p["toe_kick_drawer_setback"]), 0), rmax(toF(this.p["depth"]) - 25, 0)));
+        const fy0 = (overlay ? -this.frontT() : 0) + sb;
+        const fy1 = (overlay ? 0 : this.frontT()) + sb;
         const fx0 = overlay ? edgeGap : pt + edgeGap;
         const fx1 = overlay ? this.width() - edgeGap : this.width() - pt - edgeGap;
         const fz0 = this.kickDrawerFloorGap();
         const fz1 = kh + edgeGap - this.doorBottomExtension() - this.drawerGap();
-        if (fz1 - fz0 < cm(6.0) || fx1 - fx0 < cm(15.0) || this.width() <= 2 * pt) {
+        if (fz1 - fz0 < cm(6.0) || fx1 - fx0 < cm(15.0) || this.width() <= 4 * pt + cm(15.0)) {
             this.buildKick(e);
             return;
         }
         const L = this.ctx.labels;
         const ug = this.unitGroupName();
-        // the two plinth runners (same line as the sides) carry the slides
-        const ry0 = overlay ? 0 : fy1;
-        for (const [nm, x0] of [["جنب سكلو شمال", 0], ["جنب سكلو يمين", this.width() - pt]]) {
+        // the two plinth runners stand under the bottom, just inside the sides: they carry the slides and are
+        // fixed to the bottom with aleta (carcass layer → the joint system drills them like any carcass joint)
+        const ry0 = (overlay ? 0 : fy1 - sb) + sb;
+        for (const [nm, x0] of [["جنب سكلو شمال", pt], ["جنب سكلو يمين", this.width() - 2 * pt]]) {
             const k = createBox(this.ctx, e, nm, x0, ry0, 0, x0 + pt, this.depth(), kh, this.carcassMaterial());
-            assignLayer(this.ctx, k, TAGS.kick);
+            assignLayer(this.ctx, k, TAGS.carcass);
             L.add(this.unitId, ug, nm, this.depth() - ry0, kh, pt, { banded: { ...NO_BAND }, material: this.carcassMaterialName() });
         }
         const label = "درج وزرة";
@@ -377,7 +380,7 @@ export class CarcassBuilder {
         this.recordDoorLabel(label, fx0, fx1, fz0, fz1, null);
         // the plinth drawer always gets its box (a front alone is no drawer); its depth can be set on its own
         const kd = toF(this.p["toe_kick_drawer_depth"]);
-        this.buildDrawerBox(sub, pt, this.width() - pt, fy1, fz0, rmax(kh - cm(0.5), fz0 + cm(2.0)), label, kd > 0 ? cm(kd) : null);
+        this.buildDrawerBox(sub, 2 * pt, this.width() - 2 * pt, fy1, fz0, rmax(kh - cm(0.5), fz0 + cm(2.0)), label, kd > 0 ? cm(kd) : null);
         tagDrawerSlide(group, this.drawerSlideBase());
     }
     // ---------------------------------------------------------------- sides

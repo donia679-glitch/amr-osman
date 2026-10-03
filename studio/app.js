@@ -2006,7 +2006,7 @@ function kickDrawerSection(p) {
   const on = !!p.toe_kick_drawer, fh = kickFrontOf(p);
   return `<details open><summary>درج الوزرة</summary><div class="bools">${boolF("toe_kick_drawer", "درج مكان الوزرة (السكلو)", on)}</div>
     ${on ? `<div class="grid2">${numF("__kickfront", "ارتفاع وش الدرج", fh, 0.5)}${numF("toe_kick_height", "ارتفاع السكلو كله", p.toe_kick_height, 0.5)}
-      ${numF("toe_kick_drawer_depth", "عمق علبة الدرج (0 = تلقائي)", p.toe_kick_drawer_depth ?? 0, 1)}${numF("toe_kick_drawer_floor_gap", "خلوص عن الأرض", p.toe_kick_drawer_floor_gap ?? 1, 0.1)}</div>
+      ${numF("toe_kick_drawer_setback", "رجوع الوش لورا (زي رجوع السكلو)", p.toe_kick_drawer_setback ?? 0, 0.5)}${numF("toe_kick_drawer_depth", "عمق علبة الدرج (0 = تلقائي)", p.toe_kick_drawer_depth ?? 0, 1)}${numF("toe_kick_drawer_floor_gap", "خلوص عن الأرض", p.toe_kick_drawer_floor_gap ?? 1, 0.1)}</div>
       <p class="hint">العرض = عرض الوحدة. لما تكبّر وش الدرج، السكلو والوحدة كلها بتعلى معاه (الكونتر بيعلى). ${fh < 6 ? `<b class="danger">الوش أقل من 6 سم — هيتعمل سكلو عادي بدل الدرج. كبّر السكلو.</b>` : ""}</p>` : `<p class="hint">درج واطي مكان السكلو، وشه على مستوى الضلف — مكان زيادة للصواني والحاجات المسطحة.</p>`}</details>`;
 }
 function kitchenProps(p) {
@@ -5772,6 +5772,7 @@ function asmStep(name, role) {
   const n = String(name || "");
   const tail = n.split(" - ").pop();
   if (role === "drawer_box" || role === "drawer_bottom" || role === "drawer_front" || /درج/.test(n)) return 5;
+  if (/^جنب سكلو/.test(n)) return 0; // the plinth drawer's runners go under the bottom with the carcass
   if (/سكلو|وزرة|كونتر|مقبض|شماعة|ليد|تقفيلة|أورزة|كليت|رجل بلاستيك|برواز ألومنيوم/.test(n) || role === "led" || role === "handle" || role === "plinth") return 7;
   if (role === "door" || role === "mirror" || /ضلفة|باب|مراية/.test(n)) return 6;
   if (role === "back" || /ظهر|ضهر/.test(tail)) return 3;
@@ -5787,6 +5788,11 @@ function asmPlan(u) {
   const codes = partCodes(u, r);
   const steps = ASM_STEPS.map((s, i) => ({ ...s, i, pieces: [], hardware: [] }));
   for (const pt of r.parts) if (pt.cut_piece && pt.label) steps[asmStep(pt.name, pt.role)].pieces.push({ code: codes.get(pt), name: pt.name, lb: pt.label });
+  if (r.parts.some((pt) => /^جنب سكلو/.test(pt.name))) {
+    const kp = r.params || {};
+    steps[0].d += ` درج الوزرة: ثبّت جنبي السكلو تحت القاعدة من جوه الأجناب بالأليتا (الأخرام متعلّمة)، على بعد ${n1(+kp.toe_kick_drawer_setback || 0)} سم من قدام.`;
+    steps[5].d += ` درج الوزرة: المجرى بيتركب على جنبي السكلو من جوه، على ارتفاع قاعدة صندوقه من الأرض (في جدول مقاسات التركيب)، والوش بيتظبط على خلوص ${n1(+(kp.toe_kick_drawer_floor_gap ?? 1))} سم من الأرض.`;
+  }
   for (const [k, v] of Object.entries(r.hardware || {})) {
     const st = steps.find((s) => s.hw?.test(k)) || steps[7];
     st.hardware.push([k, v]);
@@ -5854,6 +5860,9 @@ function partClass(name, role) {
   let cls = "other";
   if (e.role === "led" || /ليد/.test(tail)) cls = "led";
   else if (/مقبض/.test(tail) || e.role === "handle") cls = "handle";
+  else if (/^درج وزرة$/.test(tail) && !n.includes(" - ")) cls = "drawer"; // the plinth drawer: front …
+  else if (/^درج وزرة - /.test(n)) cls = "drawerBox"; // … and its box
+  else if (/^جنب سكلو/.test(tail)) cls = "other"; // its runners: part of the carcass
   else if (/وزرة|سكلو/.test(n) || e.role === "plinth") cls = "plinth";
   else if (/كونتر/.test(n)) cls = "counter";
   else if (/^درج \d+$/.test(tail) || e.role === "drawer_front" || (e.role === "door" && /درج/.test(tail))) cls = "drawer";
@@ -5912,7 +5921,7 @@ function asmLayout(u) {
       bottom: r1(e.z0 - ref), top: r1(e.z1 - ref), gapBelow: lo === null ? null : r1(e.z0 - lo), gapAbove: hi === null ? null : r1(hi - e.z1), floor: r1(e.z0), e };
   });
   const drawers = E.filter((e) => e.cls === "drawer").sort((a, b) => a.x0 - b.x0 || a.z0 - b.z0).map((e) => {
-    const ref = refOf(e);
+    const ref = /^درج وزرة/.test(e.name) ? 0 : refOf(e); // the plinth drawer is measured from the floor
     const box = E.filter((x) => x.cls === "drawerBox" && (e.group ? x.group === e.group : x.name.startsWith(e.name + " - ")));
     const side = box.find((x) => /جنب/.test(x.tail)) || box[0];
     const depth = side ? side.y1 - side.y0 : 0;
@@ -6006,7 +6015,7 @@ function layoutTables(L, step = null) {
   const fixed = L.shelves.filter((s) => s.fixed), loose = L.shelves.filter((s) => !s.fixed);
   if (want(2) && fixed.length) h += `<h4 class="advh">الأرفف الثابتة</h4>` + t(["القطعة", "تحت الرف", "فوق الرف", "الفراغ تحته"], fixed.map((s) => [nm(s), `${n1(s.bottom)}`, `${n1(s.top)}`, s.gapBelow === null ? "—" : n1(s.gapBelow)]));
   if (want(4) && loose.length) h += `<h4 class="advh">ارتفاعات الأرفف — الفرش تحت الرف على</h4>` + t(["القطعة", "تحت الرف", "فوق الرف", "الفراغ تحته", "الفراغ فوقه"], loose.map((s) => [nm(s), `<b>${n1(s.bottom)}</b>`, n1(s.top), s.gapBelow === null ? "—" : n1(s.gapBelow), s.gapAbove === null ? "—" : n1(s.gapAbove)]));
-  if (want(5) && L.drawers.length) h += `<h4 class="advh">الأدراج — المجرى وتحت الصندوق على</h4>` + t(["الدرج", "المجرى على", "الصندوق", "المجرى"], L.drawers.map((d) => [nm(d) + `<small class="blk">الوش ${n1(d.f0)} ← ${n1(d.f1)}</small>`, d.run === null ? "—" : `<b>${n1(d.run)}</b>`, d.bh === null ? "—" : `${n1(d.bh)}×${n1(d.depth)}`, d.slide ? `${d.slide} سم` : "—"]));
+  if (want(5) && L.drawers.length) h += `<h4 class="advh">الأدراج — المجرى وتحت الصندوق على</h4>` + t(["الدرج", "المجرى على", "الصندوق", "المجرى"], L.drawers.map((d) => [nm(d) + `<small class="blk">${/^درج وزرة/.test(d.name) ? "من الأرض · " : ""}الوش ${n1(d.f0)} ← ${n1(d.f1)}</small>`, d.run === null ? "—" : `<b>${n1(d.run)}</b>`, d.bh === null ? "—" : `${n1(d.bh)}×${n1(d.depth)}`, d.slide ? `${d.slide} سم` : "—"]));
   if (want(6) && L.doors.length) h += `<h4 class="advh">الضلف والمفصلات</h4>` + t(["الضلفة", "المقاس", "من تحت على", "المفصلات", "أماكن الكبب"], L.doors.map((d) => [nm(d), `${n1(d.h)} × ${n1(d.w)}`, n1(d.z0), d.side ? SIDE_AR[d.side] || d.side : "—",
     d.hinges.length ? `${d.hinges.map(n1).join(" · ")}<small> ${d.side === "top" ? "من الشمال" : "من تحت"} · ${n1(d.edge)} من الحرف${d.sugg ? " · مقترح" : ""}</small>` : "—"]));
   if (want(7) && L.rails.length) h += `<h4 class="advh">الشماعات</h4>` + t(["القطعة", "الارتفاع", "من الأرض", "بعدها عن الظهر"], L.rails.map((r) => [esc(r.name), `<b>${n1(r.z)}</b>`, n1(r.floor), n1(r.back)]));
