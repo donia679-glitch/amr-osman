@@ -1106,6 +1106,8 @@ function commitPush(d) {
     ui.sel.clear(); ui.sel.add("s:" + s.id);
   });
   overlay();
+  const big = M.solids.find((x) => ui.sel.has("s:" + x.id) && !G.isBoard(x));
+  if (big) setMsg(`ده بقى مجسّم سمكه ${f1(big.depth)} سم مش لوح (مش هيدخل القص) — لو دي حيطة دوس «🧱 حوّله حيطة» من الجنب أو ارسمها بأداة «حيطة»`);
 }
 /** cut a loop all the way through a board: a hole when inside, a notch / split when it crosses the edge */
 function cutThrough(s, loop) {
@@ -1700,7 +1702,7 @@ function sideHtml() {
     const s = solids[0], bs = G.boardSize(s), bx = G.solidBox(s);
     h += `<div class="dsbox"><input class="dsin" data-sp="name" value="${esc(s.name)}" aria-label="اسم اللوح">
       <div class="dsrow"><span>المقاس</span><b dir="ltr">${f1(bs.w)} × ${f1(bs.h)} × ${f1(s.depth)}</b></div>
-      ${G.isBoard(s) ? "" : `<p class="hint">ده مجسّم مش لوح (سمكه أكتر من 6 سم) — هيتحسب قطعة لكن مش هيتقص من لوح.</p>`}
+      ${G.isBoard(s) ? "" : `<p class="hint">ده مجسّم مش لوح (سمكه أكتر من 6 سم) — بيظهر في الرسم بس ومش بيدخل القص.</p><button class="dsb primary" data-ds="towall">🧱 حوّله حيطة</button>`}
       <div class="dsgrid">
         <label><span>السمك</span><input type="text" inputmode="decimal" data-numf data-sp="depth" value="${f1(s.depth)}"></label>
         <label><span>س</span><input type="text" inputmode="decimal" data-numf data-sp="x" value="${f1(bx.x0)}"></label>
@@ -1819,6 +1821,7 @@ function onClick(e) {
     case "facepush": faceAction("push"); break;
     case "face2dsel": faceAction("2d"); break;
     case "snapmenu": snapMenu(); break;
+    case "towall": solidToWall(selSolids()[0]); break;
     case "selnone": ui.sel.clear(); ui.editGroup = null; rebuild(); renderUI(); break;
     case "selinv": invertSel(); break;
     case "selmat": selSameMat(); break;
@@ -2721,4 +2724,29 @@ function roomChange(t) {
       else if ((d.rp === "at" || d.rp === "z") && isFinite(num) && num >= 0) e[d.rp] = num;
     }
   });
+}
+
+/** a thick block drawn by hand (rectangle + push/pull) → a real wall of the room */
+function solidToWall(sd) {
+  if (!sd) return;
+  const b = G.solidBox(sd), dx = b.x1 - b.x0, dy = b.y1 - b.y0, h = Room.r1(b.z1);
+  const alongX = dx >= dy, t = Room.r1(alongX ? dy : dx);
+  if (t > 60 || h < 10) { setMsg("الشكل ده مش شبه حيطة — ارسمها بأداة «حيطة»"); return; }
+  // the inner face is the room side; the thickness grows outwards (same rule as the room's walls)
+  const A = alongX ? [Room.r1(b.x0), Room.r1(-b.y0)] : [Room.r1(b.x1), Room.r1(-b.y0)];
+  const B = alongX ? [Room.r1(b.x1), Room.r1(-b.y0)] : [Room.r1(b.x1), Room.r1(-b.y1)];
+  const r = M.room?.pts?.length >= 2 ? M.room : null;
+  const near = (p, q) => Math.hypot(p[0] - q[0], p[1] - q[1]) < 20;
+  if (r && (r.closed || ![r.pts[0], r.pts.at(-1)].some((e) => near(e, A) || near(e, B)))) { setMsg("فيه حيطان تانية مش لازقة فيها — ارسم دي بأداة «حيطة» من طرف الحيطان الموجودة"); return; }
+  edit(() => {
+    const meta = Room.newWallMeta(t, h);
+    if (!r) M.room = { pts: [A, B], closed: false, walls: [meta], openings: [], points: [], columns: [] };
+    else if (near(r.pts.at(-1), A)) { r.pts.push(B); r.walls.push(meta); }
+    else if (near(r.pts.at(-1), B)) { r.pts.push(A); r.walls.push(meta); }
+    else if (near(r.pts[0], B)) { r.pts.unshift(A); r.walls.unshift(meta); }
+    else { r.pts.unshift(B); r.walls.unshift(meta); }
+    M.solids = M.solids.filter((x) => x !== sd); ui.sel.clear();
+    const w = M.room.walls.find((x) => x.id === meta.id); if (w) ui.rsel = { ref: "W:" + w.id, kind: "W", id: w.id };
+  });
+  setMsg("اتحوّلت حيطة ✓ — اتأكد من ناحية السمك («السمك للناحية التانية» لو محتاج)");
 }

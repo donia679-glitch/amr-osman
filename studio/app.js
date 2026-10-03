@@ -591,7 +591,9 @@ function adaptModel(u) {
   const fail = (e) => ({ kind: "panel", ok: false, errors: [e], warnings: [], notes: [], params: u.params, parts: [], checks: [] });
   if (!(m.solids || []).length && !(m.sweeps || []).length) return fail("الرسمة فاضية — افتحها في ورشة الرسم وارسم ألواح.");
   const off = modelOffset(m);
-  const S = (m.solids || []).map((s) => ({ ...s, plane: { ...s.plane, o: DG.add(s.plane.o, off) } }));
+  const ALL = (m.solids || []).map((s) => ({ ...s, plane: { ...s.plane, o: DG.add(s.plane.o, off) } }));
+  // thick blocks (a wall, a plinth block, a counter…) aren't boards: they show in the model but never go to the cut list
+  const S = ALL.filter((s) => DG.isBoard(s)), blocks = ALL.filter((s) => !DG.isBoard(s));
   const panels = S.map((s, i) => {
     const b = DG.solidBox(s), ax = axisOf(DG.nOf(s.plane));
     const role = s.mat === "back" ? "back" : ax === 2 ? "horizontal" : ax === 0 ? "side" : ax === 1 && s.mat === "front" ? "door" : "other";
@@ -637,6 +639,10 @@ function adaptModel(u) {
     return out;
   });
   const hardware = { ...(base.hardware || {}) };
+  blocks.forEach((s, i) => {
+    const faces = DG.solidFaces(s), b = DG.solidBox(s);
+    parts.push({ id: 94000 + i, name: s.name || `مجسّم ${i + 1}`, role: "solid", material: s.mat || "carcass", cut_piece: false, label: null, box: b, shape: { type: "faces", faces: faces.map((f) => ({ n: f.n, outer: f.outer, holes: f.holes, mat: s.mat })) }, holes: [], checks: [`🧱 مجسّم سمكه ${n1(s.depth)} سم — بيظهر في الرسم بس ومش بيدخل القص (للحيطان استعمل أداة «حيطة» في ورشة الرسم)`] });
+  });
   (m.sweeps || []).forEach((w, i) => {
     const path = w.path.map((P) => DG.add(P, off));
     const faces = DG.sweepFaces(w.profile, path, w.closed);

@@ -4078,5 +4078,17 @@
 "🧱 ارسمها 3D في ورشة الرسم": "🧱 Draw them in 3D in the Drawing Studio",
 "اتحفظت الحيطان ✓ — بقت حيطان المشروع في المسقط والواجهات والـ3D": "Walls saved ✓ — they are now the project's walls in the floor plan, elevations and 3D",
 "اتحفظ التصميم والحيطان ✓ — الألواح في القص والملصقات، والحيطان في المسقط": "Design and walls saved ✓ — the boards are in the cutting list and labels, the walls in the floor plan",
-"💾 احفظ واقفل": "💾 Save and close"
+"💾 احفظ واقفل": "💾 Save and close",
+"اتأكد من ناحية السمك («السمك للناحية التانية» لو محتاج)": "check the thickness side («Thickness on the other side» if needed)",
+"اتحوّلت حيطة": "Turned into a wall",
+"الشكل ده مش شبه حيطة — ارسمها بأداة «حيطة»": "This shape isn't like a wall — draw it with the «Wall» tool",
+"حوّله حيطة": "Turn into a wall",
+"حوّله حيطة» من الجنب أو ارسمها بأداة «حيطة»": "Turn into a wall» in the side panel or draw it with the «Wall» tool",
+"ده بقى مجسّم سمكه": "This is now a block",
+"سم مش لوح (مش هيدخل القص) — لو دي حيطة دوس": "cm thick, not a board (it won't go to cutting) — if it's a wall tap",
+"سم — بيظهر في الرسم بس ومش بيدخل القص (للحيطان استعمل أداة «حيطة» في ورشة الرسم)": "cm — shown in the model only, not in the cutting list (for walls use the «Wall» tool in the Drawing Studio)",
+"سم) — بيظهر في الرسم بس ومش بيدخل القص.": "cm) — shown in the model only, not in the cutting list.",
+"فيه حيطان تانية مش لازقة فيها — ارسم دي بأداة «حيطة» من طرف الحيطان الموجودة": "There are other walls not touching it — draw this one with the «Wall» tool from an end of the existing walls",
+"مجسّم": "Block",
+"مجسّم سمكه": "Block, thickness"
 }
