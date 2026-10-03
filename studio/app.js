@@ -672,7 +672,7 @@ function openStudio(u, extra = {}) {
     matName: (k) => PANEL_MATS[k] || k,
     onDone: (model, name, x = {}) => {
       // walls, doors, windows and MEP points drawn in the studio are the project's room
-      if (x.roomChanged) state.project.room = x.room && x.room.pts?.length >= 2 ? x.room : null;
+      if (x.roomChanged) { state.project.room = x.room && x.room.pts?.length >= 2 ? x.room : null; if (state.project.room) { state.whole = true; ui.planOn = false; plan.vb = null; } }
       const empty = !model.solids.length && !model.sweeps.length && !model.sketches.length;
       if (u && state.project.units.includes(u)) { u.params = { ...u.params, model, template: "free" }; u.name = name || u.name; }
       else if (!empty) { const nu = { id: uid(), kind: "panel", name: name || "تصميم حر", params: { template: "free", model, materials: {} } }; state.project.units.push(nu); state.sel = nu.id; }
