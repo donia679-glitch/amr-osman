@@ -25,6 +25,15 @@ function words(run) {
   }
   return out.join(" ");
 }
+// "10 Part" → "10 parts" (Arabic counts its nouns in the singular after 11+)
+const PL = { part: "parts", unit: "units", door: "doors", drawer: "drawers", sheet: "sheets", wall: "walls", board: "boards", shelf: "shelves", point: "points", piece: "pieces", hole: "holes", copy: "copies", leaf: "leaves", item: "items", week: "weeks", day: "days", month: "months", year: "years", project: "projects", panel: "panels", hinge: "hinges", handle: "handles", offcut: "offcuts", label: "labels", cut: "cuts", side: "sides", window: "windows" };
+function plural(s) {
+  return s.replace(/(^|[^\w.])(\d+(?:[.,]\d+)?)(\s+(?:\/\s*\d+\s+)?)([A-Z]?[a-z]+)\b/g, (m, pre, n, sp, w) => {
+    const k = w.toLowerCase(), p = PL[k];
+    if (!p || +n.replace(",", ".") === 1) return m;
+    return pre + n + sp + (w[0] === w[0].toUpperCase() && sp.includes("/") ? p : p);
+  });
+}
 /** translate one string (Arabic → English); returns it unchanged in Arabic mode */
 export function tr(s) {
   if (!dict || s == null) return s;
@@ -36,11 +45,14 @@ export function tr(s) {
   let out;
   if (dict[t0] != null) out = s.replace(t0, dict[t0]);
   else {
-    out = s.replace(/(\d[\d:٠-٩]*)\s*م(?=$|\s|[^؀-ۿ])/g, "$1 PM").replace(/(\d[\d:٠-٩]*)\s*ص(?=$|\s|[^؀-ۿ])/g, "$1 AM");
+    // clock times only (10:30 م) — a bare "م" after a number is metres (2.7 م², 11.6 م شريط)
+    out = s.replace(/([0-9٠-٩]{1,2}:[0-9٠-٩]{2})\s*م(?![؀-ۿ²])/g, "$1 PM").replace(/([0-9٠-٩]{1,2}:[0-9٠-٩]{2})\s*ص(?![؀-ۿ])/g, "$1 AM");
+    // "وPDF" / "عبرQR": an Arabic word glued to a Latin one
+    out = out.replace(/(^|[\s(])و(?=[A-Za-z])/g, "$1and ").replace(/([؀-ۿ])([A-Za-z])/g, "$1 $2").replace(/([A-Za-z])([؀-ۿ])/g, "$1 $2");
     out = out.replace(RUN, (r) => { const k = r.trim(); return dict[k] ?? words(k); });
     out = out.replace(/[،]/g, ",").replace(/؛/g, ";").replace(/؟/g, "?").replace(/[«»]/g, '"');
   }
-  out = digits(out).replace(/←/g, "→");
+  out = plural(digits(out).replace(/←/g, "→"));
   if (cache.size > 20000) cache.clear();
   cache.set(s, out);
   return out;
@@ -48,7 +60,9 @@ export function tr(s) {
 /** text inside markup (an SVG page, an HTML document) — tags and attributes other than visible text stay */
 export function trMarkup(m) {
   if (!dict) return m;
-  return String(m).replace(/>([^<]+)</g, (a, t) => ">" + tr(t) + "<").replace(/(aria-label|title|placeholder|alt)="([^"]*)"/g, (a, k, v) => `${k}="${tr(v).replace(/"/g, "&quot;")}"`);
+  // translations can bring a bare & or < (e.g. "Warranty & maintenance") — keep the markup valid
+  const safe = (t) => t.replace(/&(?!#?\w+;)/g, "&amp;").replace(/</g, "&lt;");
+  return String(m).replace(/>([^<]+)</g, (a, t) => ">" + safe(tr(t)) + "<").replace(/(aria-label|title|placeholder|alt)="([^"]*)"/g, (a, k, v) => `${k}="${safe(tr(v)).replace(/"/g, "&quot;")}"`);
 }
 const ATTRS = ["placeholder", "title", "aria-label", "alt"];
 const SKIP = new Set(["SCRIPT", "STYLE", "TEXTAREA", "CODE"]);

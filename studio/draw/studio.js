@@ -144,7 +144,7 @@ function build() {
       <button class="dsb primary" data-ds="done">✓ خلصت</button><button class="dsb" data-ds="cancel" title="اقفل من غير حفظ">✕</button>
       <input class="dsname" id="dsName" aria-label="اسم التصميم">
       <span class="dsgrp"><button class="dsb" data-ds="undo" title="تراجع">↶</button><button class="dsb" data-ds="redo" title="إعادة">↷</button></span>
-      <span class="dsgrp dsviews"><button class="dsb" data-view="iso" title="منظور">⬢</button><button class="dsb" data-view="top" title="من فوق">فوق</button><button class="dsb" data-view="front" title="من قدام">قدام</button><button class="dsb" data-view="right" title="من الجنب">جنب</button><button class="dsb" data-view="back" title="من ورا">ورا</button><button class="dsb" data-ds="zoomx" title="شوف الكل">⤢</button><button class="dsb" data-ds="ortho" title="منظور / مسطّح">⊡</button></span>
+      <span class="dsgrp dsviews"><button class="dsb primary" data-ds="home" title="رجّع الكاميرا للوضع الأساسي">🏠</button><button class="dsb" data-view="iso" title="منظور">⬢</button><button class="dsb" data-view="top" title="من فوق">فوق</button><button class="dsb" data-view="front" title="من قدام">قدام</button><button class="dsb" data-view="right" title="من الجنب">جنب</button><button class="dsb" data-view="back" title="من ورا">ورا</button><button class="dsb" data-view="left" title="من الشمال">شمال</button><button class="dsb" data-ds="zoomx" title="شوف الكل">⤢</button><button class="dsb" data-ds="ortho" title="منظور / مسطّح">⊡</button></span>
       <span class="dsgrp"><button class="dsb" data-ds="xray" title="شفاف">◐</button><button class="dsb" data-ds="section" title="قطاع">✂</button><button class="dsb" data-ds="panel" title="اللوحة الجانبية">☰</button><button class="dsb" data-ds="help" title="شرح">؟</button></span>
     </header>
     <div class="dsmain">
@@ -1567,14 +1567,15 @@ function edit(fn) {
 }
 function undo() { if (!hist.u.length) return; hist.r.push(JSON.stringify(M)); M = JSON.parse(hist.u.pop()); ui.st = null; ui.sel.clear(); ui.rsel = null; rebuild(); overlay(); renderUI(); }
 function redo() { if (!hist.r.length) return; hist.u.push(JSON.stringify(M)); M = JSON.parse(hist.r.pop()); ui.st = null; ui.sel.clear(); ui.rsel = null; rebuild(); overlay(); renderUI(); }
-function cancelStep() { restoreRoomDrag(); ui.st = null; overlay(); vcbSet(""); }
+function vcbNormal() { const i = el?.querySelector("#dsVcb"); if (i && !i.hasAttribute("data-keypad")) { i.setAttribute("data-keypad", ""); i.placeholder = "—"; } }
+function cancelStep() { restoreRoomDrag(); ui.st = null; vcbNormal(); overlay(); vcbSet(""); }
 function delSel() { if (ui.rsel) { const r = ui.rsel.ref; edit(() => delRoomRef(r)); return; } if (!ui.sel.size) return; edit(() => { for (const r of [...ui.sel]) delEnt(r); ui.sel.clear(); }); }
 function setTool(t) {
   if (ui.tool === "text" && ui.st) TOOL.text.raw("");
   if (ui.tool === "line" && ui.st?.wpts?.length >= 2) finishLine(false);
   if (ui.tool === "wall" && ui.st?.wpts?.length >= 2) finishWall(false);
   restoreRoomDrag();
-  ui.tool = t; ui.st = null;
+  ui.tool = t; ui.st = null; vcbNormal();
   overlay(); applyControls(); vcbSet("", "المقاس"); renderLabelsList();
   if (t === "wall" && !M.room && !M.solids.length && !M.sketches.length) setView("top", 900);
   if (t === "wall" && !M.room) setMsg("دوس أول ركن على الأرض، وبعدين كل ركن — أو اكتب الطول بعد ما تحدد الاتجاه");
@@ -1793,6 +1794,7 @@ function onClick(e) {
     case "undo": undo(); break;
     case "redo": redo(); break;
     case "zoomx": zoomExtents(); break;
+    case "home": if (ui.face2d) { ui.face2d = null; ui.plane = "auto"; applyControls(); } ui.section = null; if (ui.ortho) { ui.ortho = false; swapCam(); } setView("iso"); rebuild(); renderUI(); break;
     case "ortho": ui.ortho = !ui.ortho; swapCam(); renderUI(); break;
     case "xray": ui.xray = !ui.xray; rebuild(); renderUI(); break;
     case "section": ui.section = ui.section == null ? 2 : ui.section === 2 ? 0 : ui.section === 0 ? 1 : null; if (ui.section != null) { const b0 = modelBox(); const c = b0.getCenter(new THREE.Vector3()); ui.secPos = [c.x, -c.z, c.y][ui.section]; const r = el.querySelector("#dsSecPos"); r.value = ui.secPos; } rebuild(); renderUI(); setMsg(ui.section == null ? "" : `قطاع على المحور ${AXN[ui.section]} — حرّك المؤشر`); break;

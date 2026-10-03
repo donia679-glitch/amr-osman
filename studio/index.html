@@ -7,7 +7,7 @@
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <style>html,body{margin:0;padding:0}body{min-height:100vh;min-height:100dvh}</style>
-<script>window.NOVERA_BUILD = "2026-10-03 20:04";</script>
+<script>window.NOVERA_BUILD = "2026-10-03 20:45";</script>
 </head>
 <body>
 <meta charset="utf-8">
@@ -543,6 +543,11 @@ body.guest .ghost { display: none; }
 .vctl { position: absolute; bottom: 10px; inset-inline-end: 10px; z-index: 2; display: flex; gap: 4px; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 4px; box-shadow: 0 3px 10px rgba(0,0,0,.15); }
 .vctl button { min-width: 44px; height: 44px; border: 0; border-radius: 10px; background: var(--panel2); font-size: 18px; font-weight: 700; color: var(--ink); }
 .vctl button[data-vp="top"], .vctl button[data-vp="front"] { font-size: 13px; padding: 0 8px; }
+.vcube { position: absolute; top: 64px; inset-inline-end: 10px; z-index: 2; display: flex; flex-direction: column; gap: 3px; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 4px; box-shadow: 0 3px 10px rgba(0,0,0,.15); }
+.vcube button { width: 58px; height: 46px; border: 0; border-radius: 10px; background: var(--panel2); color: var(--ink); font-size: 17px; line-height: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; padding: 0; }
+.vcube button small { font-size: 10.5px; font-weight: 700; }
+.vcube .vhome { background: var(--brand); color: #fff; }
+body.ptrun .vcube { display: none; }
 .vctl .vmode { display: inline-flex; gap: 2px; background: var(--panel2); border-radius: 10px; padding: 2px; margin-inline-end: 4px; }
 .vctl .vmode[hidden] { display: none; }
 .vctl .vmode button { font-size: 13px; padding: 0 10px; min-width: 0; height: 40px; background: transparent; }
@@ -659,6 +664,7 @@ body.fs #views { position: fixed; inset: 0; z-index: 10; }
   .libbtn { width: 54px; height: 46px; font-size: 11px; }
   .uchip { min-height: 46px; padding: 4px 10px; max-width: 160px; }
   .vctl { bottom: 6px; inset-inline-end: 6px; gap: 2px; padding: 3px; }
+  .vcube { top: auto; bottom: 54px; inset-inline-end: 6px; flex-direction: row; padding: 3px; gap: 2px; } .vcube button { width: 44px; height: 40px; font-size: 14px; } .vcube button small { font-size: 9px; }
   .vctl button { min-width: 36px; height: 36px; font-size: 16px; }
   .vctl button[data-vp="top"], .vctl button[data-vp="front"] { font-size: 11.5px; padding: 0 5px; }
   .vctl .vmode button { font-size: 11.5px; padding: 0 6px; height: 32px; }
@@ -842,6 +848,7 @@ body.indraw { overflow: hidden; }
 .dsbar, .dsfoot { display: flex; align-items: center; gap: 6px; padding: 6px 10px; background: var(--panel); border-bottom: 1px solid var(--line); overflow-x: auto; scrollbar-width: none; }
 .dsfoot { border-bottom: 0; border-top: 1px solid var(--line); padding-bottom: max(6px, env(safe-area-inset-bottom)); flex-wrap: wrap; }
 .dsbar::-webkit-scrollbar { display: none; }
+@media (max-width: 1000px) { .dsbar { flex-wrap: wrap; overflow-x: visible; row-gap: 4px; } .dsbar .dsname { flex: 1 1 120px; min-width: 100px; } }
 .dsb { flex: none; min-width: 38px; height: 38px; padding: 0 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel2); color: var(--ink); font: inherit; font-size: 13.5px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; gap: 4px; cursor: pointer; }
 .dsb:disabled { opacity: .4; }
 .dsb.on { background: var(--brand); color: #fff; border-color: transparent; }
@@ -858,7 +865,7 @@ body.indraw { overflow: hidden; }
 .dstg small { grid-column: 1 / -1; color: var(--muted); font-size: 10.5px; font-weight: 700; padding: 0 2px; }
 .dst { width: 50px; height: 50px; border-radius: 12px; border: 1px solid var(--line); background: var(--panel2); color: var(--ink); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; padding: 2px; font: inherit; cursor: pointer; }
 .dst span { font-size: 19px; line-height: 1; }
-.dst em { font-style: normal; font-size: 9.5px; color: var(--muted); white-space: nowrap; overflow: hidden; max-width: 46px; text-overflow: ellipsis; }
+.dst em { font-style: normal; font-size: 9px; line-height: 1.05; color: var(--muted); white-space: normal; text-align: center; overflow: hidden; max-width: 48px; max-height: 2.2em; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; word-break: break-word; }
 .dst.on { background: var(--brand); border-color: transparent; color: #fff; } .dst.on em { color: #fff; }
 .dsview { position: relative; min-width: 0; min-height: 0; overflow: hidden; touch-action: none; }
 .dscanvas { display: block; width: 100%; height: 100%; touch-action: none; }

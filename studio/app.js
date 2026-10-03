@@ -586,6 +586,8 @@ function modelOffset(m) {
   for (const w of m.sweeps || []) for (const P of w.path) for (let i = 0; i < 3; i++) lo[i] = Math.min(lo[i], P[i]);
   return lo.map((v) => (isFinite(v) ? -v : 0));
 }
+/** a stored (Arabic) text shown inside an input: translated in English mode (input values aren't translated by the page layer) */
+const trv = (v) => (I18n.isEn() ? I18n.tr(v) : v);
 function adaptModel(u) {
   const m = u.params.model || {};
   const fail = (e) => ({ kind: "panel", ok: false, errors: [e], warnings: [], notes: [], params: u.params, parts: [], checks: [] });
@@ -711,7 +713,7 @@ function piecesProps(u) {
   return `<details open><summary>القطع (${rows.length} صنف · ${total} قطعة)</summary>
     <p class="hint">المقاسات بالسم. الطول هو اتجاه الألياف. علّم على الحروف اللي عليها شريط: ط١ ط٢ = حرفين الطول، ع١ ع٢ = حرفين العرض.</p>
     <div class="pcs">${rows.map((r, i) => `<div class="pcrow" data-pi="${i}">
-      <div class="pchead"><b class="num">${i + 1}</b><input data-pf="name" value="${esc(r.name || "")}" placeholder="اسم القطعة (جنب، رف، باب…)"><button class="danger sm" data-pdel="${i}" aria-label="امسح القطعة">${ICON.trash}</button></div>
+      <div class="pchead"><b class="num">${i + 1}</b><input data-pf="name" value="${esc(trv(r.name || ""))}" placeholder="اسم القطعة (جنب، رف، باب…)"><button class="danger sm" data-pdel="${i}" aria-label="امسح القطعة">${ICON.trash}</button></div>
       <div class="pcgrid">
         <label><span>الطول</span><input type="text" inputmode="decimal" data-numf step="0.1" data-pf="l" value="${r.l}"></label>
         <label><span>العرض</span><input type="text" inputmode="decimal" data-numf step="0.1" data-pf="w" value="${r.w}"></label>
@@ -888,7 +890,16 @@ app.innerHTML = `
           <span class="vmode" role="group" aria-label="اللمس بيحرّك إيه"><button data-vmode="scene" title="السحب بيلف المشهد كله">🌍 المشهد</button><button data-vmode="units" title="السحب بيحرّك الوحدة المختارة">✋ الوحدات</button></span>
           <button data-vz="0.8" aria-label="قرّب">+</button><button data-vz="1.25" aria-label="بعّد">−</button>
           <button data-vr="-25" aria-label="لف الكاميرا شمال">⟲</button><button data-vr="25" aria-label="لف الكاميرا يمين">⟳</button>
-          <button data-vp="top" aria-label="من فوق">فوق</button><button data-vp="front" aria-label="من قدام">قدام</button><button data-vp="fit" aria-label="ملء الشاشة">⤢</button>
+          <button data-vp="fit" aria-label="شوف الكل">⤢</button>
+        </div>
+        <div class="vcube" role="toolbar" aria-label="المناظير والمساقط">
+          <button data-vp="home" class="vhome" title="رجّع الكاميرا للوضع الأساسي">🏠<small>الأساسي</small></button>
+          <button data-vp="iso" title="منظور">⬢<small>منظور</small></button>
+          <button data-vp="top" title="مسقط أفقي (من فوق)">⬒<small>فوق</small></button>
+          <button data-vp="front" title="واجهة قدام">▣<small>قدام</small></button>
+          <button data-vp="back" title="واجهة ورا">▣<small>ورا</small></button>
+          <button data-vp="right" title="جنب يمين">◧<small>يمين</small></button>
+          <button data-vp="left" title="جنب شمال">◨<small>شمال</small></button>
         </div></div>
       <div id="plan" class="plan" hidden></div>
       <div id="errs" class="errs" hidden></div>
@@ -981,7 +992,8 @@ $("#steps").addEventListener("click", (e) => {
   ui.stepAt = k;
   const scrollTo = (sel, txt) => setTimeout(() => {
     const host = $(sel);
-    const h = [...(host?.querySelectorAll("h3, summary") || [])].find((x) => x.textContent.includes(txt));
+    const want = [txt, I18n.tr(txt)];
+    const h = [...(host?.querySelectorAll("h3, summary") || [])].find((x) => want.some((w) => x.textContent.includes(w)));
     const box = h?.closest("details, section") || h;
     if (box?.tagName === "DETAILS") box.open = true;
     box?.scrollIntoView({ block: "start", behavior: "smooth" });
@@ -1755,7 +1767,7 @@ function planChips() {
 function renderChips() {
   const u = selUnit();
   const el = $("#chips");
-  if (ui.planOn) { el.innerHTML = planChips(); return; }
+  if (ui.planOn) { el.innerHTML = `<div class="cbody">${planChips()}</div>`; return; }
   if (!u) { el.innerHTML = `<div class="cbody"><button class="chip tog" data-plan>المسقط والحيطان</button><button class="chip tog" data-roompop>📐 أوضة بالمقاسات · 📷 مسح</button><button class="chip tog gold" data-autok>✨ صمملي المطبخ</button>${state.project.variants?.length > 1 ? `<button class="chip tog" data-varpop>🗂 النسخ</button>` : ""}</div>`; return; }
   const r = R(u);
   const p = r.params;
@@ -2080,7 +2092,7 @@ function renderProps0() {
   if (!u) { el.innerHTML = `<div class="emptyp"><h2>ابدأ بوحدة</h2><p class="hint">افتح المكتبة واختار تصميم جاهز أو قالب فاضي.</p></div>`; return; }
   const r = R(u);
   const p = r.params;
-  let h = `<div class="ph"><input id="unitName" class="uname" value="${esc(u.name)}" aria-label="اسم الوحدة">
+  let h = `<div class="ph"><input id="unitName" class="uname" value="${esc(trv(u.name))}" aria-label="اسم الوحدة">
     <div class="pa"><button data-mysave title="احفظها في مكتبتي" aria-label="احفظها في مكتبتي">⭐</button><button data-dup title="نسخة" aria-label="نسخة">${ICON.copy}</button><button data-del class="danger" title="حذف" aria-label="حذف">${ICON.trash}</button></div></div>
     <div class="tplname"><span class="ucode">${esc(unitCode(u))}</span>${esc(r.label || (u.kind === "dressing" ? "دريسنج" : u.kind === "kitchen" ? "وحدة مطبخ" : ""))}</div>`;
   if (r.ok) h += `<div class="stats"><div><b>${r.pieces}</b><span>قطعة</span></div><div><b>${r.banding}</b><span>م شريط</span></div><div><b>${r.doors}</b><span>ضلفة</span></div><div><b>${r.drawers}</b><span>درج</span></div></div>`;
@@ -2237,8 +2249,8 @@ function defaultsPop() {
     <details><summary>🧱 الأوضة والحيطان</summary><div class="grid2">${nf("room.t", "سمك الحيطة", D0.room.t, Room.WALL_T)}${nf("room.h", "ارتفاع السقف", D0.room.h, Room.WALL_H)}</div></details>
     <details><summary>💰 التسعير</summary><div class="grid2"><label class="f"><span>حساب الخامة</span><select data-def="price.mode"><option value="area" ${P.mode === "area" ? "selected" : ""}>بمسطح القطع (م²) لكل وحدة</option><option value="sheets" ${P.mode !== "area" ? "selected" : ""}>بعدد الألواح من خطة القص</option></select></label>${nf("price.waste", "نسبة الهالك % (بالمسطح)", P.waste)}${nf("price.defaultSheet", "سعر اللوح (أي خامة ملهاش سعر)", P.defaultSheet)}${nf("price.band", "سعر متر الشريط", P.band)}
       ${nf("price.laborUnit", "مصنعية الوحدة", P.laborUnit)}${nf("price.laborM2", "مصنعية المتر المربع", P.laborM2)}${nf("price.install", "التركيب للمشروع", P.install)}${nf("price.margin", "نسبة المكسب %", P.margin)}
-      ${nf("price.validity", "صلاحية عرض السعر (يوم)", P.validity)}<label class="f"><span>مدة التنفيذ</span><input data-deft="price.delivery" value="${esc(P.delivery || "")}"></label>
-      <label class="f full"><span>الضمان</span><input data-deft="price.warranty" value="${esc(P.warranty || "")}"></label><label class="f full"><span>شروط ثابتة في كل عرض سعر</span><input data-deft="price.notes" value="${esc(P.notes || "")}"></label></div>
+      ${nf("price.validity", "صلاحية عرض السعر (يوم)", P.validity)}<label class="f"><span>مدة التنفيذ</span><input data-deft="price.delivery" value="${esc(trv(P.delivery || ""))}"></label>
+      <label class="f full"><span>الضمان</span><input data-deft="price.warranty" value="${esc(trv(P.warranty || ""))}"></label><label class="f full"><span>شروط ثابتة في كل عرض سعر</span><input data-deft="price.notes" value="${esc(P.notes || "")}"></label></div>
       <p class="hint">أسعار كل خامة وكل بند هاردوير بتتظبط من «الورشة والعميل» وبتفضل محفوظة لكل المشاريع.</p></details>
     <details><summary>✂ القص والملصقات</summary><div class="grid2">${nf("cut.sheetW", "طول اللوح", o.sheetW, 244)}${nf("cut.sheetH", "عرض اللوح", o.sheetH, 122)}${nf("cut.kerf", "سلاح المنشار", o.kerf, 0.4)}${nf("cut.trim", "تشذيب الحرف", o.trim, 1)}${nf("cut.leftMin", "أقل باقي يتحسب", o.leftMin, 30)}
       <label class="f"><span>مقاس الملصقات</span><select data-def="labelFmt"><option value="a4" ${state.labelFmt !== "roll" ? "selected" : ""}>A4 — 21 ملصق</option><option value="roll" ${state.labelFmt === "roll" ? "selected" : ""}>رول 60×40 مم</option></select></label></div></details>
@@ -3268,11 +3280,12 @@ function pieceTag(THREE, pt, ucode) {
   let fs = Math.min(ch / 3.6, cw / (Math.max(dims.length, 6) * 0.6));
   g.fillStyle = "#14201a"; g.textAlign = "center"; g.textBaseline = "middle"; g.direction = "rtl";
   g.font = `700 ${fs}px "IBM Plex Sans Arabic", system-ui, sans-serif`;
-  let nm = pt.name;
+  let nm = I18n.tr(pt.name);
+  if (I18n.isEn()) g.direction = "ltr";
   const fit = (cw * 0.9) / Math.max(1, g.measureText(nm).width);
   if (fit < 1) { const f2 = Math.max(fs * 0.6, fs * fit); g.font = `700 ${f2}px "IBM Plex Sans Arabic", system-ui, sans-serif`; }
   while (nm.length > 3 && g.measureText(nm).width > cw * 0.9) nm = nm.slice(0, -2) + "…";
-  g.fillText(I18n.tr(nm), cw / 2, ch / 2 - fs * 0.6);
+  g.fillText(nm, cw / 2, ch / 2 - fs * 0.6);
   g.font = `500 ${fs * 0.9}px system-ui, sans-serif`; g.direction = "ltr";
   g.fillText(dims, cw / 2, ch / 2 + fs * 0.65);
   const tex = new THREE.CanvasTexture(c);
@@ -3901,8 +3914,9 @@ $("#pop").addEventListener("click", async (e) => {
       const r = await ex[3]();
       st.textContent = r === "declined" ? "اتلغى" : "تم ✓";
     } catch (err) {
-      st.textContent = err?.message && err.message.length < 60 ? err.message : "ما كملش";
-      console.error(err);
+      const known = err?.message && err.message.length < 60;
+      st.textContent = known ? err.message : "ما كملش";
+      if (!known) console.error(err); // a short message is an expected stop ("draw the walls first"), not a crash
     }
     b.disabled = false;
     return;
@@ -4989,12 +5003,19 @@ const view = {
     let selBox = null;
     for (const u of units) {
       const r = R(u);
-      if (!r.ok) continue;
       const ug = new THREE.Group();
       ug.userData.unitId = u.id;
-      this.buildUnit(ug, u, r, edgeMat);
+      if (!r.ok) {
+        // a unit that can't be built stays visible as a red box (instead of disappearing), so it can be found and fixed
+        const P = u.params || {}, w = +P.width || 60, h = +P.height || 72, d = +P.depth || 58;
+        const bx = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshBasicMaterial({ color: 0xd23228, transparent: true, opacity: 0.22, depthWrite: false }));
+        bx.position.set(w / 2, h / 2, -d / 2);
+        const be = new THREE.LineSegments(new THREE.EdgesGeometry(bx.geometry), new THREE.LineBasicMaterial({ color: 0xd23228 }));
+        be.position.copy(bx.position);
+        ug.add(bx, be);
+      } else this.buildUnit(ug, u, r, edgeMat);
       const inspected = !whole || u.id === state.sel;
-      if (inspected && ui.explode) this.explode(ug, ui.explode);
+      if (inspected && ui.explode && r.ok) this.explode(ug, ui.explode);
       if (layout) {
         const L = layout.get(u.id);
         if (!L) continue;
@@ -5003,7 +5024,7 @@ const view = {
       }
       g.add(ug);
       this.pickables.push(ug);
-      if (inspected && ui.cut) { ug.updateMatrixWorld(true); this.cutUnit(ug, ui.cut, ui.cutT ?? 0.5); }
+      if (inspected && ui.cut && r.ok) { ug.updateMatrixWorld(true); this.cutUnit(ug, ui.cut, ui.cutT ?? 0.5); }
       if (whole && u.id === (ui.mode === "client" ? ui.clientUnit?.id : state.sel) && ui.mode === "owner") selBox = ug;
     }
     g.updateMatrixWorld(true);
@@ -5137,10 +5158,24 @@ const view = {
     this.dirty = true;
   },
   preset(kind) {
-    if (kind === "fit") { this.update(true); return; }
-    const t = this.ctl.target, c = this.cam.position, d = c.distanceTo(t);
-    if (kind === "top") c.set(t.x + 0.01, t.y + d, t.z + 0.01);
-    else { const v = c.clone().sub(t); v.y = 0; v.normalize(); c.set(t.x + v.x * d * 0.95, t.y + d * 0.18, t.z + v.z * d * 0.95); }
+    const cam = this.cam;
+    this.baseFov ??= cam.fov;
+    // the elevations and the plan look like true projections: a long lens far away (almost no perspective)
+    const flat = ["top", "front", "back", "right", "left"].includes(kind), fov = flat ? 10 : this.baseFov;
+    const scale = Math.tan((cam.fov * Math.PI) / 360) / Math.tan((fov * Math.PI) / 360);
+    if (cam.fov !== fov) { cam.fov = fov; cam.updateProjectionMatrix(); }
+    this.flatView = flat;
+    if (kind === "fit" || kind === "home") { this.update(true); return; }
+    const t = this.ctl.target, c = this.cam.position, d = c.distanceTo(t) * scale;
+    if (cam.far < d * 4) { cam.far = d * 10; cam.updateProjectionMatrix(); }
+    // standard views around what the camera looks at (x → right, z → towards the viewer, y up)
+    const dirs = { top: [0.0001, 1, 0.0001], front: [0, 0.06, 1], back: [0, 0.06, -1], right: [1, 0.06, 0], left: [-1, 0.06, 0], iso: [0.62, 0.5, 0.78] };
+    const v = dirs[kind];
+    if (!v) return;
+    const n = Math.hypot(...v);
+    c.set(t.x + (v[0] / n) * d, t.y + (v[1] / n) * d, t.z + (v[2] / n) * d);
+    this.cam.up.set(0, 1, 0);
+    this.cam.lookAt(t); this.ctl.update?.();
     this.dirty = true;
   },
   /** lift a unit a little and tint it while it is being moved */
@@ -5417,7 +5452,7 @@ function pieceLabel(pl, code, name, dims) {
   let fs = Math.min(6, W / (Math.max(code.length, dims.length, 6) * cw), H / 3.5);
   if (fs >= 2.1) {
     const maxCh = Math.max(3, Math.floor(W / (fs * cw)));
-    const nm = name.length > maxCh ? name.slice(0, maxCh - 1) + "…" : name;
+    const nmT = trv(name), nm = nmT.length > maxCh ? nmT.slice(0, maxCh - 1) + "…" : nmT;
     return t(cy - fs * 1.15, fs * 1.05, code, "pcode") + t(cy, fs, nm) + t(cy + fs * 1.15, fs * 0.95, dims, "dim");
   }
   fs = Math.min(5, W / (Math.max(code.length, dims.length) * cw), H / 2.3);
@@ -5460,7 +5495,7 @@ function leftoversHtml() {
       <button class="ghost2" data-leftcopy>📋 انسخ الملخص</button><button class="ghost2" data-leftstock>📦 خزّنها في المخزن</button></div>`;
   if (!L.length) return h + `<p class="hint">مفيش بواقي ${min}×${min} سم أو أكبر — الألواح متقصة كويس.</p></section>`;
   h += `<div class="tblwrap"><table class="tbl"><thead><tr><th>الخامة</th><th>العدد</th><th>المساحة م²</th><th>المقاسات (طول × عرض سم · رقم اللوح)</th></tr></thead><tbody>`;
-  for (const x of L) h += `<tr><td>${esc(x.key)}</td><td class="num">${x.list.length}</td><td class="num">${x.area}</td><td>${x.list.slice(0, 14).map((o) => `<span class="rem">${n1(o.w)}×${n1(o.h)} <small>ل${o.sheet}</small></span>`).join(" ")}${x.list.length > 14 ? ` <small>+${x.list.length - 14}</small>` : ""}</td></tr>`;
+  for (const x of L) h += `<tr><td>${esc(x.key)}</td><td class="num">${x.list.length}</td><td class="num">${x.area}</td><td>${x.list.slice(0, 14).map((o) => `<span class="rem">${n1(o.w)}×${n1(o.h)} <small>${I18n.isEn() ? "S" : "ل"}${o.sheet}</small></span>`).join(" ")}${x.list.length > 14 ? ` <small>+${x.list.length - 14}</small>` : ""}</td></tr>`;
   return h + `</tbody></table></div><p class="hint">البواقي دي بتتعلّم على رسمة كل لوح تحت (المربعات المتقطّعة). «خزّنها في المخزن» بتضيفها لبواقي كل خامة، وخطة القص الجاية بتستخدمها الأول.</p></section>`;
 }
 function leftoversText() {
@@ -6685,7 +6720,7 @@ function quoteHtml() {
       ${Q.perUnit.map(({ u, price, cost, area }) => `<tr><td><b>${esc(u.code || "")}</b> ${esc(u.name)}</td><td class="num">${n1(area || 0)} م²</td>${Q.byArea ? `<td class="num">${money(cost)}</td>` : ""}<td class="num"><b>${money(price)}</b></td><td class="num">${area ? money(price / area) : "—"}</td></tr>`).join("")}</tbody></table></div></details>
     <div class="grid3">${pin("defaultSheet", P.defaultSheet, "سعر اللوح لأي خامة مش متسعّرة")}<label class="f"><span>اسم المصنع (في العروض والفيديو والضمان)</span><input data-pricet="factory" value="${esc(P.factory || "")}" placeholder="NOVERA"></label><label class="f"><span>رقم التليفون / واتساب</span><input data-pricet="phone" inputmode="tel" value="${esc(P.phone || "")}" placeholder="010xxxxxxxx"></label></div>
     <div class="grid3">${pin("margin", P.margin, "هامش الربح %")}<label class="f"><span>اسم العميل</span><input data-pricet="client" value="${esc(P.client)}"></label>${pin("validity", P.validity, "العرض ساري (يوم)")}</div>
-    <div class="grid2"><label class="f"><span>مدة التنفيذ</span><input data-pricet="delivery" value="${esc(P.delivery)}"></label><label class="f"><span>الضمان</span><input data-pricet="warranty" value="${esc(P.warranty)}"></label></div>
+    <div class="grid2"><label class="f"><span>مدة التنفيذ</span><input data-pricet="delivery" value="${esc(trv(P.delivery))}"></label><label class="f"><span>الضمان</span><input data-pricet="warranty" value="${esc(trv(P.warranty))}"></label></div>
     <label class="f"><span>ملاحظات تظهر في العرض</span><input data-pricet="notes" value="${esc(P.notes)}"></label>
     <div class="btnrow"><button class="primary" data-quote>عرض سعر PDF للعميل</button><span class="hint" id="quoteMsg"></span></div></section>`;
   return h;
@@ -6868,7 +6903,7 @@ async function exportLabelsPdf() {
     return `<g transform="translate(${x} ${y})"><rect width="${W}" height="${H}" fill="#fff" stroke="#bbb" stroke-dasharray="3 3"/>
       <rect x="${W - 2 * s - 21 * s}" y="${2 * s}" width="${21 * s}" height="${6 * s}" rx="${1 * s}" fill="#111"/>
       <text x="${W - 2 * s - 10.5 * s}" y="${6.6 * s}" font-size="${4.2 * s}" font-weight="800" fill="#fff" text-anchor="middle" direction="ltr">${esc(pc.key)}</text>
-      <text x="${W - 25 * s}" y="${6.4 * s}" font-size="${2.9 * s}" font-weight="700" text-anchor="end">${esc(pc.pt.name.length > 15 ? pc.pt.name.slice(0, 14) + "…" : pc.pt.name)}</text>
+      <text x="${W - 25 * s}" y="${6.4 * s}" font-size="${2.9 * s}" font-weight="700" text-anchor="end">${esc(trv(pc.pt.name).length > (I18n.isEn() ? 22 : 15) ? trv(pc.pt.name).slice(0, I18n.isEn() ? 21 : 14) + "…" : trv(pc.pt.name))}</text>
       <text x="${2 * s}" y="${12 * s}" font-size="${3.1 * s}" font-weight="700" direction="ltr">${n1(pc.lb.h)} × ${n1(pc.lb.w)} × ${n1(pc.lb.t)}</text>
       ${(() => { const gi = grooveInfo(pc); return gi ? `${nest(dia, 3 * s, 13 * s, 36 * s, 14.5 * s)}<text x="${W - 2 * s}" y="${29.6 * s}" font-size="${2.35 * s}" font-weight="800" fill="#8a5a00" text-anchor="end">${esc(gi.short)}</text>` : nest(dia, 3 * s, 13 * s, 36 * s, 17 * s); })()}
       ${qr ? nest(qr, W - 19 * s, 10 * s, 16 * s, 16 * s) : ""}
