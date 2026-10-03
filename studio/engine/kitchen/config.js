@@ -164,6 +164,8 @@ export const DEFAULTS = {
     "toe_kick_drawer_floor_gap": 1.0,
     "toe_kick_drawer_depth": 0.0,
     "toe_kick_drawer_setback": 0.0,
+    "toe_kick_drawer_handle": "none",
+    "toe_kick_drawer_handle_size": 3.0,
     "include_led_marker": false,
     "led_marker_offset": 3.0,
     "led_marker_width": 1.5,

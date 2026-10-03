@@ -32,6 +32,8 @@ export function applicable(params, appDefault = null) {
     if (SKIP_CATEGORIES.includes(toS(params["unit_category"])))
         return false;
     const [cfg] = effectiveCfg(params, appDefault);
+    if (params["toe_kick_drawer"] && toS(params["toe_kick_drawer_handle"]) === "routed")
+        return true; // v191
     return !!cfg && cfg.type !== "none";
 }
 /** Handles.shift_ratios */
@@ -118,10 +120,20 @@ function rubyJson(v, isFloat, key = "") {
         .map(([k, x]) => `${JSON.stringify(k)}:${rubyJson(x, isFloat, k)}`)
         .join(",")}}`;
 }
+/** v191: the plinth drawer has its own handle: none (default) · same as the unit · a routed CNC handle · a finger gap */
+export const KICK_DRAWER = "درج وزرة";
+export function kickHandleMode(params) {
+    const m = toS(params["toe_kick_drawer_handle"]);
+    return ["none", "same", "routed", "gap"].includes(m) ? m : "none";
+}
 export function applyHandles(ctx, group, params, appDefault = null) {
-    const [cfg, errors] = effectiveCfg(params, appDefault);
-    if (!(cfg && cfg.type !== "none"))
+    const [cfg0, errors] = effectiveCfg(params, appDefault);
+    const unitOn = !!(cfg0 && cfg0.type !== "none");
+    const kmode = kickHandleMode(params);
+    const kcfg = kmode === "routed" ? Catalog.normalize({ type: "builtin_routed", routed_height: toF(params["toe_kick_drawer_handle_size"] ?? 3.0) || 3.0 })[0] : null;
+    if (!unitOn && !kcfg)
         return null;
+    const cfg = unitOn ? cfg0 : kcfg;
     const warnings = errors.map((e) => `إعداد المقبض: ${e}`);
     const unitId = group.entityID;
     let unitType = toS(params["unit_type"]);
@@ -140,12 +152,17 @@ export function applyHandles(ctx, group, params, appDefault = null) {
     const used = new Set();
     const hardware = {};
     for (const f of fronts) {
+        const isKick = f.holder.name === KICK_DRAWER;
+        if (isKick && kmode !== "same" && kmode !== "routed")
+            continue;
+        if (!isKick && !unitOn)
+            continue;
         const b = f.box;
         const front = {
             w: b.x1 - b.x0, h: b.z1 - b.z0, t: b.y1 - b.y0, kind: f.kind, hinge: f.hinge, unit_type: unitType,
             z_base: b.z0 - unitZ0, framed: f.framed, existing_recess: recess > 0 && Math.abs(b.z1 - topZ) < 1.0 ? recess : 0.0,
         };
-        const plan = Catalog.compute(front, cfg);
+        const plan = Catalog.compute(front, isKick && kcfg ? kcfg : cfg);
         for (const w of plan.warnings)
             warnings.push(`${f.name}: ${w}`);
         for (const [k, v] of Object.entries(plan.hardware))

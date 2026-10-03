@@ -1999,7 +1999,7 @@ function panelAdvanced(p, shown) {
 /** the plinth drawer's front height from the unit's settings (kick height − floor gap − gaps) */
 function kickFrontOf(p) {
   const ov = p.door_position === "overlay", eg = +(ov ? p.door_gap_overlay : p.door_gap_inset) || 0;
-  return Math.round(((+p.toe_kick_height || 10) + eg - (+p.door_bottom_extension || 0) - (+p.drawer_gap || 0) - (+(p.toe_kick_drawer_floor_gap ?? 1))) * 10) / 10;
+  return Math.round(((+p.toe_kick_height || 10) + eg - (+p.door_bottom_extension || 0) - (+p.drawer_gap || 0) - (+(p.toe_kick_drawer_floor_gap ?? 1)) - (p.toe_kick_drawer_handle === "gap" ? +(p.toe_kick_drawer_handle_size ?? 3) : 0)) * 10) / 10;
 }
 function kickDrawerSection(p) {
   if (p.unit_type === "wall" || !p.include_toe_kick) return "";
@@ -2007,6 +2007,9 @@ function kickDrawerSection(p) {
   return `<details open><summary>درج الوزرة</summary><div class="bools">${boolF("toe_kick_drawer", "درج مكان الوزرة (السكلو)", on)}</div>
     ${on ? `<div class="grid2">${numF("__kickfront", "ارتفاع وش الدرج", fh, 0.5)}${numF("toe_kick_height", "ارتفاع السكلو كله", p.toe_kick_height, 0.5)}
       ${numF("toe_kick_drawer_setback", "رجوع الوش لورا (زي رجوع السكلو)", p.toe_kick_drawer_setback ?? 0, 0.5)}${numF("toe_kick_drawer_depth", "عمق علبة الدرج (0 = تلقائي)", p.toe_kick_drawer_depth ?? 0, 1)}${numF("toe_kick_drawer_floor_gap", "خلوص عن الأرض", p.toe_kick_drawer_floor_gap ?? 1, 0.1)}</div>
+      <div class="grid2">${selF("toe_kick_drawer_handle", "مقبض درج الوزرة (لوحده)", { none: "بدون مقبض (بوش / تاتش)", routed: "حفر مقبض بلت إن (CNC)", gap: "فتحة صباع فوق الوش", same: "زي باقي الوحدة" }, p.toe_kick_drawer_handle || "none")}
+        ${["routed", "gap"].includes(p.toe_kick_drawer_handle) ? numF("toe_kick_drawer_handle_size", p.toe_kick_drawer_handle === "gap" ? "ارتفاع الفتحة" : "عرض الحفر", p.toe_kick_drawer_handle_size ?? 3, 0.5) : ""}</div>
+      <p class="hint">مقبض درج الوزرة مستقل: مقابض الوحدة وخلوص المقبض البلت إن ما بيأثروش عليه. الحفر بيتعمل في الحرف اللي فوق من ورا (CNC)، والفتحة بتقصّر الوش وتسيب مكان صباع تحت الوحدة.</p>
       <p class="hint">العرض = عرض الوحدة. لما تكبّر وش الدرج، السكلو والوحدة كلها بتعلى معاه (الكونتر بيعلى). ${fh < 6 ? `<b class="danger">الوش أقل من 6 سم — هيتعمل سكلو عادي بدل الدرج. كبّر السكلو.</b>` : ""}</p>` : `<p class="hint">درج واطي مكان السكلو، وشه على مستوى الضلف — مكان زيادة للصواني والحاجات المسطحة.</p>`}</details>`;
 }
 function kitchenProps(p) {
@@ -6486,6 +6489,16 @@ async function exportCnc() {
       else { const y = g.ratio * H; d.rect(0, Math.round((y - gw / 2) * 10) / 10, W, gw, `GROOVE_W${gw}_Z${gz}`); }
       ng++;
     }
+    // routed built-in handle (from the back): the handle system writes it in the piece's note
+    const rm = /حفر CNC مقبض بلت إن من الضهر على (الحرف اللي فوق|الحرف اللي تحت|الحرف الشمال|الحرف اليمين): طول ([\d.]+) × عرض ([\d.]+) × عمق ([\d.]+)/.exec([pt.note, lb.note, ...(pt.checks || [])].filter(Boolean).join(" | "));
+    if (rm) {
+      const L = mm(+rm[2]), Wd = mm(+rm[3]), Z = mm(+rm[4]), lay = `POCKET_BACK_Z${Z}`;
+      if (rm[1] === "الحرف اللي فوق") d.rect(Math.round((W - L) / 2 * 10) / 10, Math.round((H - Wd) * 10) / 10, L, Wd, lay);
+      else if (rm[1] === "الحرف اللي تحت") d.rect(Math.round((W - L) / 2 * 10) / 10, 0, L, Wd, lay);
+      else if (rm[1] === "الحرف الشمال") d.rect(0, Math.round((H - L) / 2 * 10) / 10, Wd, L, lay);
+      else d.rect(Math.round((W - Wd) * 10) / 10, Math.round((H - L) / 2 * 10) / 10, Wd, L, lay);
+      ng++;
+    }
     d.text(4, H + 6, 8, `${pc.key}  ${pt.name}  ${W}x${H}x${T}`, "TEXT");
     const note = [pt.note, ...(pt.checks || [])].filter(Boolean).join(" | ");
     if (/تفريغة|قصة ركن|اتقصّت/.test(note)) d.text(4, -12, 6, "CUT-OUT: see label / شوف الملصق", "TEXT");
@@ -6497,7 +6510,7 @@ async function exportCnc() {
   files.push({ name: "عمليات CNC.csv", data: Exp.csv(rows) });
   files.push({ name: "اقراني.txt", data: "NOVERA Studio — ملفات CNC\r\n\r\nكل قطعة في ملف DXF لوحدها بالمليمتر، مقسومة فولدرات حسب الخامة والسمك.\r\n" +
     "الطبقات (Layers):\r\n  OUTLINE  حدود القطعة (الطول على X والعرض على Y زي الملصق)\r\n  DRILL_V_D8_Z12  خرم رأسي قطره 8 وعمقه 12 مم (الرقمين في اسم الطبقة)\r\n" +
-    "  DRILL_V_D35_Z13  كبة مفصلة\r\n  GROOVE_W7_Z8  مفحار عرضه 7 وعمقه 8 مم\r\n  TEXT  رقم القطعة (مش للتشغيل)\r\n\r\nفي برنامج المكنة: اربط كل طبقة بالعدة المناسبة مرة واحدة واحفظها كقالب.\r\n" });
+    "  DRILL_V_D35_Z13  كبة مفصلة\r\n  GROOVE_W7_Z8  مفحار عرضه 7 وعمقه 8 مم\r\n  POCKET_BACK_Z12  حفر مقبض بلت إن من ضهر الوش (العمق في الاسم بالمم)\r\n  TEXT  رقم القطعة (مش للتشغيل)\r\n\r\nفي برنامج المكنة: اربط كل طبقة بالعدة المناسبة مرة واحدة واحفظها كقالب.\r\n" });
   return Exp.deliver(cloud.downloads, `${fileBase()} — CNC.zip`, Exp.zip(files));
 }
 async function exportImage() {

@@ -354,7 +354,9 @@ export class CarcassBuilder {
         const fx0 = overlay ? edgeGap : pt + edgeGap;
         const fx1 = overlay ? this.width() - edgeGap : this.width() - pt - edgeGap;
         const fz0 = this.kickDrawerFloorGap();
-        const fz1 = kh + edgeGap - this.doorBottomExtension() - this.drawerGap();
+        // "gap" handle: the front stops lower, leaving a finger gap under the carcass
+        const kgap = toS(this.p["toe_kick_drawer_handle"]) === "gap" ? cm(rmax(toF(this.p["toe_kick_drawer_handle_size"] ?? 3.0), 0)) : 0;
+        const fz1 = kh + edgeGap - this.doorBottomExtension() - this.drawerGap() - kgap;
         if (fz1 - fz0 < cm(6.0) || fx1 - fx0 < cm(15.0) || this.width() <= 4 * pt + cm(15.0)) {
             this.buildKick(e);
             return;
