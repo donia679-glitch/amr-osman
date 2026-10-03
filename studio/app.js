@@ -222,7 +222,7 @@ function setCloud(s) {
 // ------------------------------------------------------------------ engines adapter
 const cache = new Map();
 function R(u) {
-  const key = u.kind + JSON.stringify(u.params) + JSON.stringify(u.libs || {}) + (u.org || "") + (u.extra?.length ? JSON.stringify(u.extra) : "");
+  const key = u.kind + JSON.stringify(u.params) + JSON.stringify(u.libs || {}) + (u.org || "") + (u.orgOpts ? JSON.stringify(u.orgOpts) : "") + (u.extra?.length ? JSON.stringify(u.extra) : "");
   if (cache.has(key)) return cache.get(key);
   if (cache.size > 80) cache.delete(cache.keys().next().value);
   let out = u.kind === "dressing" ? adaptDressing(u) : u.kind === "kitchen" ? adaptKitchen(u) : u.kind === "pieces" ? adaptPieces(u) : adaptPanel(u);
@@ -1534,7 +1534,7 @@ $("#lib").addEventListener("click", (e) => {
   let u;
   if (c.dataset.kitchen) {
     const s = KU.KITCHEN[c.dataset.kitchen];
-    u = { id: uid(), kind: "kitchen", name: s ? s.label : "وحدة مطبخ", params: clone(s ? s.params : {}), libs: {}, ...(s?.org ? { org: s.org } : {}) };
+    u = { id: uid(), kind: "kitchen", name: s ? s.label : "وحدة مطبخ", params: clone(s ? s.params : {}), libs: {}, ...(s?.org ? { org: s.org } : {}), ...(s?.orgOpts ? { orgOpts: clone(s.orgOpts) } : {}) };
     if (s?.ins) {
       const d0 = unitDrawers(u, R(u));
       u.inserts = {};
@@ -1876,7 +1876,55 @@ function roomProps() {
     <p class="hint">تقدر تسحبه على الحيطة في المسقط. الوحدات السفلية مش بتتحط قدام الأبواب، والعلوية مش بتتحط قدام الشبابيك.</p></details>`;
 }
 const r1 = Room.r1;
-function renderProps() { renderProps0(); propsMode($("#props")); }
+/** the settings panel is re-drawn after every change: keep the place — the same scroll, the sections the
+ *  user opened or closed, the field being edited at the same height on screen, and the focus */
+const FIELD_KEYS = ["data-num", "data-sel", "data-bool", "data-text", "data-auto", "data-toggle", "data-rw", "data-ro", "data-rp", "data-rc", "data-rwb", "data-mat", "data-xnum", "data-xtext", "data-xsel", "data-xcut", "data-zone", "data-step", "id"];
+function fieldSel(x) {
+  for (const k of FIELD_KEYS) { const v = x?.getAttribute?.(k); if (v) return k === "id" ? `#${CSS.escape(v)}` : `[${k}="${CSS.escape(v)}"]`; }
+  return null;
+}
+const secKey = (sm) => sm.textContent.replace(/\(\d+\)|\d+/g, "").replace(/\s+/g, " ").trim();
+let propsLater = 0;
+function renderProps() {
+  const el = $("#props");
+  if (!el) return;
+  // a change fired while leaving a field (Tab / next / tapping another field): let the focus land first,
+  // then re-draw and keep it there
+  if (window.event?.type === "change" && el.contains(window.event.target)) { clearTimeout(propsLater); propsLater = setTimeout(renderProps, 0); return; }
+  clearTimeout(propsLater);
+  const key = `${state.sel || ""}|${ui.planSel?.kind || ""}:${ui.planSel?.id || ""}|${ui.planTool || ""}|${ui.asm?.id || ""}`;
+  const same = el.dataset.pkey === key;
+  let st = 0, opens = null, anchor = null, aoff = 0, focus = null, caret = null;
+  if (same) {
+    st = el.scrollTop;
+    opens = new Map([...el.querySelectorAll("details > summary")].map((sm) => [secKey(sm), sm.parentElement.open]));
+    const a = document.activeElement && el.contains(document.activeElement) ? document.activeElement : null;
+    const ref = a || (ui.lastField && el.querySelector(ui.lastField));
+    anchor = ref ? fieldSel(ref.closest("[data-step]") || ref) || ui.lastField : null;
+    if (ref && anchor) aoff = ref.getBoundingClientRect().top - el.getBoundingClientRect().top;
+    if (a && a.matches("input, textarea, select")) { focus = fieldSel(a); try { caret = [a.selectionStart, a.selectionEnd]; } catch { caret = null; } }
+    else if (ui.nextFocus && performance.now() - ui.nextFocus.t < 400) focus = ui.nextFocus.sel; // moving on (Tab / next) while the change re-draws
+  }
+  renderProps0(); propsMode(el);
+  el.dataset.pkey = key;
+  if (!same) { el.scrollTop = 0; return; }
+  for (const sm of el.querySelectorAll("details > summary")) { const o = opens.get(secKey(sm)); if (o !== undefined && sm.parentElement.open !== o) sm.parentElement.open = o; }
+  el.scrollTop = st;
+  const b = anchor && el.querySelector(anchor);
+  if (b) el.scrollTop += b.getBoundingClientRect().top - el.getBoundingClientRect().top - aoff;
+  if (focus) { const f = el.querySelector(focus); if (f && document.activeElement !== f) { f.focus({ preventScroll: true }); if (caret && caret[0] != null) try { f.setSelectionRange(caret[0], caret[1]); } catch { /* not a text field */ } } }
+}
+// remember the last field touched in the panel (the change re-draws it after the field lost focus)
+document.addEventListener("pointerdown", (e) => { const p = $("#props"); if (p && p.contains(e.target)) { const t = e.target.closest("input, select, textarea, button, label"); const q = t && (fieldSel(t) || fieldSel(t.querySelector?.("input, select"))); if (q) ui.lastField = q; } }, true);
+document.addEventListener("focusin", (e) => { const p = $("#props"); if (p && p.contains(e.target)) { const q = fieldSel(e.target); if (q) ui.lastField = q; } });
+document.addEventListener("focusout", (e) => {
+  const p = $("#props"), n = e.relatedTarget;
+  if (!p || !n || !n.matches?.("input, textarea, select")) { ui.nextFocus = null; return; }
+  const sel = fieldSel(n);
+  ui.nextFocus = { sel, t: performance.now() };
+  // the change already re-drew the panel: the field we are going to is gone — focus its new copy
+  if (!n.isConnected && sel) setTimeout(() => { const f = p.querySelector(sel); if (f && document.activeElement !== f) { f.focus({ preventScroll: true }); f.select?.(); } }, 0);
+});
 function renderProps0() {
   const u = selUnit();
   const el = $("#props");
@@ -2189,6 +2237,7 @@ function dressingProps(p) {
 const props = $("#props");
 props.addEventListener("change", (e) => {
   const t = e.target;
+  if (t.hasAttribute?.("data-tlev")) { const u = selUnit(), T = u && trolleyOpts(u); if (T) { u.orgOpts = { ...T, levels: +t.value }; save(); render(); } return; }
   const prow = t.closest?.(".pcrow");
   if (prow) {
     const u = selUnit(), i = +prow.dataset.pi, r = u?.params?.pieces?.[i];
@@ -2303,6 +2352,13 @@ props.addEventListener("click", (e) => {
   const pu = selUnit();
   if (pu && rb && rb.dataset.ins) { const [i, k] = rb.dataset.ins.split("|"); applyInsert(pu, +i, k); return; }
   if (pu && rb && rb.dataset.org !== undefined) { applyOrg(pu, rb.dataset.org); return; }
+  if (pu && rb && (rb.dataset.trow || rb.dataset.tdiv)) {
+    const T = trolleyOpts(pu); if (!T) return;
+    const [i, v] = (rb.dataset.trow || rb.dataset.tdiv).split("|");
+    pu.orgOpts = { levels: T.levels, rows: [...T.rows], div: [...T.div] };
+    if (rb.dataset.trow) pu.orgOpts.rows[+i] = v; else pu.orgOpts.div[+i] = +v;
+    save(); render(); return;
+  }
   if (pu && rb && (rb.dataset.fabt || rb.dataset.fabc || rb.dataset.tuft || rb.dataset.bduvet || rb.dataset.bthrow)) {
     const same = targetUnits().filter((x) => x.kind === "panel");
     for (const x of same.length ? same : [pu]) {
@@ -2669,7 +2725,7 @@ function insertSvg(W, D, v, h) {
 // 2) pull-out fittings and corner systems: hardware the workshop buys (it goes into the hardware list and
 //    the price) and a picture inside the unit.
 const ORGS = {
-  oil: { label: "ترولي زيت وتوابل (سحب كامل)", fit: (p) => (!p.unit_type || p.unit_type === "base") && +p.width <= 35 && (p.unit_category || "standard") === "standard", set: { door_type: "drawers", drawer_count: 1, include_drawer_boxes: false, include_shelves: false }, hw: { "ترولي زيت 3 أدوار + مجرى فتح كامل": 1 }, levels: 3, bottles: true },
+  oil: { label: "ترولي زيت وتوابل (سحب كامل)", fit: (p) => (!p.unit_type || p.unit_type === "base") && +p.width <= 45 && (p.unit_category || "standard") === "standard", set: { door_type: "drawers", drawer_count: 1, include_drawer_boxes: false, include_shelves: false }, hw: { "ترولي زيت 3 أدوار + مجرى فتح كامل": 1 }, levels: 3, bottles: true },
   cargo: { label: "عمود ترولي طويل (كارجو / تاندم)", fit: (p) => p.unit_type === "tall" && (p.unit_category || "standard") === "standard" && +p.width <= 60, set: { door_type: "drawers", drawer_count: 1, include_drawer_boxes: false, include_shelves: false }, hw: { "طقم ترولي طويل 5 سلات (تاندم)": 1 }, levels: 5 },
   baskets: { label: "سلال سحب داخلية (2)", fit: (p) => (!p.unit_type || p.unit_type === "base") && (p.unit_category || "standard") === "standard" && +p.width >= 40 && !String(p.door_type).includes("drawer"), set: { include_shelves: false }, hw: { "سلة سحب داخلية ستانلس": 2 }, levels: 2, inner: true },
   bin: { label: "سلة زبالة سحب (صندوقين)", fit: (p) => (!p.unit_type || p.unit_type === "base") && +p.width >= 40, set: {}, hw: { "سلة زبالة سحب — صندوقين": 1 }, bins: 2 },
@@ -2680,7 +2736,29 @@ const ORGS = {
   plates: { label: "مصفاة أطباق وكوبايات ستانلس", fit: (p) => p.unit_type === "wall" && +p.width >= 50, set: { include_shelves: false }, hw: { "مصفاة أطباق ستانلس دورين": 1 }, rack: true },
   lift: { label: "رف طالع ونازل (ليفت)", fit: (p) => p.unit_type === "wall" && +p.width >= 60, set: { include_shelves: false }, hw: { "ميكانيزم رف ليفت للعلوي": 1 }, levels: 2, inner: true },
 };
-function orgHardware(u) { return ORGS[u.org]?.hw || null; }
+/** what a trolley level holds (bottom level first) — the picture and the hardware text follow it */
+const TROLLEY_ROWS = {
+  oil: { label: "🫒 زيت وخل", h: 28, r: 3.1, gap: 7.5 }, bottles: { label: "🍾 زجاجات كبيرة", h: 32, r: 4, gap: 9.5 },
+  spice: { label: "🧂 برطمانات توابل", h: 10, r: 2.4, gap: 5.8 }, cans: { label: "🥫 علب وكانز", h: 12, r: 3.6, gap: 8 },
+  cloth: { label: "🧽 منظفات وفوط", h: 22, r: 3.6, gap: 9 }, empty: { label: "فاضي", h: 0 },
+};
+const TROLLEY_DEF = { oil: { levels: 3, rows: ["bottles", "oil", "spice"], div: [0, 1, 1] }, cargo: { levels: 5, rows: ["bottles", "cans", "cans", "spice", "spice"], div: [0, 0, 1, 1, 1] } };
+function trolleyOpts(u) {
+  const d = TROLLEY_DEF[u.org];
+  if (!d) return null;
+  const o = u.orgOpts || {}, n = Math.max(2, Math.min(u.org === "oil" ? 4 : 6, +o.levels || d.levels));
+  const rows = Array.from({ length: n }, (_, i) => (TROLLEY_ROWS[o.rows?.[i]] ? o.rows[i] : d.rows[Math.min(i, d.rows.length - 1)]));
+  const div = Array.from({ length: n }, (_, i) => Math.max(0, Math.min(3, Math.round(o.div?.[i] ?? d.div[Math.min(i, d.div.length - 1)] ?? 0))));
+  return { levels: n, rows, div };
+}
+function orgHardware(u) {
+  const t = trolleyOpts(u), o = ORGS[u.org];
+  if (!o) return null;
+  if (!t) return o.hw;
+  const w = Math.round(+u.params?.width || 0); // (not R(u): this runs while R builds the unit)
+  const what = [...new Set(t.rows.filter((k) => k !== "empty").map((k) => TROLLEY_ROWS[k].label.replace(/^\S+\s/, "")))].join(" / ");
+  return { [`${u.org === "oil" ? "ترولي زيت" : "ترولي طويل (كارجو)"} ${w} سم — ${t.levels} أدوار (${what}) + مجرى فتح كامل`]: 1, ...(t.div.some((x) => x) ? { "فواصل ترولي ستانلس": t.div.reduce((a, b) => a + b, 0) } : {}) };
+}
 function organizerField(u, r) {
   const p = r.params || {};
   let h = `<details open class="appbox orgbox"><summary>🧩 التقسيمات الداخلية</summary>`;
@@ -2698,7 +2776,16 @@ function organizerField(u, r) {
   const fits = Object.entries(ORGS).filter(([, o]) => o.fit(p));
   if (fits.length || u.org) {
     h += `<h4>ترولي ومنظمات سحب</h4><div class="inschips"><button class="chip ${!u.org ? "on" : ""}" data-org="">من غير</button>${fits.map(([k, o]) => `<button class="chip ${u.org === k ? "on" : ""}" data-org="${k}">${esc(o.label)}</button>`).join("")}</div>`;
-    if (u.org && ORGS[u.org]) h += `<p class="hint">اتضاف للهاردوير: ${Object.entries(ORGS[u.org].hw).map(([k, q]) => `${esc(k)} × ${q}`).join("، ")}. حط سعره في الورشة والعميل.</p>`;
+    const T = trolleyOpts(u);
+    if (T) {
+      h += `<h4>تقسيمة الترولي</h4><div class="grid2"><label class="f"><span>عدد الأدوار</span><select data-tlev>${Array.from({ length: (u.org === "oil" ? 4 : 6) - 1 }, (_, i) => i + 2).map((n) => `<option value="${n}" ${n === T.levels ? "selected" : ""}>${n} أدوار</option>`).join("")}</select></label></div>`;
+      for (let i = T.levels - 1; i >= 0; i--) {
+        h += `<div class="drw"><div class="drwh"><b>الدور ${i + 1}${i === 0 ? " (تحت)" : i === T.levels - 1 ? " (فوق)" : ""}</b><small>فواصل: ${[0, 1, 2, 3].map((k) => `<button class="chip ${T.div[i] === k ? "on" : ""}" data-tdiv="${i}|${k}">${k ? k + 1 + " خانات" : "من غير"}</button>`).join("")}</small></div>
+          <div class="inschips">${Object.entries(TROLLEY_ROWS).map(([k, x]) => `<button class="chip ${T.rows[i] === k ? "on" : ""}" data-trow="${i}|${k}">${esc(x.label)}</button>`).join("")}</div></div>`;
+      }
+      h += `<p class="hint">الترولي بيتشترى جاهز — التقسيمة دي بتظهر في الـ3D وبتتكتب في طلب الهاردوير عشان المورّد يجيب المقاس والأدوار الصح. الوحدة نفسها بتبقى وش واحد بيسحب الترولي كله.</p>`;
+    }
+    if (u.org && ORGS[u.org]) h += `<p class="hint">اتضاف للهاردوير: ${Object.entries(orgHardware(u) || {}).map(([k, q]) => `${esc(k)} × ${q}`).join("، ")}. حط سعره في الورشة والعميل.</p>`;
   }
   return h + `</details>`;
 }
@@ -2748,7 +2835,27 @@ function organizerMeshes(THREE, u, r, view_, g) {
     }
     for (const [xx, yy] of [[bx0, by0], [bx1, by0], [bx0, by1], [bx1, by1]]) rod(hh, xx, yy, bz + hh / 2, "z");
   };
-  if (o.levels) {
+  const T = trolleyOpts(u);
+  if (T) {
+    const n = T.levels, span = (z1 - z0) / n;
+    for (let i = 0; i < n; i++) {
+      const bz = z0 + i * span + 1, hh = Math.min(12, span * 0.45), row = TROLLEY_ROWS[T.rows[i]];
+      basket(x0, x1, y0, y1, bz, hh);
+      const nd = T.div[i], cw = (x1 - x0) / (nd + 1);
+      for (let k = 1; k <= nd; k++) { const xx = x0 + k * cw; rod(y1 - y0, xx, (y0 + y1) / 2, bz + hh * 0.6, "y"); rod(hh * 0.6, xx, y0, bz + hh * 0.3, "z"); rod(hh * 0.6, xx, y1, bz + hh * 0.3, "z"); }
+      if (!row.h) continue;
+      const COLORS = T.rows[i] === "spice" ? [0xb5651d, 0xc23b22, 0x7a8b3a, 0xd9a520] : T.rows[i] === "cans" ? [0xb8bcc0, 0xc23b22, 0x2f6f9f] : T.rows[i] === "cloth" ? [0x3a7bd5, 0x2fa36b, 0xf2c94c] : [0x6b7f2a, 0x8a5a1c, 0x2d4f2f, 0xb88a2a];
+      const bh = Math.min(span * 0.8, row.h), rr = row.r;
+      for (let c = 0; c <= nd; c++) {
+        const cx0 = x0 + c * cw + rr + 0.6, cx1 = x0 + (c + 1) * cw - rr - 0.6;
+        const cols = Math.max(1, Math.floor((cx1 - cx0) / row.gap) + 1), rows = Math.max(1, Math.floor((y1 - y0 - 2 * rr - 2) / row.gap) + 1);
+        for (let a = 0; a < cols; a++) for (let b2 = 0; b2 < Math.min(rows, 6); b2++) {
+          const mat = new THREE.MeshPhysicalMaterial({ color: COLORS[(a + b2 + i) % COLORS.length], roughness: 0.2, ...(T.rows[i] === "oil" || T.rows[i] === "bottles" ? { transmission: 0.3, thickness: 1 } : { metalness: T.rows[i] === "cans" ? 0.6 : 0 }) });
+          add(new THREE.CylinderGeometry(rr, rr, bh, 14), mat, cols > 1 ? cx0 + a * ((cx1 - cx0) / (cols - 1)) : (cx0 + cx1) / 2, y0 + rr + 1 + b2 * row.gap, bz + bh / 2 + 0.4);
+        }
+      }
+    }
+  } else if (o.levels) {
     const n = o.levels, span = (z1 - z0) / n;
     for (let i = 0; i < n; i++) {
       const bz = z0 + i * span + 1, hh = Math.min(12, span * 0.45);
@@ -4985,6 +5092,7 @@ function drawCut() {
   let sheets = 0, lb = 0;
   for (const g of groups) { sheets += results[g.key].stats.sheets; lb += results[g.key].stats.lower_bound; }
   h += `<div class="kpis"><div><b>${sheets}</b><span>لوح كامل</span></div><div><b>${lb}</b><span>أقل عدد نظري</span></div><div><b>${groups.length}</b><span>خامة/سمك</span></div><div><b>${groups.reduce((a, g) => a + g.parts.length, 0)}</b><span>قطعة على المنشار</span></div></div>`;
+  h += leftoversHtml();
   for (const g of groups) {
     const res = results[g.key];
     const st = res.stats;
@@ -5037,7 +5145,46 @@ function sheetSvg(s, si, g) {
   return `<figure class="sheet"><figcaption><b>لوح ${si + 1}</b>${s.stock === "remnant" ? '<span class="pill gold">باقي مخزن</span>' : ""}<span>${s.w}×${s.h}</span><span>${Math.round(s.util * 100)}%</span></figcaption>${svg}
     <details><summary>خطوات القص (${s.cuts.length})</summary><ol>${steps}</ol>${s.offcuts.length ? `<p class="hint">بواقي تتشال: ${s.offcuts.map((o) => `${o.w}×${o.h}`).join("، ")}</p>` : ""}</details></figure>`;
 }
+/** the usable pieces left on the boards after cutting this project (≥ the minimum size), per material */
+function leftovers(min = +(state.cutOpts?.leftMin ?? 30)) {
+  if (!cutData?.results) return [];
+  return cutData.groups.map((g) => {
+    const res = cutData.results[g.key];
+    const list = [];
+    res.sheets.forEach((sh, i) => { for (const o of sh.offcuts || []) if (Math.min(o.w, o.h) >= min) list.push({ w: Math.round(Math.max(o.w, o.h) * 10) / 10, h: Math.round(Math.min(o.w, o.h) * 10) / 10, sheet: i + 1 }); });
+    list.sort((a, b) => b.w * b.h - a.w * a.h);
+    const area = list.reduce((a, o) => a + (o.w * o.h) / 10000, 0);
+    const sheetA = res.sheets.reduce((a, sh) => a + (sh.w * sh.h) / 10000, 0);
+    return { key: g.key, list, area: Math.round(area * 100) / 100, sheetA, util: res.stats.utilization };
+  }).filter((x) => x.list.length);
+}
+function leftoversHtml() {
+  const L = leftovers(), min = +(state.cutOpts?.leftMin ?? 30);
+  const total = L.reduce((a, x) => a + x.list.length, 0), area = Math.round(L.reduce((a, x) => a + x.area, 0) * 100) / 100;
+  let h = `<section class="mgroup leftbox"><div class="mg-h"><h3>♻ ملخص بواقي الألواح — ${esc(state.project.name)}</h3><span class="pill">${total} قطعة باقية</span><span class="pill soft">${area} م²</span></div>
+    <div class="btnrow"><label class="f"><span>أقل مقاس يتحسب باقي (سم)</span><input type="text" inputmode="decimal" data-numf id="leftMin" value="${min}"></label>
+      <button class="ghost2" data-leftcopy>📋 انسخ الملخص</button><button class="ghost2" data-leftstock>📦 خزّنها في المخزن</button></div>`;
+  if (!L.length) return h + `<p class="hint">مفيش بواقي ${min}×${min} سم أو أكبر — الألواح متقصة كويس.</p></section>`;
+  h += `<div class="tblwrap"><table class="tbl"><thead><tr><th>الخامة</th><th>العدد</th><th>المساحة م²</th><th>المقاسات (طول × عرض سم · رقم اللوح)</th></tr></thead><tbody>`;
+  for (const x of L) h += `<tr><td>${esc(x.key)}</td><td class="num">${x.list.length}</td><td class="num">${x.area}</td><td>${x.list.slice(0, 14).map((o) => `<span class="rem">${n1(o.w)}×${n1(o.h)} <small>ل${o.sheet}</small></span>`).join(" ")}${x.list.length > 14 ? ` <small>+${x.list.length - 14}</small>` : ""}</td></tr>`;
+  return h + `</tbody></table></div><p class="hint">البواقي دي بتتعلّم على رسمة كل لوح تحت (المربعات المتقطّعة). «خزّنها في المخزن» بتضيفها لبواقي كل خامة، وخطة القص الجاية بتستخدمها الأول.</p></section>`;
+}
+function leftoversText() {
+  const L = leftovers();
+  return [`بواقي الألواح — ${state.project.name}`, ...L.map((x) => `${x.key}: ${x.list.length} قطعة (${x.area} م²) — ${x.list.map((o) => `${n1(o.w)}×${n1(o.h)}`).join("، ")}`)].join("\n");
+}
+$("#v-cut").addEventListener("click", async (e) => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  if (b.hasAttribute("data-leftcopy")) { try { await navigator.clipboard.writeText(leftoversText()); b.textContent = "اتنسخ ✓"; } catch { alertBar("ما قدرتش أنسخ — صدّر Excel وفيه شيت البواقي."); } return; }
+  if (b.hasAttribute("data-leftstock")) {
+    let n = 0;
+    for (const x of leftovers()) { const st = stockOf(x.key); for (const o of x.list) { st.remnants.push({ id: uid(), w: Math.round(o.w), h: Math.round(o.h) }); n++; } }
+    save(); alertBar(`اتضاف ${n} باقي للمخزن (الورشة والعميل ← المخزن).`); return;
+  }
+});
 $("#v-cut").addEventListener("change", (e) => {
+  if (e.target.id === "leftMin") { state.cutOpts ??= {}; state.cutOpts.leftMin = Math.max(5, toNum(e.target.value) || 30); save(); runCut(); return; }
   if (e.target.dataset.gsheet !== undefined) {
     const o = state.cutOpts; o.sheetFor ??= {};
     const v = e.target.value;
@@ -6260,6 +6407,7 @@ async function exportXlsx() {
     { name: "الألواح", rows: sheetRows, widths: [34, 12] },
     { name: "الهاردوير", rows: hwRows, widths: [34, 10] },
     { name: "كهربا وسباكة", rows: mepRows(), widths: [5, 22, 14, 8, 20, 20] },
+    { name: "بواقي الألواح", rows: [["الخامة", "الطول (سم)", "العرض (سم)", "المساحة (م²)", "رقم اللوح"], ...leftovers().flatMap((x) => x.list.map((o) => [x.key, o.w, o.h, Math.round((o.w * o.h) / 100) / 100, o.sheet]))], widths: [30, 10, 10, 12, 10] },
   ]);
   return Exp.deliver(cloud.downloads, `${fileBase()} — قايمة القطع.xlsx`, bytes);
 }
