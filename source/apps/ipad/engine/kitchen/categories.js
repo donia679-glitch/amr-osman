@@ -488,7 +488,8 @@ export class PulloutBuilder extends CarcassBuilder {
         const overlay = this.doorPosition() === "overlay";
         const gap = overlay ? this.doorGapOverlay() : this.doorGapInset();
         const fy0 = overlay ? -this.frontT() : 0, fy1 = overlay ? 0 : this.frontT();
-        const x0 = zone.x0 + gap, x1 = zone.x1 - gap, z0 = zone.z0 + gap - this.handleRecess(), z1 = zone.z1 - gap;
+        // the front: full zone height, its top lowered by the built-in handle recess (like every other base-unit front)
+        const x0 = zone.x0 + gap, x1 = zone.x1 - gap, z0 = zone.z0 + gap, z1 = rmax(zone.z1 - gap - this.handleRecess(), z0);
         if (x1 <= x0 || z1 <= z0)
             return;
         const label = "بول أوت";

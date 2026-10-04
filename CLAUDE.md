@@ -38,6 +38,7 @@ cd /home/claude/novera-app && python3 tools/build_pwa.py && python3 tools/build_
 - Kitchen units: base depth 58 includes the door (inset, face at y=0); corner units get their depth from `cornerFit()` in app.js unless set by hand.
 
 ## History (latest first)
+- v60: pull-out front honours `door_handle_recess` at its TOP (was wrongly applied at the bottom) — same 57.4 cm front as a base door.
 - v59: drawers behind hinged doors — the dressing engine already narrows them (hinge_fix: spacer `drawers.hinge_spacer_t` 1.8 on hinge sides, box in by spacer + slide clearance, inner front narrower by spacer + hinge_front_gap);
   now exposed in the dressing «إعدادات متقدمة → الأدراج» as a toggle + a NOVERA-rule hint with the numbers. Kitchen/panel engines have no drawers behind doors (zone drawers are external).
 - v58: fix — glass drawer fronts (dressing + panel engines) opened without their frame: `partMovers()` now gives every drawer part of the same `group` the first rail's mover (one drawer, not one mover per rail).
