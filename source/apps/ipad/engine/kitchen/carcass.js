@@ -531,6 +531,8 @@ export class CarcassBuilder {
     // ---------------------------------------------------------------- bottom
     buildBottom(e) {
         const pt = this.panelT();
+        if (this.hoodLift() > 0)
+            return this.buildHoodShelf(e);
         const piece = this.ptrapEnabled()
             ? this.buildBottomWithPtrap(e)
             : this.buildGroovedHorizontal(e, "قاعدة", pt, this.width() - pt, this.z0Carcass(), this.z0Carcass() + pt, "notch_at_top");
@@ -539,6 +541,29 @@ export class CarcassBuilder {
     }
     ptrapEnabled() {
         return truthy(this.p["include_ptrap_opening"]);
+    }
+    /** the raised bottom over the hood body, with the duct cut-out (and the matching hole in the head) */
+    buildHoodShelf(e) {
+        const pt = this.panelT(), z0 = this.z0Carcass() + this.hoodLift();
+        const piece = this.buildGroovedHorizontal(e, "جلسة الشفاط", pt, this.width() - pt, z0, z0 + pt, "notch_at_top");
+        this.bandFrontAndBack(piece);
+        this.recordHorizontalLabel("جلسة الشفاط", pt, this.width() - pt, 0, this.depth());
+        const r = this.hoodDuctR();
+        const last = this.ctx.labels.last(this.unitId, "جلسة الشفاط");
+        const ductNote = this.hoodDuctNote();
+        const note = `جلسة الشفاط: جسم الشفاط بيتعلق تحتها (ارتفاع الفراغ ${rround(this.hoodLift() / cm(1.0), 1)} سم) ومسامير التثبيت من جوه الوحدة · ${ductNote} · بريزة الشفاط جوه الوحدة فوق الجلسة`;
+        if (last) last.note = last.note ? `${last.note} | ${note}` : note;
+        if (r > 0) {
+            const cx = this.width() / 2.0, cy = this.depth() / 2.0 + cm(2.0);
+            const m1 = createHoleMarkerZ(this.ctx, e, "فتحة مجرى الشفاط (الجلسة)", cx, cy, z0 + pt / 2.0, r, pt + cm(0.2), COLORS.assembly);
+            assignLayer(this.ctx, m1, TAGS.assembly);
+            const m2 = createHoleMarkerZ(this.ctx, e, "فتحة مجرى الشفاط (الرأس)", cx, cy, this.height() - pt / 2.0, r, pt + cm(0.2), COLORS.assembly);
+            assignLayer(this.ctx, m2, TAGS.assembly);
+        }
+    }
+    hoodDuctNote() {
+        const r = this.hoodDuctR();
+        return r > 0 ? `فتحة مجرى الشفاط Ø${rround(r * 2 / cm(1.0), 0)} سم في النص على بعد ${rround(this.depth() / cm(1.0) / 2 + 2, 0)} سم من الحرف الأمامي` : "";
     }
     buildBottomWithPtrap(e) {
         const x0 = this.panelT();
@@ -644,6 +669,10 @@ export class CarcassBuilder {
             const piece = this.buildGroovedHorizontal(e, "رأس", pt, this.width() - pt, this.height() - pt, this.height(), "notch_at_bottom");
             this.bandFrontAndBack(piece);
             this.recordHorizontalLabel("رأس", pt, this.width() - pt, 0, this.depth());
+        }
+        if (this.hoodLift() > 0 && this.hoodDuctR() > 0) {
+            const head = this.ctx.labels.last(this.unitId, this.topRails() ? "شريط علوي خلفي" : "رأس");
+            if (head) head.note = [head.note, `${this.hoodDuctNote()} (لو التفريغ لفوق)`].filter(Boolean).join(" | ");
         }
     }
     recordHorizontalLabel(name, x0, x1, y0, y1) {
@@ -1019,10 +1048,20 @@ export class CarcassBuilder {
     // ---------------------------------------------------------------- openings
     innerOpening() {
         const pt = this.panelT();
-        return { x0: pt, x1: this.width() - pt, z0: this.z0Carcass() + pt, z1: this.height() - pt - this.valanceH() };
+        return { x0: pt, x1: this.width() - pt, z0: this.z0Carcass() + this.hoodLift() + pt, z1: this.height() - pt - this.valanceH() };
     }
     outerOpening() {
-        return { x0: 0, x1: this.width(), z0: this.z0Carcass(), z1: this.height() - this.valanceH() };
+        return { x0: 0, x1: this.width(), z0: this.z0Carcass() + this.hoodLift(), z1: this.height() - this.valanceH() };
+    }
+    /** NOVERA v55: a hood built into a wall unit — the bottom is raised by the hood body's height, the hood hangs in the open zone under it */
+    hoodEnabled() {
+        return this.unitType() === "wall" && truthy(this.p["include_hood"]);
+    }
+    hoodLift() {
+        return this.once("hood_lift", () => (this.hoodEnabled() ? rmin(rmax(pcm(this.p["hood_height"]), 0), rmax(this.height() - 3 * this.panelT(), 0)) : 0));
+    }
+    hoodDuctR() {
+        return rmax(pcm(this.p["hood_duct_diameter"]), 0) / 2.0;
     }
     activeZone() {
         return this.doorPosition() === "overlay" ? this.outerOpening() : this.innerOpening();

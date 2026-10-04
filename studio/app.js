@@ -1750,7 +1750,7 @@ function swatches(colors) {
 }
 function kitchenGroup(s) {
   const p = s.params || {};
-  if (["fridge", "oven", "microwave", "washing_machine", "washer_gap"].includes(p.unit_category) || /hob90|sink/.test(s.key || "")) return "🔌 أجهزة وتجاويف (تلاجة · فرن · ميكروويف · غسالة)";
+  if (["fridge", "oven", "microwave", "washing_machine", "washer_gap", "cooker_gap"].includes(p.unit_category) || p.include_hood || /hob90|sink/.test(s.key || "")) return "🔌 أجهزة وتجاويف (تلاجة · فرن · ميكروويف · غسالة)";
   if (s.group) return s.group;
   if (p.element_mode === "accessory") return "مطابخ — إكسسوارات";
   if (p.unit_category === "bedroom_wardrobe") return "دواليب غرف النوم";
@@ -2238,6 +2238,8 @@ function renderChips() {
   if (u.kind === "kitchen") {
     for (const [path, label] of KU.dimsFor(p).slice(0, 3)) h += stepChip(path, label, n1(+p[path] || 0));
     if (p.unit_category === "washer_gap") { h += cycleChip("washer_gap_side", "جنب يمسك الرأس", "K_GAP_SIDE", p.washer_gap_side || "none") + cycleChip("top_style", "الرأس", "K_TOP", p.top_style) + togChip("include_assembly_holes", "أليتا", p.include_assembly_holes); el.innerHTML = `<div class="cbody">${h}</div>`; return; }
+    if (p.unit_category === "cooker_gap") { h += cycleChip("washer_gap_side", "جنب تقفيلة", "K_GAP_SIDE", p.washer_gap_side || "none") + stepChip("cooker_base_height", "القعدة", n1(+p.cooker_base_height || 0), 1); el.innerHTML = `<div class="cbody">${h}</div>`; return; }
+    if (p.unit_type === "wall" && !["open_shelf", "corner_glass_display", "corner"].includes(p.unit_category)) h += togChip("include_hood", "شفاط مدمج", p.include_hood) + (p.include_hood ? stepChip("hood_height", "فراغ الشفاط", n1(+p.hood_height || 18), 1) : "");
     h += cycleChip("door_type", "الضلف", "K_DOORS", p.door_type);
     if (p.door_type === "drawers" || p.door_type === "drawer_top_two_doors_bottom") h += stepChip("drawer_count", "أدراج", p.drawer_count, 1);
     if (p.include_shelves) h += stepChip("shelf_count", "أرفف", p.shelf_count, 1);
@@ -2586,7 +2588,7 @@ function renderProps0() {
     h += `</div></details>`;
     el.innerHTML = h; return;
   }
-  if (u.kind === "kitchen" && r.ok) h += applianceField(u, p) + (p.unit_category === "washer_gap" ? "" : organizerField(u, r));
+  if (u.kind === "kitchen" && r.ok) h += applianceField(u, p) + (p.unit_category === "washer_gap" || p.unit_category === "cooker_gap" ? "" : organizerField(u, r));
   if (r.ok) h += summaryHtml(u);
   if (r.ok) h += `<div class="btnrow"><button class="ghost2" data-tostudio title="نسخة من الوحدة كألواح تعدّلها بحرية">✏️ عدّلها بحرية في ورشة الرسم</button></div>`;
   h += u.kind === "dressing" ? dressingProps(p) : u.kind === "kitchen" ? kitchenProps(p) : panelProps(p, r);
@@ -2838,6 +2840,12 @@ function kitchenProps(p) {
   if (extra.length) {
     h += `<details open><summary>إعدادات ${esc(KU.K_CATS[p.unit_category] || "")}</summary><div class="grid2">${extra.filter((x) => x[2] !== "bool").map(f).join("")}</div>
       <div class="bools">${extra.filter((x) => x[2] === "bool").map(f).join("")}</div></details>`;
+  }
+  if (p.unit_category === "cooker_gap") {
+    h += `<p class="hint">البوتجاز العادي بيقف في فتحة: القعدة (شريط أمامي بفتحات تهوية + سطح بشقوق) بتتثبت في الوحدات اللي جنبها، ومفيش رأس ولا كونتر — مسطح البوتجاز نفسه هو السطح. لو الفتحة آخر الصف اختار جنب تقفيلة. الغاز ورا البوتجاز بمحبس.</p>
+      <details><summary>الهيكل</summary><div class="grid2">${numF("panel_thickness", "سمك الخشب", p.panel_thickness, 0.1)}</div>
+      <div class="bools">${boolF("include_edge_banding", "شريط حواف", p.include_edge_banding)}</div></details>`;
+    return h;
   }
   if (p.unit_category === "washer_gap") {
     // the washer slot has no box: just the head (+ a side at the end of the run) and the countertop over it
@@ -3869,10 +3877,43 @@ function applianceMeshes(THREE, u, r) {
     }
   }
   // a hood under the wall unit over the hob
-  if (p.unit_type === "wall" && /شفاط/.test(label)) {
+  const hoodIn = p.unit_type === "wall" && (p.include_hood === true || p.include_hood === "true");
+  if (hoodIn) {
+    // v55: the hood body hangs in the open zone under the raised bottom («جلسة الشفاط»)
+    const shelf = ms.find((m) => /^جلسة الشفاط/.test(m.name)), zs = shelf ? shelf.box.z0 : Math.min(...ms.map((m) => m.box.z0)) + (+p.hood_height || 18);
+    const hh = Math.max(6, +p.hood_height || 18), zb = zs - hh;
+    const sides = ms.filter((m) => /^جنب/.test(m.name)), xl = Math.max(W0, ...sides.filter((m) => (m.box.x0 + m.box.x1) / 2 < (W0 + W1) / 2).map((m) => m.box.x1)), xr = Math.min(W1, ...sides.filter((m) => (m.box.x0 + m.box.x1) / 2 >= (W0 + W1) / 2).map((m) => m.box.x0));
+    box("steel", xl + 0.5, xr - 0.5, 1, Math.min(D1 - 1, 30), zb + 1, zs - 0.3, "شفاط");
+    box("steel", xl + 0.5, xr - 0.5, -3, 1, zb + 1, zs - 0.3, "شفاط (الوش)");
+    box("dark", xl + 3, xr - 3, 3, Math.min(D1 - 4, 27), zb + 0.6, zb + 1, "فلتر الشفاط");
+    box("dark", xl + 4, xr - 4, -2.4, -2, zb + hh * 0.3, zb + hh * 0.55, "أزرار الشفاط");
+    cyl("steel", Math.max(4, (+p.hood_duct_diameter || 15) / 2 - 0.3), Math.max(1, Math.max(...ms.map((m) => m.box.z1)) - zs - 0.5), (xl + xr) / 2, Math.min(D1 - 4, 30) / 2 + 2, (zs + Math.max(...ms.map((m) => m.box.z1))) / 2, "z");
+  } else if (p.unit_type === "wall" && /شفاط/.test(label)) {
     const z0 = Math.min(...ms.map((m) => m.box.z0));
     box("steel", W0 + 3, W1 - 3, 0, Math.min(32, D1), z0 - 7, z0, "شفاط");
     box("dark", W0 + 6, W1 - 6, 3, Math.min(29, D1 - 3), z0 - 7.4, z0 - 7, "شفاط");
+  }
+  // v55: a freestanding cooker standing on the vented deck of the cooker gap
+  if (cat === "cooker_gap") {
+    const deck = ms.find((m) => /^قعدة البوتجاز/.test(m.name)), zb = deck ? deck.box.z1 : 0;
+    const sides = ms.filter((m) => /^جنب/.test(m.name)), xl = Math.max(W0, ...sides.filter((m) => (m.box.x0 + m.box.x1) / 2 < (W0 + W1) / 2).map((m) => m.box.x1)), xr = Math.min(W1, ...sides.filter((m) => (m.box.x0 + m.box.x1) / 2 >= (W0 + W1) / 2).map((m) => m.box.x0));
+    const a0 = xl + 1, a1 = xr - 1, dep = Math.min(D1, 60), H = 85, top = zb + H;
+    box("white", a0, a1, 1, dep, zb + 0.5, top - 4, "بوتجاز");
+    box("steel", a0, a1, 0, dep, top - 4, top, "مسطح البوتجاز");
+    box("steel", a0 + 1, a1 - 1, dep - 2, dep + 8, top, top + 12, "ضهر البوتجاز");
+    box("dark", a0 + 3, a1 - 3, -0.6, 1, zb + 10, top - 22, "باب الفرن");
+    box("glass", a0 + 8, a1 - 8, -0.9, -0.6, zb + 22, top - 32, "زجاج الفرن");
+    cyl("chrome", 0.9, a1 - a0 - 10, (a0 + a1) / 2, -3, top - 20);
+    box("steel", a0 + 2, a1 - 2, -0.6, 1, top - 16, top - 5, "مفاتيح");
+    const n = a1 - a0 > 75 ? 5 : 4;
+    const pts = n === 5 ? [[0.2, 0.3], [0.2, 0.75], [0.5, 0.5], [0.8, 0.3], [0.8, 0.75]] : [[0.27, 0.3], [0.27, 0.72], [0.73, 0.3], [0.73, 0.72]];
+    for (const [fx, fy] of pts) {
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(n === 5 && fx === 0.5 ? 6 : 4.5, 0.7, 8, 24), apMat(THREE, "dark"));
+      ring.rotation.x = Math.PI / 2;
+      ring.position.set(a0 + (a1 - a0) * fx, top + 1.2, -(4 + (dep - 8) * fy));
+      ring.userData.pname = "بوتجاز"; ring.userData.appl = true;
+      out.push(ring);
+    }
   }
   return out;
 }
@@ -7037,7 +7078,8 @@ function designChecks(project = state.project) {
     const range = (it, sg) => { const fp = Room.footprint(it.pose, it.box).map((q) => (q[0] - sg.A[0]) * sg.d[0] + (q[1] - sg.A[1]) * sg.d[1]); return [Math.min(...fp), Math.max(...fp)]; };
     for (const it of items) {
       const p = R(it.u).params || {};
-      if (it.u.kind !== "kitchen" || p.unit_category !== "washer_gap") continue;
+      if (it.u.kind !== "kitchen" || (p.unit_category !== "washer_gap" && p.unit_category !== "cooker_gap")) continue;
+      const cooker = p.unit_category === "cooker_gap";
       const sg = segs.find((x) => x.id === it.pose.wall);
       if (!sg) continue;
       const [lo, hi] = range(it, sg);
@@ -7049,8 +7091,9 @@ function designChecks(project = state.project) {
       const leftIsLo = pr(fp[0]) < pr(fp[1]);
       const wantL = leftIsLo ? !hasL : !hasR, wantR = leftIsLo ? !hasR : !hasL; // in the unit's own left/right
       const have = { left: side === "left" || side === "both", right: side === "right" || side === "both" };
-      if ((wantL && !have.left) || (wantR && !have.right)) add("w", `${label(it)}: فتحة الغسالة في آخر الصف ومفيش جنب يمسك الرأس من الناحية الفاضية — اختار «جنب يمسك الرأس» في إعدادات الوحدة.`, it.id);
-      if ((!wantL && !wantR) && side !== "none") add("n", `${label(it)}: الفتحة بين وحدتين — الجنب مش لازم (الرأس بتتثبت في الوحدات اللي جنبها).`, it.id);
+      if ((wantL && !have.left) || (wantR && !have.right)) add(cooker ? "n" : "w", cooker ? `${label(it)}: فتحة البوتجاز في آخر الصف — ضيف «جنب تقفيلة» من الناحية الفاضية عشان جنب البوتجاز يبقى مقفول.` : `${label(it)}: فتحة الغسالة في آخر الصف ومفيش جنب يمسك الرأس من الناحية الفاضية — اختار «جنب يمسك الرأس» في إعدادات الوحدة.`, it.id);
+      if ((!wantL && !wantR) && side !== "none") add("n", `${label(it)}: الفتحة بين وحدتين — الجنب مش لازم${cooker ? "" : " (الرأس بتتثبت في الوحدات اللي جنبها)"}.`, it.id);
+      if (cooker && !pts.some((q) => q.kind === "gas" && Math.hypot(q.w.x - Room.centerOf(it.pose, it.box)[0], q.w.z - Room.centerOf(it.pose, it.box)[1]) < 100)) add("w", `${label(it)}: مفيش مخرج غاز قريب من البوتجاز — المحبس ورا البوتجاز أو جنبه.`, it.id);
     }
     // sockets / switches hidden behind units
     for (const p of pts) {
@@ -7099,7 +7142,9 @@ function designChecks(project = state.project) {
         if (o.row !== "upper" || o.pose.wall !== hobIt.pose.wall) continue;
         const g = gapOn(hobIt, o);
         if (g == null || g > -5) continue;
-        const clear = (+prm(o).wall_mount_height || 140) - ((+prm(hobIt).height || 72) + (+prm(hobIt).toe_kick_height || 10) + (+prm(hobIt).countertop_thickness || 3.8));
+        const hp = prm(hobIt), hobTop = hp.unit_category === "cooker_gap" ? (+hp.cooker_base_height || 0) + 85 : (+hp.height || 72) + (+hp.toe_kick_height || 10) + (+hp.countertop_thickness || 3.8);
+        const hoodBottom = +prm(o).wall_mount_height || 140; // a built-in hood hangs inside the unit: its bottom is the unit's bottom
+        const clear = hoodBottom - hobTop;
         if (clear < 65) add("w", `${label(o)} فوق البوتجاز على ${n1(clear)} سم بس — الشفاط محتاج 65 سم على الأقل (غاز 75).`, o.id);
       }
     }
@@ -7109,7 +7154,7 @@ function designChecks(project = state.project) {
     if (hobIt) {
       if (openOn(hobIt, "window")) add("w", `${label(hobIt)} قدام الشباك — الهوا بيطفي الشعلة والستارة قريبة من النار؛ الأحسن الحوض تحت الشباك والبوتجاز على حيطة تانية.`, hobIt.id);
       if (openOn(hobIt, "door", 30)) add("w", `${label(hobIt)} جنب باب الأوضة على طول — اللي داخل بيخبط في اللي بيطبخ. سيب 40 سم على الأقل.`, hobIt.id);
-      const hoodAbove = kit.some((o) => o.row === "upper" && o.pose.wall === hobIt.pose.wall && (gapOn(hobIt, o) ?? 99) < -5 && /شفاط|hood/i.test(`${prm(o).unit_label || ""} ${o.u.name}`));
+      const hoodAbove = kit.some((o) => o.row === "upper" && o.pose.wall === hobIt.pose.wall && (gapOn(hobIt, o) ?? 99) < -5 && (prm(o).include_hood || /شفاط|hood/i.test(`${prm(o).unit_label || ""} ${o.u.name}`)));
       const hoodPt = pts.some((q) => q.kind === "hood" && Math.hypot(q.w.x - ctr(hobIt)[0], q.w.z - ctr(hobIt)[1]) < 80);
       if (!hoodAbove && !hoodPt) add("n", `${label(hobIt)}: مفيش شفاط فوق البوتجاز — ضيف «علوية فوق الشفاط» من المكتبة أو نقطة شفاط على الحيطة.`, hobIt.id);
       const gasPts = pts.filter((q) => q.kind === "gas");
@@ -8979,9 +9024,11 @@ function purchaseData() {
     if (p.unit_category === "microwave") add("microwave", "ميكروويف بلت إن", `تجويف ${n1(w - 4)} سم`);
     if (p.unit_category === "washing_machine") add("washer", "غسالة", `تجويف ${n1(w - 4)} سم`);
     if (p.unit_category === "washer_gap") add("washer", "غسالة", `فتحة ${n1(w)} سم`);
+    if (p.unit_category === "cooker_gap") add("cooker", "بوتجاز عادي", `فتحة ${n1(w)} سم`);
+    if (p.unit_type === "wall" && (p.include_hood === true || p.include_hood === "true")) add("hood", "شفاط مدمج", `دولاب ${n1(w)} سم · فراغ ${n1(+p.hood_height || 18)} سم`);
     if (p.include_sink_cutout === true || p.include_sink_cutout === "true") add("sink", "حوض", `فتحة ${n1(+p.sink_cutout_width || w - 10)} × ${n1(+p.sink_cutout_depth || 45)} سم`);
     if (/بوتجاز|مسطح|hob/i.test(`${p.unit_label || ""} ${u.name}`)) add("hob", "مسطح / بوتجاز بلت إن", `عرض ${n1(w)} سم`);
-    if (/شفاط|hood/i.test(`${p.unit_label || ""} ${u.name}`)) add("hood", "شفاط", `عرض ${n1(w)} سم`);
+    if (!(p.include_hood === true || p.include_hood === "true") && /شفاط|hood/i.test(`${p.unit_label || ""} ${u.name}`)) add("hood", "شفاط", `عرض ${n1(w)} سم`);
   }
   for (const k of Object.keys(out)) out[k].forEach((l) => { l.total = l.price ? l.price * l.qty : 0; });
   return out;

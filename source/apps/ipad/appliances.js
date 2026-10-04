@@ -20,6 +20,7 @@ export const CLASS_LABELS = {
   washer: "غسالة / غسالة أطباق",
   sink: "حوض",
   hob: "بوتجاز / مسطح",
+  cooker: "بوتجاز عادي (واقف)",
   hood: "شفاط",
 };
 
@@ -256,7 +257,7 @@ const HOBS = [
 // minUnitHeight = minimum height of the wall unit that carries it (0 = no wall unit needed)
 const hood = (id, label, size, cavity, width, hoodMount, minUnitHeight, brands, note) => ({
   id, label, size, cavity,
-  params: { width },
+  params: hoodMount === "chimney" ? { width } : { width, hood_height: size.h },
   hoodMount, minUnitHeight,
   width, brands, note, power: P16,
 });
@@ -291,6 +292,28 @@ const HOODS = [
     "بيتدمج داخل دولاب علوي 90 ارتفاعه 40 سم على الأقل. بريزة جوه الدولاب وماسورة تفريغ 12–15 سم."),
 ];
 
+// ---------------------------------------------------------------- freestanding cookers (stand in a gap in the base run, NOVERA v55)
+// size = the cooker body (w × h to the hob top × d); cavity = the slot it needs (w + 1 cm each side)
+const cooker = (id, label, size, width, brands, note, power) => ({
+  id, label, size, cavity: sz(size.w + 2, size.h, size.d),
+  params: { width },
+  width, brands, note, power,
+});
+const COOKERS = [
+  cooker("cooker60_gas", "بوتجاز عادي 60×60 غاز 4 شعلات بفرن", sz(60, 85, 60), 62,
+    ["Unionaire", "Fresh", "Kiriazi", "Tornado", "Glemgas", "Elba", "Zanussi"],
+    "فتحة 62 سم (سنتي كل جنب). ارتفاعه 85 — المسطح أعلى من الكونتر 82 بشوية، سيب القعدة 0 لو عايز نفس المستوى. محبس غاز ورا البوتجاز وتهوية تحته.", GAS),
+  cooker("cooker80_gas", "بوتجاز عادي 80×60 غاز 5 شعلات بفرن", sz(80, 85, 60), 82,
+    ["Unionaire", "Fresh", "Kiriazi", "Tornado", "Glemgas"],
+    "فتحة 82 سم. محبس غاز وبريزة 16 أمبير للإشعال والشواية.", BOTH),
+  cooker("cooker90_gas", "بوتجاز عادي 90×60 غاز 5 شعلات بفرن", sz(90, 85, 60), 92,
+    ["Unionaire", "Fresh", "Kiriazi", "Glemgas", "Elba", "Zanussi", "Bosch"],
+    "فتحة 92 سم. محبس غاز وبريزة 16 أمبير.", BOTH),
+  cooker("cooker55_gas", "بوتجاز عادي 55×55 غاز 4 شعلات", sz(55, 85, 55), 57,
+    ["Unionaire", "Fresh", "Kiriazi", "Tornado"],
+    "فتحة 57 سم للمطابخ الصغيرة.", GAS),
+];
+
 // ---------------------------------------------------------------- export (deep-frozen so callers cannot mutate the catalog)
 const deepFreeze = (o) => {
   if (o && typeof o === "object" && !Object.isFrozen(o)) {
@@ -300,7 +323,7 @@ const deepFreeze = (o) => {
   return o;
 };
 
-const BUILD = { oven: OVENS, microwave: MICROWAVES, fridge: FRIDGES, washer: WASHERS, sink: SINKS, hob: HOBS, hood: HOODS };
+const BUILD = { oven: OVENS, microwave: MICROWAVES, fridge: FRIDGES, washer: WASHERS, sink: SINKS, hob: HOBS, cooker: COOKERS, hood: HOODS };
 Object.keys(BUILD).forEach((cls) => BUILD[cls].forEach((e) => { e.cls = cls; }));
 
 export const APPLIANCES = deepFreeze(BUILD);
@@ -323,8 +346,10 @@ export function classOf(params, name) {
     case "microwave": return "microwave";
     case "washing_machine": return "washer";
     case "washer_gap": return "washer";
+    case "cooker_gap": return "cooker";
     default: break;
   }
+  if (p.include_hood === true || p.include_hood === "true") return "hood";
   if (p.include_sink_cutout === true || p.include_sink_cutout === "true") return "sink";
   const text = `${name == null ? "" : name} ${p.unit_label == null ? "" : p.unit_label}`;
   if (/بوتجاز|مسطح|hob/i.test(text)) return "hob";
@@ -352,7 +377,9 @@ export function fits(params, entry) {
   const EPS = 1e-6;
   const bad = [];
 
-  if (cls === "hood") {
+  if (cls === "cooker") {
+    if (W != null && W < entry.width - EPS) bad.push(`عرض الفتحة ${r1(W)} أقل من المطلوب ${entry.width} سم (البوتجاز ${entry.size.w} + سنتي كل جنب)`);
+  } else if (cls === "hood") {
     if (W != null && W < entry.width - EPS) bad.push(`عرض الوحدة ${r1(W)} أقل من عرض الشفاط ${entry.width} سم`);
     if (entry.hoodMount !== "chimney" && H != null && H < entry.minUnitHeight - EPS) {
       bad.push(`ارتفاع الدولاب ${r1(H)} أقل من المطلوب للشفاط ده (${entry.minUnitHeight} سم)`);

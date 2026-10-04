@@ -5,7 +5,7 @@ import { TYPES as HANDLE_TYPES } from "./engine/handles/catalog.js";
 export const K_CATS = {
   standard: "عادية (ضلف/أدراج)", oven: "وحدة فرن", microwave: "وحدة ميكروويف", open_shelf: "مفتوحة (رفوف)",
   divided: "مقسّمة (فاصل رأسي)", corner: "وحدة زاوية", corner_glass_display: "فاترينة زاوية زجاج",
-  wardrobe: "دولاب دريسنج (مطبخ)", bedroom_wardrobe: "دولاب غرفة نوم", washing_machine: "وحدة غسالة", washer_gap: "فتحة غسالة (رأس بس)", fridge: "تجويف ثلاجة",
+  wardrobe: "دولاب دريسنج (مطبخ)", bedroom_wardrobe: "دولاب غرفة نوم", washing_machine: "وحدة غسالة", washer_gap: "فتحة غسالة (رأس بس)", cooker_gap: "فتحة بوتجاز عادي (قعدة بتهوية)", fridge: "تجويف ثلاجة",
 };
 export const K_GAP_SIDE = { none: "بدون — بين وحدتين", left: "جنب شمال (الفتحة آخر الصف من الشمال)", right: "جنب يمين (الفتحة آخر الصف من اليمين)", both: "جنبين" };
 export const K_TYPES = { base: "سفلية", wall: "حائط", tall: "دولاب طويل" };
@@ -83,6 +83,8 @@ export function extraFields(p) {
   } else if (cat === "washer_gap") {
     f.push(["washer_gap_side", "جنب يمسك الرأس", "choice", K_GAP_SIDE], ["top_style", "الرأس", "choice", K_TOP], ["washer_cavity_height", "ارتفاع الغسالة (للتأكد إنها داخلة)", "num"]);
     if (p.top_style === "rails") f.push(["top_rail_width", "عرض الشريط", "num"], ["top_rail_front_inset", "رجوع الشريط الأمامي", "num"]);
+  } else if (cat === "cooker_gap") {
+    f.push(["washer_gap_side", "جنب تقفيلة (لو الفتحة آخر الصف)", "choice", K_GAP_SIDE], ["cooker_base_height", "ارتفاع القعدة (0 = البوتجاز على الأرض)", "num"]);
   } else if (cat === "fridge") {
     f.push(["fridge_include_left_side", "جنب طويل شمال", "bool"], ["fridge_include_right_side", "جنب طويل يمين", "bool"]);
   } else if (cat === "divided") {
@@ -111,6 +113,11 @@ export function extraFields(p) {
     f.push(["wardrobe_rail_diameter", "قطر الشماعة", "num"], ["wardrobe_rail_depth_offset", "بعد الشماعة عن الظهر", "num"]);
   }
   if (p.door_type === "sliding" && p.door_style !== "sliding" && !f.some((x) => x[0] === "sliding_panel_count")) f.push(["sliding_panel_count", "عدد ألواح السحّاب (2–4)", "int"]);
+  // NOVERA v55: any wall unit can carry a hood on its own — the bottom is raised by the hood body and the hood hangs under it
+  if (p.unit_type === "wall" && !["open_shelf", "corner_glass_display", "corner"].includes(cat)) {
+    f.push(["include_hood", "شفاط مدمج في الوحدة (جلسة مرفوعة)", "bool"]);
+    if (p.include_hood) f.push(["hood_height", "ارتفاع جسم الشفاط (الفراغ تحت الجلسة)", "num"], ["hood_duct_diameter", "قطر مجرى التفريغ", "num"]);
+  }
   return f;
 }
 
@@ -127,6 +134,10 @@ export const KITCHEN = {
   k_oven: { label: "دولاب فرن + ميكروويف", desc: "طويل 220 سم: أدراج، فرن، ميكروويف، ضلف فوق.", params: B({ unit_category: "oven", unit_type: "tall", height: 220, include_microwave: true, oven_bottom_front_type: "drawers", drawer_count: 2, oven_cavity_bottom_offset: 52, microwave_cavity_bottom_offset: 116 }) },
   k_fridge: { label: "تجويف ثلاجة", desc: "جنبين طوال حوالين الثلاجة ووحدة فوقها.", params: B({ unit_category: "fridge", unit_type: "tall", height: 220, depth: 60 }) },
   k_washer_gap: { label: "فتحة غسالة 60", desc: "مكان الغسالة فاضي: رأس بس بيتربط في الوحدات اللي جنبها، وجنب لو في آخر الصف. الكونتر بيكمل فوقها.", params: B({ unit_category: "washer_gap", width: 60, include_toe_kick: false, include_shelves: false, door_type: "none", washer_cavity_height: 85 }) },
+  k_cooker_gap: { label: "فتحة بوتجاز عادي 60", desc: "البوتجاز العادي بيقف في فتحة: قعدة 10 سم بشقوق تهوية وفتحات في الوزرة — من غير رأس ولا كونتر.", params: B({ unit_category: "cooker_gap", width: 60, include_toe_kick: false, include_shelves: false, door_type: "none", cooker_base_height: 10 }) },
+  k_cooker_gap90: { label: "فتحة بوتجاز عادي 90", desc: "نفس الفتحة لبوتجاز 90 (5 شعلات).", params: B({ unit_category: "cooker_gap", width: 90, include_toe_kick: false, include_shelves: false, door_type: "none", cooker_base_height: 10 }) },
+  k_wall_hood_in: { label: "علوية بشفاط مدمج 60", desc: "علوية 60×70: الجلسة مرفوعة 18 سم وجسم الشفاط (تليسكوبي) تحتها، وفتحة مجرى 15 سم.", params: B({ unit_type: "wall", width: 60, height: 70, depth: 32, include_toe_kick: false, shelf_count: 1, include_hood: true, hood_height: 18, hood_duct_diameter: 15, unit_label: "شفاط" }) },
+  k_wall_hood_in90: { label: "علوية بشفاط مدمج 90", desc: "علوية 90×70 بشفاط تليسكوبي مدمج تحت الجلسة.", params: B({ unit_type: "wall", width: 90, height: 70, depth: 32, include_toe_kick: false, shelf_count: 1, include_hood: true, hood_height: 18, hood_duct_diameter: 15, unit_label: "شفاط" }) },
   k_washer: { label: "وحدة غسالة", desc: "تجويف غسالة بفيلرات ووحدة فوقها.", params: B({ unit_category: "washing_machine", unit_type: "tall", height: 200 }) },
   k_bedroom_wr: { label: "دولاب غرفة نوم 120", desc: "طويل 220 سم، شماعة فوق وأرفف تحت، ضلفتين.", params: B({ unit_category: "bedroom_wardrobe", unit_type: "tall", width: 120, height: 220, depth: 60, wardrobe_zone_count: 2, wardrobe_zone1_type: "shelves_double", wardrobe_zone1_height: 90, wardrobe_zone1_count: 2, wardrobe_zone2_type: "rail_double" }) },
   k_bedroom_slide: { label: "دولاب نوم سحّاب 180", desc: "3 ألواح سحّاب، شماعة وأرفف.", params: B({ unit_category: "bedroom_wardrobe", unit_type: "tall", width: 180, height: 240, depth: 62, door_style: "sliding", sliding_panel_count: 3, wardrobe_zone_count: 2, wardrobe_zone1_type: "shelves_open", wardrobe_zone1_height: 100, wardrobe_zone1_count: 3, wardrobe_zone2_type: "rail_open" }) },

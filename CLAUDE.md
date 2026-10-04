@@ -38,6 +38,12 @@ cd /home/claude/novera-app && python3 tools/build_pwa.py && python3 tools/build_
 - Kitchen units: base depth 58 includes the door (inset, face at y=0); corner units get their depth from `cornerFit()` in app.js unless set by hand.
 
 ## History (latest first)
+- v55: freestanding cooker gap + built-in hood. Kitchen category `cooker_gap` → `CookerGapBuilder extends WasherGapBuilder` (no head/countertop; vented deck «قعدة البوتجاز»
+  of `cooker_base_height` (10): deck board with vent-slot markers + front rail with Ø3 hole markers (createHoleMarkerY) + back/side rails; side via `washer_gap_side`; presets k_cooker_gap/k_cooker_gap90).
+  Wall units: `include_hood` + `hood_height` (18) + `hood_duct_diameter` (15) in config.js; carcass.js `hoodEnabled/hoodLift/hoodDuctR`, inner/outerOpening z0 += hoodLift, `buildBottom` → `buildHoodShelf`
+  («جلسة الشفاط» raised, duct hole markers in shelf + head, notes); presets k_wall_hood_in/90; extraFields adds the hood fields to any wall unit; chips «شفاط مدمج» + «فراغ الشفاط».
+  appliances.js: class `cooker` (COOKERS 55/60/80/90), classOf cooker_gap→cooker, include_hood→hood, under/builtin hoods set `hood_height` via params, fits() for cooker.
+  app.js: 3D cooker in the gap + hood body under the raised shelf (+ duct), purchase list, compact props/chips, checks (gas near cooker, finishing side note, hob top for cooker = base + 85, hood detection via include_hood).
 - v54: washer gap unit (NOVERA practice: the washer stands in an open slot in the base run). Kitchen category `washer_gap` → `WasherGapBuilder` (engine/kitchen/categories.js):
   no kick/bottom/back/doors, head = solid «رأس» or two rails (`top_style`, rails from the base defaults) spanning the slot and screwed into the neighbours, optional side `washer_gap_side`
   (none/left/right/both, config.js) carrying the head when the slot ends the run; countertop as usual. kitchen_ui.js K_CATS/K_GAP_SIDE/extraFields/preset `k_washer_gap`; library SMART `s_washer_run`;
@@ -82,5 +88,6 @@ Amr wants the plugin updated in one go after all app edits are done. Pending for
 - corners: L-corner counter + plinth to the door face (engine/kitchen/corners.js v45), and the corner depth defaults (app.js `cornerFit()`:
   L corner_depth = depth − 1.8, diagonal cut = leg − depth) so corner units line up with the straight units.
 - dressing: compartment `drawer_glass` (glass drawer fronts: 4 frame rails + glass insert, v50) — port to the plugin's dressing layout + schema.
+- kitchen: `cooker_gap` category + `include_hood`/`hood_height`/`hood_duct_diameter` on wall units (carcass hoodLift + buildHoodShelf, v55) — port to builders/config/dialog.
 - kitchen: `washer_gap` category (WasherGapBuilder + `washer_gap_side` param, v54) — port to the plugin's builders_categories.rb + config/dialog.
 - kitchen: `drawer_glass` param + carcass.js `drawerGlassAt`/`buildSingleDrawer`/`buildDrawerBox(glassFront)` (v53); panel: zone `glass` + catalog `glass` material + templates buildDrawers + checker skips (v53).

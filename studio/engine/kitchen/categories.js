@@ -2,10 +2,11 @@
 // Standard, Wardrobe, Oven, Microwave, Fridge, Washing machine, Open shelf, Divided, Blind corner,
 // Bedroom wardrobe.
 import { COLORS } from "./config.js";
-import { assignLayer, bandAllSideEdges, createBox, createHoleMarker, getOrCreateNamedMaterial, NO_BAND } from "./helpers.js";
+import { assignLayer, bandAllSideEdges, createBox, createHoleMarker, createHoleMarkerY, getOrCreateNamedMaterial, NO_BAND } from "./helpers.js";
 import { CarcassBuilder, materialLabelName, TAGS, argError } from "./carcass.js";
 import { strip, toF, toI, toS, truthy } from "./rb.js";
 import { cm, rmax, rmin } from "./su/geom.js";
+import { rround } from "../core/rubyMath.js";
 import { Entities, Material } from "./su/model.js";
 const pcm = (v) => cm(toF(v));
 export class StandardUnitBuilder extends CarcassBuilder {
@@ -422,6 +423,57 @@ export class WasherGapBuilder extends CarcassBuilder {
             assignLayer(this.ctx, t, TAGS.carcass);
             this.bandFrontAndBack(t);
             this.headLabel("رأس", x0, x1, 0, d);
+        }
+    }
+}
+/** NOVERA v55: a freestanding cooker slot — an open gap in the base run with only a vented plinth-height base («قعدة»)
+ *  for the cooker to stand on; no head, no countertop (the cooker's own top is the worktop there), a side when the slot ends the run. */
+export class CookerGapBuilder extends WasherGapBuilder {
+    baseH() {
+        return this.once("cooker_base_h", () => rmin(rmax(pcm(this.p["cooker_base_height"]), 0), this.height() / 2.0));
+    }
+    buildTop(_e) { }
+    buildCountertop(_e) { }
+    buildFrontContent(e) {
+        const bh = this.baseH();
+        if (bh <= 0)
+            return;
+        const pt = this.panelT(), d = this.depth(), g = this.gapSides();
+        const x0 = g.left ? pt : 0, x1 = g.right ? this.width() - pt : this.width();
+        const mat = this.carcassMaterial(), b = this.edgeBandingEnabled();
+        const banded = (o) => ({ ...NO_BAND, ...o });
+        // the deck the cooker stands on — slots cut into it so the air under the cooker can move
+        const top = createBox(this.ctx, e, "قعدة البوتجاز", x0, 0, bh - pt, x1, d, bh, mat);
+        assignLayer(this.ctx, top, TAGS.carcass);
+        if (b) bandAllSideEdges(this.ctx, top, this.edgeBandingMaterial());
+        const slotNote = `تهوية: شقوق 2×12 سم كل 8 سم على عرض القعدة في النص (من ${rround((d / cm(1.0)) * 0.3, 0)} لـ ${rround((d / cm(1.0)) * 0.7, 0)} سم من قدام) — تتقص بالراوتر`;
+        this.ctx.labels.add(this.unitId, this.unitGroupName(), "قعدة البوتجاز", x1 - x0, d, pt, { banded: banded({ top: b, bottom: b, left: b, right: b }), material: this.carcassMaterialName(), note: `${slotNote} · البوتجاز بيقف عليها وبتتثبت في الوحدات اللي جنبها` });
+        // vent slots drawn on the deck (markers only)
+        const sw = cm(2.0), sl = cm(12.0), gap = cm(8.0), y0 = d * 0.3, y1 = d * 0.7;
+        for (let x = x0 + gap; x + sw <= x1 - gap / 2; x += gap)
+            for (let y = y0; y + sl <= y1 + 0.001; y += sl + cm(3.0)) {
+                const m = createBox(this.ctx, e, "شق تهوية", x, y, bh - pt - cm(0.05), x + sw, y + sl, bh + cm(0.05), COLORS.assembly);
+                assignLayer(this.ctx, m, TAGS.assembly);
+            }
+        // the base frame under the deck: front and back rails with round vent holes in the front one, side rails
+        const rails = [["شريط أمامي للقعدة", x0, 0, x1, pt, true], ["شريط خلفي للقعدة", x0, d - pt, x1, d, false]];
+        for (const [name, a0, b0, a1, b1, vent] of rails) {
+            const r = createBox(this.ctx, e, name, a0, b0, 0, a1, b1, bh - pt, mat);
+            assignLayer(this.ctx, r, TAGS.carcass);
+            if (b && vent) bandAllSideEdges(this.ctx, r, this.edgeBandingMaterial());
+            this.ctx.labels.add(this.unitId, this.unitGroupName(), name, a1 - a0, bh - pt, pt, { banded: banded(vent ? { top: b, bottom: b, left: b, right: b } : {}), material: this.carcassMaterialName(), note: vent ? `فتحات تهوية Ø3 سم كل 6 سم في النص (${rround((bh - pt) / cm(1.0) / 2, 1)} سم من تحت)` : "من ورا — ممكن من الفضلات" });
+            if (vent) {
+                const hr = cm(1.5), cz = (bh - pt) / 2.0;
+                for (let x = a0 + cm(6.0); x <= a1 - cm(4.0); x += cm(6.0)) {
+                    const h = createHoleMarkerY(this.ctx, e, "فتحة تهوية", x, b0 + pt / 2.0, cz, hr, pt + cm(0.2), COLORS.assembly);
+                    assignLayer(this.ctx, h, TAGS.assembly);
+                }
+            }
+        }
+        for (const [name, a0, a1] of [["شريط جانبي شمال للقعدة", x0, x0 + pt], ["شريط جانبي يمين للقعدة", x1 - pt, x1]]) {
+            const r = createBox(this.ctx, e, name, a0, pt, 0, a1, d - pt, bh - pt, mat);
+            assignLayer(this.ctx, r, TAGS.carcass);
+            this.ctx.labels.add(this.unitId, this.unitGroupName(), name, d - 2 * pt, bh - pt, pt, { banded: banded({}), material: this.carcassMaterialName(), note: "من الفضلات" });
         }
     }
 }

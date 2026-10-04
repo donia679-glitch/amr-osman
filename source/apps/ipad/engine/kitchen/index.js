@@ -1,7 +1,7 @@
 // Kitchen engine — public API. Port of BuilderFactory (+ the KitchenJoints and Handles hooks the
 // plugin installs on it) and of the parity recorder's build/run_case.
 import { AccessoryBuilder, CornerGlassDisplayUnitBuilder, DiagonalCornerUnitBuilder, LShapeCornerUnitBuilder, OpenCornerUnitBuilder } from "./corners.js";
-import { BedroomWardrobeBuilder, BlindCornerUnitBuilder, DividedUnitBuilder, FridgeHousingBuilder, MicrowaveHousingBuilder, OpenShelfBuilder, OvenHousingBuilder, StandardUnitBuilder, WardrobeUnitBuilder, WashingMachineHousingBuilder, WasherGapBuilder, } from "./categories.js";
+import { BedroomWardrobeBuilder, BlindCornerUnitBuilder, DividedUnitBuilder, FridgeHousingBuilder, MicrowaveHousingBuilder, OpenShelfBuilder, OvenHousingBuilder, StandardUnitBuilder, WardrobeUnitBuilder, WashingMachineHousingBuilder, WasherGapBuilder, CookerGapBuilder, } from "./categories.js";
 import { CarcassBuilder } from "./carcass.js";
 import { applicable as handlesApplicable, applyHandles } from "./handles.js";
 import { Ctx } from "./helpers.js";
@@ -21,6 +21,7 @@ const MAP = {
     wardrobe: WardrobeUnitBuilder,
     washing_machine: WashingMachineHousingBuilder,
     washer_gap: WasherGapBuilder,
+    cooker_gap: CookerGapBuilder,
     fridge: FridgeHousingBuilder,
     corner_glass_display: CornerGlassDisplayUnitBuilder,
 };
