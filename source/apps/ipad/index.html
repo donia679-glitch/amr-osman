@@ -220,7 +220,12 @@ body.present .stage { position: fixed; inset: 0; z-index: 30; }
 /* v63: worker mode — pictures, big numbers, big targets */
 body.worker .bar, body.worker .steps, body.worker #props, body.worker .units, body.worker #chips, body.worker .vctl, body.worker .vcube, body.worker #sheetBtn, body.worker .lib, body.worker #movebar, body.worker #multibar, body.worker .fsbtn, body.worker .errs, body.worker #scenep, body.worker #inspp, body.worker #wasteHint { display: none !important; }
 body.worker .stage { position: fixed; inset: 0; z-index: 30; }
-.workerbar { position: absolute; inset: 0; pointer-events: none; display: grid; grid-template-rows: auto auto 1fr; direction: rtl; font-size: 17px; }
+.workerbar { position: absolute; inset: 0; pointer-events: none; display: grid; grid-template-rows: auto auto 1fr; direction: rtl; font-size: 17px; --ink: #1b1b1b; --muted: #4f5751; --line: #cfd4cc; --panel: #fff; color: #1b1b1b; }
+/* v65: the worker panels are always light (hard-coded white cards) — so every text inside is forced dark, whatever the app theme */
+.workerbar .wb-side, .workerbar .wb-units, .workerbar .wb-side *:not(.wb-ic):not(.wcode):not(.wb-x), .workerbar .wb-u, .workerbar .wb-u * { color: #1b1b1b; }
+.workerbar small, .workerbar .hint, .workerbar .wb-tabs button small, .workerbar .wivals small, .workerbar .wpc-dims span, .workerbar .wb-u small { color: #4f5751 !important; font-weight: 600; }
+.workerbar .wb-tabs button.on, .workerbar .wb-tabs button.on small { color: #123f23 !important; } .workerbar .wnum { color: #111; } .workerbar .wb-big, .workerbar .wrow, .workerbar .wstep, .workerbar .whwrow, .workerbar .winrow, .workerbar .wirow, .workerbar .wcodeb { color: #1b1b1b; background: #fff; }
+.workerbar .wstep small { font-size: 12px; font-weight: 700; } .workerbar .wstepn, .workerbar .wstep em { color: #1b1b1b; font-weight: 800; }
 .workerbar > * { pointer-events: auto; }
 .wb-top { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: var(--brand, #123f23); color: #fff; }
 .wb-top b { flex: 1; font-size: 18px; } .wb-x { width: 46px; height: 46px; border-radius: 12px; border: 0; background: #fff2; color: #fff; font-size: 22px; }
