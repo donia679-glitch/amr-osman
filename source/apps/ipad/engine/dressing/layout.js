@@ -1149,13 +1149,16 @@ export class Engine {
             this.drawer_groups.push(grp);
             if (hasFront && c.drawer_glass) {
                 // NOVERA v50: a glass drawer front — a wood frame (4 rails) with a glass panel in a groove; pulled from the top rail, no handle
-                const W = fx1 - fx0, H = fz1 - fz0, fw = Math.min(3.0, W / 4.0, H / 3.0), eng = 0.6;
+                // frame 4 cm wide (narrower on small fronts), glass 4 mm sits 8 mm deep in a groove in the middle of the rails;
+                // the frame IS the drawer's front wall: the box sides screw into the back of the stiles, the bottom runs into the bottom rail's groove
+                const W = fx1 - fx0, H = fz1 - fz0, fw = Math.min(4.0, W / 4.0, H / 3.0), eng = 0.8;
                 const gt = this.doors.glass_t;
-                const rails = [["فوق", fx0, fz1 - fw, fx1, fz1, ["left", "right", "top", "bottom"]], ["تحت", fx0, fz0, fx1, fz0 + fw, ["left", "right", "top", "bottom"]],
-                    ["شمال", fx0, fz0 + fw, fx0 + fw, fz1 - fw, ["left"]], ["يمين", fx1 - fw, fz0 + fw, fx1, fz1 - fw, ["right"]]];
-                for (const [lbl, a0, b0, a1, b1, band] of rails) {
+                const gnote = `فريم وش درج زجاج: مفحار ${f(gt + 0.1)} مم عرض × 8 مم عمق في نص السمك على الحرف الداخلي، الزجاج بيتركب أثناء تجميع الفريم (دويلين في الأركان)`;
+                const rails = [["فوق", fx0, fz1 - fw, fx1, fz1, "الحرف اللي تحت ليه مفحار الزجاج — الحرف اللي فوق هو مسكة السحب"], ["تحت", fx0, fz0, fx1, fz0 + fw, "مفحار الزجاج فوق، ومفحار قاعدة الدرج من ورا"],
+                    ["شمال", fx0, fz0 + fw, fx0 + fw, fz1 - fw, "جنب الصندوق بيتثبت في ضهره بدويلين ومسمارين"], ["يمين", fx1 - fw, fz0 + fw, fx1, fz1 - fw, "جنب الصندوق بيتثبت في ضهره بدويلين ومسمارين"]];
+                for (const [lbl, a0, b0, a1, b1, extra] of rails) {
                     this.addPart(`${name} - فريم ${lbl}`, "drawer_front", "drawer_front", this.box(a0, fy0, b0, a1, fy1, b1), {
-                        label_axes: ["x", "z"], band, layer: "front", group: key, note: "فريم وش درج زجاج — مفحار 4 مم في النص للزجاج",
+                        label_axes: ["x", "z"], band: ["left", "right", "top", "bottom"], band_all_sides: true, layer: "front", group: key, note: `${gnote} · ${extra}`,
                     });
                 }
                 const ym = (fy0 + fy1) / 2.0;
@@ -1173,7 +1176,7 @@ export class Engine {
                 this.placeHandle(name, key, fp, plan, fx0, fz0, fy0);
             }
             this.drawer_groups[this.drawer_groups.length - 1].slide_len = boxLen;
-            this.buildDrawerBox(name, key, bx0, bx1, boxY0, boxY0 + boxLen, bz0, bz1);
+            this.buildDrawerBox(name, key, bx0, bx1, boxY0, boxY0 + boxLen, bz0, bz1, hasFront && c.drawer_glass);
         });
     }
     hingeFixSides() {
@@ -1214,7 +1217,7 @@ export class Engine {
         }
         return Math.max(...fits);
     }
-    buildDrawerBox(name, key, bx0, bx1, by0, by1, bz0, bz1) {
+    buildDrawerBox(name, key, bx0, bx1, by0, by1, bz0, bz1, glassFront = false) {
         const dr = this.dr;
         const bt = dr.box_t;
         const bg = dr.bottom_groove;
@@ -1230,14 +1233,16 @@ export class Engine {
         this.addPart(`${name} - جنب يمين`, "drawer_box", "drawer_box", this.box(bx1 - bt, by0, bz0, bx1, by1, bz1), {
             label_axes: ["y", "z"], band: ["top"], layer: "front", group: key, groove: grv,
         });
-        this.addPart(`${name} - جدار أمامي`, "drawer_box", "drawer_box", this.box(bx0 + bt, by0, bz0, bx1 - bt, by0 + bt, bz1), {
+        // a glass front: the frame itself is the front wall (no wood wall behind the glass); the bottom runs into the frame's bottom rail
+        if (!glassFront) this.addPart(`${name} - جدار أمامي`, "drawer_box", "drawer_box", this.box(bx0 + bt, by0, bz0, bx1 - bt, by0 + bt, bz1), {
             label_axes: ["x", "z"], band: ["top"], layer: "front", group: key, groove: grv,
         });
         this.addPart(`${name} - جدار خلفي`, "drawer_box", "drawer_box", this.box(bx0 + bt, by1 - bt, bz0, bx1 - bt, by1, bz1), {
             label_axes: ["x", "z"], band: ["top"], layer: "front", group: key, groove: grv,
         });
-        this.addPart(`${name} - قاعدة`, "drawer_bottom", "drawer_bottom", this.box(bx0 + bt - bg, by0 + bt - bg, bz0 + bi, bx1 - bt + bg, by1 - bt + bg, bz0 + bi + bb), {
-            label_axes: ["x", "y"], band: [], layer: "front", group: key,
+        const fy = glassFront ? by0 - bg : by0 + bt - bg;
+        this.addPart(`${name} - قاعدة`, "drawer_bottom", "drawer_bottom", this.box(bx0 + bt - bg, fy, bz0 + bi, bx1 - bt + bg, by1 - bt + bg, bz0 + bi + bb), {
+            label_axes: ["x", "y"], band: [], layer: "front", group: key, note: glassFront ? "القاعدة بتدخل في مفحار الفريم التحتاني من قدام" : undefined,
         });
     }
     // ================================================================ plinth

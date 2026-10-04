@@ -38,7 +38,7 @@ cd /home/claude/novera-app && python3 tools/build_pwa.py && python3 tools/build_
 - Kitchen units: base depth 58 includes the door (inset, face at y=0); corner units get their depth from `cornerFit()` in app.js unless set by hand.
 
 ## History (latest first)
-- v50: glass-front drawers in the dressing engine (compartment flag `drawer_glass`: 4 wood rails + glass insert, no handle; engine/dressing/layout.js buildDrawers, schema.js);
+- v50/v51: glass-front drawers in the dressing engine (compartment flag `drawer_glass`: 4 rails 4 cm + 4 mm glass 8 mm in a groove, the frame is the box front wall (no wood front), bottom runs into the bottom rail, no handle; engine/dressing/layout.js buildDrawers, schema.js);
   library presets d_glass_drawers90 / d_glass_walkin240 (oak + clear glass); toggle «وش زجاج بفريم خشب» in the dressing compartment editor.
 - v49: offcut wizard «♻️ أعمل إيه من الفضلات؟» (scrap*, SCRAP_CANDIDATES, pools by material+thickness from stock keys or typed rows with lib/thickness,
   role→pool assignments tried via the cut worker with timeCap 0.08, results with plan text, thumbnails, add with the pools' materials via scrapWithPlan). cutworker.js honours opts.timeCap.
