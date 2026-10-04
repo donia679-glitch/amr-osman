@@ -38,6 +38,10 @@ cd /home/claude/novera-app && python3 tools/build_pwa.py && python3 tools/build_
 - Kitchen units: base depth 58 includes the door (inset, face at y=0); corner units get their depth from `cornerFit()` in app.js unless set by hand.
 
 ## History (latest first)
+- v67: (1) assembly order the NOVERA way: ASM_STEPS = first side + bottom → top → dividers → back slides in → second side closes the box → shelves → drawers → doors → finish;
+  named indices `ASM.{side1,top,dividers,back,side2,shelves,drawers,doors,finish}` used by asmStep/layoutTables/asmProps; `lastSide(tail)` = شمال / حيطة ب / الثانية; STEP_ICON indexed by st.i.
+  (2) speech: `sayPrep` (Egyptian number words `arWords/arNum` — 57.4 → «سبعة وخمسين وأربعة من عشرة», .5 → «ونص», 0.3 → «تلاتة ملي»; codes K01-08 → «كيه واحد، قطعة تمانية»; `AR_WORDS` vocalised workshop words with و/ب/ل prefixes),
+  `sayAr(text, lang)` splits into sentences, `pickVoice` (saved name → ar-EG → enhanced/premium → ar-SA), prefs in localStorage `novera-voice` {name, rate, pitch}; worker bar 🎙️ pop `voicePopHtml` (voice select, speed, pitch, test, reset; CSS .wvpop); presentTell uses sayAr.
 - v66: runner height follows `drawer_runner`: asmLayout drawers carry `runner` + `box0` (box bottom) and `run` = middle of the box side for side runners / box bottom for bottom runners;
   elevation label «مجرى جانبي/سفلي ↥N», worker «من جوه» row «↥ المجرى الجانبي (نص الجنب)» (+ «↥ تحت الصندوق») or «↥ المجرى السفلي (تحت الجنب)», voice + advanced table + text lines say which.
 - v65: worker mode text was faded in the dark theme (white cards inheriting light --ink/--muted) — .workerbar now pins its own --ink/--muted/--line and forces dark text on every card/label.

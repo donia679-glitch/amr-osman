@@ -4971,5 +4971,21 @@
  "↥ تحت الصندوق": "↥ box bottom",
  "المجرى الجانبي في نص الجنب": "the side runner at the middle of the side",
  "المجرى السفلي تحت الجنب": "the bottom runner under the side",
- "وتحت الصندوق على": "and the box bottom at"
+ "وتحت الصندوق على": "and the box bottom at",
+ "الجنب الأول والقاعدة": "first side and bottom",
+ "رقّد الجنب الأول على الطاولة (من جوه لفوق) وركّب فيه القاعدة بالمينيفكس والدوبل (الأخرام متعلّمة في الملصق). اتأكد إن الحرف الأمامي للقاعدة على خط الجنب.": "Lay the first side on the bench (inside up) and fix the bottom into it with minifix and dowels (the holes are marked on the label). Make sure the front edge of the bottom is flush with the side.",
+ "ركّب الرأس (أو الشريطين الأمامي والخلفي) في نفس الجنب بنفس الطريقة. الشريط الأمامي مرجّع لورا عشان بروفايل المقبض لو موجود.": "Fix the top (or the front and back rails) into the same side the same way. The front rail is set back for the handle profile, if any.",
+ "ركّب القواطيع الرأسية والأرفف الثابتة والفيلرات في أماكنها المعلّمة بين القاعدة والرأس، وثبّتها بالدوبل والمينيفكس.": "Fit the vertical dividers, fixed shelves and fillers in their marked places between the bottom and the top, and fix them with dowels and minifix.",
+ "نزّل الظهر في المفحار من فوق (من ناحية الجنب اللي لسه مش متركّب) قبل ما تقفل العلبة، أو ثبّته بالدبابيس لو مفيش مفحار. الظهر بيقفل العلبة على زاوية قايمة.": "Slide the back down into the groove (from the side that is still open) before closing the box, or staple it if there is no groove. The back squares the box.",
+ "الجنب التاني (قفل العلبة)": "second side (closing the box)",
+ "اقفل العلبة بآخر جنب: نزّله على القاعدة والرأس والقواطيع والظهر مرة واحدة وشدّ المينيفكس. قيس القطرين — لازم يبقوا زي بعض عشان العلبة تطلع مربعة.": "Close the box with the last side: lower it onto the bottom, top, dividers and back in one go and tighten the minifix. Measure both diagonals — they must be equal so the box is square.",
+ "إعدادات الصوت": "voice settings",
+ "🎙️ الصوت": "🎙️ Voice",
+ "الصوت المستخدم": "voice",
+ "مفيش أصوات عربي على الجهاز": "no Arabic voices on this device",
+ "السرعة": "speed",
+ "طبقة الصوت": "pitch",
+ "▶️ جرّب": "▶️ Try",
+ "أحسن نطق: نزّل صوت عربي «Enhanced / Premium» من إعدادات الآيباد ← تسهيلات الاستخدام ← المحتوى المنطوق ← الأصوات ← العربية، وبعدين اختاره هنا. الصوت المصري لو موجود بيتختار لوحده.": "Best pronunciation: download an Arabic \"Enhanced / Premium\" voice from iPad Settings → Accessibility → Spoken Content → Voices → Arabic, then pick it here. An Egyptian voice is picked automatically when present.",
+ "أهلاً، أنا الصوت اللي هيقرالك المقاسات": "Hello, I am the voice that will read the sizes to you"
 }

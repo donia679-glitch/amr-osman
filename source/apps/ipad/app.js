@@ -1654,11 +1654,23 @@ function sceneMode() {
   renderMoveBar(); renderChips();
   if (view.ready) view.update();
 }
+document.querySelector(".stage").addEventListener("input", (e) => {
+  const t = e.target; if (!ui.worker || !t.closest("#workerBar [data-wvpop]")) return;
+  const P = voicePrefs();
+  if (t.hasAttribute("data-wvname")) P.name = t.value; else if (t.hasAttribute("data-wvrate")) P.rate = +t.value; else if (t.hasAttribute("data-wvpitch")) P.pitch = +t.value; else return;
+  saveVoicePrefs(P);
+  const lab = t.closest("label")?.querySelector("b"); if (lab) lab.textContent = n1(+t.value);
+  if (t.hasAttribute("data-wvname")) sayAr("أهلاً، أنا الصوت اللي هيقرالك المقاسات");
+});
 document.querySelector(".stage").addEventListener("click", (e) => {
-  const wb = e.target.closest("#workerBar [data-wexit],#workerBar [data-wvoice],#workerBar [data-wexplode],#workerBar [data-wxray],#workerBar [data-wview],#workerBar [data-wunit],#workerBar [data-wtab],#workerBar [data-wback],#workerBar [data-wiso],#workerBar [data-wsay],#workerBar [data-wpiece],#workerBar [data-wstep],#workerBar [data-wsaytext]");
+  const wb = e.target.closest("#workerBar [data-wexit],#workerBar [data-wvoice],#workerBar [data-wexplode],#workerBar [data-wxray],#workerBar [data-wview],#workerBar [data-wunit],#workerBar [data-wtab],#workerBar [data-wback],#workerBar [data-wiso],#workerBar [data-wsay],#workerBar [data-wpiece],#workerBar [data-wstep],#workerBar [data-wsaytext],#workerBar [data-wvset],#workerBar [data-wvclose],#workerBar [data-wvtest],#workerBar [data-wvreset]");
   if (wb && ui.worker) {
     const d = wb.dataset, W = ui.worker, u = selUnit();
     if (d.wexit !== undefined) { workerOff(); return; }
+    if (d.wvset !== undefined) { W.vpop = !W.vpop; if (W.vpop && "speechSynthesis" in window) { speechSynthesis.getVoices(); speechSynthesis.onvoiceschanged = () => { if (ui.worker?.vpop) renderWorker(); }; } renderWorker(); return; }
+    if (d.wvclose !== undefined) { W.vpop = false; renderWorker(); return; }
+    if (d.wvtest !== undefined) { sayAr("جنب يمين K01-03. الطول 72 سنتي، العرض 56.4 سنتي، السمك 1.8. المجرى الجانبي على 7.5 من القاعدة."); return; }
+    if (d.wvreset !== undefined) { saveVoicePrefs({ rate: 0.88, pitch: 1, name: "" }); renderWorker(); return; }
     if (d.wvoice !== undefined) { W.voice = !W.voice; if (W.voice && "speechSynthesis" in window) speechSynthesis.getVoices(); renderWorker(); if (W.voice) sayAr("الصوت شغال. دوس على أي قطعة تسمع مقاسها"); return; }
     if (d.wexplode !== undefined) { ui.explode = ui.explode ? 0 : 0.6; view.update(true); renderWorker(); return; }
     if (d.wxray !== undefined) { state.xray = !state.xray; view.update(); renderWorker(); return; }
@@ -7377,27 +7389,32 @@ function checksHtml(list) {
 
 // ------------------------------------------------------------------ unit summary + assembly guide
 const ASM_STEPS = [
-  { t: "القاعدة والأجناب", d: "ركّب الأجناب على القاعدة بالمينيفكس والدوبل (الأخرام متعلّمة في الملصق). اتأكد إن الحروف الأمامية على خط واحد والعلبة مربعة (قيس القطرين — لازم يبقوا زي بعض).", hw: /أليتا|كام|مينيفكس|دوبل|دويل/ },
-  { t: "الرأس", d: "ركّب الرأس (أو الشريطين الأمامي والخلفي) بين الأجناب بنفس الطريقة. الشريط الأمامي مرجّع لورا عشان بروفايل المقبض لو موجود." },
-  { t: "القواطيع والفيلرات", d: "ركّب القواطيع الرأسية والأرفف الثابتة والفيلرات في أماكنها المعلّمة، وثبّتها بالدوبل والمينيفكس." },
-  { t: "الظهر", d: "زحلق الظهر في المفحار من ورا قبل ما تقفل آخر قطعة، أو ثبّته بالدبابيس لو مفيش مفحار. الظهر بيقفل العلبة على زاوية قايمة." },
+  { t: "الجنب الأول والقاعدة", d: "رقّد الجنب الأول على الطاولة (من جوه لفوق) وركّب فيه القاعدة بالمينيفكس والدوبل (الأخرام متعلّمة في الملصق). اتأكد إن الحرف الأمامي للقاعدة على خط الجنب.", hw: /أليتا|كام|مينيفكس|دوبل|دويل/ },
+  { t: "الرأس", d: "ركّب الرأس (أو الشريطين الأمامي والخلفي) في نفس الجنب بنفس الطريقة. الشريط الأمامي مرجّع لورا عشان بروفايل المقبض لو موجود." },
+  { t: "القواطيع والفيلرات", d: "ركّب القواطيع الرأسية والأرفف الثابتة والفيلرات في أماكنها المعلّمة بين القاعدة والرأس، وثبّتها بالدوبل والمينيفكس." },
+  { t: "الظهر", d: "نزّل الظهر في المفحار من فوق (من ناحية الجنب اللي لسه مش متركّب) قبل ما تقفل العلبة، أو ثبّته بالدبابيس لو مفيش مفحار. الظهر بيقفل العلبة على زاوية قايمة." },
+  { t: "الجنب التاني (قفل العلبة)", d: "اقفل العلبة بآخر جنب: نزّله على القاعدة والرأس والقواطيع والظهر مرة واحدة وشدّ المينيفكس. قيس القطرين — لازم يبقوا زي بعض عشان العلبة تطلع مربعة." },
   { t: "الأرفف", d: "حط فرش الأرفف في الأخرام وركّب الأرفف المتحركة.", hw: /فرش|رف/ },
   { t: "الأدراج", d: "جمّع صناديق الأدراج (الجنبين والأمامي والخلفي ثم القاعدة في المفحار)، ركّب المجاري على الأجناب وعلى الصناديق، ودخّل الأدراج وبعدها ركّب الوشوش.", hw: /سك|مجر|درج/ },
   { t: "الضلف", d: "ركّب المفصلات في الكبب (35 مم) وعلّق الضلف، واظبط الخلوص 3 مم من مسامير المفصلة (فوق/تحت، يمين/شمال، لقدام/لورا).", hw: /مفصل|ذراع|قلاب/ },
   { t: "التشطيب والتركيب", d: "ركّب الأرجل والسكلو والمقابض والليد، وبعدين الكونتر لو موجود. علّق الوحدات العلوية بالتعليقات واتأكد إنها على ميزان.", hw: /أرجل|تعليق|مقبض|ليد|سكلو|بروفايل|براغي|محول/ },
 ];
+const ASM = { side1: 0, top: 1, dividers: 2, back: 3, side2: 4, shelves: 5, drawers: 6, doors: 7, finish: 8 };
+/** the side that closes the box last: the left one (شمال / ب / الثانية); every other side goes on the table first */
+const lastSide = (tail) => /شمال|حيطة ب|الثانية|التانية| ب$/.test(tail);
 function asmStep(name, role) {
   const n = String(name || "");
   const tail = n.split(" - ").pop();
-  if (role === "drawer_box" || role === "drawer_bottom" || role === "drawer_front" || /درج/.test(n)) return 5;
-  if (/^جنب سكلو/.test(n)) return 0; // the plinth drawer's runners go under the bottom with the carcass
-  if (/سكلو|وزرة|كونتر|مقبض|شماعة|ليد|تقفيلة|أورزة|كليت|رجل بلاستيك|برواز ألومنيوم/.test(n) || role === "led" || role === "handle" || role === "plinth") return 7;
-  if (role === "door" || role === "mirror" || /ضلفة|باب|مراية/.test(n)) return 6;
-  if (role === "back" || /ظهر|ضهر/.test(tail)) return 3;
-  if (/رأس|راس|شريط علوي/.test(tail)) return 1;
-  if (role === "divider" || role === "fixed_shelf" || /قاطوع|ضلع|رف ثابت|عارضة|فيلر|لوح أعمى|بانوه|جلسة|فاصل/.test(n)) return 2;
-  if (role === "shelf" || /رف/.test(tail)) return 4;
-  return 0;
+  if (role === "drawer_box" || role === "drawer_bottom" || role === "drawer_front" || /درج/.test(n)) return ASM.drawers;
+  if (/^جنب سكلو/.test(n)) return ASM.side1; // the plinth drawer's runners go under the bottom with the carcass
+  if (/سكلو|وزرة|كونتر|مقبض|شماعة|ليد|تقفيلة|أورزة|كليت|رجل بلاستيك|برواز ألومنيوم/.test(n) || role === "led" || role === "handle" || role === "plinth") return ASM.finish;
+  if (role === "door" || role === "mirror" || /ضلفة|باب|مراية/.test(n)) return ASM.doors;
+  if (role === "back" || /ظهر|ضهر/.test(tail)) return ASM.back;
+  if (/رأس|راس|شريط علوي/.test(tail)) return ASM.top;
+  if (role === "divider" || role === "fixed_shelf" || /قاطوع|ضلع|رف ثابت|عارضة|فيلر|لوح أعمى|بانوه|جلسة|فاصل/.test(n)) return ASM.dividers;
+  if (role === "shelf" || /رف/.test(tail)) return ASM.shelves;
+  if ((role === "side" || /^جنب/.test(tail)) && !/السلة|سرير/.test(tail)) return lastSide(tail) ? ASM.side2 : ASM.side1;
+  return ASM.side1;
 }
 /** steps of one unit: for each step its pieces (with numbers) and the hardware that goes in then */
 function asmPlan(u) {
@@ -7409,10 +7426,10 @@ function asmPlan(u) {
   if (r.parts.some((pt) => /^جنب سكلو/.test(pt.name))) {
     const kp = r.params || {};
     steps[0].d += ` درج الوزرة: ثبّت جنبي السكلو تحت القاعدة من جوه الأجناب بالأليتا (الأخرام متعلّمة)، على بعد ${n1(+kp.toe_kick_drawer_setback || 0)} سم من قدام.`;
-    steps[5].d += ` درج الوزرة: المجرى بيتركب على جنبي السكلو من جوه، على ارتفاع قاعدة صندوقه من الأرض (في جدول مقاسات التركيب)، والوش بيتظبط على خلوص ${n1(+(kp.toe_kick_drawer_floor_gap ?? 1))} سم من الأرض.`;
+    steps[ASM.drawers].d += ` درج الوزرة: المجرى بيتركب على جنبي السكلو من جوه، على ارتفاع قاعدة صندوقه من الأرض (في جدول مقاسات التركيب)، والوش بيتظبط على خلوص ${n1(+(kp.toe_kick_drawer_floor_gap ?? 1))} سم من الأرض.`;
   }
   for (const [k, v] of Object.entries(r.hardware || {})) {
-    const st = steps.find((s) => s.hw?.test(k)) || steps[7];
+    const st = steps.find((s) => s.hw?.test(k)) || steps[ASM.finish];
     st.hardware.push([k, v]);
   }
   return steps.filter((s) => s.pieces.length || s.hardware.length || (r.meshes || r.parts).some((m) => asmStep(m.name, m.role) === s.i));
@@ -7457,7 +7474,7 @@ function asmProps(u) {
     <div class="asmdots">${steps.map((x, i) => `<button class="${i === k ? "on" : i < k ? "done" : ""}" data-asmto="${i}" aria-label="${esc(x.t)}">${i + 1}</button>`).join("")}</div>
     <h3 class="asmt">${esc(s.t)}</h3><p class="hint">${esc(s.d)}</p>
     ${layoutTables(L, s.i)}
-    <details class="elevbox" ${[2, 4, 5, 6, 7].includes(s.i) ? "open" : ""}><summary>📐 الواجهة بالمقاسات</summary>${unitElevSvg(u, L)}</details>
+    <details class="elevbox" ${[ASM.dividers, ASM.shelves, ASM.drawers, ASM.doors, ASM.finish].includes(s.i) ? "open" : ""}><summary>📐 الواجهة بالمقاسات</summary>${unitElevSvg(u, L)}</details>
     ${s.pieces.length ? `<table class="tbl"><thead><tr><th>الرقم</th><th>القطعة</th><th>المقاس</th></tr></thead><tbody>${s.pieces.map((p) => `<tr><td class="num"><b>${esc(p.code)}</b></td><td>${esc(p.name)}</td><td class="num">${n1(p.lb.h)}×${n1(p.lb.w)}</td></tr>`).join("")}</tbody></table>` : ""}
     ${s.hardware.length ? `<h4 class="advh">الهاردوير في الخطوة دي</h4><table class="tbl"><tbody>${s.hardware.map(([a, v]) => `<tr><td>${esc(a)}</td><td class="num">${v}</td></tr>`).join("")}</tbody></table>` : ""}
     <p class="hint">القطع اللي في الخطوة دي متلوّنة في العرض، واللي قبلها متركّبة.</p>`;
@@ -7631,15 +7648,15 @@ function layoutTables(L, step = null) {
   const nm = (x) => `${x.code ? `<b class="nw">${esc(x.code)}</b> ` : ""}${esc(x.name)}`;
   let h = "";
   const want = (i) => step === null || step === i;
-  if (want(0) && L.kitchen) h += `<p class="hint">${L.wall ? `الوحدة بتتعلّق وتحتها على <b>${n1(L.zMin)} سم</b> من الأرض.` : `قاعدة الوحدة من جوه على <b>${n1(L.baseTop)} سم</b> من الأرض (بالسكلو).`} كل الارتفاعات تحت من فوق القاعدة من جوه.</p>`;
-  if (want(2) && L.dividers.length) h += `<h4 class="advh">أماكن القواطيع (من الجنب الشمال من جوه)</h4>` + t(["القطعة", "مكانه", "التخانة"], L.dividers.map((d) => [nm(d), `${n1(d.x)} سم`, n1(d.t)]));
+  if (want(ASM.side1) && L.kitchen) h += `<p class="hint">${L.wall ? `الوحدة بتتعلّق وتحتها على <b>${n1(L.zMin)} سم</b> من الأرض.` : `قاعدة الوحدة من جوه على <b>${n1(L.baseTop)} سم</b> من الأرض (بالسكلو).`} كل الارتفاعات تحت من فوق القاعدة من جوه.</p>`;
+  if (want(ASM.dividers) && L.dividers.length) h += `<h4 class="advh">أماكن القواطيع (من الجنب الشمال من جوه)</h4>` + t(["القطعة", "مكانه", "التخانة"], L.dividers.map((d) => [nm(d), `${n1(d.x)} سم`, n1(d.t)]));
   const fixed = L.shelves.filter((s) => s.fixed), loose = L.shelves.filter((s) => !s.fixed);
-  if (want(2) && fixed.length) h += `<h4 class="advh">الأرفف الثابتة</h4>` + t(["القطعة", "تحت الرف", "فوق الرف", "الفراغ تحته"], fixed.map((s) => [nm(s), `${n1(s.bottom)}`, `${n1(s.top)}`, s.gapBelow === null ? "—" : n1(s.gapBelow)]));
-  if (want(4) && loose.length) h += `<h4 class="advh">ارتفاعات الأرفف — الفرش تحت الرف على</h4>` + t(["القطعة", "تحت الرف", "فوق الرف", "الفراغ تحته", "الفراغ فوقه"], loose.map((s) => [nm(s), `<b>${n1(s.bottom)}</b>`, n1(s.top), s.gapBelow === null ? "—" : n1(s.gapBelow), s.gapAbove === null ? "—" : n1(s.gapAbove)]));
-  if (want(5) && L.drawers.length) h += `<h4 class="advh">الأدراج — المجرى ${L.drawers[0].runner === "side" ? "الجانبي (نص جنب الصندوق)" : "السفلي (تحت جنب الصندوق)"} على</h4>` + t(["الدرج", "المجرى على", "الصندوق", "المجرى"], L.drawers.map((d) => [nm(d) + `<small class="blk">${/^درج وزرة/.test(d.name) ? "من الأرض · " : ""}الوش ${n1(d.f0)} ← ${n1(d.f1)}${d.runner === "side" && d.box0 !== null ? ` · تحت الصندوق ${n1(d.box0)}` : ""}</small>`, d.run === null ? "—" : `<b>${n1(d.run)}</b>`, d.bh === null ? "—" : `${n1(d.bh)}×${n1(d.depth)}`, d.slide ? `${d.slide} سم` : "—"]));
-  if (want(6) && L.doors.length) h += `<h4 class="advh">الضلف والمفصلات</h4>` + t(["الضلفة", "المقاس", "من تحت على", "المفصلات", "أماكن الكبب"], L.doors.map((d) => [nm(d), `${n1(d.h)} × ${n1(d.w)}`, n1(d.z0), d.side ? SIDE_AR[d.side] || d.side : "—",
+  if (want(ASM.dividers) && fixed.length) h += `<h4 class="advh">الأرفف الثابتة</h4>` + t(["القطعة", "تحت الرف", "فوق الرف", "الفراغ تحته"], fixed.map((s) => [nm(s), `${n1(s.bottom)}`, `${n1(s.top)}`, s.gapBelow === null ? "—" : n1(s.gapBelow)]));
+  if (want(ASM.shelves) && loose.length) h += `<h4 class="advh">ارتفاعات الأرفف — الفرش تحت الرف على</h4>` + t(["القطعة", "تحت الرف", "فوق الرف", "الفراغ تحته", "الفراغ فوقه"], loose.map((s) => [nm(s), `<b>${n1(s.bottom)}</b>`, n1(s.top), s.gapBelow === null ? "—" : n1(s.gapBelow), s.gapAbove === null ? "—" : n1(s.gapAbove)]));
+  if (want(ASM.drawers) && L.drawers.length) h += `<h4 class="advh">الأدراج — المجرى ${L.drawers[0].runner === "side" ? "الجانبي (نص جنب الصندوق)" : "السفلي (تحت جنب الصندوق)"} على</h4>` + t(["الدرج", "المجرى على", "الصندوق", "المجرى"], L.drawers.map((d) => [nm(d) + `<small class="blk">${/^درج وزرة/.test(d.name) ? "من الأرض · " : ""}الوش ${n1(d.f0)} ← ${n1(d.f1)}${d.runner === "side" && d.box0 !== null ? ` · تحت الصندوق ${n1(d.box0)}` : ""}</small>`, d.run === null ? "—" : `<b>${n1(d.run)}</b>`, d.bh === null ? "—" : `${n1(d.bh)}×${n1(d.depth)}`, d.slide ? `${d.slide} سم` : "—"]));
+  if (want(ASM.doors) && L.doors.length) h += `<h4 class="advh">الضلف والمفصلات</h4>` + t(["الضلفة", "المقاس", "من تحت على", "المفصلات", "أماكن الكبب"], L.doors.map((d) => [nm(d), `${n1(d.h)} × ${n1(d.w)}`, n1(d.z0), d.side ? SIDE_AR[d.side] || d.side : "—",
     d.hinges.length ? `${d.hinges.map(n1).join(" · ")}<small> ${d.side === "top" ? "من الشمال" : "من تحت"} · ${n1(d.edge)} من الحرف${d.sugg ? " · مقترح" : ""}</small>` : "—"]));
-  if (want(7) && L.rails.length) h += `<h4 class="advh">الشماعات</h4>` + t(["القطعة", "الارتفاع", "من الأرض", "بعدها عن الظهر"], L.rails.map((r) => [esc(r.name), `<b>${n1(r.z)}</b>`, n1(r.floor), n1(r.back)]));
+  if (want(ASM.finish) && L.rails.length) h += `<h4 class="advh">الشماعات</h4>` + t(["القطعة", "الارتفاع", "من الأرض", "بعدها عن الظهر"], L.rails.map((r) => [esc(r.name), `<b>${n1(r.z)}</b>`, n1(r.floor), n1(r.back)]));
   return h;
 }
 /** PDF page(s) with the unit's front elevation and every assembly height, written as lines */
@@ -9413,7 +9430,7 @@ function sigBlockSvg(y) {
 // ================================================================== v63 — worker mode («👷 وضع العمال»): pictures + numbers, big targets, voice
 const HW_ICON = [[/مفصل/, "🔗"], [/سكك|مجرى|مجاري/, "↔️"], [/أليتا|كام|مينيفكس/, "🔩"], [/فرش|بنز/, "📌"], [/رجل|أرجل/, "🦵"], [/تعليق|كليت/, "🪝"], [/مقبض/, "🫳"], [/دوبل|خابور/, "🪵"], [/ليد|LED/i, "💡"], [/شريط/, "🧵"], [/مسمار/, "🔩"], [/.*/, "⚙️"]];
 const hwIcon = (k) => HW_ICON.find(([re]) => re.test(k))[1];
-const STEP_ICON = ["🧱", "🔝", "🧩", "🚪", "🗄️", "🔲", "🧲", "🪜", "✅", "🔧"];
+const STEP_ICON = ["🧱", "🔝", "🧩", "🟫", "📦", "🔲", "🗄️", "🚪", "✅"]; // by ASM step index
 function workerOn() {
   if (!view.ready) { alertBar("الـ3D لسه بيحمّل"); return; }
   const first = state.project.units.find((u) => R(u).ok);
@@ -9434,11 +9451,89 @@ function workerOff() {
   state.tab = b.tab; state.sel = b.sel; state.whole = b.whole;
   render(true); view.resize?.(); view.update(true);
 }
-function sayAr(text) {
-  if (!("speechSynthesis" in window)) { alertBar("الصوت مش متاح على الجهاز ده"); return; }
-  try { speechSynthesis.cancel(); const m = new SpeechSynthesisUtterance(text); m.lang = "ar-EG"; const v = speechSynthesis.getVoices().find((x) => x.lang?.startsWith("ar")); if (v) m.voice = v; m.rate = 0.9; speechSynthesis.speak(m); } catch { /* no voices */ }
+// ---- speech (worker + presentation): Egyptian number words, vocalised workshop words, the best Arabic voice on the device
+const VOICE_KEY = "novera-voice";
+function voicePrefs() { try { return { rate: 0.88, pitch: 1, name: "", ...(JSON.parse(localStorage.getItem(VOICE_KEY) || "{}")) }; } catch { return { rate: 0.88, pitch: 1, name: "" }; } }
+function saveVoicePrefs(p) { try { localStorage.setItem(VOICE_KEY, JSON.stringify(p)); } catch { /* */ } }
+function arVoices() { try { return speechSynthesis.getVoices().filter((v) => /^ar/i.test(v.lang || "")); } catch { return []; } }
+/** the best Arabic voice: the saved one, else Egyptian, else an enhanced/premium one, else Saudi, else any Arabic */
+function pickVoice(lang = "ar") {
+  const all = (() => { try { return speechSynthesis.getVoices(); } catch { return []; } })();
+  const list = all.filter((v) => (v.lang || "").toLowerCase().startsWith(lang));
+  if (!list.length) return null;
+  if (lang === "ar") { const P = voicePrefs(); const sv = P.name && list.find((v) => v.name === P.name); if (sv) return sv; }
+  const score = (v) => (/eg/i.test(v.lang) ? 40 : 0) + (/enhanced|premium|neural|natural|siri/i.test(v.name) ? 20 : 0) + (/sa/i.test(v.lang) ? 8 : 0) + (v.localService ? 2 : 0) + (v.default ? 1 : 0);
+  return list.slice().sort((a, b) => score(b) - score(a))[0];
 }
-const arNum = (v) => String(n1(v)).replace(".", " فاصلة ");
+const AR_ONES = ["صفر", "واحد", "اتنين", "تلاتة", "أربعة", "خمسة", "ستة", "سبعة", "تمانية", "تسعة", "عشرة", "حداشر", "اتناشر", "تلتاشر", "أربعتاشر", "خمستاشر", "ستاشر", "سبعتاشر", "تمنتاشر", "تسعتاشر"];
+const AR_TENS = ["", "", "عشرين", "تلاتين", "أربعين", "خمسين", "ستين", "سبعين", "تمانين", "تسعين"];
+const AR_HUNDS = ["", "مية", "ميتين", "تلتمية", "ربعمية", "خمسمية", "ستمية", "سبعمية", "تمنمية", "تسعمية"];
+/** 0–9999 in Egyptian words: 247 → ميتين سبعة وأربعين */
+function arWords(n) {
+  n = Math.round(n);
+  if (n < 0) return "ناقص " + arWords(-n);
+  if (n < 20) return AR_ONES[n];
+  if (n < 100) { const o = n % 10, t = Math.floor(n / 10); return o ? `${AR_ONES[o]} و${AR_TENS[t]}` : AR_TENS[t]; }
+  if (n < 1000) { const h = Math.floor(n / 100), r = n % 100; return r ? `${AR_HUNDS[h]} ${arWords(r)}` : AR_HUNDS[h]; }
+  if (n < 10000) { const k = Math.floor(n / 1000), r = n % 1000; const kw = k === 1 ? "ألف" : k === 2 ? "ألفين" : `${AR_ONES[k].replace(/ة$/, "")} تلاف`; return r ? `${kw} و${arWords(r)}` : kw; }
+  return String(n);
+}
+/** a measurement in words: 57.4 → سبعة وخمسين وأربعة من عشرة · 7.5 → سبعة ونص · 0.3 → تلاتة ملي */
+function arNum(v) {
+  const x = Math.round(+v * 10) / 10;
+  if (!isFinite(x)) return String(v);
+  const i = Math.trunc(Math.abs(x)), d = Math.round((Math.abs(x) - i) * 10), neg = x < 0 ? "ناقص " : "";
+  if (!d) return neg + arWords(i);
+  if (!i) return neg + `${arWords(d)} ملي`;
+  if (d === 5) return neg + `${arWords(i)} ونص`;
+  return neg + `${arWords(i)} و${arWords(d)} من عشرة`;
+}
+const AR_LETTER = { K: "كيه", D: "دي", P: "بي", W: "دبليو", T: "تي", B: "بي", S: "إس", C: "سي", L: "إل", U: "يو", A: "إيه", M: "إم", N: "إن", R: "آر", H: "إتش", G: "جي", F: "إف", E: "إي", V: "ڤي", X: "إكس", Y: "واي", Z: "زد", I: "آي", J: "جيه", O: "أو", Q: "كيو" };
+/** piece/unit codes: K01-08 → كيه واحد، قطعة تمانية */
+const arCode = (c) => String(c).replace(/^([A-Z]{1,2})(\d+)(?:-(\d+))?$/, (m, L, u, pc) => `${[...L].map((ch) => AR_LETTER[ch] || ch).join(" ")} ${arWords(+u)}${pc ? `، قطعة ${arWords(+pc)}` : ""}`);
+// workshop words the voices mangle → vocalised / spelled the way they're said in the factory (with any و/ب/ل/ف prefix and ال)
+const AR_L = "\\u0621-\\u064A\\u0660-\\u0669\\u066E-\\u06D3";
+const AR_WORDS = [
+  ["جنب", "جَنْب", "ين|ي|ك"], ["قاعدة", "قاعِدة"], ["رأس|راس", "رَاس"], ["ظهر|ضهر", "ضَهْر", "ية"], ["وش", "وِشّ", "وش|ه|ها"], ["رف", "رَفّ", "وف|ّ|ه"], ["مجرى|مجري", "مَجْرى"], ["مجاري", "مَجاري"],
+  ["درج", "دُرْج", "ين|ه"], ["أدراج", "أدْراج"], ["ضلف", "ضِلْف", "ة|تين|ه"], ["سمك", "سُمْك"], ["شريط", "شِريط"], ["كبب", "كُبَب"], ["كبة", "كُبّة"], ["مفصل", "مَفَصَّل", "ات|ة"],
+  ["فرش", "فَرْش"], ["خلوص", "خُلوص"], ["سكلو", "سُكْلو"], ["وزرة", "وَزَرة"], ["مينيفكس", "ميني فيكس"], ["دوبل", "دوبِل"], ["مفحار", "مِفْحار"], ["كونتر", "كاونتر"], ["علشان", "عَشان"], ["لحد", "لِحَدّ"],
+  ["فوق", "فُوق"], ["تحت", "تَحْت"], ["شمال", "شِمال"], ["يمين", "يِمين"], ["قدام", "قُدّام"], ["ورا", "وَرا"], ["نص", "نُصّ"], ["صندوق", "صَندوق"], ["هاردوير", "هارد وير"], ["قطعة", "قِطْعة"], ["طول", "طُول"], ["عرض", "عَرْض"],
+  ["سفلي", "سُفْلي", "ة"], ["جانبي", "جانِبي", "ة"], ["علوي", "عِلْوي", "ة"], ["ثابت", "ثابِت", "ة"], ["متحرك", "مِتْحَرَّك", "ة"], ["مقبض", "مَقْبَض"], ["تعليق", "تَعْليق", "ة|ات"], ["ليد", "لِيد"],
+].map(([w, v, suf]) => [new RegExp(`(^|[^${AR_L}])((?:[وبلفك])?(?:ال)?)(?:${w})(${suf ? `(?:${suf})?` : ""})(?=$|[^${AR_L}])`, "g"), `$1$2${v}$3`]);
+const AR_SAY = [
+  [/\bK(\d{2})-(\d{2})\b/g, (m, a, b) => arCode(`K${a}-${b}`)], [/\b([DPWTBS])(\d{2})-(\d{2})\b/g, (m, L, a, b) => arCode(`${L}${a}-${b}`)], [/\b([KDPWTBS])(\d{2})\b/g, (m, L, a) => arCode(`${L}${a}`)],
+  [new RegExp(`(\\d+(?:[.,]\\d+)?)\\s*(?:سم|سنتي)(?![${AR_L}])`, "g"), (m, v) => `${arNum(+v.replace(",", "."))} سَنتي`], [new RegExp(`(\\d+(?:[.,]\\d+)?)\\s*مم(?![${AR_L}])`, "g"), (m, v) => `${arNum(+v.replace(",", "."))} مِلّي`], [new RegExp(`(\\d+(?:[.,]\\d+)?)\\s*م(?![${AR_L}])`, "g"), (m, v) => `${arNum(+v.replace(",", "."))} مِتر`],
+  [/(\d+)\s*[×xX]\s*(\d+(?:[.,]\d+)?)/g, (m, a, b) => `${arNum(+a)} في ${arNum(+b.replace(",", "."))}`], [/(\d+(?:[.,]\d+)?)/g, (m, v) => arNum(+v.replace(",", "."))],
+  ...AR_WORDS,
+  [/[↥↕→←×]/g, " "], [/\s*[·•]\s*/g, "، "], [/\(|\)/g, "، "], [/[:：]/g, "، "], [/\s+/g, " "],
+];
+/** the text as it should be read: numbers in words, codes spelled, workshop words vocalised */
+function sayPrep(text) { let t = String(text); for (const [re, rp] of AR_SAY) t = t.replace(re, rp); return t.trim(); }
+/** say Arabic: one utterance per sentence (iOS cuts long ones), the chosen voice + speed */
+function sayAr(text, lang = "ar") {
+  if (!("speechSynthesis" in window)) { alertBar("الصوت مش متاح على الجهاز ده"); return; }
+  try {
+    speechSynthesis.cancel();
+    const P = voicePrefs(), v = pickVoice(lang);
+    const parts = (lang === "ar" ? sayPrep(text) : String(text)).split(/(?<=[.!؟?])\s+|\n+/).map((x) => x.trim()).filter(Boolean);
+    for (const part of parts) {
+      const m = new SpeechSynthesisUtterance(part);
+      m.lang = v?.lang || (lang === "ar" ? "ar-EG" : "en-US"); if (v) m.voice = v;
+      m.rate = +P.rate || 0.88; m.pitch = +P.pitch || 1;
+      speechSynthesis.speak(m);
+    }
+  } catch { /* no voices */ }
+}
+/** the voice settings pop (worker bar 🎙️): pick an Arabic voice on this device, speed, pitch, test */
+function voicePopHtml() {
+  const P = voicePrefs(), vs = arVoices(), cur = pickVoice("ar");
+  return `<div class="wvpop" data-wvpop><div class="wvh"><b>🎙️ الصوت</b><button class="wb-ic" data-wvclose>✕</button></div>
+    <label class="f"><span>الصوت المستخدم</span><select data-wvname>${vs.length ? vs.map((v) => `<option value="${esc(v.name)}" ${cur && v.name === cur.name ? "selected" : ""}>${esc(v.name)} (${esc(v.lang)})${/enhanced|premium/i.test(v.name) ? " ★" : ""}</option>`).join("") : `<option value="">مفيش أصوات عربي على الجهاز</option>`}</select></label>
+    <label class="f"><span>السرعة <b class="wnum" dir="ltr">${n1(P.rate)}</b></span><input type="range" min="0.5" max="1.3" step="0.05" value="${P.rate}" data-wvrate></label>
+    <label class="f"><span>طبقة الصوت <b class="wnum" dir="ltr">${n1(P.pitch)}</b></span><input type="range" min="0.7" max="1.3" step="0.05" value="${P.pitch}" data-wvpitch></label>
+    <div class="row"><button class="primary" data-wvtest>▶️ جرّب</button><button class="ghost2" data-wvreset>رجّع الافتراضي</button></div>
+    <p class="hint">أحسن نطق: نزّل صوت عربي «Enhanced / Premium» من إعدادات الآيباد ← تسهيلات الاستخدام ← المحتوى المنطوق ← الأصوات ← العربية، وبعدين اختاره هنا. الصوت المصري لو موجود بيتختار لوحده.</p></div>`;
+}
 function workerPieceText(pc) {
   const lb = pc.lb; const b = lb.banded || {};
   const sides = [b.top && "فوق", b.bottom && "تحت", b.left && "شمال", b.right && "يمين"].filter(Boolean);
@@ -9476,7 +9571,7 @@ function renderWorker() {
   const units = state.project.units.filter((x) => R(x).ok);
   const big = (v) => `<b class="wnum" dir="ltr">${n1(v)}</b>`;
   let top = `<div class="wb-top"><button class="wb-x" data-wexit aria-label="خروج">✕</button><b>👷 ${esc(state.project.name)}</b>
-    <button class="wb-ic ${W.voice ? "on" : ""}" data-wvoice title="صوت">🔊</button><button class="wb-ic ${ui.explode ? "on" : ""}" data-wexplode title="تفكيك">💥</button><button class="wb-ic ${state.xray ? "on" : ""}" data-wxray title="شفاف">◐</button><button class="wb-ic" data-wview="iso">⬢</button><button class="wb-ic" data-wview="front">⬜</button><button class="wb-ic" data-wview="fit">⛶</button></div>
+    <button class="wb-ic ${W.voice ? "on" : ""}" data-wvoice title="صوت">🔊</button><button class="wb-ic ${W.vpop ? "on" : ""}" data-wvset title="إعدادات الصوت">🎙️</button><button class="wb-ic ${ui.explode ? "on" : ""}" data-wexplode title="تفكيك">💥</button><button class="wb-ic ${state.xray ? "on" : ""}" data-wxray title="شفاف">◐</button><button class="wb-ic" data-wview="iso">⬢</button><button class="wb-ic" data-wview="front">⬜</button><button class="wb-ic" data-wview="fit">⛶</button></div>
     <div class="wb-units">${units.map((x) => `<button class="wb-u ${x.id === state.sel ? "on" : ""}" data-wunit="${x.id}"><b>${esc(unitCode(x))}</b><small>${esc(x.name)}</small></button>`).join("")}</div>`;
   const TABS = [["pieces", "🧩", "القطع"], ["inside", "🪚", "من جوه"], ["drawings", "📐", "الرسومات"], ["hardware", "🔩", "الهاردوير"], ["steps", "🪜", "التجميع"], ["install", "📏", "التركيب"]];
   let side = `<div class="wb-tabs">${TABS.map(([k, ic, l]) => `<button class="${W.tab === k ? "on" : ""}" data-wtab="${k}"><span>${ic}</span><small>${l}</small></button>`).join("")}</div><div class="wb-body">`;
@@ -9519,7 +9614,7 @@ function renderWorker() {
   } else if (W.tab === "steps") {
     const steps = asmPlan(u);
     const k = W.step ?? -1;
-    side += `<div class="wsteps">${steps.map((st, i) => `<button class="wstep ${k === i ? "on" : ""}" data-wstep="${i}"><span class="wstepn">${i + 1}</span><span class="wstepi">${STEP_ICON[i] || "🔧"}</span><small>${esc(st.t)}</small><em>${st.pieces.length}</em></button>`).join("")}</div>
+    side += `<div class="wsteps">${steps.map((st, i) => `<button class="wstep ${k === i ? "on" : ""}" data-wstep="${i}"><span class="wstepn">${i + 1}</span><span class="wstepi">${STEP_ICON[st.i] || "🔧"}</span><small>${esc(st.t)}</small><em>${st.pieces.length}</em></button>`).join("")}</div>
       ${k >= 0 && steps[k] ? `<div class="wstepd"><p>${esc(steps[k].d)}</p><div class="wcodes">${steps[k].pieces.map((p) => `<button class="wcodeb" data-wpiece="${esc(p.code || "")}">${esc(p.code || "?")}</button>`).join("")}</div>${steps[k].hardware.length ? `<div class="whw small">${steps[k].hardware.map(([a, v]) => `<div class="whwrow"><span class="whwic">${hwIcon(a)}</span><b class="wnum" dir="ltr">${v}</b><small>${esc(a)}</small></div>`).join("")}</div>` : ""}<button class="wb-big" data-wsaytext="${esc(`خطوة ${k + 1}: ${steps[k].t}. ${steps[k].d}`)}">🔊 اسمع</button></div>` : `<p class="hint">دوس على خطوة — الـ3D بيوريك اللي اتركب لحد دلوقتي</p>`}`;
   } else if (W.tab === "install") {
     const p = r.params || {}, poses = projectPoses(state.project), L = poses.get(u.id), segs = state.project.room ? Room.segments(state.project.room) : [];
@@ -9539,7 +9634,7 @@ function renderWorker() {
     side += `<div class="winst">${rows.map(([l, v]) => `<div class="winrow" data-wsaytext="${esc(l)}: ${arNum(v)} سنتي"><small>${l}</small>${big(v)}</div>`).join("")}</div><p class="hint">كل الأرقام بالسنتيمتر من الأرض الخالصة</p>`;
   }
   side += `</div>`;
-  bar.innerHTML = top + `<div class="wb-side">${side}</div>`;
+  bar.innerHTML = top + (W.vpop ? voicePopHtml() : "") + `<div class="wb-side">${side}</div>`;
 }
 function unitDims(u, r) {
   const p = r.params || {};
@@ -9960,7 +10055,7 @@ function presentTell(id) {
   b.innerHTML = `<b>${esc(u.name)}</b><span>${esc(text.slice(u.name.length + 2))}</span>`;
   b.hidden = false; clearTimeout(b._t); b._t = setTimeout(() => { b.hidden = true; }, 9000);
   if (ui.present?.voice && "speechSynthesis" in window) {
-    try { speechSynthesis.cancel(); const m = new SpeechSynthesisUtterance(text); m.lang = I18n.lang === "en" ? "en-US" : "ar-EG"; const v = speechSynthesis.getVoices().find((x) => x.lang?.startsWith(I18n.lang === "en" ? "en" : "ar")); if (v) m.voice = v; m.rate = 0.95; speechSynthesis.speak(m); } catch { /* no voices */ }
+    sayAr(text, I18n.lang === "en" ? "en" : "ar");
   }
 }
 
