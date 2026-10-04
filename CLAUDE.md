@@ -38,6 +38,12 @@ cd /home/claude/novera-app && python3 tools/build_pwa.py && python3 tools/build_
 - Kitchen units: base depth 58 includes the door (inset, face at y=0); corner units get their depth from `cornerFit()` in app.js unless set by hand.
 
 ## History (latest first)
+- v61: wood grain direction system. app.js: `GRAIN_DEF/grainPolicy(u)` (project default `userDefs().grain` + `state.project.grain` + `u.grain` {fronts v|h|free, carcass std|free, match, applies wood|all}),
+  `grainKind(pt)` (front/vert/horiz/box/back/none by role+name), `grainOf(u, pt, lib)` → "h"|"w"|null with per-piece override `u.grainOv[name]`; projectPieces carries grain/kind/uid;
+  cutGroups locks grained pieces (h → laid along the sheet length, w → along width) and merges a unit's drawer fronts of equal width into one strip «وشوش الأدراج 1+2+3 (عروق متتالية)» (strip dividers + grain arrows in sheetSvg);
+  pieceSvg (labels) draws grain lines + arrow; Mat.textureFor(THREE, key, render, grain) rotates wood textures per piece (h → 0, w → π/2) in both mesh paths;
+  UI: grainProps() section «🪵 اتجاه ثمرة الخشب» in unit props (chips + per-piece override list, data-grain/data-grainov/data-grainmatch/data-grainreset), defaults pop section (data-defgrain). __dbg exposes cutReady/cutData/projectPieces.
+  Keypad fix: `.kpad:not(.on)` visibility hidden (+ bigger translate for the studio's floating pad) — it used to stay partly visible after closing.
 - v60: pull-out front honours `door_handle_recess` at its TOP (was wrongly applied at the bottom) — same 57.4 cm front as a base door.
 - v59: drawers behind hinged doors — the dressing engine already narrows them (hinge_fix: spacer `drawers.hinge_spacer_t` 1.8 on hinge sides, box in by spacer + slide clearance, inner front narrower by spacer + hinge_front_gap);
   now exposed in the dressing «إعدادات متقدمة → الأدراج» as a toggle + a NOVERA-rule hint with the numbers. Kitchen/panel engines have no drawers behind doors (zone drawers are external).

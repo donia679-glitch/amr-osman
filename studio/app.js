@@ -417,6 +417,31 @@ function drawPieceAt(cx, cy) {
   alertBar(`اتضاف ${pc.name} — ${pc.w}×${pc.d}×${pc.h} سم. تقدر تظبط مقاسه ومكانه من "رسم قطع وتجميعها".`);
 }
 const XKIND = { shelf: "🟫 رف", divider: "▮ قاطوع", board: "▭ لوح حر" };
+/** v61: grain direction of the unit — the policy chips + a per-piece override list */
+function grainProps(u, r) {
+  const P = grainPolicy(u), own = u.grain || {};
+  const chip = (k, v, l) => `<button class="chip tog ${P[k] === v ? "on" : ""}" data-grain="${k}" data-gv="${v}">${l}</button>`;
+  const pieces = (r.parts || []).filter((pt) => pt.cut_piece && pt.label && grainKind(pt) !== "none").map((pt) => ({ pt, g: grainOf(u, pt, r.libOf?.(pt.material)), k: grainKind(pt), ov: u.grainOv?.[pt.name] }));
+  const grained = pieces.filter((x) => x.g);
+  const woodLibs = new Set(pieces.map((x) => r.libOf?.(x.pt.material)).filter((l) => (l || "").startsWith("wood_")));
+  let h = `<details class="grainbox"><summary>🪵 اتجاه ثمرة الخشب${grained.length ? ` · ${grained.length} قطعة` : ""}${Object.keys(own).length ? " · مخصص" : ""}</summary>
+    <p class="hint">العميل ممكن يطلب العروق بالطول أو بالعرض — اختار هنا والقص والملصقات والـ3D (في الريندر) بيتظبطوا عليه. القطع اللي عروقها محددة ما بتتلفش في خطة القص.</p>
+    <div class="dglass"><span>الضلف ووشوش الأدراج</span><div class="chips2">${chip("fronts", "v", "↕ بالطول (رأسي)")}${chip("fronts", "h", "↔ بالعرض (أفقي)")}${chip("fronts", "free", "حر")}</div></div>
+    <div class="dglass"><span>الهيكل الظاهر (أجناب، رفوف، رأس…)</span><div class="chips2">${chip("carcass", "std", "القياسي: الأجناب بالطول والرفوف بالعرض")}${chip("carcass", "free", "حر")}</div></div>
+    <div class="dglass"><span>تطبّق على</span><div class="chips2">${chip("applies", "wood", "خامات الخشب بس")}${chip("applies", "all", "كل الخامات")}</div></div>
+    <div class="bools"><label class="f b"><input type="checkbox" data-grainmatch ${P.match ? "checked" : ""}><span>عروق متتالية على وشوش الأدراج اللي فوق بعض (تتقص من شريحة واحدة بالترتيب)</span></label></div>
+    ${Object.keys(own).length ? `<div class="btnrow"><button class="ghost2" data-grainreset>رجّع لافتراضي المشروع</button></div>` : ""}
+    ${!woodLibs.size && P.applies === "wood" ? `<p class="hint">الوحدة دي مفيهاش خامة خشب (عروق) — الاتجاه مش هيأثر غير لو اخترت «كل الخامات» أو غيّرت الخامة لخشب.</p>` : ""}`;
+  if (pieces.length) {
+    h += `<details><summary>تخصيص قطعة قطعة${Object.keys(u.grainOv || {}).length ? ` · ${Object.keys(u.grainOv).length} مخصصة` : ""}</summary><div class="grainlist">`;
+    for (const { pt, g, ov } of pieces) {
+      const c = (v, l) => `<button class="chip tog ${(ov ? ov === v : (g || "free") === v) ? "on" : ""} ${ov === v ? "gold" : ""}" data-grainov="${esc(pt.name)}" data-gv="${v}">${l}</button>`;
+      h += `<div class="grow"><span class="gname">${esc(pt.name)} <small>${n1(pt.label.w)}×${n1(pt.label.h)}</small></span><span class="chips2">${c("h", "↕")}${c("w", "↔")}${c("free", "حر")}</span></div>`;
+    }
+    h += `</div><p class="hint">↕ على طول القطعة (ارتفاعها في الملصق) · ↔ على عرضها · الذهبي = مخصص يدوي.</p></details>`;
+  }
+  return h + `</details>`;
+}
 function extraProps(u, r) {
   const list = extraOf(u);
   const mats = extraMats(u);
@@ -2598,6 +2623,7 @@ function renderProps0() {
   h += u.kind === "dressing" ? dressingProps(p) : u.kind === "kitchen" ? kitchenProps(p) : panelProps(p, r);
   if (u.kind === "panel" && r.ok) h += softProps(u, r);
   if (r.ok && (u.kind === "dressing" || u.kind === "panel") && r.params?.template !== "free") h += obstaclesProps(p);
+  if (r.ok) h += grainProps(u, r);
   if (r.ok) h += extraProps(u, r);
 
   h += `<details open><summary>الخامات</summary><div class="mats">`;
@@ -2760,6 +2786,12 @@ function defaultsPop() {
       <label class="f"><span>نوع المقبض</span><select data-def="handle"><option value="">— زي البرنامج —</option>${Object.entries(HANDLE_TYPES_UI).map(([v, lb]) => `<option value="${v}" ${D0.handle === v ? "selected" : ""}>${esc(lb)}</option>`).join("")}</select></label></div>
       <div class="bools">${DEF_KEYS.filter((x) => x[2] === "b").map(([k, l]) => `<label class="f b"><input type="checkbox" data-defb="k.${k}" ${dv(k) === true ? "checked" : ""} ${dv(k) === undefined ? 'data-unset="1"' : ""}><span>${esc(l)}${dv(k) === undefined ? " <small>(زي البرنامج)</small>" : ""}</span></label>`).join("")}</div>
       </details>
+    <details open><summary>🪵 اتجاه ثمرة الخشب (افتراضي لكل الوحدات)</summary>
+      <p class="hint">بيتطبق على أي وحدة ما اتخصصتش من إعداداتها. العميل طلب العروق بالعرض؟ غيّرها هنا مرة واحدة.</p>
+      <div class="grid2"><label class="f"><span>الضلف ووشوش الأدراج</span><select data-defgrain="fronts"><option value="v" ${(D0.grain?.fronts || "v") === "v" ? "selected" : ""}>↕ بالطول (رأسي)</option><option value="h" ${D0.grain?.fronts === "h" ? "selected" : ""}>↔ بالعرض (أفقي)</option><option value="free" ${D0.grain?.fronts === "free" ? "selected" : ""}>حر</option></select></label>
+      <label class="f"><span>الهيكل الظاهر</span><select data-defgrain="carcass"><option value="std" ${(D0.grain?.carcass || "std") === "std" ? "selected" : ""}>القياسي (أجناب بالطول، رفوف بالعرض)</option><option value="free" ${D0.grain?.carcass === "free" ? "selected" : ""}>حر</option></select></label>
+      <label class="f"><span>تطبّق على</span><select data-defgrain="applies"><option value="wood" ${(D0.grain?.applies || "wood") === "wood" ? "selected" : ""}>خامات الخشب بس</option><option value="all" ${D0.grain?.applies === "all" ? "selected" : ""}>كل الخامات</option></select></label></div>
+      <div class="bools"><label class="f b"><input type="checkbox" data-defgrain="match" ${D0.grain?.match !== false ? "checked" : ""}><span>عروق متتالية على وشوش الأدراج اللي فوق بعض</span></label></div></details>
     <details open><summary>🏭 حسب نوع الوحدة ومعايير المصنع</summary>
       <p class="hint">إعدادات بتختلف بين السفلي والعلوي والطويل، وقواعد بتتطبق على كل وحدة جديدة. زرار «معايير NOVERA» بيرجّع القيم اللي اتفقنا عليها.</p>
       <div class="btnrow"><button class="ghost2" data-defnovera>🏭 معايير NOVERA</button></div>
@@ -3108,6 +3140,7 @@ props.addEventListener("change", (e) => {
     applyInsert(u, i, "grid");
     return;
   }
+  if (t.hasAttribute("data-grainmatch")) { u.grain = { ...(u.grain || {}), match: t.checked }; cutKey = ""; save(); render(true); return; }
   if (t.hasAttribute("data-runner")) { const R0 = userDefs().rules || {}; const clr = R0.runnerClr?.[t.value]; setParams(u, (p) => { p.drawer_runner = t.value; if (clr != null) p.drawer_box_side_clearance = +clr; }); return; }
   if (d.appl) {
     u.appliance ??= {};
@@ -3295,6 +3328,19 @@ props.addEventListener("click", (e) => {
   const b = e.target.closest("button");
   if (!u || !b) return;
   const d = b.dataset;
+  if (b.dataset.grain) {
+    const k = b.dataset.grain, v = b.dataset.gv;
+    u.grain = { ...(u.grain || {}) }; u.grain[k] = k === "match" ? v === "1" : v;
+    cutKey = ""; save(); render(true); return;
+  }
+  if (b.hasAttribute("data-grainreset")) { delete u.grain; delete u.grainOv; cutKey = ""; save(); render(true); return; }
+  if (b.dataset.grainov) {
+    const name = b.dataset.grainov, v = b.dataset.gv;
+    u.grainOv = { ...(u.grainOv || {}) };
+    if (u.grainOv[name] === v) delete u.grainOv[name]; else u.grainOv[name] = v;
+    if (!Object.keys(u.grainOv).length) delete u.grainOv;
+    cutKey = ""; save(); render(true); return;
+  }
   if (b.dataset.kglass) {
     const v = b.dataset.kglass;
     setParams(u, (p) => {
@@ -4381,6 +4427,7 @@ $("#pop").addEventListener("change", async (e) => {
     if (d.def) { const num = t.tagName === "INPUT"; setDefault(d.def, num ? (t.value.trim() === "" ? "" : toNum(t.value)) : t.value); }
     else if (d.deft) setDefault(d.deft, t.value);
     else if (d.defb) setDefault(d.defb, t.checked);
+    else if (d.defgrain) { const G = (userDefs().grain ??= {}); if (t.type === "checkbox") G[d.defgrain] = t.checked; else if (t.value === "") delete G[d.defgrain]; else G[d.defgrain] = t.value; cutKey = ""; }
     else return;
     save(); settingsPush(); return;
   }
@@ -5579,12 +5626,12 @@ const view = {
     let minX = 1e9, maxX = -1e9, minY = 1e9, maxY = -1e9, minZ = 1e9, maxZ = -1e9;
     if (r.meshes) {
       const mats = {};
-      const matFor = (key, front) => {
+      const matFor = (key, front, grain = null) => {
         const see = state.xray && front;
-        const id = key + (see ? "~x" : "");
+        const id = key + (see ? "~x" : "") + (grain ? "~" + grain : "");
         if (mats[id]) return mats[id];
         const led = key === "led", glass = key === "glass";
-        const lib = r.libOf?.(key), tx = Mat.textureFor(THREE, lib, !!state.render), sf = Mat.surface(lib);
+        const lib = r.libOf?.(key), tx = Mat.textureFor(THREE, lib, !!state.render, grain), sf = Mat.surface(lib);
         const m = finMaterial(THREE, led || glass ? null : finOf(u, key), { color: tx ? new THREE.Color(1, 1, 1).multiplyScalar(sf.bright) : r.colors[key] || "#cccccc", map: tx?.tex || null,
           roughness: state.render || lib ? sf.rough : 0.7, metalness: ["frame", "rail", "handle"].includes(key) ? 0.5 : sf.metal,
           transparent: see || glass, opacity: see ? 0.16 : glass ? 0.4 : 1, side: THREE.DoubleSide,
@@ -5596,6 +5643,7 @@ const view = {
         return (mats[id] = m);
       };
       const T = ([x, y, z]) => [x, z, -y];
+      const partByName = new Map((r.parts || []).map((pt) => [pt.name, pt]));
       for (const m of r.meshes) {
         if ((m.mat === "hole" && !state.xray) || m.name === "كبة مفصلة" || m.name === "خرم مقبض") continue;
         if (this.hiddenPart(u, m.name, null)) continue;
@@ -5640,7 +5688,7 @@ const view = {
             geo.setAttribute("position", new THREE.Float32BufferAttribute(arr, 3));
             geo.computeVertexNormals();
           }
-          const mm = matFor(key, front);
+          const mm = matFor(key, front, state.render ? grainOf(u, partByName.get(m.name) || { name: m.name, label: { w: 1, h: 1 } }, r.libOf?.(key)) : null);
           if (mm.userData.tile) Mat.planarUV(THREE, geo, mm.userData.tile);
           const mesh = new THREE.Mesh(geo, vs === "cur" ? hiMat(mm) : mm);
           mesh.userData.led = key === "led";
@@ -5676,7 +5724,7 @@ const view = {
       if (pt.material === "mirror") color = "#c9d1d6";
       const glassy = pt.material === "glass";
       const see = state.xray && isFront;
-      const plib = r.libOf?.(pt.material), ptx = led ? null : Mat.textureFor(THREE, plib, !!state.render), psf = Mat.surface(plib);
+      const plib = r.libOf?.(pt.material), ptx = led ? null : Mat.textureFor(THREE, plib, !!state.render, state.render ? grainOf(u, pt, plib) : null), psf = Mat.surface(plib);
       const mat = finMaterial(THREE, led || glassy ? null : finOf(u, pt.material), { color: ptx ? new THREE.Color(1, 1, 1).multiplyScalar(psf.bright) : color, map: ptx?.tex || null,
         roughness: state.render || plib ? psf.rough : 0.72, metalness: pt.material === "mirror" || pt.material === "rail" ? 0.45 : psf.metal,
         transparent: see || glassy, opacity: see ? 0.16 : glassy ? 0.45 : 1,
@@ -6128,6 +6176,44 @@ function ensureCodes(project) {
 }
 const unitCode = (u) => u.code || "";
 /** every sheet piece of a project; key = the piece number printed everywhere (K01-07) */
+// ================================================================== v61 — wood grain direction («اتجاه ثمرة الخشب»)
+// policy per project (defaults) and per unit: fronts v (vertical, بالطول) | h (horizontal, بالعرض) | free;
+// carcass std (vertical pieces along their height, horizontal pieces along their width) | free; match = continuous grain
+// across a stack of drawer fronts (cut from one strip); applies = wood (only wood_* libraries) | all materials.
+const GRAIN_DEF = () => ({ fronts: "v", carcass: "std", match: true, applies: "wood" });
+function grainPolicy(u) {
+  const base = { ...GRAIN_DEF(), ...(userDefs().grain || {}), ...(state.project.grain || {}) };
+  return u?.grain ? { ...base, ...u.grain } : base;
+}
+/** what kind of board a part is, for the grain rules */
+function grainKind(pt) {
+  const n = pt.name || "", role = pt.role || "";
+  if (pt.material === "glass" || pt.material === "mirror" || role === "door_insert" && /زجاج|مراية/.test(n)) return "none";
+  if (role === "back" || /^(ظهر|ضهر)/.test(n) || /- ظهر$/.test(n) && /صندوق|درج/.test(n) === false && role !== "drawer_box") return "back";
+  if (role === "drawer_box" || role === "drawer_bottom" || /صندوق|جدار|- جنب (شمال|يمين)$|- ظهر$|- قاعدة$|حافة/.test(n)) return "box";
+  if (pt.material === "front" || ["door", "drawer_front", "door_insert", "sliding_door"].includes(role) || /^(ضلفة|وش |درج \d+$|بول أوت$|فريم|باب سحاب)/.test(n) || /- (فريم|وش)/.test(n)) return "front";
+  if (["side", "divider"].includes(role) || /جنب|قاطوع|فاصل رأسي|تقفيلة|الضهر الرأسي|كليت/.test(n)) return "vert";
+  if (["shelf", "top", "base", "horizontal", "fixed_shelf", "plinth", "rail", "countertop", "spacer"].includes(role) || /رأس|قاعدة|رف|شريط|وزرة|سكلو|كونتر|جلسة|قعدة|صينية|أورزة|حشوة/.test(n)) return "horiz";
+  return "other";
+}
+/** grain axis of a part: "h" (along the label's h = the piece's height/length) | "w" (along its width) | null (free) */
+function grainOf(u, pt, lib) {
+  const lb = pt.label; if (!lb) return null;
+  const ov = u?.grainOv?.[pt.name];
+  if (ov === "free") return null;
+  if (ov === "h" || ov === "w") return ov;
+  const P = grainPolicy(u);
+  const grained = (lib || "").startsWith("wood_") || !!lb.grain || P.applies === "all";
+  if (!grained) return null;
+  const k = grainKind(pt);
+  if (k === "none" || k === "back") return null;
+  if (k === "front") return P.fronts === "free" ? null : P.fronts === "h" ? "w" : "h";
+  if (P.carcass === "free") return null;
+  if (k === "vert") return "h";
+  if (k === "horiz") return "w";
+  return lb.h >= lb.w ? "h" : "w"; // boxes and the rest: along the longer side
+}
+const GRAIN_AR = { h: "↕ بالطول", w: "↔ بالعرض" };
 function projectPieces(project) {
   ensureCodes(project);
   const out = [];
@@ -6138,7 +6224,8 @@ function projectPieces(project) {
     for (const pt of r.parts) {
       if (!pt.cut_piece || !pt.label) continue;
       const key = `${u.code}-${String(++n).padStart(2, "0")}`;
-      const base = { ucode: u.code, unit: u.name, unitIdx: ui_, mname: r.names[pt.material] || pt.material, color: r.colors?.[pt.material] || "#ccc", lib: r.libOf(pt.material) };
+      const lib0 = r.libOf(pt.material);
+      const base = { ucode: u.code, unit: u.name, unitIdx: ui_, mname: r.names[pt.material] || pt.material, color: r.colors?.[pt.material] || "#ccc", lib: lib0, grain: grainOf(u, pt, lib0), kind: grainKind(pt), uid: u.id };
       const parts = splitBack(pt);
       if (parts.length === 1) { out.push({ ...base, key, code: key, pt, lb: pt.label }); continue; }
       const plinth = pt.role === "plinth" || /سكلو|وزرة/.test(pt.name || "");
@@ -6183,13 +6270,42 @@ function cutGroups(project) {
     const { lb } = pc;
     if (STONE(pc.lib) || /^(alu_|stainless|copper)/.test(pc.lib || "") || ["glass", "mirror", "frame", "door_frame_alu", "rail"].includes(pc.pt.material) || /ألومنيوم|المونيوم|معدن/.test(pc.mname || "")) { outside.push(pc); continue; }
     const layers = thick.some((t) => Math.abs(t - lb.t) < 0.01) ? [lb.t] : Catalog.laminationFor(lb.t) || [lb.t];
-    const wood = (pc.lib || "").startsWith("wood_") || !!lb.grain; // wood, or a part marked «grain: don't turn»
+    const g = pc.grain; // "h": the grain runs along the piece's h → lay it along the sheet's length (sheet w); "w": along the piece's w; null: free to turn
     layers.forEach((t, li) => {
       const key = `${pc.mname} — ${Math.round(t * 10)} مم`;
       if (!groups.has(key)) groups.set(key, { key, color: pc.color, parts: [] });
       const name = `${pc.unit}: ${pc.pt.name}${layers.length > 1 ? ` (طبقة ${li + 1})` : ""}`;
-      groups.get(key).parts.push(wood ? { name, w: lb.h, h: lb.w, rotate: false, key: pc.key, code: pc.key + (layers.length > 1 ? `/${li + 1}` : "") } : { name, w: lb.w, h: lb.h, key: pc.key, code: pc.key + (layers.length > 1 ? `/${li + 1}` : "") });
+      const code = pc.key + (layers.length > 1 ? `/${li + 1}` : "");
+      groups.get(key).parts.push(g === "h" ? { name, w: lb.h, h: lb.w, rotate: false, key: pc.key, code, grain: "w", hdim: "w", uid: pc.uid, kind: pc.kind, pname: pc.pt.name }
+        : g === "w" ? { name, w: lb.w, h: lb.h, rotate: false, key: pc.key, code, grain: "w", hdim: "h", uid: pc.uid, kind: pc.kind, pname: pc.pt.name }
+        : { name, w: lb.w, h: lb.h, key: pc.key, code, uid: pc.uid, kind: pc.kind, pname: pc.pt.name });
     });
+  }
+  // continuous grain across a stack of drawer fronts: the fronts of one unit with the same width become ONE strip
+  // (cut in order from one piece, kerf between them) so the grain runs through the stack
+  const kerf = +state.cutOpts?.kerf || 0.3;
+  for (const grp of groups.values()) {
+    const byUnit = new Map();
+    for (const p of grp.parts) {
+      if (p.kind !== "front" || !p.grain || !/^درج \d+$|- درج \d+$/.test(p.pname || "")) continue;
+      const u = state.project.units.find((x) => x.id === p.uid);
+      if (!u || !grainPolicy(u).match) continue;
+      // the fronts stand one above the other: the strip grows along the sheet axis that holds the front's height (hdim),
+      // and only fronts of the same width (the other axis) can share a strip
+      const wdim = p.hdim === "w" ? "h" : "w";
+      const k = `${p.uid}|${Math.round(p[wdim] * 10)}`;
+      (byUnit.get(k) || byUnit.set(k, []).get(k)).push(p);
+    }
+    for (const list of byUnit.values()) {
+      if (list.length < 2) continue;
+      list.sort((a, b) => (+(/(\d+)$/.exec(a.pname)?.[1] || 0)) - (+(/(\d+)$/.exec(b.pname)?.[1] || 0)));
+      const first = list[0], hd = first.hdim, wd = hd === "w" ? "h" : "w";
+      const total = list.reduce((a, p) => a + p[hd], 0) + kerf * (list.length - 1);
+      const merged = { name: `${first.name.split(": ")[0]}: وشوش الأدراج ${list.map((p) => /(\d+)$/.exec(p.pname)?.[1]).join("+")} (عروق متتالية)`, rotate: false, key: first.key, code: list.map((p) => p.code).join("·"), grain: "w", hdim: hd, uid: first.uid, kind: "front", pname: first.pname, strip: list.map((p) => ({ code: p.code, w: p[hd], name: p.pname })) };
+      merged[hd] = Math.round(total * 100) / 100; merged[wd] = first[wd];
+      grp.parts = grp.parts.filter((p) => !list.includes(p));
+      grp.parts.push(merged);
+    }
   }
   return { groups: [...groups.values()], outside };
 }
@@ -6314,6 +6430,18 @@ function sheetSvg(s, si, g) {
     const label = pl.name.split(": ").pop();
     const code = g.parts[pl.index]?.code || "";
     svg += `<rect x="${pl.x}" y="${pl.y}" width="${pl.w}" height="${pl.h}" class="pc" style="fill:${g.color}"/>`;
+    const part = g.parts[pl.index];
+    if (part?.grain) {
+      // the grain runs along the sheet's length (x) unless the piece was turned
+      const along = pl.rotated ? "y" : "x";
+      const L = Math.min(along === "x" ? pl.w : pl.h, 14), cx = pl.x + pl.w / 2, cy = pl.y + pl.h / 2;
+      svg += along === "x" ? `<path class="grain" d="M${cx - L / 2} ${pl.y + 2.2} h${L} m-2 -1.2 l2 1.2 l-2 1.2"/>` : `<path class="grain" d="M${pl.x + 2.2} ${cy - L / 2} v${L} m-1.2 -2 l1.2 2 l1.2 -2"/>`;
+    }
+    if (part?.strip) {
+      let acc = 0;
+      const alongX = (part.hdim === "w") !== !!pl.rotated; // the strip grows along the sheet x when its height axis is the piece's w (and it was not turned)
+      for (const sgm of part.strip.slice(0, -1)) { acc += sgm.w + (+state.cutOpts?.kerf || 0.3); svg += alongX ? `<line class="strip" x1="${pl.x + acc}" y1="${pl.y}" x2="${pl.x + acc}" y2="${pl.y + pl.h}"/>` : `<line class="strip" x1="${pl.x}" y1="${pl.y + acc}" x2="${pl.x + pl.w}" y2="${pl.y + acc}"/>`; }
+    }
     svg += pieceLabel(pl, code, label, `${n1(pl.rotated ? pl.orig_h : pl.orig_w)}×${n1(pl.rotated ? pl.orig_w : pl.orig_h)}`);
   }
   svg += "</svg>";
@@ -6461,6 +6589,15 @@ function pieceSvg(pc, size = 1) {
       const tx = gr.axis === "vertical" ? gx + (gr.ratio < 0.5 ? 5 : -5) : gx, ty = gr.axis === "vertical" ? gy : gy + (gr.ratio < 0.5 ? -3 : 7);
       g += `<text x="${tx}" y="${ty}" font-size="7" font-weight="700" fill="#8a5a00" text-anchor="middle" ${gr.axis === "vertical" ? `transform="rotate(-90 ${tx} ${ty})"` : ""} font-family="Arial, sans-serif" paint-order="stroke" stroke="#fff" stroke-width="2">${n1(gi.len)}</text>`;
     }
+  }
+  // v61: the grain direction as faint lines + an arrow (↕ along the piece's height, ↔ along its width)
+  if (pc.grain) {
+    const cx = x0 + w / 2, cy = y0 + hh / 2, L = Math.min(pc.grain === "h" ? hh : w, 18) * 0.7;
+    const lines = [];
+    for (let k = -2; k <= 2; k++) lines.push(pc.grain === "h" ? `M${(cx + k * w * 0.16).toFixed(1)} ${(y0 + 3).toFixed(1)} V${(y0 + hh - 3).toFixed(1)}` : `M${(x0 + 3).toFixed(1)} ${(cy + k * hh * 0.16).toFixed(1)} H${(x0 + w - 3).toFixed(1)}`);
+    g += `<path d="${lines.join(" ")}" stroke="#b58a3a" stroke-width="0.5" stroke-opacity="0.55" fill="none"/>`;
+    g += pc.grain === "h" ? `<path d="M${cx} ${cy - L / 2} V${cy + L / 2} M${cx - 2.5} ${cy - L / 2 + 3} L${cx} ${cy - L / 2} L${cx + 2.5} ${cy - L / 2 + 3} M${cx - 2.5} ${cy + L / 2 - 3} L${cx} ${cy + L / 2} L${cx + 2.5} ${cy + L / 2 - 3}" stroke="#8a5a00" stroke-width="1.2" fill="none"/>`
+      : `<path d="M${cx - L / 2} ${cy} H${cx + L / 2} M${cx - L / 2 + 3} ${cy - 2.5} L${cx - L / 2} ${cy} L${cx - L / 2 + 3} ${cy + 2.5} M${cx + L / 2 - 3} ${cy - 2.5} L${cx + L / 2} ${cy} L${cx + L / 2 - 3} ${cy + 2.5}" stroke="#8a5a00" stroke-width="1.2" fill="none"/>`;
   }
   for (const ho of pt.holes || []) {
     const cx = x0 + ho.w * w, cy = y0 + (1 - ho.h) * hh;
@@ -10001,4 +10138,4 @@ function cmdOpen() {
 function cmdClose() { const b = $("#cmdBox"); if (b) { b.hidden = true; b.innerHTML = ""; } }
 addEventListener("keydown", (e) => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); if ($("#cmdBox") && !$("#cmdBox").hidden) cmdClose(); else cmdOpen(); } });
 
-if (DEV) window.__dbg = { view, plan, R, render: (x) => render(x), ak: (t) => kitchenProposals(t), applyK: (u) => applyKitchen(u, null), checks: () => designChecks(), merge: (a, b) => mergeInto(a, b), get ui() { return ui; }, layout: asmLayout, libUnit, libSet, thumbs, openStudio: (u, x) => openStudio(u, x), exportUnitDrawings, exportPurchasePdf, exportPurchaseXlsx, renderPop, libAdd, exportQuotePdf, exportAsmBooklet, presentOn, presentOff, renderPresent, exportMachines, speakRun, applyLighting, setParams, cmdOpen, elev: (u) => unitElevSvg(u), get state() { return state; } };
+if (DEV) window.__dbg = { view, plan, R, render: (x) => render(x), ak: (t) => kitchenProposals(t), applyK: (u) => applyKitchen(u, null), checks: () => designChecks(), merge: (a, b) => mergeInto(a, b), get ui() { return ui; }, layout: asmLayout, libUnit, libSet, thumbs, openStudio: (u, x) => openStudio(u, x), exportUnitDrawings, exportPurchasePdf, exportPurchaseXlsx, renderPop, libAdd, exportQuotePdf, exportAsmBooklet, presentOn, presentOff, renderPresent, exportMachines, speakRun, applyLighting, setParams, cmdOpen, elev: (u) => unitElevSvg(u), cutReady, get cutData() { return cutData; }, projectPieces: () => projectPieces(state.project), get state() { return state; } };

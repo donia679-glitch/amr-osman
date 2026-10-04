@@ -101,10 +101,10 @@ export function tileCanvas(hex = "#d9d4c8") {
 // ------------------------------------------------------------------ three.js textures
 const texCache = new Map();
 /** the texture for a material key (custom photo, or drawn grain in render mode) — null for plain colours */
-export function textureFor(THREE, key, renderMode) {
+export function textureFor(THREE, key, renderMode, grain = null) {
   if (!key) return null;
   const custom = get(key);
-  const id = key + (renderMode ? "|r" : "");
+  const id = key + (renderMode ? "|r" : "") + (grain ? "|g" + grain : "");
   if (texCache.has(id)) return texCache.get(id);
   let tex = null, tile = 60, rot = 0;
   if (custom?.img) {
@@ -121,6 +121,8 @@ export function textureFor(THREE, key, renderMode) {
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.anisotropy = 4;
   tex.center.set(0.5, 0.5);
+  // v61: a known grain direction overrides the library's own orientation — "h" = along the piece's height (vertical on fronts), "w" = along its width
+  if (grain && (key.startsWith("wood_") || custom?.img)) rot = grain === "h" ? 0 : Math.PI / 2;
   tex.rotation = rot;
   const out = { tex, tile };
   texCache.set(id, out);
