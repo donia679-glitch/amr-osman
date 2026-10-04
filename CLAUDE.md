@@ -38,6 +38,10 @@ cd /home/claude/novera-app && python3 tools/build_pwa.py && python3 tools/build_
 - Kitchen units: base depth 58 includes the door (inset, face at y=0); corner units get their depth from `cornerFit()` in app.js unless set by hand.
 
 ## History (latest first)
+- v71: NO background computing any more (it made the iPad heavy). The zero-waste library ships precomputed in `apps/ipad/zwlib.js` (`export default {sig, items}`, re-exported as `More.ZW_PRE`;
+  built by `tools/zwpre.py` = Playwright run of zwSolve for every ZW_LIB preset with budget 45 s, default sheet 244×122/kerf 0.4/trim 1/NOVERA shelf rules — re-run it after changing the solver or presets).
+  `zwLibStore()` uses ZW_PRE when `zwSig()` matches (zwSig seeds defaults first), else localStorage, else empty; computing happens only via the «🧮 احسب…» button (`L.want` toggles the pump) or by tapping an uncomputed card (solved once, saved).
+  `zwLibPaint` skips cards whose state key is unchanged (no thumbnail re-shoots), called on render while the library is open. Presets with front sheets rebalanced to 4+1 / 6+2 / 8+2; solver: random restarts while time remains, stale<4, stronger penalties for >2 of a kind / >2 drawer units, narrower starts for ≤2 sheets.
 - v70: zero waste rebuilt as a real solver + ready library. `zwSolve({mode, counts, budget, onProgress})`: stage 1 grow from 3 seeds (5-cm widths, moves widen/add/swap/narrow+add), stage 2 fine-tune every width ±1–4 cm (`zwUnit(c, w, sh)` any integer width),
   stage 3 fill the real offcuts (optimizer `minOffcut [8,5]`, untouched sheets count as whole offcuts) with extra loose shelves (`sh` extra shelves per candidate cap `shelves`) and ZW_FILLERS accessories (diffParts for the added pieces), stage 4 distinct results;
   judged by `score` = waste + composition penalty (kitchen needs base + wall (+ sink from 3 units), >2 of a kind, drawers-heavy). Worker calls serialised (`zwCall` queue). Results carry `leftovers`.

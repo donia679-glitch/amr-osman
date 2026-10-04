@@ -1987,7 +1987,7 @@ function renderLib() {
   $("#lib").innerHTML = h + "</div>";
   filterLib();
   thumbs.watch($("#lib"));
-  zwLibPaint(); setTimeout(zwLibPump, 400);
+  zwLibPaint();
 }
 $("#lib").addEventListener("input", (e) => { if (e.target.id !== "libq") return; ui.libQ = e.target.value; filterLib(); });
 $("#lib").addEventListener("click", (e) => {
@@ -1996,6 +1996,7 @@ $("#lib").addEventListener("click", (e) => {
   if (e.target.closest("[data-studio-new]")) { state.libOpen = false; render(); openStudio(null); return; }
   if (e.target.closest("[data-scrap-lib]")) { state.libOpen = false; render(); ui.pop = "scrap"; renderPop(); return; }
   if (e.target.closest("[data-zero-lib]")) { state.libOpen = false; render(); ui.pop = "zero"; renderPop(); return; }
+  if (e.target.closest("[data-zwcompute]")) { const L = zwLibStore(); L.want = !L.want; zwLibPaint(); if (L.want) zwLibPump(); return; }
   { const z = e.target.closest("[data-zwlib]"); if (z) { zwLibOpen(z.dataset.zwlib); return; } }
   const c = e.target.closest("[data-preset],[data-template],[data-dress],[data-kitchen],[data-pieces],[data-smart]");
   if (!c) return;
@@ -10395,7 +10396,8 @@ async function zwSolve({ mode, counts, budget = 12000, onProgress = () => {} }) 
   // the score a variant is judged by: its waste plus a small penalty for a set that is not a kitchen (all drawers, no wall units, no sink…)
   const score = (e) => {
     let pen = 0; const kinds = new Map(); for (const it of e.set) kinds.set(it.c.k, (kinds.get(it.c.k) || 0) + 1);
-    for (const n of kinds.values()) if (n > 2) pen += 0.012 * (n - 2);
+    for (const n of kinds.values()) if (n > 2) pen += 0.02 * (n - 2);
+    const drawers = kinds.get("k_base_drawers") || 0; if (drawers > 2) pen += 0.015 * (drawers - 2);
     if (mode === "kitchen" && e.set.length >= 2) { if (!e.set.some((it) => it.row === "wall")) pen += 0.03; if (!e.set.some((it) => it.row === "base")) pen += 0.03; if (!kinds.has("k_sink") && e.set.length >= 3) pen += 0.015; }
     if (mode !== "wall" && e.set.length >= 3 && [...kinds].filter(([k]) => k === "k_base_drawers").reduce((a, [, n]) => a + n, 0) > e.set.length / 2) pen += 0.02;
     return e.waste + pen;
@@ -10407,19 +10409,24 @@ async function zwSolve({ mode, counts, budget = 12000, onProgress = () => {} }) 
     ["k_base_drawers", "k_wall2", "k_sink", "k_base_drawers", "k_wall_flip", "k_drawer_doors", "k_wall1_40", "k_base_drawers", "k_wall2"],
     ["k_base2", "k_wall2", "k_sink", "k_base1_45", "k_wall1_40", "k_base2", "k_wall2", "k_base1_45", "k_wall_flip", "k_base2"],
   ].map((l) => l.filter((k) => cands.some((c) => c.k === k))).filter((l) => l.length);
+  // random restarts (different orders) are tried while time remains — they find the sets the fixed seeds miss
+  const rnd = (n) => Math.floor(Math.random() * n);
+  for (let i = 0; i < 6; i++) { const keys = cands.map((c) => c.k); const l = []; while (l.length < 10) l.push(keys[rnd(keys.length)]); seeds.push(l); }
+  const small = pools.reduce((a, P) => a + P.n, 0) <= 2;
   // ---- stage 1: grow from each seed with coarse widths
   let bests = [];
-  for (let si = 0; si < seeds.length && left() > 2500; si++) {
+  for (let si = 0; si < seeds.length && (si < 3 ? left() > 2500 : left() > budget * 0.45); si++) {
     const order = seeds[si];
     let set = [], i = 0;
-    while (i < order.length * 3) { const k = order[i % order.length]; i++; if (zwCandOf(k)?.once && set.some((it) => it.c.k === k)) continue; const it = pick(k, ZW_TYPICAL[k] || 60, coarse); if (!it) continue; const a = zwArea([...set, it], pools); if (pools.some((P) => a[P.id] > P.avail * 0.8)) break; set.push(it); }
+    const jitter = si >= 3 ? () => (rnd(7) - 3) * 5 : () => 0;
+    while (i < order.length * 3) { const k = order[i % order.length]; i++; if (zwCandOf(k)?.once && set.some((it) => it.c.k === k)) continue; const it = pick(k, (ZW_TYPICAL[k] || 60) - (small ? 15 : 0) + jitter(), coarse); if (!it) continue; const a = zwArea([...set, it], pools); if (pools.some((P) => a[P.id] > P.avail * 0.8)) break; set.push(it); }
     if (!set.length) continue;
     let cur = (await zwEval([set], pools, 0.25))[0];
     let guard = 0; while (!cur.fits && cur.set.length > 1 && guard++ < 6) cur = (await zwEval([cur.set.slice(0, -1)], pools, 0.25))[0];
     if (!cur.fits) continue;
     keep(cur);
     let stale = 0, round = 0;
-    while (stale < 3 && round++ < 12 && left() > 2000) {
+    while (stale < 4 && round++ < 14 && left() > 2000) {
       onProgress(`بيملى الألواح (تجربة ${si + 1}/${seeds.length}، خطوة ${round}) — الهدر دلوقتي ${Math.round(cur.waste * 100)}%`);
       const room = pools.map((P) => P.avail - cur.area[P.id]);
       const variants = [];
@@ -10549,16 +10556,16 @@ function zwPop() {
 const ZW_LIB = [
   { id: "k2", label: "مطبخ صغير من لوحين", mode: "kitchen", carcass: 2 }, { id: "k3", label: "مطبخ من 3 ألواح", mode: "kitchen", carcass: 3 }, { id: "k4", label: "مطبخ من 4 ألواح", mode: "kitchen", carcass: 4 },
   { id: "k5", label: "مطبخ من 5 ألواح", mode: "kitchen", carcass: 5 }, { id: "k6", label: "مطبخ من 6 ألواح", mode: "kitchen", carcass: 6 }, { id: "k8", label: "مطبخ كبير من 8 ألواح", mode: "kitchen", carcass: 8 },
-  { id: "k32", label: "3 ألواح هيكل + 2 ضلف", mode: "kitchen", carcass: 3, front: 2 }, { id: "k42", label: "4 هيكل + 2 ضلف", mode: "kitchen", carcass: 4, front: 2 }, { id: "k63", label: "6 هيكل + 3 ضلف", mode: "kitchen", carcass: 6, front: 3 },
+  { id: "k41", label: "4 ألواح هيكل + لوح ضلف", mode: "kitchen", carcass: 4, front: 1 }, { id: "k62", label: "6 هيكل + 2 ضلف", mode: "kitchen", carcass: 6, front: 2 }, { id: "k82", label: "8 هيكل + 2 ضلف", mode: "kitchen", carcass: 8, front: 2 },
   { id: "b2", label: "سفلي بس من لوحين", mode: "base", carcass: 2 }, { id: "b3", label: "سفلي بس من 3 ألواح", mode: "base", carcass: 3 }, { id: "b4", label: "سفلي بس من 4 ألواح", mode: "base", carcass: 4 },
   { id: "w1", label: "علوي بس من لوح واحد", mode: "wall", carcass: 1 }, { id: "w2", label: "علوي بس من لوحين", mode: "wall", carcass: 2 }, { id: "w3", label: "علوي بس من 3 ألواح", mode: "wall", carcass: 3 },
 ];
 const ZW_LIB_KEY = "novera-zwlib";
-const zwSig = () => { const sh = zwSheet(), R0 = userDefs().rules || {}; return `${sh.W}x${sh.H}|${sh.kerf}|${sh.trim}|${JSON.stringify(R0.shelves || {})}|${+!!R0.drawerBoxLikeCarcass}|v1`; };
+const zwSig = () => { seedDefaults(); const sh = zwSheet(), R0 = userDefs().rules || {}; return `${sh.W}x${sh.H}|${sh.kerf}|${sh.trim}|${JSON.stringify(R0.shelves || {})}|${+!!R0.drawerBoxLikeCarcass}|v1`; };
 function zwLibStore() {
   let st = null; try { st = JSON.parse(localStorage.getItem(ZW_LIB_KEY) || "null"); } catch { st = null; }
-  if (!st || st.sig !== zwSig()) st = { sig: zwSig(), items: {} };
-  ui.zwLib ??= { st, busy: null }; ui.zwLib.st = st; return ui.zwLib;
+  if (!st || st.sig !== zwSig()) st = More.ZW_PRE && More.ZW_PRE.sig === zwSig() ? { sig: zwSig(), items: clone(More.ZW_PRE.items), shipped: true } : { sig: zwSig(), items: {} };
+  ui.zwLib ??= { st, busy: null, want: false }; ui.zwLib.st = st; return ui.zwLib;
 }
 const zwLibSave = () => { try { localStorage.setItem(ZW_LIB_KEY, JSON.stringify(ui.zwLib.st)); } catch { /* full */ } };
 /** a stored library result back into a live result (units rebuilt from their specs) */
@@ -10575,7 +10582,7 @@ async function zwLibPump() {
   const L = zwLibStore();
   if (L.busy) return;
   const next = ZW_LIB.find((sp) => !L.st.items[sp.id]);
-  if (!next || !state.libOpen) return;
+  if (!next || !L.want) { L.want = false; zwLibPaint(); return; }
   L.busy = next.id; zwLibPaint();
   try {
     const res = await zwSolve({ mode: next.mode, counts: { carcass: { n: next.carcass }, front: { n: next.front || 0 }, back: { n: 0 } }, budget: 9000, onProgress: (m) => zwLibPaint(m) });
@@ -10583,27 +10590,33 @@ async function zwLibPump() {
   } catch { L.st.items[next.id] = { list: [], failed: true }; }
   zwLibSave();
   L.busy = null; zwLibPaint();
-  if (state.libOpen) setTimeout(zwLibPump, 150);
+  if (L.want) setTimeout(zwLibPump, 150);
 }
 /** repaint only the library cards (no full renderLib → no flicker) */
 function zwLibPaint(msg) {
   const L = zwLibStore();
+  const missing = ZW_LIB.filter((sp) => !L.st.items[sp.id]).length;
+  const hb = $("#lib [data-zwcompute]"); if (hb) { hb.hidden = !missing && !L.want; hb.disabled = !!L.want; hb.textContent = L.want ? `⏳ بيحسب… (فاضل ${missing}) — اضغط للإيقاف` : `🧮 احسب الـ${missing} تصميم الناقصين بمقاسات ألواحي (حوالي ${Math.ceil(missing * 10 / 60)} دقايق)`; }
+  const note = $("#lib [data-zwnote]"); if (note) note.textContent = L.st.shipped && !missing ? "التصميمات دي محسوبة جاهزة على لوح 244×122 وشريحة 4 مم — مفيش حساب على جهازك." : missing && !L.want ? "مقاسات ألواحك مختلفة عن الجاهز — الحساب بيتم بس لما تضغط الزرار، ومرة واحدة." : "";
   for (const sp of ZW_LIB) {
     const el = $(`#lib [data-zwlib="${sp.id}"]`); if (!el) continue;
     const rec = L.st.items[sp.id], best = rec?.list?.[0];
+    const stateKey = `${L.st.sig}|${best ? "ok" + best.waste : rec ? "none" : L.busy === sp.id ? "busy" + (msg || "") : "wait"}`;
+    if (el.dataset.zws === stateKey) continue; // nothing changed for this card — keep its picture
+    el.dataset.zws = stateKey;
     const sheets = `${sp.carcass} ${sp.front ? `هيكل + ${sp.front} ضلف` : "لوح"}`;
     let body;
     if (best) body = `<img class="th" data-zwth="${sp.id}" alt=""><b>${esc(sp.label)}</b><small>هدر ${Math.round(best.waste * 100)}% · ${best.set.length} وحدات · ${sheets}</small><em class="cnt">${esc(ZW_MODES[sp.mode])}</em>`;
     else if (rec?.failed || (rec && !best)) body = `<span class="sw" style="font-size:26px">♻️</span><b>${esc(sp.label)}</b><small>مفيش توليفة لقيت — جرّب من زرار «صفر هدر» بعدد تاني.</small>`;
     else if (L.busy === sp.id) body = `<span class="sw" style="font-size:26px">⏳</span><b>${esc(sp.label)}</b><small>${esc(msg || "بيحسب…")}</small>`;
-    else body = `<span class="sw" style="font-size:26px">♻️</span><b>${esc(sp.label)}</b><small>${sheets} · في الانتظار — بيتحسب على الجهاز مرة واحدة</small>`;
+    else body = `<span class="sw" style="font-size:26px">♻️</span><b>${esc(sp.label)}</b><small>${sheets} · لسه ما اتحسبش — دوس عليه يتحسب لوحده، أو زرار الحساب فوق</small>`;
     el.innerHTML = body;
     el.classList.toggle("ready", !!best);
     if (best) { const im = el.querySelector("[data-zwth]"); if (im && !im.src) { try { const R0 = zwLibResult(sp, rec); const sh2 = thumbs.shot(R0.list[0].line.map(({ u, at }) => ({ u, at })), 240, 160); if (sh2?.url) im.src = sh2.url; } catch { /* no 3D yet */ } } }
   }
 }
 function zwLibHtml() {
-  return `<h3>♻️ مكتبة صفر هدر — تصميمات بتاكل ألواح بعينها</h3><p class="hint">كل كارت مطبخ (أو صف) متظبط بالسنتي عشان يخلّص عدد ألواح محدد من غير فضلة تذكر — بيتحسب على جهازك مرة واحدة وبيتحفظ. دوس على الكارت تشوف التوليفات وتضيفها، أو زرار «صفر هدر» فوق لعدد ألواح وخامات بتاعتك.</p><div class="cards zwlib">${ZW_LIB.map((sp) => `<button class="card" data-zwlib="${sp.id}"><span class="sw" style="font-size:26px">♻️</span><b>${esc(sp.label)}</b><small>…</small></button>`).join("")}</div>`;
+  return `<h3>♻️ مكتبة صفر هدر — تصميمات بتاكل ألواح بعينها</h3><p class="hint">كل كارت مطبخ (أو صف) متظبط بالسنتي عشان يخلّص عدد ألواح محدد من غير فضلة تذكر. دوس على الكارت تشوف التوليفات وتضيفها، أو زرار «صفر هدر» فوق لعدد ألواح وخامات بتاعتك. <span data-zwnote></span></p><button class="add" data-zwcompute hidden></button><div class="cards zwlib">${ZW_LIB.map((sp) => `<button class="card" data-zwlib="${sp.id}"><span class="sw" style="font-size:26px">♻️</span><b>${esc(sp.label)}</b><small>…</small></button>`).join("")}</div>`;
 }
 function zwLibOpen(id) {
   const sp = ZW_LIB.find((x) => x.id === id), L = zwLibStore(), rec = L.st.items[id];
@@ -10611,7 +10624,7 @@ function zwLibOpen(id) {
   const Z = zw(); Z.mode = sp.mode; Z.carcass = { lib: "", n: sp.carcass }; Z.front = { lib: "", n: sp.front || 0 }; Z.back = { lib: "", n: 0 };
   Z.res = rec?.list?.length ? zwLibResult(sp, rec) : null;
   state.libOpen = false; render(); ui.pop = "zero"; renderPop(); zwThumbs();
-  if (!Z.res) zwRun();
+  if (!Z.res) zwRun().then(() => { const R0 = zw().res; if (R0?.list?.length) { L.st.items[id] = { list: R0.list.map((r) => ({ set: r.set.map((it) => ({ k: it.c.k, w: it.w, sh: it.sh })), waste: r.waste, used: r.used, leftovers: r.leftovers })), tried: R0.tried, secs: R0.secs, at: Date.now() }; zwLibSave(); } });
 }
 
 const EXPORTS = [
@@ -10646,7 +10659,7 @@ function render(refit = false) {
   document.querySelectorAll(".tabs [data-tab]").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === state.tab)));
   for (const t of ["design", "cut", "parts", "shop"]) $(`#v-${t}`).hidden = ui.mode !== "owner" || state.tab !== t;
   $("#v-design").classList.toggle("lib-open", !!state.libOpen);
-  if (state.libOpen && typeof zwLibPump === "function") setTimeout(zwLibPump, 300);
+  if (state.libOpen) zwLibPaint();
   if (ui.mode !== "owner") return;
   if (state.tab === "design") {
     $("#view3d").hidden = !!ui.planOn;
@@ -10812,4 +10825,4 @@ function cmdOpen() {
 function cmdClose() { const b = $("#cmdBox"); if (b) { b.hidden = true; b.innerHTML = ""; } }
 addEventListener("keydown", (e) => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); if ($("#cmdBox") && !$("#cmdBox").hidden) cmdClose(); else cmdOpen(); } });
 
-if (DEV) window.__dbg = { view, plan, R, render: (x) => render(x), ak: (t) => kitchenProposals(t), applyK: (u) => applyKitchen(u, null), checks: () => designChecks(), merge: (a, b) => mergeInto(a, b), get ui() { return ui; }, layout: asmLayout, libUnit, libSet, thumbs, openStudio: (u, x) => openStudio(u, x), exportUnitDrawings, exportPurchasePdf, exportPurchaseXlsx, renderPop, libAdd, exportQuotePdf, exportAsmBooklet, presentOn, presentOff, renderPresent, exportMachines, speakRun, applyLighting, setParams, cmdOpen, elev: (u) => unitElevSvg(u), cutReady, get cutData() { return cutData; }, projectPieces: () => projectPieces(state.project), workerOn, workerOff, renderWorker, zwLibPump, zwSolve, zwLibStore, zwLibPaint, get state() { return state; } };
+if (DEV) window.__dbg = { view, plan, R, render: (x) => render(x), ak: (t) => kitchenProposals(t), applyK: (u) => applyKitchen(u, null), checks: () => designChecks(), merge: (a, b) => mergeInto(a, b), get ui() { return ui; }, layout: asmLayout, libUnit, libSet, thumbs, openStudio: (u, x) => openStudio(u, x), exportUnitDrawings, exportPurchasePdf, exportPurchaseXlsx, renderPop, libAdd, exportQuotePdf, exportAsmBooklet, presentOn, presentOff, renderPresent, exportMachines, speakRun, applyLighting, setParams, cmdOpen, elev: (u) => unitElevSvg(u), cutReady, get cutData() { return cutData; }, projectPieces: () => projectPieces(state.project), workerOn, workerOff, renderWorker, zwLibPump, zwSolve, zwLibStore, zwLibPaint, ZW_LIB, get state() { return state; } };

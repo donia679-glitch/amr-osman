@@ -295,3 +295,6 @@ export const SMART = {
     { k: "k_wr_3col240", at: 0 }, { k: "k_wr_single50", at: 240, p: { height: 250, depth: 60 } },
   ] },
 };
+
+// precomputed zero-waste library (apps/ipad/zwlib.js, built by scratchpad/lib/zwpre.py) — used when the sheet settings match its sig
+export { default as ZW_PRE } from "./zwlib.js";
