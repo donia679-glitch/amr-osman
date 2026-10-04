@@ -38,6 +38,8 @@ cd /home/claude/novera-app && python3 tools/build_pwa.py && python3 tools/build_
 - Kitchen units: base depth 58 includes the door (inset, face at y=0); corner units get their depth from `cornerFit()` in app.js unless set by hand.
 
 ## History (latest first)
+- v57: pull-out rebuilt after Amr's photos: one front + ONE full-height spine panel (`pullout_spine_side` left/right) + shallow lipped trays («صينية بول أوت N»: back-material base + front/back/outer lips of `pullout_tray_lip` 8)
+  hung off the spine, open on the other side; runner pairs only at the first and last tray (hardware = min(2, trays)). No closed box any more.
 - v56: wooden turbo drawers + inner drawers + wooden pull-out (no metal mechanisms). carcass.js: `drawer_turbo` (box walls to 1.5 under the front top, `buildDrawerBox(..., wallDropOverride)`),
   `drawer_inner_N` (main box takes the lower half, an inner box with a carcass-material «وش داخلي» sits above it in a sibling group tagged as a drawer, slide +8); hardware labels renamed for turbo (side full-extension).
   Kitchen category `pullout` → `PulloutBuilder` (one tall front + full-height box via buildDrawerBox + N «صينية بول أوت» trays with front/back lips, two runner pairs; `pullout_tray_count`, `pullout_tray_lip`;

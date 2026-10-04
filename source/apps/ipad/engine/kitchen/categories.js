@@ -2,12 +2,13 @@
 // Standard, Wardrobe, Oven, Microwave, Fridge, Washing machine, Open shelf, Divided, Blind corner,
 // Bedroom wardrobe.
 import { COLORS } from "./config.js";
-import { assignLayer, bandAllSideEdges, createBox, createHoleMarker, createHoleMarkerY, getOrCreateNamedMaterial, NO_BAND, tagDrawerSlide } from "./helpers.js";
+import { assignLayer, bandAllSideEdges, bandEdges, createBox, createHoleMarker, createHoleMarkerY, getOrCreateNamedMaterial, NO_BAND, tagDrawerSlide } from "./helpers.js";
 import { CarcassBuilder, materialLabelName, TAGS, argError } from "./carcass.js";
 import { strip, toF, toI, toS, truthy } from "./rb.js";
 import { cm, rmax, rmin } from "./su/geom.js";
 import { rround } from "../core/rubyMath.js";
 import { Entities, Material } from "./su/model.js";
+import { Vector3d } from "./su/geom.js";
 const pcm = (v) => cm(toF(v));
 export class StandardUnitBuilder extends CarcassBuilder {
     buildFrontContent(e) {
@@ -477,8 +478,9 @@ export class CookerGapBuilder extends WasherGapBuilder {
         }
     }
 }
-/** NOVERA v56: a wooden pull-out («بول أوت») — one tall front with a full-height wooden box behind it carrying lipped trays,
- *  running on two pairs of full-extension drawer runners (no metal cargo mechanism). Base or tall units, 15–45 cm wide. */
+/** NOVERA v56: a wooden pull-out («بول أوت») — one tall front, ONE full-height spine panel on one side, and shallow lipped trays
+ *  cantilevered off the spine (the other side is open). A pair of drawer runners at the top tray and at the bottom tray:
+ *  one runner on the spine's outer face, the other on the tray's outer wall — no metal cargo mechanism. Base or tall units, 15–45 cm wide. */
 export class PulloutBuilder extends CarcassBuilder {
     buildShelves(_e) { }
     buildFrontContent(e) {
@@ -498,35 +500,44 @@ export class PulloutBuilder extends CarcassBuilder {
         if (this.edgeBandingEnabled())
             bandAllSideEdges(this.ctx, f, this.edgeBandingMaterial());
         this.recordDoorLabel(label, x0, x1, z0, z1, null);
-        // the box: full height, walls up to 1.5 cm under the front's top, depth = the unit's usable depth
-        const bz0 = zone.z0 + cm(0.5), bz1 = z1;
+        const t = this.drawerBoxT(), clr = this.drawerBoxSideClearance(), eb = this.edgeBandingEnabled();
+        const mat = this.carcassMaterial(), matName = this.carcassMaterialName();
         const depth = rmax(this.depth() - this.backT() - this.backRearOffset() - fy1 - cm(1.0), cm(20.0));
-        const [floorTop] = this.buildDrawerBox(sub, x0, x1, fy1, bz0, bz1, label, depth, false, cm(1.5));
-        // lipped trays inside the box
-        const t = this.drawerBoxT(), ix0 = x0 + this.drawerBoxSideClearance() + t, ix1 = x1 - this.drawerBoxSideClearance() - t;
-        const iy0 = fy1 + t, iy1 = fy1 + depth - t;
-        const n = Math.min(Math.max(toI(this.p["pullout_tray_count"]), 0), 8);
-        const lip = rmax(pcm(this.p["pullout_tray_lip"]), cm(2.0));
-        if (n > 0 && ix1 > ix0 && iy1 > iy0) {
-            const span = bz1 - cm(1.5) - floorTop;
-            const step = span / (n + 1);
-            for (let i = 1; i <= n; i++) {
-                const zt = floorTop + step * i;
-                const sh = createBox(this.ctx, sub, `صينية بول أوت ${i}`, ix0, iy0, zt, ix1, iy1, zt + t, this.carcassMaterial());
-                assignLayer(this.ctx, sh, TAGS.front);
-                this.ctx.labels.add(this.unitId, this.unitGroupName(), `صينية بول أوت ${i}`, ix1 - ix0, iy1 - iy0, t, {
-                    banded: { top: this.edgeBandingEnabled(), bottom: false, left: false, right: false }, material: this.carcassMaterialName(),
-                    note: "بيتثبت في جوانب الصندوق بدوبل ومسامير من بره",
-                });
-                for (const [nm, y0, y1] of [[`حافة صينية بول أوت ${i} (قدام)`, iy0, iy0 + t], [`حافة صينية بول أوت ${i} (ورا)`, iy1 - t, iy1]]) {
-                    const lp = createBox(this.ctx, sub, nm, ix0, y0, zt + t, ix1, y1, zt + t + lip, this.carcassMaterial());
-                    assignLayer(this.ctx, lp, TAGS.front);
-                    this.ctx.labels.add(this.unitId, this.unitGroupName(), nm, ix1 - ix0, lip, t, { banded: { top: this.edgeBandingEnabled(), bottom: false, left: false, right: false }, material: this.carcassMaterialName(), note: "حافة عشان الحاجة ما تقعش لما البول أوت يتسحب" });
-                }
+        const y0 = fy1, y1 = fy1 + depth;
+        const bz0 = zone.z0 + cm(0.5), bz1 = z1 - cm(1.5);
+        const spineRight = toS(this.p["pullout_spine_side"]) === "right";
+        // the spine: one full-height panel on the runner side, screwed to the back of the front
+        const sx0 = spineRight ? x1 - clr - t : x0 + clr, sx1 = sx0 + t;
+        const sp = createBox(this.ctx, sub, "جنب البول أوت (الضهر الرأسي)", sx0, y0, bz0, sx1, y1, bz1, mat);
+        assignLayer(this.ctx, sp, TAGS.front);
+        if (eb) bandAllSideEdges(this.ctx, sp, this.edgeBandingMaterial());
+        this.ctx.labels.add(this.unitId, this.unitGroupName(), "جنب البول أوت (الضهر الرأسي)", y1 - y0, bz1 - bz0, t, {
+            banded: { top: eb, bottom: eb, left: eb, right: eb }, material: matName,
+            note: "لوح رأسي واحد بارتفاع البول أوت: بيتثبت في ضهر الوش بدوبل ومسامير، والصواني بتتعلق فيه من جنب واحد، والمجرى بيتركب على وشه الخارجي",
+        });
+        // the trays: shallow open boxes hung off the spine (bottom + front, back and outer walls); the spine is the inner wall
+        const n = Math.min(Math.max(toI(this.p["pullout_tray_count"]), 1), 8);
+        const lip = rmin(rmax(pcm(this.p["pullout_tray_lip"]), cm(3.0)), cm(20.0));
+        const bt = rmin(this.drawerBoxBaseT(), t), tx0 = spineRight ? x0 + clr : sx1, tx1 = spineRight ? sx0 : x1 - clr;
+        const trayH = bt + lip;
+        const span = bz1 - bz0 - trayH;
+        const step = n > 1 ? span / (n - 1) : 0;
+        for (let i = 0; i < n; i++) {
+            const zt = bz0 + step * i, name = `صينية بول أوت ${i + 1}`;
+            const base = createBox(this.ctx, sub, `${name} - قاعدة`, tx0, y0, zt, tx1, y1, zt + bt, this.backMaterial());
+            assignLayer(this.ctx, base, TAGS.front);
+            this.ctx.labels.add(this.unitId, this.unitGroupName(), `${name} - قاعدة`, tx1 - tx0, y1 - y0, bt, { banded: { ...NO_BAND }, material: materialLabelName(this.backMaterial()), note: "بتتثبت في جنب البول أوت (الضهر الرأسي) بمسامير من بره" });
+            const walls = [[`${name} - حافة أمامية`, tx0, y0, tx1, y0 + t, "x"], [`${name} - حافة خلفية`, tx0, y1 - t, tx1, y1, "x"],
+                [`${name} - حافة جانبية`, spineRight ? tx0 : tx1 - t, y0 + t, spineRight ? tx0 + t : tx1, y1 - t, "y"]];
+            for (const [nm, a0, b0, a1, b1, ax] of walls) {
+                const w = createBox(this.ctx, sub, nm, a0, b0, zt + bt, a1, b1, zt + trayH, mat);
+                assignLayer(this.ctx, w, TAGS.front);
+                if (eb) bandEdges(this.ctx, w, [new Vector3d(0, 0, 1)], this.edgeBandingMaterial());
+                this.ctx.labels.add(this.unitId, this.unitGroupName(), nm, ax === "x" ? a1 - a0 : b1 - b0, lip, t, { banded: { top: eb, bottom: false, left: false, right: false }, material: matName, note: ax === "y" ? "الحافة الخارجية — المجرى بيتركب عليها في الصينية الأولى والأخيرة" : "حافة عشان الحاجة ما تقعش لما البول أوت يتسحب" });
             }
+            if (i === 0 || i === n - 1)
+                this.ctx.labels.addAssemblyMark(this.unitId, this.unitGroupName(), "drawer", `${name} (مجرى)`, zt + bt - this.z0Carcass());
         }
-        this.ctx.labels.addAssemblyMark(this.unitId, this.unitGroupName(), "drawer", label, bz0 - this.drawerSlideClearance() - this.z0Carcass());
-        this.ctx.labels.addAssemblyMark(this.unitId, this.unitGroupName(), "drawer", `${label} (المجرى العلوي)`, bz1 - cm(6.0) - this.z0Carcass());
         tagDrawerSlide(group, rmin(depth * 0.9, this.drawerSlideBase() + cm(30.0)));
         this.buildTopValancePanel(e, this.innerOpening().x0, this.innerOpening().x1);
         this.buildBottomValancePanel(e, this.innerOpening().x0, this.innerOpening().x1);
