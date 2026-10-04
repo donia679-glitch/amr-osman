@@ -38,6 +38,9 @@ cd /home/claude/novera-app && python3 tools/build_pwa.py && python3 tools/build_
 - Kitchen units: base depth 58 includes the door (inset, face at y=0); corner units get their depth from `cornerFit()` in app.js unless set by hand.
 
 ## History (latest first)
+- v63: worker mode «👷 وضع العمال» (menu item + command palette; app.js workerOn/workerOff/renderWorker/workerTap/workerIsolate/sayAr, `ui.worker`, body.worker, #workerBar on the stage):
+  unit chips by code, icon tabs — pieces (list + big card: pieceSvg, L/W/T big digits, «لوحدها» isolate via ui.hidePart, «اسمع» speech ar-EG), drawings (projSvg front/side/plan), hardware (HW_ICON emoji + counts),
+  steps (asmPlan with ui.asm driving the 3D), install (unit dims, wall mount height, counter height, kick, hood clearance, distance along the wall); tapping a piece in the 3D opens its card. CSS .workerbar*.
 - v62: studio pick modes «بتختار إيه؟» (ui.pickMode solid|face|edge|vertex, buttons data-pmode in the side panel; select tool picks a face directly, `pickEdge`/`pickVertex` nearest on screen,
   `edgeOf`/`vertexOf`, highlights in rebuild, panels `edgeHtml` (length, set length by moving the far corner, split mid-edge, move) / `vertexHtml` (plane x/y, move, delete), `subAction`;
   move tool starts from a picked edge (`moveEdge`, both corners slide in-plane) or vertex; eraser in vertex mode deletes a corner (≥3 kept). __ds exposes click/pickEdge/pickVertex/rebuild.

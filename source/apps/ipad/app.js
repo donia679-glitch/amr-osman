@@ -1392,7 +1392,7 @@ $("#libBtn").addEventListener("click", () => { state.libOpen = !state.libOpen; r
       view.update();
       return;
     }
-    if (!down || ui.mode !== "owner" || e.type !== "pointerup" || (!wholeView() && !(ui.tapHide && ui.inspOpen) && !ui.xdraw)) { down = null; return; }
+    if (!down || ui.mode !== "owner" || e.type !== "pointerup" || (!wholeView() && !(ui.tapHide && ui.inspOpen) && !ui.xdraw && !ui.worker)) { down = null; return; }
     const moved = Math.hypot(e.clientX - down[0], e.clientY - down[1]);
     down = null;
     if (moved > 6) return;
@@ -1407,6 +1407,7 @@ $("#libBtn").addEventListener("click", () => { state.libOpen = !state.libOpen; r
       }
       return;
     }
+    if (ui.worker) { workerTap(e.clientX, e.clientY); return; }
     if (ui.present) { const id = view.pickAt(e.clientX, e.clientY); if (id) presentTell(id); return; }
     const hit = view.pickAny(e.clientX, e.clientY);
     if (!hit && ui.moveMode) { sceneMode(); alertBar("رجعت للوضع العادي — السحب بيلف المشهد كله."); return; }
@@ -1654,6 +1655,24 @@ function sceneMode() {
   if (view.ready) view.update();
 }
 document.querySelector(".stage").addEventListener("click", (e) => {
+  const wb = e.target.closest("#workerBar [data-wexit],#workerBar [data-wvoice],#workerBar [data-wexplode],#workerBar [data-wxray],#workerBar [data-wview],#workerBar [data-wunit],#workerBar [data-wtab],#workerBar [data-wback],#workerBar [data-wiso],#workerBar [data-wsay],#workerBar [data-wpiece],#workerBar [data-wstep],#workerBar [data-wsaytext]");
+  if (wb && ui.worker) {
+    const d = wb.dataset, W = ui.worker, u = selUnit();
+    if (d.wexit !== undefined) { workerOff(); return; }
+    if (d.wvoice !== undefined) { W.voice = !W.voice; if (W.voice && "speechSynthesis" in window) speechSynthesis.getVoices(); renderWorker(); if (W.voice) sayAr("الصوت شغال. دوس على أي قطعة تسمع مقاسها"); return; }
+    if (d.wexplode !== undefined) { ui.explode = ui.explode ? 0 : 0.6; view.update(true); renderWorker(); return; }
+    if (d.wxray !== undefined) { state.xray = !state.xray; view.update(); renderWorker(); return; }
+    if (d.wview) { view.preset(d.wview); return; }
+    if (d.wunit) { state.sel = d.wunit; W.piece = null; W.step = null; W.iso = null; ui.hidePart?.clear?.(); ui.asm = null; render(true); renderWorker(); setTimeout(() => view.preset("iso"), 60); return; }
+    if (d.wtab) { W.tab = d.wtab; W.piece = null; if (d.wtab !== "steps") { ui.asm = null; view.update(true); } renderWorker(); return; }
+    if (d.wback !== undefined) { W.piece = null; renderWorker(); return; }
+    if (d.wiso && u) { workerIsolate(u, d.wiso); renderWorker(); return; }
+    if (d.wsay) { const pc = projectPieces(state.project).find((x) => x.key === d.wsay); if (pc) sayAr(workerPieceText(pc)); return; }
+    if (d.wsaytext) { sayAr(d.wsaytext); return; }
+    if (d.wpiece !== undefined) { W.piece = d.wpiece; W.tab = "pieces"; renderWorker(); if (W.voice) { const pc = projectPieces(state.project).find((x) => x.key === d.wpiece); if (pc) sayAr(workerPieceText(pc)); } return; }
+    if (d.wstep !== undefined && u) { W.step = +d.wstep; ui.asm = { id: u.id, step: W.step }; view.update(true); renderWorker(); return; }
+    return;
+  }
   const b = e.target.closest("#presentBar button"); if (!b || !ui.present) return;
   const d = b.dataset;
   if (d.pexit !== undefined) { presentTurn(false); presentOff(false); return; }
@@ -2387,6 +2406,7 @@ $("#chips").addEventListener("click", async (e) => {
   if (b.hasAttribute("data-open")) { ui.open = !ui.open; renderChips(); view.setOpen(ui.open); return; }
   if (b.hasAttribute("data-whole")) { state.whole = !state.whole; save(); renderChips(); view.update(true); return; }
   if (b.hasAttribute("data-present")) { presentOn(); return; }
+  if (b.hasAttribute("data-worker")) { workerOn(); return; }
   if (b.hasAttribute("data-render")) { state.render = !state.render; if (!state.render) { ui.sceneOpen = false; closeFinal(); } save(); renderChips(); renderScene(); view.update(); return; }
   if (b.hasAttribute("data-insp")) { ui.inspOpen = !ui.inspOpen; ui.sceneOpen = false; renderScene(); renderInsp(); renderChips(); return; }
   if (b.hasAttribute("data-fincmp")) { ui.pop = "fincmp"; renderPop(); return; }
@@ -4343,6 +4363,7 @@ function renderPop() {
       ${it("scrap", "♻️", "أعمل إيه من الفضلات؟", "اختار البواقي والبرنامج يرشّحلك وحدات تطلع منها بالكامل")}
       ${it("fincmp", "🎨", "لو الضلف خامة تانية؟", "نفس التصميم بأكتر من خامة جنب بعض مع فرق السعر")}
       ${it("present", "🖥", "وضع العرض للعميل", "شاشة نظيفة: الريندر، الألوان البديلة، السعر، والاعتماد بالتوقيع")}
+      ${it("worker", "👷", "وضع العمال", "تصفح مصوّر بالأرقام بس: الوحدات، القطع بمقاساتها، الهاردوير، خطوات التجميع وارتفاعات التركيب — مع قراءة بالصوت")}
       <h3>الإعدادات</h3>${it("brand", "🏷", "هوية المصنع", "اللوجو والاسم والتليفون والشروط على كل الأوراق")}${it("defaults", "⚙", "الإعدادات الافتراضية", "مقاسات الوحدات، التصنيع، التسعير، القص — مرة واحدة لكل المشاريع")}${it("look", "🎨", "الألوان والمظهر والكيبورد", "فاتح/غامق، لون التطبيق، كيبورد الأرقام")}
       <h3>مساعدة</h3>${it("lang", "🌐", I18n.lang === "en" ? "اللغة: عربي" : "Language: English", I18n.lang === "en" ? "التطبيق كله بالعربي" : "Switch the whole app to English")}${it("tour", "🧭", "الجولة التعريفية", "شرح سريع لكل جزء في الشاشة")}${it("about", "ⓘ", "عن التطبيق", "الإصدار والتواصل")}</div>`;
   }
@@ -4559,6 +4580,7 @@ $("#pop").addEventListener("click", async (e) => {
     if (m === "studio") { const su = selUnit(); openStudio(su?.params?.model ? su : null); return; }
     if (m === "tour") { state.tourDone = false; startTour(); return; }
     if (m === "present") { presentOn(); return; }
+    if (m === "worker") { workerOn(); return; }
     if (m === "lang") { await Lib.put(state.project).catch(() => {}); I18n.setLang(I18n.lang === "en" ? "ar" : "en"); return; }
     ui.pop = m; renderPop(); return;
   }
@@ -9385,6 +9407,125 @@ function sigBlockSvg(y) {
 }
 
 // ================================================================== v46 — presentation mode (showroom, in front of the client)
+// ================================================================== v63 — worker mode («👷 وضع العمال»): pictures + numbers, big targets, voice
+const HW_ICON = [[/مفصل/, "🔗"], [/سكك|مجرى|مجاري/, "↔️"], [/أليتا|كام|مينيفكس/, "🔩"], [/فرش|بنز/, "📌"], [/رجل|أرجل/, "🦵"], [/تعليق|كليت/, "🪝"], [/مقبض/, "🫳"], [/دوبل|خابور/, "🪵"], [/ليد|LED/i, "💡"], [/شريط/, "🧵"], [/مسمار/, "🔩"], [/.*/, "⚙️"]];
+const hwIcon = (k) => HW_ICON.find(([re]) => re.test(k))[1];
+const STEP_ICON = ["🧱", "🔝", "🧩", "🚪", "🗄️", "🔲", "🧲", "🪜", "✅", "🔧"];
+function workerOn() {
+  if (!view.ready) { alertBar("الـ3D لسه بيحمّل"); return; }
+  const first = state.project.units.find((u) => R(u).ok);
+  ui.worker = { tab: state.sel && state.project.units.find((u) => u.id === state.sel) ? "pieces" : "units", piece: null, step: null, back: { tab: state.tab, sel: state.sel, whole: state.whole, explode: ui.explode || 0, xray: state.xray } };
+  if (!state.sel && first) state.sel = first.id;
+  ui.moveMode = false; ui.multi = null; ui.planOn = false; state.libOpen = false; state.tab = "design"; state.whole = false; ui.asm = null;
+  document.body.classList.add("worker");
+  render(true); renderWorker(); view.resize?.();
+  setTimeout(() => view.preset("iso"), 120);
+}
+function workerOff() {
+  if (!ui.worker) return;
+  const b = ui.worker.back; ui.worker = null; ui.asm = null; ui.explode = b.explode; state.xray = b.xray;
+  ui.hidePart?.clear?.();
+  document.body.classList.remove("worker");
+  $("#workerBar")?.remove();
+  if ("speechSynthesis" in window) speechSynthesis.cancel();
+  state.tab = b.tab; state.sel = b.sel; state.whole = b.whole;
+  render(true); view.resize?.(); view.update(true);
+}
+function sayAr(text) {
+  if (!("speechSynthesis" in window)) { alertBar("الصوت مش متاح على الجهاز ده"); return; }
+  try { speechSynthesis.cancel(); const m = new SpeechSynthesisUtterance(text); m.lang = "ar-EG"; const v = speechSynthesis.getVoices().find((x) => x.lang?.startsWith("ar")); if (v) m.voice = v; m.rate = 0.9; speechSynthesis.speak(m); } catch { /* no voices */ }
+}
+const arNum = (v) => String(n1(v)).replace(".", " فاصلة ");
+function workerPieceText(pc) {
+  const lb = pc.lb; const b = lb.banded || {};
+  const sides = [b.top && "فوق", b.bottom && "تحت", b.left && "شمال", b.right && "يمين"].filter(Boolean);
+  return `${pc.pt.name}. الطول ${arNum(lb.h)} سنتي، العرض ${arNum(lb.w)} سنتي، السمك ${arNum(lb.t)}. ${pc.pt.band_all_sides ? "شريط على كل الحروف" : sides.length ? "شريط على " + sides.join(" و ") : "من غير شريط"}.`;
+}
+function workerTap(cx, cy) {
+  const T = view.three, rc = view.ren.domElement.getBoundingClientRect(), ray = new T.Raycaster();
+  ray.setFromCamera(new T.Vector2(((cx - rc.left) / rc.width) * 2 - 1, -((cy - rc.top) / rc.height) * 2 + 1), view.cam);
+  const h = ray.intersectObjects(view.pickables || [], true).find((x) => x.object.isMesh && x.object.userData.pname && !x.object.userData.appl);
+  if (!h) { if (ui.worker.piece) { ui.worker.piece = null; renderWorker(); } return; }
+  let o = h.object; while (o && !o.userData.unitId) o = o.parent;
+  const u = o ? state.project.units.find((x) => x.id === o.userData.unitId) : selUnit();
+  if (!u) return;
+  if (u.id !== state.sel) { state.sel = u.id; render(true); }
+  const pcs = projectPieces(state.project).filter((pc) => pc.uid === u.id);
+  const pc = pcs.find((x) => x.pt.name === h.object.userData.pname) || pcs.find((x) => h.object.userData.pname.startsWith(x.pt.name));
+  ui.worker.piece = pc ? pc.key : null; ui.worker.tab = "pieces";
+  renderWorker();
+  if (pc && ui.worker.voice) sayAr(workerPieceText(pc));
+}
+function workerIsolate(u, name) {
+  ui.hidePart ??= new Set();
+  const r = R(u), all = (r.meshes || r.parts || []).filter((x) => x.role !== "hole" && x.mat !== "hole").map((x) => x.name);
+  const isolated = [...ui.hidePart].some((k) => k.startsWith(u.id + "|"));
+  ui.hidePart.clear();
+  if (!isolated || ui.worker.iso !== name) { for (const n of all) if (n !== name) ui.hidePart.add(u.id + "|" + n); ui.worker.iso = name; }
+  else ui.worker.iso = null;
+  view.update(true);
+}
+function renderWorker() {
+  if (!ui.worker) return;
+  let bar = $("#workerBar");
+  if (!bar) { bar = document.createElement("div"); bar.id = "workerBar"; bar.className = "workerbar"; $(".stage").appendChild(bar); }
+  const W = ui.worker, u = selUnit(), r = u ? R(u) : null;
+  const units = state.project.units.filter((x) => R(x).ok);
+  const big = (v) => `<b class="wnum" dir="ltr">${n1(v)}</b>`;
+  let top = `<div class="wb-top"><button class="wb-x" data-wexit aria-label="خروج">✕</button><b>👷 ${esc(state.project.name)}</b>
+    <button class="wb-ic ${W.voice ? "on" : ""}" data-wvoice title="صوت">🔊</button><button class="wb-ic ${ui.explode ? "on" : ""}" data-wexplode title="تفكيك">💥</button><button class="wb-ic ${state.xray ? "on" : ""}" data-wxray title="شفاف">◐</button><button class="wb-ic" data-wview="iso">⬢</button><button class="wb-ic" data-wview="front">⬜</button><button class="wb-ic" data-wview="fit">⛶</button></div>
+    <div class="wb-units">${units.map((x) => `<button class="wb-u ${x.id === state.sel ? "on" : ""}" data-wunit="${x.id}"><b>${esc(unitCode(x))}</b><small>${esc(x.name)}</small></button>`).join("")}</div>`;
+  const TABS = [["pieces", "🧩", "القطع"], ["drawings", "📐", "الرسومات"], ["hardware", "🔩", "الهاردوير"], ["steps", "🪜", "التجميع"], ["install", "📏", "التركيب"]];
+  let side = `<div class="wb-tabs">${TABS.map(([k, ic, l]) => `<button class="${W.tab === k ? "on" : ""}" data-wtab="${k}"><span>${ic}</span><small>${l}</small></button>`).join("")}</div><div class="wb-body">`;
+  if (!u || !r?.ok) side += `<p class="hint">اختار وحدة من فوق</p>`;
+  else if (W.tab === "pieces") {
+    const pcs = projectPieces(state.project).filter((pc) => pc.uid === u.id);
+    const cur = W.piece ? pcs.find((x) => x.key === W.piece) : null;
+    if (cur) {
+      side += `<div class="wpc"><div class="wpc-h"><b class="wcode">${esc(cur.key)}</b><button class="wb-ic" data-wback>←</button></div>
+        <div class="wpc-img">${pieceSvg(cur, 2.4)}</div>
+        <div class="wpc-dims"><div><span>📏 طول</span>${big(cur.lb.h)}</div><div><span>↔ عرض</span>${big(cur.lb.w)}</div><div><span>▭ سمك</span>${big(cur.lb.t)}</div></div>
+        <div class="wpc-name">${esc(cur.pt.name)}</div>
+        <div class="wb-btns"><button class="wb-big ${W.iso === cur.pt.name ? "on" : ""}" data-wiso="${esc(cur.pt.name)}">👁 لوحدها</button><button class="wb-big" data-wsay="${esc(cur.key)}">🔊 اسمع</button></div>
+        ${cur.pt.note || cur.pt.checks?.length ? `<p class="wnote">⚠ ${esc(cur.pt.note || cur.pt.checks[0])}</p>` : ""}</div>`;
+    } else {
+      side += `<p class="hint">دوس على أي قطعة في الـ3D أو من القايمة</p><div class="wlist">${pcs.map((pc) => `<button class="wrow" data-wpiece="${esc(pc.key)}"><b class="wcode">${esc(pc.key)}</b><span class="wmini">${pieceSvg(pc, 0.55)}</span><span class="wdims" dir="ltr">${n1(pc.lb.h)} × ${n1(pc.lb.w)} × ${n1(pc.lb.t)}</span></button>`).join("")}</div>`;
+    }
+  } else if (W.tab === "drawings") {
+    side += `<div class="wdraw">${["front", "side", "plan"].map((m) => `<figure><figcaption>${{ front: "⬜ من قدام", side: "▯ من الجنب", plan: "⬛ من فوق" }[m]}</figcaption>${projSvg(u, r, m, 420, 300)}</figure>`).join("")}</div>`;
+  } else if (W.tab === "hardware") {
+    const hw = Object.entries(r.hardware || {});
+    side += `<div class="whw">${hw.map(([k, v]) => `<div class="whwrow" data-wsaytext="${esc(k)}: ${v}"><span class="whwic">${hwIcon(k)}</span><b class="wnum" dir="ltr">${v}</b><small>${esc(k)}</small></div>`).join("") || `<p class="hint">مفيش هاردوير</p>`}</div>`;
+  } else if (W.tab === "steps") {
+    const steps = asmPlan(u);
+    const k = W.step ?? -1;
+    side += `<div class="wsteps">${steps.map((st, i) => `<button class="wstep ${k === i ? "on" : ""}" data-wstep="${i}"><span class="wstepn">${i + 1}</span><span class="wstepi">${STEP_ICON[i] || "🔧"}</span><small>${esc(st.t)}</small><em>${st.pieces.length}</em></button>`).join("")}</div>
+      ${k >= 0 && steps[k] ? `<div class="wstepd"><p>${esc(steps[k].d)}</p><div class="wcodes">${steps[k].pieces.map((p) => `<button class="wcodeb" data-wpiece="${esc(p.code || "")}">${esc(p.code || "?")}</button>`).join("")}</div>${steps[k].hardware.length ? `<div class="whw small">${steps[k].hardware.map(([a, v]) => `<div class="whwrow"><span class="whwic">${hwIcon(a)}</span><b class="wnum" dir="ltr">${v}</b><small>${esc(a)}</small></div>`).join("")}</div>` : ""}<button class="wb-big" data-wsaytext="${esc(`خطوة ${k + 1}: ${steps[k].t}. ${steps[k].d}`)}">🔊 اسمع</button></div>` : `<p class="hint">دوس على خطوة — الـ3D بيوريك اللي اتركب لحد دلوقتي</p>`}`;
+  } else if (W.tab === "install") {
+    const p = r.params || {}, poses = projectPoses(state.project), L = poses.get(u.id), segs = state.project.room ? Room.segments(state.project.room) : [];
+    const sg = L?.wall != null ? segs.find((x) => x.id === L.wall) : null;
+    const rows = [];
+    const dims = unitDims(u, r);
+    rows.push(["↔ العرض", dims.w], ["↕ الارتفاع", dims.h], ["▭ العمق", dims.d]);
+    if (u.kind === "kitchen") {
+      if (p.unit_type === "wall") rows.push(["🪝 من الأرض لتحت الوحدة", +p.wall_mount_height || 140], ["🔝 من الأرض لفوق الوحدة", (+p.wall_mount_height || 140) + (+p.height || 70)]);
+      else if (p.unit_type === "base") { rows.push(["🦵 السكلو", p.include_toe_kick === false ? 0 : +p.toe_kick_height || 10], ["🔝 سطح الكونتر من الأرض", (p.include_toe_kick === false ? 0 : +p.toe_kick_height || 10) + (+p.height || 72) + (+p.countertop_thickness || 3.8)]); }
+      else rows.push(["🔝 الارتفاع الكلي", (+p.toe_kick_height || 0) + (+p.height || 220)]);
+      if (p.include_hood) rows.push(["🌀 فراغ الشفاط", +p.hood_height || 18]);
+      if (p.unit_category === "washer_gap" || p.unit_category === "cooker_gap") rows.push(["🧺 فتحة الجهاز", +p.width || 60]);
+    }
+    if (sg) rows.push([`📍 بعدها عن بداية حيطة ${sg.i + 1}`, Math.round(((L.s ?? 0)) * 10) / 10]);
+    if (u.lift) rows.push(["⬆ رفع عن الأرض", +u.lift]);
+    side += `<div class="winst">${rows.map(([l, v]) => `<div class="winrow" data-wsaytext="${esc(l)}: ${arNum(v)} سنتي"><small>${l}</small>${big(v)}</div>`).join("")}</div><p class="hint">كل الأرقام بالسنتيمتر من الأرض الخالصة</p>`;
+  }
+  side += `</div>`;
+  bar.innerHTML = top + `<div class="wb-side">${side}</div>`;
+}
+function unitDims(u, r) {
+  const p = r.params || {};
+  if (u.kind === "kitchen") return { w: +p.width || +p.corner_total_width || 60, h: +p.height || 72, d: +p.depth || 58 };
+  return { w: +p.width || 0, h: +p.height || 0, d: +p.depth || 0 };
+}
 function presentOn() {
   if (!view.ready) { alertBar("الـ3D لسه بيحمّل"); return; }
   ui.present = { orig: clone(state.project.units), lib: null, price: false, tab: state.tab, sel: state.sel };
@@ -10098,6 +10239,7 @@ function cmdItems() {
   const pops = [["scrap", "♻️ أعمل إيه من الفضلات؟"], ["speak", "🗣 اوصفلي المطبخ"], ["auto", "✨ صمملي المطبخ"], ["checks", "🔍 فحص التصميم"], ["fincmp", "🎨 لو الضلف خامة تانية؟"], ["brand", "🏷 هوية المصنع"], ["defaults", "⚙ الإعدادات الافتراضية"], ["variants", "🗂 النسخ"], ["look", "🎨 المظهر والكيبورد"], ["about", "ⓘ عن التطبيق"]];
   for (const [k, l] of pops) add("أدوات", l, () => { ui.pop = k; renderPop(); });
   add("أدوات", "🖥 وضع العرض للعميل", () => presentOn());
+  add("أدوات", "👷 وضع العمال (مصوّر بالأرقام)", () => workerOn());
   add("أدوات", "✏️ ورشة الرسم", () => { const su = selUnit(); openStudio(su?.params?.model ? su : null); });
   add("أدوات", "📷 امسح ملصق", () => scanOpen());
   add("أدوات", "👤 شخص ومثلث الشغل", () => { ergo().on = !ergo().on; state.tab = "design"; render(true); });
@@ -10138,4 +10280,4 @@ function cmdOpen() {
 function cmdClose() { const b = $("#cmdBox"); if (b) { b.hidden = true; b.innerHTML = ""; } }
 addEventListener("keydown", (e) => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); if ($("#cmdBox") && !$("#cmdBox").hidden) cmdClose(); else cmdOpen(); } });
 
-if (DEV) window.__dbg = { view, plan, R, render: (x) => render(x), ak: (t) => kitchenProposals(t), applyK: (u) => applyKitchen(u, null), checks: () => designChecks(), merge: (a, b) => mergeInto(a, b), get ui() { return ui; }, layout: asmLayout, libUnit, libSet, thumbs, openStudio: (u, x) => openStudio(u, x), exportUnitDrawings, exportPurchasePdf, exportPurchaseXlsx, renderPop, libAdd, exportQuotePdf, exportAsmBooklet, presentOn, presentOff, renderPresent, exportMachines, speakRun, applyLighting, setParams, cmdOpen, elev: (u) => unitElevSvg(u), cutReady, get cutData() { return cutData; }, projectPieces: () => projectPieces(state.project), get state() { return state; } };
+if (DEV) window.__dbg = { view, plan, R, render: (x) => render(x), ak: (t) => kitchenProposals(t), applyK: (u) => applyKitchen(u, null), checks: () => designChecks(), merge: (a, b) => mergeInto(a, b), get ui() { return ui; }, layout: asmLayout, libUnit, libSet, thumbs, openStudio: (u, x) => openStudio(u, x), exportUnitDrawings, exportPurchasePdf, exportPurchaseXlsx, renderPop, libAdd, exportQuotePdf, exportAsmBooklet, presentOn, presentOff, renderPresent, exportMachines, speakRun, applyLighting, setParams, cmdOpen, elev: (u) => unitElevSvg(u), cutReady, get cutData() { return cutData; }, projectPieces: () => projectPieces(state.project), workerOn, workerOff, renderWorker, get state() { return state; } };
