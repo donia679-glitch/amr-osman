@@ -2977,6 +2977,11 @@ function advancedFields(p, shown) {
     }
     if (!fl?.length) continue;
     h += `<h4 class="advh">${esc(label)}</h4><div class="grid2">${fl.join("")}</div>`;
+    if (g === "drawers") {
+      const sp = +getPath(p, "drawers.hinge_spacer_t") || 1.8, sc = +getPath(p, "drawers.slide_clearance") || 1.3;
+      h += `<div class="bools">${boolF("drawers.hinge_fix", "الأدراج اللي ورا ضلف بمفصلات أضيق (حشوة مجرى على جنب المفصلة)", getPath(p, "drawers.hinge_fix") !== false)}</div>
+        <p class="hint">قاعدة NOVERA: أي درج جوه فراغ عليه ضلفة بمفصلات بيتضيّق من ناحية المفصلة — حشوة ${n1(sp)} سم بتتركب على الجنب والمجرى عليها، فالصندوق بيبعد عن الجنب ${n1(sp + sc)} سم ووش الدرج الداخلي أضيق بنفس القيمة، عشان الدرج ميخبطش في دراع المفصلة وهو طالع. الأدراج اللي وشها خارجي (مش ورا ضلفة) بتفضل بعرضها.</p>`;
+    }
   }
   return h + "</details>";
 }
