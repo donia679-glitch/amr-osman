@@ -38,6 +38,11 @@ cd /home/claude/novera-app && python3 tools/build_pwa.py && python3 tools/build_
 - Kitchen units: base depth 58 includes the door (inset, face at y=0); corner units get their depth from `cornerFit()` in app.js unless set by hand.
 
 ## History (latest first)
+- v70: zero waste rebuilt as a real solver + ready library. `zwSolve({mode, counts, budget, onProgress})`: stage 1 grow from 3 seeds (5-cm widths, moves widen/add/swap/narrow+add), stage 2 fine-tune every width ±1–4 cm (`zwUnit(c, w, sh)` any integer width),
+  stage 3 fill the real offcuts (optimizer `minOffcut [8,5]`, untouched sheets count as whole offcuts) with extra loose shelves (`sh` extra shelves per candidate cap `shelves`) and ZW_FILLERS accessories (diffParts for the added pieces), stage 4 distinct results;
+  judged by `score` = waste + composition penalty (kitchen needs base + wall (+ sink from 3 units), >2 of a kind, drawers-heavy). Worker calls serialised (`zwCall` queue). Results carry `leftovers`.
+  Library section «♻️ مكتبة صفر هدر» (ZW_LIB 15 presets: kitchens 2/3/4/5/6/8 sheets, 3+2/4+2/6+3 carcass+front, base 2/3/4, wall 1/2/3) computed in the background while the library is open (`zwLibPump`, 9 s each, sequential),
+  cached in localStorage `novera-zwlib` keyed by `zwSig()` (sheet/kerf/trim/shelf rules); cards repainted by `zwLibPaint` (⏳ progress → thumbnail + waste); tap → `zwLibOpen` loads the result into the «zero» pop (`zwLibResult` rebuilds units from {k,w,sh}). __dbg exposes zwSolve/zwLibPump/zwLibStore/zwLibPaint.
 - v69: (1) «♻️ صفر هدر» library card → `ui.pop = "zero"` (zw*: ZW_CANDS kitchen presets × 5-cm widths, zwUnit cache via scrapUnit/scrapGroups into pools carcass/front/back, zwPools from sheet counts,
   zwRun = 3 seeds grown by widen/add/swap/narrow+add moves evaluated in the cut worker (zwEval, timeCap 0.18–0.25, budget 14 s), results sorted by waste, thumbnails via thumbs.shot, zwAdd lines units up on the wall with the pools' libs; CSS .zwrow/.zwgrid).
   (2) illustrated minifix/dowel drilling guide: `alitaNums(u)` (assembly_* params), `alitaSvg` (joint section + 3-hole set plan, numbers in mm), `alitaGuideHtml` (6 steps, tap = voice) — in worker «التجميع» (data-walita), the assembly guide steps side1/top/side2, and the «مقاسات الأليتا» props section. CSS .alita/.alstep.

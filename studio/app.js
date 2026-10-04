@@ -1952,6 +1952,7 @@ function renderLib() {
   h += `<h3>✨ تصميمات ذكية جاهزة — كذا وحدة مع بعض</h3><div class="cards smart">`;
   for (const [key, S] of Object.entries(More.SMART)) h += `<button class="card" data-smart="${key}">${TH("s:" + key)}<b>${esc(S.label)}</b><small>${esc(S.desc)}</small><em class="cnt">${S.items.length} وحدات · ${esc(AK_TIERS[S.tier]?.label || "")}</em></button>`;
   h += `</div>`;
+  h += zwLibHtml();
   const kg = {};
   for (const [key, s] of Object.entries(KU.KITCHEN)) (kg[kitchenGroup({ ...s, key })] ??= []).push([key, s]);
   for (const g of ["🔌 أجهزة وتجاويف (تلاجة · فرن · ميكروويف · غسالة)", "مطابخ — سفلي", "مطابخ — علوي", "مطابخ — طويل", "مطابخ — زوايا", "سحّاب (جرّار)", "مطابخ — ترولي ومنظمات", "مطابخ — إكسسوارات", "دواليب غرف النوم", ...Object.keys(kg)].filter((g, i, a) => kg[g] && a.indexOf(g) === i)) {
@@ -1986,6 +1987,7 @@ function renderLib() {
   $("#lib").innerHTML = h + "</div>";
   filterLib();
   thumbs.watch($("#lib"));
+  zwLibPaint(); setTimeout(zwLibPump, 400);
 }
 $("#lib").addEventListener("input", (e) => { if (e.target.id !== "libq") return; ui.libQ = e.target.value; filterLib(); });
 $("#lib").addEventListener("click", (e) => {
@@ -1994,6 +1996,7 @@ $("#lib").addEventListener("click", (e) => {
   if (e.target.closest("[data-studio-new]")) { state.libOpen = false; render(); openStudio(null); return; }
   if (e.target.closest("[data-scrap-lib]")) { state.libOpen = false; render(); ui.pop = "scrap"; renderPop(); return; }
   if (e.target.closest("[data-zero-lib]")) { state.libOpen = false; render(); ui.pop = "zero"; renderPop(); return; }
+  { const z = e.target.closest("[data-zwlib]"); if (z) { zwLibOpen(z.dataset.zwlib); return; } }
   const c = e.target.closest("[data-preset],[data-template],[data-dress],[data-kitchen],[data-pieces],[data-smart]");
   if (!c) return;
   // the small ＋ on a card adds it straight away; a tap on the card itself shows the preview first
@@ -10286,67 +10289,89 @@ function alitaGuideHtml(u, { compact = false } = {}) {
     <p class="hint">القاعدة التي بتدخل: الطقم = دوبلين + مسمار كام في النص · في كل طرف طقم، وفي النص طقم زيادة لو الوصلة أطول من 60 سم. لو خرمت الحرف بعمق أقل من ${mm(N.ed)} الكام مش هيمسك المسمار.</p></div>`;
 }
 
-// ================================================================== v69 — "zero waste": a kitchen (or units) that eats exactly the sheets you have
-/** library items the search mixes, with the widths it may give them (cm) */
+// ================================================================== v70 — "zero waste": kitchens that eat exactly the sheets you have
+// A solver in four stages: (1) grow a set of units from 3 seeds until the sheets are ~full (5-cm widths), (2) fine-tune every width by ±1–4 cm,
+// (3) fill the offcuts of the real cutting plan with extra shelves and small accessories, (4) keep the distinct best results. Every evaluation
+// is a real packing in the cut worker (same optimizer as خطة القص), so "fits in N sheets" is what the saw will see.
 const zwRange = (a, b, step = 5) => Array.from({ length: Math.floor((b - a) / step) + 1 }, (_, i) => a + i * step);
+/** library items the search mixes, with their width range (cm); shelves: how many extra loose shelves the filler may add */
 const ZW_CANDS = {
   base: [
-    { k: "k_sink", w: zwRange(60, 100), once: true, tag: "حوض" }, { k: "k_base_drawers", w: zwRange(40, 90), tag: "أدراج" }, { k: "k_base2", w: zwRange(60, 100), tag: "ضلفتين" },
-    { k: "k_drawer_doors", w: zwRange(60, 90), tag: "درج + ضلفتين" }, { k: "k_base1_45", w: zwRange(30, 60), tag: "ضلفة" }, { k: "k_base_open30", w: zwRange(20, 40), tag: "رفوف مفتوحة" },
+    { k: "k_sink", lo: 60, hi: 100, once: true, tag: "حوض", shelves: 0 }, { k: "k_base_drawers", lo: 40, hi: 90, tag: "أدراج", shelves: 0 }, { k: "k_base2", lo: 60, hi: 100, tag: "ضلفتين", shelves: 2 },
+    { k: "k_drawer_doors", lo: 60, hi: 90, tag: "درج + ضلفتين", shelves: 1 }, { k: "k_base1_45", lo: 30, hi: 60, tag: "ضلفة", shelves: 2 }, { k: "k_base_open30", lo: 20, hi: 40, tag: "رفوف مفتوحة", shelves: 2 },
   ],
   wall: [
-    { k: "k_wall2", w: zwRange(60, 100), tag: "علوية ضلفتين" }, { k: "k_wall1_40", w: zwRange(30, 60), tag: "علوية ضلفة" }, { k: "k_wall_flip", w: zwRange(40, 90), tag: "قلاب" }, { k: "k_wall_open60", w: zwRange(30, 80, 10), tag: "رف مفتوح" },
+    { k: "k_wall2", lo: 60, hi: 100, tag: "علوية ضلفتين", shelves: 2 }, { k: "k_wall1_40", lo: 30, hi: 60, tag: "علوية ضلفة", shelves: 2 }, { k: "k_wall_flip", lo: 40, hi: 90, tag: "قلاب", shelves: 1 }, { k: "k_wall_open60", lo: 30, hi: 80, tag: "رف مفتوح", shelves: 2 },
   ],
 };
+/** small things that eat offcuts at the end */
+const ZW_FILLERS = [{ k: "k_acc_spice", lo: 20, hi: 20, tag: "رف بهارات", shelves: 0 }, { k: "k_acc_shelfdiv", lo: 76, hi: 76, tag: "فواصل رف", shelves: 0 }, { k: "k_acc_plates", lo: 76, hi: 76, tag: "حامل أطباق", shelves: 0 }, { k: "k_base_tray30", lo: 20, hi: 30, tag: "صواني", shelves: 0 }, { k: "k_base_open30", lo: 20, hi: 30, tag: "رفوف مفتوحة", shelves: 2 }];
 const ZW_MODES = { kitchen: "مطبخ كامل (سفلي + علوي)", base: "سفلي بس", wall: "علوي بس" };
-function zw() { return (ui.zw ??= { mode: "kitchen", carcass: { lib: "", n: 1 }, front: { lib: "", n: 0 }, back: { lib: "", n: 0 }, res: null, busy: false, msg: "" }); }
+const ZW_TYPICAL = { k_sink: 80, k_base_drawers: 60, k_wall2: 80, k_base2: 80, k_wall_flip: 60, k_base1_45: 45, k_wall1_40: 40, k_drawer_doors: 80, k_base_open30: 30, k_wall_open60: 60 };
+function zw() { return (ui.zw ??= { mode: "kitchen", carcass: { lib: "", n: 2 }, front: { lib: "", n: 0 }, back: { lib: "", n: 0 }, res: null, busy: false, msg: "" }); }
 const zwCache = new Map();
-/** one candidate at a width: its unit and its cut pieces per pool (carcass 18 mm / fronts / thin backs) */
-function zwUnit(c, w) {
-  const key = `${c.k}|${w}`;
+const zwCandOf = (k) => [...ZW_CANDS.base, ...ZW_CANDS.wall, ...ZW_FILLERS].find((c) => c.k === k);
+/** one candidate at a width with `sh` extra shelves: its unit and its cut pieces per pool (carcass 18 mm / fronts / thin backs) */
+function zwUnit(c, w, sh = 0) {
+  const key = `${c.k}|${w}|${sh}`;
   if (zwCache.has(key)) return zwCache.get(key);
   let out = null;
   try {
-    const u = scrapUnit({ ds: { kitchen: c.k } }, w), G = scrapGroups(u);
+    const u = scrapUnit({ ds: { kitchen: c.k } }, w);
+    if (sh > 0) { u.params.include_shelves = true; u.params.shelf_count = (+u.params.shelf_count || 0) + sh; u.name += ` (+${sh} رف)`; }
+    const G = scrapGroups(u);
     if (G) {
       const pools = { carcass: [], front: [], back: [] };
       for (const g of G.groups) (g.role === "front" ? pools.front : pools.carcass).push(...g.parts);
       for (const pt of G.thin) pools.back.push({ name: pt.name, w: pt.label.w, h: pt.label.h, rotate: true });
       const area = Object.fromEntries(Object.entries(pools).map(([k, l]) => [k, l.reduce((a, p) => a + p.w * p.h, 0)]));
-      out = { c, w, u, pools, area, row: c.k.startsWith("k_wall") ? "wall" : "base" };
+      out = { key, c, w, sh, u, pools, area, row: c.k.startsWith("k_wall") || c.k.startsWith("k_acc") ? "wall" : "base" };
     }
   } catch { out = null; }
   zwCache.set(key, out);
   return out;
 }
 function zwSheet() { const o = cutOptsSafe(); return { W: +o.sheetW, H: +o.sheetH, kerf: +o.kerf, trim: +o.trim, usable: (+o.sheetW - 2 * +o.trim) * (+o.sheetH - 2 * +o.trim) }; }
-/** the pools the user has: separate fronts only when front sheets were given; thin backs only when back sheets were given */
-function zwPools() {
-  const Z = zw(), sh = zwSheet();
-  const P = [{ id: "carcass", n: Math.max(1, +Z.carcass.n || 1), lib: Z.carcass.lib, roles: ["carcass", ...(+Z.front.n > 0 ? [] : ["front"])] }];
-  if (+Z.front.n > 0) P.push({ id: "front", n: +Z.front.n, lib: Z.front.lib, roles: ["front"] });
-  if (+Z.back.n > 0) P.push({ id: "back", n: +Z.back.n, lib: Z.back.lib, roles: ["back"] });
+/** the pools from sheet counts: separate fronts only when front sheets were given; thin backs only when back sheets were given */
+function zwPoolsOf(counts) {
+  const sh = zwSheet();
+  const P = [{ id: "carcass", n: Math.max(1, +counts.carcass.n || 1), lib: counts.carcass.lib || "", roles: ["carcass", ...(+counts.front.n > 0 ? [] : ["front"])] }];
+  if (+counts.front.n > 0) P.push({ id: "front", n: +counts.front.n, lib: counts.front.lib || "", roles: ["front"] });
+  if (+counts.back.n > 0) P.push({ id: "back", n: +counts.back.n, lib: counts.back.lib || "", roles: ["back"] });
   for (const p of P) p.avail = p.n * sh.usable;
   return P;
 }
 const zwArea = (set, pools) => Object.fromEntries(pools.map((P) => [P.id, set.reduce((a, it) => a + P.roles.reduce((b, r) => b + it.area[r], 0), 0)]));
-let zwWorker = null;
-/** pack every variant's pieces on the pools' sheets (one worker call): sheets used per pool and whether it fits */
+const zwKey = (set) => set.map((it) => it.key).sort().join(",");
+// one worker, calls queued one after the other (the library computes in the background while the pop may run too)
+let zwWorker = null, zwQueue = Promise.resolve();
+function zwCall(groups, opts) {
+  const run = async () => {
+    try {
+      if (!zwWorker) zwWorker = new Worker(new URL("./cutworker.js", import.meta.url), { type: "module" });
+      return await new Promise((res, rej) => { const id = "zw" + Date.now() + Math.random(); zwWorker.onmessage = (e) => { if (e.data.id === id) res(e.data.out); }; zwWorker.onerror = rej; zwWorker.postMessage({ id, groups, opts }); });
+    } catch { return groups.map((g) => ({ key: g.key, result: optimize(g.parts, { ...opts, sheetW: g.sheetW, sheetH: g.sheetH }) })); }
+  };
+  const p = zwQueue.then(run, run);
+  zwQueue = p.catch(() => {});
+  return p;
+}
+/** pack every variant's pieces on the pools' sheets: sheets used per pool, fits, waste, and the real offcuts */
 async function zwEval(variants, pools, timeCap) {
   const sh = zwSheet(), groups = [];
   variants.forEach((set, vi) => { for (const P of pools) { const parts = set.flatMap((it) => P.roles.flatMap((r) => it.pools[r])); if (parts.length) groups.push({ key: `${vi}#${P.id}`, sheetW: sh.W, sheetH: sh.H, parts }); } });
-  const opts = { kerf: sh.kerf, trim: sh.trim, timeCap };
-  let out;
-  try {
-    if (!zwWorker) zwWorker = new Worker(new URL("./cutworker.js", import.meta.url), { type: "module" });
-    out = await new Promise((res, rej) => { const id = "zw" + Date.now() + Math.random(); zwWorker.onmessage = (e) => { if (e.data.id === id) res(e.data.out); }; zwWorker.onerror = rej; zwWorker.postMessage({ id, groups, opts }); });
-  } catch { out = groups.map((g) => ({ key: g.key, result: optimize(g.parts, { ...opts, sheetW: g.sheetW, sheetH: g.sheetH }) })); }
+  const out = groups.length ? await zwCall(groups, { kerf: sh.kerf, trim: sh.trim, timeCap, minOffcut: [8, 5] }) : [];
   const by = Object.fromEntries(out.map((x) => [x.key, x.result]));
   return variants.map((set, vi) => {
-    const used = {}; let fits = true;
-    for (const P of pools) { const r = by[`${vi}#${P.id}`]; const n = r ? (r.stats?.sheets ?? 0) + ((r.oversized?.length || 0) ? 99 : 0) : 0; used[P.id] = n; if (n > P.n) fits = false; }
+    const used = {}; let fits = true; const offcuts = [];
+    for (const P of pools) {
+      const r = by[`${vi}#${P.id}`]; const n = r ? (r.stats?.sheets ?? 0) + ((r.oversized?.length || 0) ? 99 : 0) : 0; used[P.id] = n; if (n > P.n) fits = false;
+      if (r) for (const s of r.sheets) for (const o of s.offcuts || []) offcuts.push({ pool: P.id, w: o.w, h: o.h });
+      // sheets the set leaves untouched are one big offcut each
+      for (let i = (r?.stats?.sheets ?? 0); i < P.n; i++) offcuts.push({ pool: P.id, w: sh.W - 2 * sh.trim, h: sh.H - 2 * sh.trim, whole: true });
+    }
     const area = zwArea(set, pools), avail = pools.reduce((a, P) => a + P.avail, 0), tot = pools.reduce((a, P) => a + area[P.id], 0);
-    return { set, used, fits, area, waste: avail ? 1 - tot / avail : 1, plans: fits ? Object.fromEntries(pools.map((P) => [P.id, by[`${vi}#${P.id}`] || null])) : null };
+    return { set, used, fits, area, waste: avail ? 1 - tot / avail : 1, offcuts: offcuts.sort((a, b) => b.w * b.h - a.w * a.h), plans: fits ? Object.fromEntries(pools.map((P) => [P.id, by[`${vi}#${P.id}`] || null])) : null };
   });
 }
 /** a set's units lined up: base units along the wall, wall units above with their own run */
@@ -10354,72 +10379,125 @@ function zwLineUp(set) {
   let xb = 0, xw = 0;
   return set.map((it) => { const u = clone(it.u); const at = it.row === "wall" ? xw : xb; if (it.row === "wall") xw += it.w; else xb += it.w; return { u, at, it }; });
 }
-const zwKey = (set) => set.map((it) => `${it.c.k}:${it.w}`).sort().join(",");
-async function zwRun() {
-  const Z = zw(), pools = zwPools(), sh = zwSheet();
-  if (!(sh.W > 0 && sh.H > 0)) { alertBar("حدد مقاس اللوح في إعدادات القص الأول."); return; }
-  Z.busy = true; Z.res = null; Z.msg = "بيجهّز الوحدات…"; renderPop();
-  await new Promise((r) => setTimeout(r, 30));
-  const rows = Z.mode === "kitchen" ? ["base", "wall"] : [Z.mode];
+/** THE solver: counts {carcass, front, back: {n, lib}}, mode kitchen|base|wall → distinct results sorted by waste */
+async function zwSolve({ mode, counts, budget = 12000, onProgress = () => {} }) {
+  const pools = zwPoolsOf(counts), sh = zwSheet();
+  const rows = mode === "kitchen" ? ["base", "wall"] : [mode];
   const cands = rows.flatMap((r) => ZW_CANDS[r].map((c) => ({ ...c, row: r })));
-  const items = cands.flatMap((c) => c.w.map((w) => zwUnit(c, w)).filter(Boolean));
-  if (!items.length) { Z.busy = false; Z.msg = ""; alertBar("مفيش وحدات اتحسبت."); renderPop(); return; }
-  const avail = pools.reduce((a, P) => a + P.avail, 0);
+  const t0 = performance.now();
+  const left = () => budget - (performance.now() - t0);
+  onProgress("بيجهّز الوحدات…");
+  const coarse = cands.flatMap((c) => zwRange(c.lo, c.hi, 5).map((w) => zwUnit(c, w)).filter(Boolean));
+  if (!coarse.length) return { list: [], pools, sh, tried: 0 };
   const areaOf = (it) => pools.reduce((a, P) => a + P.roles.reduce((b, r) => b + it.area[r], 0), 0);
-  const smallest = Math.min(...items.map(areaOf));
-  // 3 seeds: a balanced kitchen, drawer-heavy, door-heavy — each grown until the sheets are full
+  const overfull = (set) => { const a = zwArea(set, pools); return pools.some((P) => a[P.id] > P.avail); };
+  const found = new Map();
+  // the score a variant is judged by: its waste plus a small penalty for a set that is not a kitchen (all drawers, no wall units, no sink…)
+  const score = (e) => {
+    let pen = 0; const kinds = new Map(); for (const it of e.set) kinds.set(it.c.k, (kinds.get(it.c.k) || 0) + 1);
+    for (const n of kinds.values()) if (n > 2) pen += 0.012 * (n - 2);
+    if (mode === "kitchen" && e.set.length >= 2) { if (!e.set.some((it) => it.row === "wall")) pen += 0.03; if (!e.set.some((it) => it.row === "base")) pen += 0.03; if (!kinds.has("k_sink") && e.set.length >= 3) pen += 0.015; }
+    if (mode !== "wall" && e.set.length >= 3 && [...kinds].filter(([k]) => k === "k_base_drawers").reduce((a, [, n]) => a + n, 0) > e.set.length / 2) pen += 0.02;
+    return e.waste + pen;
+  };
+  const keep = (e) => { if (e.fits && !found.has(zwKey(e.set))) { e.score = score(e); found.set(zwKey(e.set), e); } };
+  const pick = (k, w0, list) => { const l = list.filter((it) => it.c.k === k); if (!l.length) return null; return l.reduce((a, b) => (Math.abs(b.w - w0) < Math.abs(a.w - w0) ? b : a)); };
   const seeds = [
     ["k_sink", "k_base_drawers", "k_wall2", "k_base2", "k_wall_flip", "k_base1_45", "k_wall1_40", "k_drawer_doors", "k_wall2", "k_base2", "k_wall1_40"],
     ["k_base_drawers", "k_wall2", "k_sink", "k_base_drawers", "k_wall_flip", "k_drawer_doors", "k_wall1_40", "k_base_drawers", "k_wall2"],
     ["k_base2", "k_wall2", "k_sink", "k_base1_45", "k_wall1_40", "k_base2", "k_wall2", "k_base1_45", "k_wall_flip", "k_base2"],
-  ].map((l) => l.filter((k) => cands.some((c) => c.k === k)));
-  const found = new Map();
-  const t0 = performance.now(), budget = 14000;
-  const note = (m) => { Z.msg = m; const el = $("#pop [data-zwmsg]"); if (el) el.textContent = m; };
-  const pick = (k, w0) => { const l = items.filter((it) => it.c.k === k); if (!l.length) return null; return l.reduce((a, b) => (Math.abs(b.w - w0) < Math.abs(a.w - w0) ? b : a)); };
-  for (let si = 0; si < seeds.length; si++) {
-    if (performance.now() - t0 > budget) break;
-    const order = seeds[si]; if (!order.length) continue;
-    // start: typical widths, stop at ~75% of the sheets
-    let set = []; let i = 0;
-    const typical = { k_sink: 80, k_base_drawers: 60, k_wall2: 80, k_base2: 80, k_wall_flip: 60, k_base1_45: 45, k_wall1_40: 40, k_drawer_doors: 80, k_base_open30: 30, k_wall_open60: 60 };
-    while (i < order.length * 3) { const k = order[i % order.length]; i++; if (cands.find((c) => c.k === k)?.once && set.some((it) => it.c.k === k)) continue; const it = pick(k, typical[k] || 60); if (!it) continue; const a = zwArea([...set, it], pools); if (pools.some((P) => a[P.id] > P.avail * 0.78)) break; set.push(it); }
+  ].map((l) => l.filter((k) => cands.some((c) => c.k === k))).filter((l) => l.length);
+  // ---- stage 1: grow from each seed with coarse widths
+  let bests = [];
+  for (let si = 0; si < seeds.length && left() > 2500; si++) {
+    const order = seeds[si];
+    let set = [], i = 0;
+    while (i < order.length * 3) { const k = order[i % order.length]; i++; if (zwCandOf(k)?.once && set.some((it) => it.c.k === k)) continue; const it = pick(k, ZW_TYPICAL[k] || 60, coarse); if (!it) continue; const a = zwArea([...set, it], pools); if (pools.some((P) => a[P.id] > P.avail * 0.8)) break; set.push(it); }
     if (!set.length) continue;
     let cur = (await zwEval([set], pools, 0.25))[0];
-    if (!cur.fits) { // shrink until it fits
-      let guard = 0; while (!cur.fits && cur.set.length > 1 && guard++ < 6) { const s2 = cur.set.slice(0, -1); cur = (await zwEval([s2], pools, 0.25))[0]; }
-      if (!cur.fits) continue;
-    }
-    found.set(zwKey(cur.set), cur);
+    let guard = 0; while (!cur.fits && cur.set.length > 1 && guard++ < 6) cur = (await zwEval([cur.set.slice(0, -1)], pools, 0.25))[0];
+    if (!cur.fits) continue;
+    keep(cur);
     let stale = 0, round = 0;
-    while (stale < 3 && round++ < 12 && performance.now() - t0 < budget) {
-      note(`بيكمّل الألواح… (تجربة ${si + 1}/${seeds.length}، خطوة ${round}) — هدر دلوقتي ${Math.round(cur.waste * 100)}%`);
+    while (stale < 3 && round++ < 12 && left() > 2000) {
+      onProgress(`بيملى الألواح (تجربة ${si + 1}/${seeds.length}، خطوة ${round}) — الهدر دلوقتي ${Math.round(cur.waste * 100)}%`);
       const room = pools.map((P) => P.avail - cur.area[P.id]);
       const variants = [];
-      // widen a unit a step
-      cur.set.forEach((it, idx) => { const wider = items.filter((x) => x.c.k === it.c.k && x.w > it.w).sort((a, b) => a.w - b.w)[0]; if (wider) { const v = cur.set.slice(); v[idx] = wider; variants.push(v); } });
-      // add a unit that still fits in the remaining area
-      const adds = items.filter((it) => !(it.c.once && cur.set.some((x) => x.c.k === it.c.k)) && pools.every((P, pi) => P.roles.reduce((b, r) => b + it.area[r], 0) <= room[pi] * 1.02)).sort((a, b) => areaOf(b) - areaOf(a));
+      cur.set.forEach((it, idx) => { const wider = coarse.filter((x) => x.c.k === it.c.k && x.w > it.w).sort((a, b) => a.w - b.w)[0]; if (wider) { const v = cur.set.slice(); v[idx] = wider; variants.push(v); } });
+      const adds = coarse.filter((it) => !(it.c.once && cur.set.some((x) => x.c.k === it.c.k)) && pools.every((P, pi) => P.roles.reduce((b, r) => b + it.area[r], 0) <= room[pi] * 1.02)).sort((a, b) => areaOf(b) - areaOf(a));
       for (const it of adds.slice(0, 5)) variants.push([...cur.set, it]);
-      // swap one unit for a different kind of a similar width
-      cur.set.slice(0, 3).forEach((it, idx) => { const alt = items.filter((x) => x.c.k !== it.c.k && x.row === it.row && Math.abs(x.w - it.w) <= 10 && !(x.c.once && cur.set.some((y) => y.c.k === x.c.k))); if (alt.length) { const v = cur.set.slice(); v[idx] = alt[(round + idx) % alt.length]; variants.push(v); } });
-      // narrow one unit a step and add a small unit in the freed room
-      cur.set.forEach((it, idx) => { const narrower = items.filter((x) => x.c.k === it.c.k && x.w < it.w).sort((a, b) => b.w - a.w)[0]; if (!narrower) return; const freed = areaOf(it) - areaOf(narrower); const small = items.filter((x) => x.row === it.row && areaOf(x) <= freed + Math.min(...room) && !(x.c.once && cur.set.some((y) => y.c.k === x.c.k))).sort((a, b) => areaOf(b) - areaOf(a))[0]; if (small) { const v = cur.set.slice(); v[idx] = narrower; v.push(small); variants.push(v); } });
-      const uniq = [...new Map(variants.map((v) => [zwKey(v), v])).values()].filter((v) => !found.has(zwKey(v)) && pools.every((P) => zwArea(v, pools)[P.id] <= P.avail)).slice(0, 8);
+      cur.set.slice(0, 3).forEach((it, idx) => { const alt = coarse.filter((x) => x.c.k !== it.c.k && x.row === it.row && Math.abs(x.w - it.w) <= 10 && !(x.c.once && cur.set.some((y) => y.c.k === x.c.k))); if (alt.length) { const v = cur.set.slice(); v[idx] = alt[(round + idx) % alt.length]; variants.push(v); } });
+      cur.set.forEach((it, idx) => { const narrower = coarse.filter((x) => x.c.k === it.c.k && x.w < it.w).sort((a, b) => b.w - a.w)[0]; if (!narrower) return; const freed = areaOf(it) - areaOf(narrower); const small = coarse.filter((x) => x.row === it.row && areaOf(x) <= freed + Math.min(...room) && !(x.c.once && cur.set.some((y) => y.c.k === x.c.k))).sort((a, b) => areaOf(b) - areaOf(a))[0]; if (small) { const v = cur.set.slice(); v[idx] = narrower; v.push(small); variants.push(v); } });
+      const uniq = [...new Map(variants.map((v) => [zwKey(v), v])).values()].filter((v) => !found.has(zwKey(v)) && !overfull(v)).slice(0, 8);
       if (!uniq.length) break;
       const ev = await zwEval(uniq, pools, 0.18);
-      for (const e of ev) if (e.fits) found.set(zwKey(e.set), e);
-      const best = ev.filter((e) => e.fits).sort((a, b) => a.waste - b.waste)[0];
-      if (best && best.waste < cur.waste - 0.002) { cur = best; stale = 0; } else stale++;
-      if (cur.waste < 0.045) break;
+      ev.forEach(keep);
+      const best = ev.filter((e) => e.fits).sort((a, b) => score(a) - score(b))[0];
+      if (best && score(best) < score(cur) - 0.002) { cur = best; stale = 0; } else stale++;
+      if (cur.waste < 0.04) break;
     }
+    bests.push(cur);
   }
-  const all = [...found.values()].sort((a, b) => a.waste - b.waste);
-  // keep results that differ from each other (not the same set plus one small change)
-  const res = []; for (const r of all) { if (res.length >= 4) break; if (res.every((x) => Math.abs(x.waste - r.waste) > 0.01 || zwKey(x.set) !== zwKey(r.set))) res.push(r); }
-  Z.res = { list: res.map((r, i) => ({ ...r, id: "zw" + i, line: zwLineUp(r.set) })), tried: found.size, pools, sh, secs: Math.round((performance.now() - t0) / 100) / 10 };
+  bests = [...new Map(bests.map((b) => [zwKey(b.set), b])).values()].sort((a, b) => score(a) - score(b)).slice(0, 2);
+  // ---- stage 2: fine-tune widths by the centimetre
+  const tuned = [];
+  for (let bi = 0; bi < bests.length && left() > 1500; bi++) {
+    let cur = bests[bi];
+    for (let round = 0; round < 5 && left() > 1500; round++) {
+      onProgress(`بيظبط العروض بالسنتي (${round + 1}/5) — الهدر ${Math.round(cur.waste * 100)}%`);
+      const variants = [];
+      cur.set.forEach((it, idx) => { for (const d of [1, 2, 3, 4, -1, -2]) { const w = it.w + d; if (w < it.c.lo || w > it.c.hi) continue; const x = zwUnit(it.c, w, it.sh); if (!x) continue; const v = cur.set.slice(); v[idx] = x; variants.push(v); } });
+      const uniq = [...new Map(variants.map((v) => [zwKey(v), v])).values()].filter((v) => !found.has(zwKey(v)) && !overfull(v)).slice(0, 14);
+      if (!uniq.length) break;
+      const ev = await zwEval(uniq, pools, 0.16);
+      ev.forEach(keep);
+      const best = ev.filter((e) => e.fits).sort((a, b) => score(a) - score(b))[0];
+      if (best && score(best) < score(cur) - 0.001) cur = best; else break;
+    }
+    tuned.push(cur);
+  }
+  // ---- stage 3: fill the real offcuts with extra shelves and small accessories
+  const fillers = ZW_FILLERS.flatMap((c) => zwRange(c.lo, c.hi, 5).map((w) => zwUnit({ ...c, row: "wall" }, w)).filter(Boolean));
+  const diffParts = (a, b) => { const rest = a.slice(); for (const q of b) { const i = rest.findIndex((p) => Math.abs(p.w - q.w) < 0.05 && Math.abs(p.h - q.h) < 0.05); if (i >= 0) rest.splice(i, 1); } return rest; };
+  const fitsOff = (parts, offs) => parts.every((p) => offs.some((o) => (p.w <= o.w + 0.01 && p.h <= o.h + 0.01) || (p.h <= o.w + 0.01 && p.w <= o.h + 0.01)));
+  const filled = [];
+  for (let ti = 0; ti < tuned.length && left() > 800; ti++) {
+    let cur = tuned[ti];
+    for (let round = 0; round < 8 && left() > 800; round++) {
+      onProgress(`بيستغل الفضلات (${round + 1}) — الهدر ${Math.round(cur.waste * 100)}%`);
+      const offs = (pid) => cur.offcuts.filter((o) => o.pool === pid);
+      const variants = [];
+      // an extra loose shelf in a unit that can take one
+      cur.set.forEach((it, idx) => { if (it.sh >= (it.c.shelves || 0)) return; const x = zwUnit(it.c, it.w, it.sh + 1); if (!x) return; const extra = pools.map((P) => ({ P, parts: diffParts(P.roles.flatMap((r) => x.pools[r]), P.roles.flatMap((q) => it.pools[q])) })); if (!extra.every(({ P, parts }) => fitsOff(parts, offs(P.id)))) return; const v = cur.set.slice(); v[idx] = x; variants.push(v); });
+      // a small accessory from the offcuts
+      for (const f of fillers) { if (!pools.every((P) => fitsOff(P.roles.flatMap((r) => f.pools[r]), offs(P.id)))) continue; if (cur.set.filter((x) => x.c.k === f.c.k).length >= 2) continue; variants.push([...cur.set, f]); }
+      const uniq = [...new Map(variants.map((v) => [zwKey(v), v])).values()].filter((v) => !found.has(zwKey(v)) && !overfull(v)).slice(0, 10);
+      if (!uniq.length) break;
+      const ev = await zwEval(uniq, pools, 0.16);
+      ev.forEach(keep);
+      const best = ev.filter((e) => e.fits).sort((a, b) => score(a) - score(b))[0];
+      if (best && score(best) < score(cur) - 0.001) cur = best; else break;
+    }
+    filled.push(cur);
+  }
+  const all = [...found.values()].sort((a, b) => score(a) - score(b));
+  const res = [];
+  for (const r of all) { if (res.length >= 4) break; if (res.every((x) => Math.abs(x.waste - r.waste) > 0.012 || x.set.length !== r.set.length)) res.push(r); }
+  return { list: res.map((r, i) => ({ ...r, id: "zw" + i, line: zwLineUp(r.set), leftovers: r.offcuts.filter((o) => !o.whole && o.w >= 10 && o.h >= 8).slice(0, 6) })), pools, sh, tried: found.size, secs: Math.round((performance.now() - t0) / 100) / 10 };
+}
+async function zwRun() {
+  const Z = zw(), sh = zwSheet();
+  if (!(sh.W > 0 && sh.H > 0)) { alertBar("حدد مقاس اللوح في إعدادات القص الأول."); return; }
+  Z.busy = true; Z.res = null; Z.msg = "بيجهّز…"; renderPop();
+  await new Promise((r) => setTimeout(r, 30));
+  const note = (m) => { Z.msg = m; const el = $("#pop [data-zwmsg]"); if (el) el.textContent = m; };
+  try { Z.res = await zwSolve({ mode: Z.mode, counts: { carcass: Z.carcass, front: Z.front, back: Z.back }, budget: 16000, onProgress: note }); }
+  catch (err) { alertBar("حصل خطأ في الحساب: " + err.message); }
   Z.busy = false; Z.msg = "";
-  renderPop();
+  renderPop(); zwThumbs();
+}
+function zwThumbs() {
+  const Z = zw(); if (!Z.res) return;
   setTimeout(() => { for (const x of Z.res.list) { const im = $(`[data-zwthumb="${x.id}"]`); if (!im || im.src) continue; try { const sh2 = thumbs.shot(x.line.map(({ u, at }) => ({ u, at })), 300, 170); if (sh2?.url) im.src = sh2.url; } catch { /* no 3D */ } } }, 60);
 }
 /** the set's units with the pools' materials, lined up and added to the project */
@@ -10440,12 +10518,19 @@ function zwAdd(id) {
   ui.pop = null; renderPop(); save(); render(true);
   alertBar(`♻️ اتضاف ${set.length} وحدات بهدر ${Math.round(x.waste * 100)}% — افتح خطة القص تشوف الألواح.`);
 }
+const ZW_POOL_AR = { carcass: "الهيكل", front: "الضلف", back: "الظهور" };
+function zwResultCard(x, i, R0, { big = false } = {}) {
+  const names = x.set.map((it) => it.u.name).join("، ");
+  const runB = x.set.filter((it) => it.row !== "wall").reduce((a, it) => a + it.w, 0), runW = x.set.filter((it) => it.row === "wall" && !it.c.k.startsWith("k_acc")).reduce((a, it) => a + it.w, 0);
+  const left = x.leftovers?.length ? `<small>الفاضل بعد القص: ${x.leftovers.map((o) => `${n1(o.w)}×${n1(o.h)}`).join("، ")}</small>` : `<small>مفيش فضلة تذكر بعد القص ✅</small>`;
+  return `<div class="sccard zwcard ${big ? "big" : ""}"><img data-zwthumb="${x.id}" alt=""><div class="scinfo"><b>${i === 0 ? "⭐ " : ""}هدر ${Math.round(x.waste * 100)}% — ${x.set.length} وحدات${runB ? ` · سفلي ${n1(runB)} سم` : ""}${runW ? ` · علوي ${n1(runW)} سم` : ""}</b><small>${esc(names)}</small><small>${R0.pools.map((P) => `${ZW_POOL_AR[P.id]}: ${x.used[P.id]} من ${P.n} لوح · ${n1(x.area[P.id] / 10000)} م² من ${n1(P.avail / 10000)}`).join(" · ")}</small>${left}</div><div class="scbtns"><button class="primary sm" data-zwadd="${x.id}">➕ ضيف المطبخ للمشروع</button></div></div>`;
+}
 function zwPop() {
   const Z = zw(), sh = zwSheet();
   const libs = [...Object.entries(Catalog.LIB).filter(([k]) => !STONE(k) && !/^(glass_|mirror|alu_|stainless|copper)/.test(k)).map(([k, v]) => [k, v[0]]), ...Mat.all().map((m) => [m.id, m.name])];
   const matRow = (key, label, hint) => `<div class="zwrow"><b>${label}</b><select data-zwlib="${key}"><option value="">${hint}</option>${libs.map(([k, l]) => `<option value="${k}" ${Z[key].lib === k ? "selected" : ""}>${esc(l)}</option>`).join("")}</select><label class="f"><span>عدد الألواح</span><input type="text" inputmode="numeric" data-numf data-zwn="${key}" value="${Z[key].n}"></label></div>`;
   let h = `<div class="popbox scrapbox" role="dialog" aria-label="صفر هدر"><div class="libhead"><h2>♻️ صفر هدر — مطبخ من الألواح اللي عندك</h2><button class="x" data-close aria-label="قفل">×</button></div>
-    <p class="hint">قول عندك كام لوح من كل خامة، والبرنامج يركّب مطبخ (أو وحدات) مقاساته متظبطة بحيث القطع تاكل الألواح دي بالكامل — بيجرّب عشرات التوليفات ويقصّها فعلاً على اللوح ${n1(sh.W)}×${n1(sh.H)} ويختار الأقل هدراً. الهدر اللي بيفضل هو شريحة المنشار (${n1(sh.kerf * 10)} مم) وتهذيب الحرف.</p>
+    <p class="hint">قول عندك كام لوح من كل خامة، والبرنامج يركّب مطبخ (أو وحدات) ويظبط عروضها بالسنتي ويحشي الفضلات بأرفف زيادة وإكسسوارات، بحيث القطع تاكل الألواح دي بالكامل — كل تجربة بتتقص فعلاً على اللوح ${n1(sh.W)}×${n1(sh.H)} بنفس محرك خطة القص. اللي بيفضل هو شريحة المنشار (${n1(sh.kerf * 10)} مم) وتهذيب الحرف.</p>
     <div class="seg">${Object.entries(ZW_MODES).map(([k, l]) => `<button data-zwmode="${k}" class="${Z.mode === k ? "on" : ""}">${l}</button>`).join("")}</div>
     ${matRow("carcass", "الهيكل (18 مم)", "لوح خام (أي خامة)")}
     ${matRow("front", "الضلف ووش الأدراج", "نفس لوح الهيكل (0 = من نفس الألواح)")}
@@ -10454,15 +10539,79 @@ function zwPop() {
     ${Z.busy ? `<p class="hint" data-zwmsg>${esc(Z.msg || "بيحسب…")}</p>` : ""}`;
   if (Z.res) {
     const R0 = Z.res;
-    h += `<p class="hint">اتجرّبت ${R0.tried} توليفة في ${R0.secs} ثانية · الألواح: ${R0.pools.map((P) => `${P.n} ${P.id === "carcass" ? "هيكل" : P.id === "front" ? "ضلف" : "ظهور"}`).join(" + ")}.</p>`;
+    h += `<p class="hint">اتجرّبت ${R0.tried} توليفة في ${R0.secs} ثانية · الألواح: ${R0.pools.map((P) => `${P.n} ${ZW_POOL_AR[P.id]}`).join(" + ")}.</p>`;
     if (!R0.list.length) h += `<p class="e">مفيش توليفة لقيت تدخل في الألواح دي — زوّد لوح أو جرّب «سفلي بس».</p>`;
-    h += `<div class="zwgrid">` + R0.list.map((x, i) => {
-      const names = x.set.map((it) => `${it.u.name}`).join("، ");
-      const runB = x.set.filter((it) => it.row !== "wall").reduce((a, it) => a + it.w, 0), runW = x.set.filter((it) => it.row === "wall").reduce((a, it) => a + it.w, 0);
-      return `<div class="sccard zwcard"><img data-zwthumb="${x.id}" alt=""><div class="scinfo"><b>${i === 0 ? "⭐ " : ""}هدر ${Math.round(x.waste * 100)}% — ${x.set.length} وحدات${runB ? ` · سفلي ${n1(runB)} سم` : ""}${runW ? ` · علوي ${n1(runW)} سم` : ""}</b><small>${esc(names)}</small><small>${R0.pools.map((P) => `${P.id === "carcass" ? "الهيكل" : P.id === "front" ? "الضلف" : "الظهور"}: ${x.used[P.id]} من ${P.n} لوح · ${n1(x.area[P.id] / 10000)} م² من ${n1(P.avail / 10000)}`).join(" · ")}</small></div><div class="scbtns"><button class="primary sm" data-zwadd="${x.id}">➕ ضيف المطبخ للمشروع</button></div></div>`;
-    }).join("") + `</div>`;
+    h += `<div class="zwgrid">` + R0.list.map((x, i) => zwResultCard(x, i, R0)).join("") + `</div>`;
   }
   return h + `</div>`;
+}
+// ---- the ready library: one design per sheet count, computed in the background on this device and kept
+const ZW_LIB = [
+  { id: "k2", label: "مطبخ صغير من لوحين", mode: "kitchen", carcass: 2 }, { id: "k3", label: "مطبخ من 3 ألواح", mode: "kitchen", carcass: 3 }, { id: "k4", label: "مطبخ من 4 ألواح", mode: "kitchen", carcass: 4 },
+  { id: "k5", label: "مطبخ من 5 ألواح", mode: "kitchen", carcass: 5 }, { id: "k6", label: "مطبخ من 6 ألواح", mode: "kitchen", carcass: 6 }, { id: "k8", label: "مطبخ كبير من 8 ألواح", mode: "kitchen", carcass: 8 },
+  { id: "k32", label: "3 ألواح هيكل + 2 ضلف", mode: "kitchen", carcass: 3, front: 2 }, { id: "k42", label: "4 هيكل + 2 ضلف", mode: "kitchen", carcass: 4, front: 2 }, { id: "k63", label: "6 هيكل + 3 ضلف", mode: "kitchen", carcass: 6, front: 3 },
+  { id: "b2", label: "سفلي بس من لوحين", mode: "base", carcass: 2 }, { id: "b3", label: "سفلي بس من 3 ألواح", mode: "base", carcass: 3 }, { id: "b4", label: "سفلي بس من 4 ألواح", mode: "base", carcass: 4 },
+  { id: "w1", label: "علوي بس من لوح واحد", mode: "wall", carcass: 1 }, { id: "w2", label: "علوي بس من لوحين", mode: "wall", carcass: 2 }, { id: "w3", label: "علوي بس من 3 ألواح", mode: "wall", carcass: 3 },
+];
+const ZW_LIB_KEY = "novera-zwlib";
+const zwSig = () => { const sh = zwSheet(), R0 = userDefs().rules || {}; return `${sh.W}x${sh.H}|${sh.kerf}|${sh.trim}|${JSON.stringify(R0.shelves || {})}|${+!!R0.drawerBoxLikeCarcass}|v1`; };
+function zwLibStore() {
+  let st = null; try { st = JSON.parse(localStorage.getItem(ZW_LIB_KEY) || "null"); } catch { st = null; }
+  if (!st || st.sig !== zwSig()) st = { sig: zwSig(), items: {} };
+  ui.zwLib ??= { st, busy: null }; ui.zwLib.st = st; return ui.zwLib;
+}
+const zwLibSave = () => { try { localStorage.setItem(ZW_LIB_KEY, JSON.stringify(ui.zwLib.st)); } catch { /* full */ } };
+/** a stored library result back into a live result (units rebuilt from their specs) */
+function zwLibResult(spec, rec) {
+  const pools = zwPoolsOf({ carcass: { n: spec.carcass }, front: { n: spec.front || 0 }, back: { n: 0 } });
+  const list = rec.list.map((r, i) => {
+    const set = r.set.map((q) => { const c = zwCandOf(q.k); return c ? zwUnit({ ...c, row: c.k.startsWith("k_wall") || c.k.startsWith("k_acc") ? "wall" : "base" }, q.w, q.sh || 0) : null; }).filter(Boolean);
+    return { id: "zw" + i, set, waste: r.waste, used: r.used, area: zwArea(set, pools), leftovers: r.leftovers || [], line: zwLineUp(set) };
+  });
+  return { list, pools, sh: zwSheet(), tried: rec.tried || 0, secs: rec.secs || 0, lib: spec.id };
+}
+/** compute the ready library one design at a time in the background (only while the library is open) */
+async function zwLibPump() {
+  const L = zwLibStore();
+  if (L.busy) return;
+  const next = ZW_LIB.find((sp) => !L.st.items[sp.id]);
+  if (!next || !state.libOpen) return;
+  L.busy = next.id; zwLibPaint();
+  try {
+    const res = await zwSolve({ mode: next.mode, counts: { carcass: { n: next.carcass }, front: { n: next.front || 0 }, back: { n: 0 } }, budget: 9000, onProgress: (m) => zwLibPaint(m) });
+    L.st.items[next.id] = { list: res.list.map((r) => ({ set: r.set.map((it) => ({ k: it.c.k, w: it.w, sh: it.sh })), waste: r.waste, used: r.used, leftovers: r.leftovers })), tried: res.tried, secs: res.secs, at: Date.now() };
+  } catch { L.st.items[next.id] = { list: [], failed: true }; }
+  zwLibSave();
+  L.busy = null; zwLibPaint();
+  if (state.libOpen) setTimeout(zwLibPump, 150);
+}
+/** repaint only the library cards (no full renderLib → no flicker) */
+function zwLibPaint(msg) {
+  const L = zwLibStore();
+  for (const sp of ZW_LIB) {
+    const el = $(`#lib [data-zwlib="${sp.id}"]`); if (!el) continue;
+    const rec = L.st.items[sp.id], best = rec?.list?.[0];
+    const sheets = `${sp.carcass} ${sp.front ? `هيكل + ${sp.front} ضلف` : "لوح"}`;
+    let body;
+    if (best) body = `<img class="th" data-zwth="${sp.id}" alt=""><b>${esc(sp.label)}</b><small>هدر ${Math.round(best.waste * 100)}% · ${best.set.length} وحدات · ${sheets}</small><em class="cnt">${esc(ZW_MODES[sp.mode])}</em>`;
+    else if (rec?.failed || (rec && !best)) body = `<span class="sw" style="font-size:26px">♻️</span><b>${esc(sp.label)}</b><small>مفيش توليفة لقيت — جرّب من زرار «صفر هدر» بعدد تاني.</small>`;
+    else if (L.busy === sp.id) body = `<span class="sw" style="font-size:26px">⏳</span><b>${esc(sp.label)}</b><small>${esc(msg || "بيحسب…")}</small>`;
+    else body = `<span class="sw" style="font-size:26px">♻️</span><b>${esc(sp.label)}</b><small>${sheets} · في الانتظار — بيتحسب على الجهاز مرة واحدة</small>`;
+    el.innerHTML = body;
+    el.classList.toggle("ready", !!best);
+    if (best) { const im = el.querySelector("[data-zwth]"); if (im && !im.src) { try { const R0 = zwLibResult(sp, rec); const sh2 = thumbs.shot(R0.list[0].line.map(({ u, at }) => ({ u, at })), 240, 160); if (sh2?.url) im.src = sh2.url; } catch { /* no 3D yet */ } } }
+  }
+}
+function zwLibHtml() {
+  return `<h3>♻️ مكتبة صفر هدر — تصميمات بتاكل ألواح بعينها</h3><p class="hint">كل كارت مطبخ (أو صف) متظبط بالسنتي عشان يخلّص عدد ألواح محدد من غير فضلة تذكر — بيتحسب على جهازك مرة واحدة وبيتحفظ. دوس على الكارت تشوف التوليفات وتضيفها، أو زرار «صفر هدر» فوق لعدد ألواح وخامات بتاعتك.</p><div class="cards zwlib">${ZW_LIB.map((sp) => `<button class="card" data-zwlib="${sp.id}"><span class="sw" style="font-size:26px">♻️</span><b>${esc(sp.label)}</b><small>…</small></button>`).join("")}</div>`;
+}
+function zwLibOpen(id) {
+  const sp = ZW_LIB.find((x) => x.id === id), L = zwLibStore(), rec = L.st.items[id];
+  if (!sp) return;
+  const Z = zw(); Z.mode = sp.mode; Z.carcass = { lib: "", n: sp.carcass }; Z.front = { lib: "", n: sp.front || 0 }; Z.back = { lib: "", n: 0 };
+  Z.res = rec?.list?.length ? zwLibResult(sp, rec) : null;
+  state.libOpen = false; render(); ui.pop = "zero"; renderPop(); zwThumbs();
+  if (!Z.res) zwRun();
 }
 
 const EXPORTS = [
@@ -10497,6 +10646,7 @@ function render(refit = false) {
   document.querySelectorAll(".tabs [data-tab]").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === state.tab)));
   for (const t of ["design", "cut", "parts", "shop"]) $(`#v-${t}`).hidden = ui.mode !== "owner" || state.tab !== t;
   $("#v-design").classList.toggle("lib-open", !!state.libOpen);
+  if (state.libOpen && typeof zwLibPump === "function") setTimeout(zwLibPump, 300);
   if (ui.mode !== "owner") return;
   if (state.tab === "design") {
     $("#view3d").hidden = !!ui.planOn;
@@ -10662,4 +10812,4 @@ function cmdOpen() {
 function cmdClose() { const b = $("#cmdBox"); if (b) { b.hidden = true; b.innerHTML = ""; } }
 addEventListener("keydown", (e) => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); if ($("#cmdBox") && !$("#cmdBox").hidden) cmdClose(); else cmdOpen(); } });
 
-if (DEV) window.__dbg = { view, plan, R, render: (x) => render(x), ak: (t) => kitchenProposals(t), applyK: (u) => applyKitchen(u, null), checks: () => designChecks(), merge: (a, b) => mergeInto(a, b), get ui() { return ui; }, layout: asmLayout, libUnit, libSet, thumbs, openStudio: (u, x) => openStudio(u, x), exportUnitDrawings, exportPurchasePdf, exportPurchaseXlsx, renderPop, libAdd, exportQuotePdf, exportAsmBooklet, presentOn, presentOff, renderPresent, exportMachines, speakRun, applyLighting, setParams, cmdOpen, elev: (u) => unitElevSvg(u), cutReady, get cutData() { return cutData; }, projectPieces: () => projectPieces(state.project), workerOn, workerOff, renderWorker, get state() { return state; } };
+if (DEV) window.__dbg = { view, plan, R, render: (x) => render(x), ak: (t) => kitchenProposals(t), applyK: (u) => applyKitchen(u, null), checks: () => designChecks(), merge: (a, b) => mergeInto(a, b), get ui() { return ui; }, layout: asmLayout, libUnit, libSet, thumbs, openStudio: (u, x) => openStudio(u, x), exportUnitDrawings, exportPurchasePdf, exportPurchaseXlsx, renderPop, libAdd, exportQuotePdf, exportAsmBooklet, presentOn, presentOff, renderPresent, exportMachines, speakRun, applyLighting, setParams, cmdOpen, elev: (u) => unitElevSvg(u), cutReady, get cutData() { return cutData; }, projectPieces: () => projectPieces(state.project), workerOn, workerOff, renderWorker, zwLibPump, zwSolve, zwLibStore, zwLibPaint, get state() { return state; } };
