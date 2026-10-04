@@ -38,6 +38,7 @@ cd /home/claude/novera-app && python3 tools/build_pwa.py && python3 tools/build_
 - Kitchen units: base depth 58 includes the door (inset, face at y=0); corner units get their depth from `cornerFit()` in app.js unless set by hand.
 
 ## History (latest first)
+- v68: unit props open collapsed — `collapseProps(el)` on a fresh unit render (renderProps `!same`, not in shop mode) closes every top-level details except the size section (`DIMS_SEC`: المقاسات / المقاسات والنظام / الوحدة / 🍳 مقاسات); the open state still survives edits of the same unit.
 - v67: (1) assembly order the NOVERA way: ASM_STEPS = first side + bottom → top → dividers → back slides in → second side closes the box → shelves → drawers → doors → finish;
   named indices `ASM.{side1,top,dividers,back,side2,shelves,drawers,doors,finish}` used by asmStep/layoutTables/asmProps; `lastSide(tail)` = شمال / حيطة ب / الثانية; STEP_ICON indexed by st.i.
   (2) speech: `sayPrep` (Egyptian number words `arWords/arNum` — 57.4 → «سبعة وخمسين وأربعة من عشرة», .5 → «ونص», 0.3 → «تلاتة ملي»; codes K01-08 → «كيه واحد، قطعة تمانية»; `AR_WORDS` vocalised workshop words with و/ب/ل prefixes),

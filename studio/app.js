@@ -2605,12 +2605,17 @@ function renderProps() {
   }
   renderProps0(); propsMode(el);
   el.dataset.pkey = key;
-  if (!same) { el.scrollTop = 0; return; }
+  if (!same) { if (selUnit() && state.propsAdv !== "shop") collapseProps(el); el.scrollTop = 0; return; }
   for (const sm of el.querySelectorAll("details > summary")) { const o = opens.get(secKey(sm)); if (o !== undefined && sm.parentElement.open !== o) sm.parentElement.open = o; }
   el.scrollTop = st;
   const b = anchor && el.querySelector(anchor);
   if (b) el.scrollTop += b.getBoundingClientRect().top - el.getBoundingClientRect().top - aoff;
   if (focus) { const f = el.querySelector(focus); if (f && document.activeElement !== f) { f.focus({ preventScroll: true }); if (caret && caret[0] != null) try { f.setSelectionRange(caret[0], caret[1]); } catch { /* not a text field */ } } }
+}
+/** a freshly opened unit: every section closed except the unit's size section, so all the headings are in view at once */
+const DIMS_SEC = /^(المقاسات|المقاسات والنظام|الوحدة|🍳 مقاسات)/;
+function collapseProps(el) {
+  for (const d of el.children) if (d.tagName === "DETAILS") d.open = DIMS_SEC.test(d.querySelector(":scope > summary")?.textContent.trim() || "");
 }
 // remember the last field touched in the panel (the change re-draws it after the field lost focus)
 document.addEventListener("pointerdown", (e) => { const p = $("#props"); if (p && p.contains(e.target)) { const t = e.target.closest("input, select, textarea, button, label"); const q = t && (fieldSel(t) || fieldSel(t.querySelector?.("input, select"))); if (q) ui.lastField = q; } }, true);
