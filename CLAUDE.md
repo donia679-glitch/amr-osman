@@ -38,6 +38,9 @@ cd /home/claude/novera-app && python3 tools/build_pwa.py && python3 tools/build_
 - Kitchen units: base depth 58 includes the door (inset, face at y=0); corner units get their depth from `cornerFit()` in app.js unless set by hand.
 
 ## History (latest first)
+- v69: (1) «♻️ صفر هدر» library card → `ui.pop = "zero"` (zw*: ZW_CANDS kitchen presets × 5-cm widths, zwUnit cache via scrapUnit/scrapGroups into pools carcass/front/back, zwPools from sheet counts,
+  zwRun = 3 seeds grown by widen/add/swap/narrow+add moves evaluated in the cut worker (zwEval, timeCap 0.18–0.25, budget 14 s), results sorted by waste, thumbnails via thumbs.shot, zwAdd lines units up on the wall with the pools' libs; CSS .zwrow/.zwgrid).
+  (2) illustrated minifix/dowel drilling guide: `alitaNums(u)` (assembly_* params), `alitaSvg` (joint section + 3-hole set plan, numbers in mm), `alitaGuideHtml` (6 steps, tap = voice) — in worker «التجميع» (data-walita), the assembly guide steps side1/top/side2, and the «مقاسات الأليتا» props section. CSS .alita/.alstep.
 - v68: unit props open collapsed — `collapseProps(el)` on a fresh unit render (renderProps `!same`, not in shop mode) closes every top-level details except the size section (`DIMS_SEC`: المقاسات / المقاسات والنظام / الوحدة / 🍳 مقاسات); the open state still survives edits of the same unit.
 - v67: (1) assembly order the NOVERA way: ASM_STEPS = first side + bottom → top → dividers → back slides in → second side closes the box → shelves → drawers → doors → finish;
   named indices `ASM.{side1,top,dividers,back,side2,shelves,drawers,doors,finish}` used by asmStep/layoutTables/asmProps; `lastSide(tail)` = شمال / حيطة ب / الثانية; STEP_ICON indexed by st.i.

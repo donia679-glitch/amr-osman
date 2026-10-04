@@ -1663,12 +1663,13 @@ document.querySelector(".stage").addEventListener("input", (e) => {
   if (t.hasAttribute("data-wvname")) sayAr("أهلاً، أنا الصوت اللي هيقرالك المقاسات");
 });
 document.querySelector(".stage").addEventListener("click", (e) => {
-  const wb = e.target.closest("#workerBar [data-wexit],#workerBar [data-wvoice],#workerBar [data-wexplode],#workerBar [data-wxray],#workerBar [data-wview],#workerBar [data-wunit],#workerBar [data-wtab],#workerBar [data-wback],#workerBar [data-wiso],#workerBar [data-wsay],#workerBar [data-wpiece],#workerBar [data-wstep],#workerBar [data-wsaytext],#workerBar [data-wvset],#workerBar [data-wvclose],#workerBar [data-wvtest],#workerBar [data-wvreset]");
+  const wb = e.target.closest("#workerBar [data-wexit],#workerBar [data-wvoice],#workerBar [data-wexplode],#workerBar [data-wxray],#workerBar [data-wview],#workerBar [data-wunit],#workerBar [data-wtab],#workerBar [data-wback],#workerBar [data-wiso],#workerBar [data-wsay],#workerBar [data-wpiece],#workerBar [data-wstep],#workerBar [data-wsaytext],#workerBar [data-wvset],#workerBar [data-wvclose],#workerBar [data-wvtest],#workerBar [data-wvreset],#workerBar [data-walita]");
   if (wb && ui.worker) {
     const d = wb.dataset, W = ui.worker, u = selUnit();
     if (d.wexit !== undefined) { workerOff(); return; }
     if (d.wvset !== undefined) { W.vpop = !W.vpop; if (W.vpop && "speechSynthesis" in window) { speechSynthesis.getVoices(); speechSynthesis.onvoiceschanged = () => { if (ui.worker?.vpop) renderWorker(); }; } renderWorker(); return; }
     if (d.wvclose !== undefined) { W.vpop = false; renderWorker(); return; }
+    if (d.walita !== undefined) { W.alita = !W.alita; renderWorker(); return; }
     if (d.wvtest !== undefined) { sayAr("جنب يمين K01-03. الطول 72 سنتي، العرض 56.4 سنتي، السمك 1.8. المجرى الجانبي على 7.5 من القاعدة."); return; }
     if (d.wvreset !== undefined) { saveVoicePrefs({ rate: 0.88, pitch: 1, name: "" }); renderWorker(); return; }
     if (d.wvoice !== undefined) { W.voice = !W.voice; if (W.voice && "speechSynthesis" in window) speechSynthesis.getVoices(); renderWorker(); if (W.voice) sayAr("الصوت شغال. دوس على أي قطعة تسمع مقاسها"); return; }
@@ -1943,6 +1944,7 @@ function renderLib() {
     <input id="libq" class="libq" type="search" placeholder="🔍 دوّر: تسريحة، تموين، حوض، دولاب…" aria-label="دوّر في المكتبة" value="${esc(ui.libQ || "")}">
     <button class="card cutcard" data-studio-new="1"><span class="sw" style="font-size:26px">✏️</span><b>ورشة الرسم — صمّم حاجتك من الصفر</b><small>رسم 3D حر: خطوط ومستطيلات ودواير وأقواس، اسحبها ألواح، فرّغ وقص واحفر، ولف وانسخ — وكل لوح يطلع في القص والـCNC بشكله.</small></button>
     <button class="card cutcard" data-scrap-lib="1"><span class="sw" style="font-size:26px">♻️</span><b>أعمل إيه من الفضلات؟</b><small>اختار البواقي من المخزن أو اكتب مقاساتها، والبرنامج يرشّحلك وحدات صغيرة تطلع منها بالكامل.</small></button>
+    <button class="card cutcard" data-zero-lib="1"><span class="sw" style="font-size:26px">♻️</span><b>صفر هدر — مطبخ من الألواح اللي عندك</b><small>قول عندك لوح أو اتنين من كل خامة، والبرنامج يصمّم مطبخ كامل أو وحدات مقاساتها متظبطة بحيث القطع تاكل الألواح بالكامل.</small></button>
     <button class="card cutcard" data-pieces="1"><span class="sw" style="font-size:26px">✂</span><b>قطع حرة — كت ليست بمقاساتك</b><small>اكتب مقاسات القطع (أو الزقها من Excel) ويطلعلك خطة القص والملصقات بالباركود من غير تصميم.</small></button>
 `;
   h += myLibHtml();
@@ -1991,6 +1993,7 @@ $("#lib").addEventListener("click", (e) => {
   if (myLibClick(e)) return;
   if (e.target.closest("[data-studio-new]")) { state.libOpen = false; render(); openStudio(null); return; }
   if (e.target.closest("[data-scrap-lib]")) { state.libOpen = false; render(); ui.pop = "scrap"; renderPop(); return; }
+  if (e.target.closest("[data-zero-lib]")) { state.libOpen = false; render(); ui.pop = "zero"; renderPop(); return; }
   const c = e.target.closest("[data-preset],[data-template],[data-dress],[data-kitchen],[data-pieces],[data-smart]");
   if (!c) return;
   // the small ＋ on a card adds it straight away; a tap on the card itself shows the preview first
@@ -2969,7 +2972,7 @@ function kitchenProps(p) {
     h += `<details open><summary>مقاسات الأليتا (سم)</summary><div class="grid2">${numF("assembly_hole_diameter", "قطر خرم الدوبل", p.assembly_hole_diameter, 0.1)}${numF("assembly_edge_distance", "البعد عن الحرف", p.assembly_edge_distance, 0.1)}
       ${numF("assembly_hole_spacing", "المسافة بين الأخرام", p.assembly_hole_spacing, 0.1)}${numF("assembly_side_depth", "عمق الخرم في الوش", p.assembly_side_depth, 0.1)}
       ${numF("assembly_base_depth", "عمق الخرم في الحرف", p.assembly_base_depth, 0.1)}${numF("assembly_cam_diameter", "قطر قفل الكام", p.assembly_cam_diameter, 0.1)}
-      ${numF("assembly_cam_depth", "عمق قفل الكام", p.assembly_cam_depth, 0.1)}</div><p class="hint">الأخرام بتبان في العرض لما تشغّل "شفاف".</p></details>`;
+      ${numF("assembly_cam_depth", "عمق قفل الكام", p.assembly_cam_depth, 0.1)}</div><p class="hint">الأخرام بتبان في العرض لما تشغّل "شفاف".</p><details class="elevbox"><summary>🔩 شرح مصور لخرم الأليتا بالمقاسات دي</summary>${alitaGuideHtml({ params: p })}</details></details>`;
   }
   if (p.include_hinge_cups) {
     h += `<details><summary>كبب المفصلات</summary><div class="grid2">${numF("hinge_cup_diameter", "قطر الكبة", p.hinge_cup_diameter, 0.1)}${numF("hinge_cup_edge_distance", "البعد عن الحرف", p.hinge_cup_edge_distance, 0.1)}${numF("hinge_cup_count", "عدد الكبب", p.hinge_cup_count, 1)}</div></details>`;
@@ -4372,6 +4375,7 @@ function renderPop() {
   else if (ui.pop === "speak") h = speakPop();
   else if (ui.pop === "fincmp") h = fincmpPop();
   else if (ui.pop === "scrap") h = scrapPop();
+  else if (ui.pop === "zero") h = zwPop();
   else if (ui.pop === "menu") {
     const it = (k, ic, t, d) => `<button class="mitem" data-menu="${k}"><span class="mic">${ic}</span><span><b>${t}</b><small>${d}</small></span></button>`;
     h = `<div class="popbox menubox" role="dialog" aria-label="القائمة"><div class="libhead"><h2>القائمة</h2><button class="x" data-close aria-label="قفل">×</button></div>
@@ -4446,6 +4450,11 @@ $("#pop").addEventListener("input", (e) => {
   if (pv && m.img) { pv.style.backgroundSize = `${Math.max(8, (260 * 60) / Math.max(5, m.tile))}px`; pv.style.filter = `brightness(${1 + m.bright / 100})`; }
 });
 $("#pop").addEventListener("change", async (e) => {
+  if (ui.pop === "zero") {
+    const Z = zw(), t = e.target, d = t.dataset;
+    if (d.zwlib) { Z[d.zwlib].lib = t.value; return; }
+    if (d.zwn) { Z[d.zwn].n = Math.max(0, Math.min(20, Math.round(toNum(t.value) || 0))); return; }
+  }
   if (ui.pop === "scrap") {
     const S = scrap(), t = e.target, d = t.dataset;
     if (d.sckey) { if (t.checked) { if (!S.keys.includes(d.sckey)) S.keys.push(d.sckey); } else S.keys = S.keys.filter((k) => k !== d.sckey); return; }
@@ -4567,6 +4576,12 @@ $("#pop").addEventListener("click", async (e) => {
   const d = b.dataset;
   if (b.hasAttribute("data-opendefs")) { ui.pop = "defaults"; renderPop(); return; }
   if (ui.pop === "brand" && b.hasAttribute("data-brandlogo-del")) { brandSet("logo", ""); renderPop(); return; }
+  if (ui.pop === "zero") {
+    const Z = zw();
+    if (d.zwmode) { Z.mode = d.zwmode; Z.res = null; renderPop(); return; }
+    if (b.hasAttribute("data-zwrun")) { zwRun(); return; }
+    if (d.zwadd) { zwAdd(d.zwadd); return; }
+  }
   if (ui.pop === "scrap") {
     const S = scrap();
     if (d.scsrc) { S.src = d.scsrc; renderPop(); return; }
@@ -7478,6 +7493,7 @@ function asmProps(u) {
     <div class="asmnav"><button class="ghost2" data-asmgo="-1" ${k <= 0 ? "disabled" : ""}>السابق</button><b>خطوة ${k + 1} من ${steps.length}</b><button class="primary" data-asmgo="1" ${k >= steps.length - 1 ? "disabled" : ""}>التالي</button></div>
     <div class="asmdots">${steps.map((x, i) => `<button class="${i === k ? "on" : i < k ? "done" : ""}" data-asmto="${i}" aria-label="${esc(x.t)}">${i + 1}</button>`).join("")}</div>
     <h3 class="asmt">${esc(s.t)}</h3><p class="hint">${esc(s.d)}</p>
+    ${s.i === ASM.side1 || s.i === ASM.top || s.i === ASM.side2 ? `<details class="elevbox"><summary>🔩 إزاي أخرم الأليتا؟ (شرح مصور بمقاسات الوحدة)</summary>${alitaGuideHtml(u)}</details>` : ""}
     ${layoutTables(L, s.i)}
     <details class="elevbox" ${[ASM.dividers, ASM.shelves, ASM.drawers, ASM.doors, ASM.finish].includes(s.i) ? "open" : ""}><summary>📐 الواجهة بالمقاسات</summary>${unitElevSvg(u, L)}</details>
     ${s.pieces.length ? `<table class="tbl"><thead><tr><th>الرقم</th><th>القطعة</th><th>المقاس</th></tr></thead><tbody>${s.pieces.map((p) => `<tr><td class="num"><b>${esc(p.code)}</b></td><td>${esc(p.name)}</td><td class="num">${n1(p.lb.h)}×${n1(p.lb.w)}</td></tr>`).join("")}</tbody></table>` : ""}
@@ -9620,6 +9636,7 @@ function renderWorker() {
     const steps = asmPlan(u);
     const k = W.step ?? -1;
     side += `<div class="wsteps">${steps.map((st, i) => `<button class="wstep ${k === i ? "on" : ""}" data-wstep="${i}"><span class="wstepn">${i + 1}</span><span class="wstepi">${STEP_ICON[st.i] || "🔧"}</span><small>${esc(st.t)}</small><em>${st.pieces.length}</em></button>`).join("")}</div>
+      <button class="add" data-walita>${W.alita ? "🔩 اقفل شرح خرم الأليتا" : "🔩 إزاي أخرم الأليتا؟ (شرح مصور)"}</button>${W.alita ? alitaGuideHtml(u, { compact: true }) : ""}
       ${k >= 0 && steps[k] ? `<div class="wstepd"><p>${esc(steps[k].d)}</p><div class="wcodes">${steps[k].pieces.map((p) => `<button class="wcodeb" data-wpiece="${esc(p.code || "")}">${esc(p.code || "?")}</button>`).join("")}</div>${steps[k].hardware.length ? `<div class="whw small">${steps[k].hardware.map(([a, v]) => `<div class="whwrow"><span class="whwic">${hwIcon(a)}</span><b class="wnum" dir="ltr">${v}</b><small>${esc(a)}</small></div>`).join("")}</div>` : ""}<button class="wb-big" data-wsaytext="${esc(`خطوة ${k + 1}: ${steps[k].t}. ${steps[k].d}`)}">🔊 اسمع</button></div>` : `<p class="hint">دوس على خطوة — الـ3D بيوريك اللي اتركب لحد دلوقتي</p>`}`;
   } else if (W.tab === "install") {
     const p = r.params || {}, poses = projectPoses(state.project), L = poses.get(u.id), segs = state.project.room ? Room.segments(state.project.room) : [];
@@ -10201,6 +10218,251 @@ function scrapAdd(id) {
   state.project.units.push(u); state.sel = u.id; ensureCodes(state.project);
   save(); ui.pop = null; renderPop(); render(true);
   alertBar(`♻️ اتضافت «${u.name}» — ولما تقصها خليك على وضع «البواقي الأول» في خطة القص.`);
+}
+
+// ================================================================== v69 — how to drill the minifix + dowel joints (الأليتا), drawn from the unit's numbers
+/** the assembly-joint numbers of a unit (cm): dowel Ø, edge distance, spacing, face/edge depths, cam Ø/depth (kitchen params or NOVERA defaults) */
+function alitaNums(u) {
+  const p = (u && R(u)?.params) || u?.params || {};
+  const g = (k, d) => (p[k] != null && Number.isFinite(+p[k]) ? +p[k] : d);
+  return { d: g("assembly_hole_diameter", 0.8), e: g("assembly_edge_distance", 1.0), s: g("assembly_hole_spacing", 2.8), fd: g("assembly_side_depth", 0.8), ed: g("assembly_base_depth", 3.2), cd: g("assembly_cam_diameter", 1.5), cdep: g("assembly_cam_depth", 1.4), t: g("panel_thickness", 1.8), on: !!p.include_assembly_holes };
+}
+const mm = (v) => `${Math.round(v * 10)} مم`;
+/** two pictures: a section through the joint (side face ↔ base edge) and a plan of one 3-hole set */
+function alitaSvg(N, { W = 440 } = {}) {
+  const ink = "#1b1b1b", wood = "#e8d9bd", wood2 = "#d9c39a", gold = "#b07d12", red = "#c0392b", blue = "#1f6fb2", f = "IBM Plex Arabic, system-ui";
+  // --- section through the joint, zoomed: the side stands on the left (face toward the base), the base butts into it with its edge
+  const sc = 20; // px per cm
+  const t = N.t * sc, H1 = 270, x0 = 40, y0 = 40, sideH = 150, baseLen = Math.min(W - x0 - t - 150, 11 * sc);
+  const joint = x0 + t, yc = y0 + 95 + t / 2;
+  const edgeHole = N.ed * sc, faceHole = N.fd * sc, holeD = N.d * sc, camD = N.cd * sc, camDep = N.cdep * sc, camX = joint + edgeHole;
+  const dim = (x1, x2, y, label, color = ink, above = false, anchor = "middle") => `<g stroke="${color}" stroke-width="0.9" fill="${color}" font-size="11" direction="rtl"><line x1="${x1}" x2="${x2}" y1="${y}" y2="${y}"/><line x1="${x1}" x2="${x1}" y1="${y - 5}" y2="${y + 5}"/><line x1="${x2}" x2="${x2}" y1="${y - 5}" y2="${y + 5}"/><text x="${anchor === "middle" ? (x1 + x2) / 2 : x1}" y="${above ? y - 5 : y + 14}" text-anchor="${anchor === "middle" ? "middle" : "end"}" stroke="none">${label}</text></g>`;
+  let g = `<svg viewBox="0 0 ${W} ${H1}" width="100%" style="max-width:${W}px;display:block" font-family="${f}" font-size="11" direction="rtl">
+    <text x="${W - 4}" y="16" font-weight="700" font-size="13" text-anchor="start" fill="${ink}">١) قطاع في الوصلة — الجنب (وش) × القاعدة (حرف)</text>
+    <rect x="${x0}" y="${y0}" width="${t}" height="${sideH}" fill="${wood}" stroke="${ink}"/>
+    <rect x="${joint}" y="${yc - t / 2}" width="${baseLen}" height="${t}" fill="${wood2}" stroke="${ink}"/>
+    <rect x="${joint - faceHole}" y="${yc - holeD / 2}" width="${faceHole}" height="${holeD}" fill="#fff" stroke="${red}" stroke-width="1.3"/>
+    <rect x="${joint}" y="${yc - holeD / 2}" width="${edgeHole}" height="${holeD}" fill="#fff" stroke="${red}" stroke-width="1.3"/>
+    <rect x="${camX - camD / 2}" y="${yc - t / 2}" width="${camD}" height="${camDep}" fill="#fff" stroke="${blue}" stroke-width="1.5"/>
+    <line x1="${joint - faceHole + 3}" x2="${camX}" y1="${yc}" y2="${yc}" stroke="${gold}" stroke-width="3.5"/><circle cx="${joint - faceHole + 4}" cy="${yc}" r="3.5" fill="${gold}"/><circle cx="${camX}" cy="${yc - t / 2 + camDep / 2}" r="${camD / 2 - 2}" fill="none" stroke="${blue}" stroke-dasharray="3 2"/>
+    ${dim(joint - faceHole, joint, yc + t / 2 + 16, `وش ${mm(N.fd)}`, red, false, "left")}
+    ${dim(joint, joint + edgeHole, yc + t / 2 + 44, `حرف ${mm(N.ed)} · Ø${mm(N.d)}`, red, false, "left")}
+    <line x1="${joint}" x2="${joint}" y1="${yc + t / 2}" y2="${yc + t / 2 + 48}" stroke="${red}" stroke-width="0.6" stroke-dasharray="2 2"/><line x1="${joint + edgeHole}" x2="${joint + edgeHole}" y1="${yc + t / 2}" y2="${yc + t / 2 + 48}" stroke="${red}" stroke-width="0.6" stroke-dasharray="2 2"/>
+    ${dim(joint, camX, y0 + 30, `مركز الكام ${mm(N.ed)} من الحرف`, blue, true)}
+    <line x1="${camX}" x2="${camX}" y1="${y0 + 30}" y2="${yc - t / 2}" stroke="${blue}" stroke-dasharray="3 2"/>
+    <text x="${camX + camD / 2 + 10}" y="${yc - t / 2 - 20}" text-anchor="end" fill="${blue}" direction="rtl">كام Ø${mm(N.cd)} عمق ${mm(N.cdep)}</text><text x="${camX + camD / 2 + 10}" y="${yc - t / 2 - 7}" text-anchor="end" fill="${blue}" direction="rtl">من وش القاعدة من جوه</text>
+    <text x="${camX + camD / 2 + 10}" y="${yc + 4}" text-anchor="end" fill="${gold}" direction="rtl">مسمار المينيفكس</text>
+    <text x="${x0 + t / 2}" y="${y0 - 6}" text-anchor="middle" fill="${ink}">الجنب</text>
+    <text x="${joint + baseLen - 4}" y="${yc + t / 2 + 78}" text-anchor="start" fill="${ink}">القاعدة — وشّها الجوّاني لفوق</text>
+  </svg>`;
+  // --- plan of one set on the base edge: dowel · bolt+cam · dowel at e, e+s, e+2s from the end
+  const px = 4; // px per mm
+  const H2 = 150, ex0 = 24, ey = 62, len = Math.min(W - 40, (N.e + 2 * N.s + 10) * 10 * px + 40);
+  const hx = (i) => ex0 + (N.e + i * N.s) * 10 * px;
+  g += `<svg viewBox="0 0 ${W} ${H2}" width="100%" style="max-width:${W}px;display:block;margin-top:8px" font-family="${f}" font-size="11" direction="rtl">
+    <text x="${W - 4}" y="16" font-weight="700" font-size="13" text-anchor="start" fill="${ink}">٢) الطقم الواحد على حرف القاعدة (منظر من فوق)</text>
+    <rect x="${ex0}" y="${ey - 16}" width="${len}" height="32" fill="${wood2}" stroke="${ink}"/>
+    ${[0, 1, 2].map((i) => `<circle cx="${hx(i)}" cy="${ey}" r="${i === 1 ? 7 : 6}" fill="#fff" stroke="${i === 1 ? gold : red}" stroke-width="1.8"/>${i === 1 ? `<circle cx="${hx(i)}" cy="${ey}" r="2.5" fill="${gold}"/>` : ""}`).join("")}
+    <g font-size="11"><text x="${hx(0)}" y="${ey - 24}" text-anchor="middle" fill="${red}">دوبل</text><text x="${hx(1)}" y="${ey - 24}" text-anchor="middle" fill="${gold}">مسمار + كام</text><text x="${hx(2)}" y="${ey - 24}" text-anchor="middle" fill="${red}">دوبل</text></g>
+    ${dim(ex0, hx(0), ey + 30, mm(N.e))}${dim(hx(0), hx(1), ey + 30, mm(N.s))}${dim(hx(1), hx(2), ey + 30, mm(N.s))}
+    <text x="${W - 4}" y="${ey + 66}" text-anchor="start" fill="${ink}">طقم عند كل طرف — وطقم تالت في النص لو الوصلة أطول من 60 سم</text>
+  </svg>`;
+  return g;
+}
+/** the step-by-step drilling guide for one unit (worker mode / assembly guide / props) */
+function alitaGuideHtml(u, { compact = false } = {}) {
+  const N = alitaNums(u);
+  const steps = [
+    ["📏", "علّم الطقم", `على حرف القاعدة (أو الرأس/الرف الثابت): 3 علامات على بعد ${mm(N.e)} من الطرف وبعدين كل ${mm(N.s)}. نفس العلامات على وش الجنب من جوه، على ارتفاع نص سمك اللوح (${mm(N.t / 2)}).`],
+    ["🔩", "خرم الحرف", `بنطة Ø${mm(N.d)} في حرف القاعدة، عمق ${mm(N.ed)} — في العلامات التلاتة. العمق مهم: المسمار لازم يوصل لحد الكام.`],
+    ["🪵", "خرم الوش", `بنطة Ø${mm(N.d)} في وش الجنب من جوه، عمق ${mm(N.fd)} بس (متعدّيش علشان ما تخرقش الوش برّه).`],
+    ["⭕", "خرم الكام", `من وش القاعدة من جوه (الوش اللي هيبقى لفوق): بنطة فورستنر Ø${mm(N.cd)} عمق ${mm(N.cdep)}، مركزها على بعد ${mm(N.ed)} من الحرف — بالظبط قدام الخرم الأوسط. الكام بيبقى في القاعدة مش في الجنب.`],
+    ["🔧", "ركّب", `اقلب مسمار المينيفكس في الخرم الأوسط في الجنب (ربع لفة بالمفك)، وحط الدوبل في الخرمين الجانبيين بشوية غراء. نزّل القاعدة على المسمار والدوبل وحط الكام في خرمه، السهم اللي عليه ناحية المسمار.`],
+    ["🔁", "اقفل", `لف الكام نص لفة لليمين لحد ما يشد. لو القاعدة ما لزقتش على الجنب تمام: ارجع الكام ولف المسمار لفة زيادة.`],
+  ];
+  const warn = !N.on && u ? `<p class="hint warn">⚠ أخرام الأليتا مش مفعّلة في الوحدة دي («🔩 التصنيع والتجميع → أخرام التجميع») — المقاسات هنا الافتراضية.</p>` : "";
+  return `<div class="alita ${compact ? "compact" : ""}">${alitaSvg(N, { W: compact ? 360 : 440 })}${warn}
+    <div class="alsteps">${steps.map(([ic, t, d], i) => `<div class="alstep" data-wsaytext="${esc(t + ". " + d)}"><span class="aln">${i + 1}</span><span class="alic">${ic}</span><div><b>${esc(t)}</b><p>${esc(d)}</p></div></div>`).join("")}</div>
+    <p class="hint">القاعدة التي بتدخل: الطقم = دوبلين + مسمار كام في النص · في كل طرف طقم، وفي النص طقم زيادة لو الوصلة أطول من 60 سم. لو خرمت الحرف بعمق أقل من ${mm(N.ed)} الكام مش هيمسك المسمار.</p></div>`;
+}
+
+// ================================================================== v69 — "zero waste": a kitchen (or units) that eats exactly the sheets you have
+/** library items the search mixes, with the widths it may give them (cm) */
+const zwRange = (a, b, step = 5) => Array.from({ length: Math.floor((b - a) / step) + 1 }, (_, i) => a + i * step);
+const ZW_CANDS = {
+  base: [
+    { k: "k_sink", w: zwRange(60, 100), once: true, tag: "حوض" }, { k: "k_base_drawers", w: zwRange(40, 90), tag: "أدراج" }, { k: "k_base2", w: zwRange(60, 100), tag: "ضلفتين" },
+    { k: "k_drawer_doors", w: zwRange(60, 90), tag: "درج + ضلفتين" }, { k: "k_base1_45", w: zwRange(30, 60), tag: "ضلفة" }, { k: "k_base_open30", w: zwRange(20, 40), tag: "رفوف مفتوحة" },
+  ],
+  wall: [
+    { k: "k_wall2", w: zwRange(60, 100), tag: "علوية ضلفتين" }, { k: "k_wall1_40", w: zwRange(30, 60), tag: "علوية ضلفة" }, { k: "k_wall_flip", w: zwRange(40, 90), tag: "قلاب" }, { k: "k_wall_open60", w: zwRange(30, 80, 10), tag: "رف مفتوح" },
+  ],
+};
+const ZW_MODES = { kitchen: "مطبخ كامل (سفلي + علوي)", base: "سفلي بس", wall: "علوي بس" };
+function zw() { return (ui.zw ??= { mode: "kitchen", carcass: { lib: "", n: 1 }, front: { lib: "", n: 0 }, back: { lib: "", n: 0 }, res: null, busy: false, msg: "" }); }
+const zwCache = new Map();
+/** one candidate at a width: its unit and its cut pieces per pool (carcass 18 mm / fronts / thin backs) */
+function zwUnit(c, w) {
+  const key = `${c.k}|${w}`;
+  if (zwCache.has(key)) return zwCache.get(key);
+  let out = null;
+  try {
+    const u = scrapUnit({ ds: { kitchen: c.k } }, w), G = scrapGroups(u);
+    if (G) {
+      const pools = { carcass: [], front: [], back: [] };
+      for (const g of G.groups) (g.role === "front" ? pools.front : pools.carcass).push(...g.parts);
+      for (const pt of G.thin) pools.back.push({ name: pt.name, w: pt.label.w, h: pt.label.h, rotate: true });
+      const area = Object.fromEntries(Object.entries(pools).map(([k, l]) => [k, l.reduce((a, p) => a + p.w * p.h, 0)]));
+      out = { c, w, u, pools, area, row: c.k.startsWith("k_wall") ? "wall" : "base" };
+    }
+  } catch { out = null; }
+  zwCache.set(key, out);
+  return out;
+}
+function zwSheet() { const o = cutOptsSafe(); return { W: +o.sheetW, H: +o.sheetH, kerf: +o.kerf, trim: +o.trim, usable: (+o.sheetW - 2 * +o.trim) * (+o.sheetH - 2 * +o.trim) }; }
+/** the pools the user has: separate fronts only when front sheets were given; thin backs only when back sheets were given */
+function zwPools() {
+  const Z = zw(), sh = zwSheet();
+  const P = [{ id: "carcass", n: Math.max(1, +Z.carcass.n || 1), lib: Z.carcass.lib, roles: ["carcass", ...(+Z.front.n > 0 ? [] : ["front"])] }];
+  if (+Z.front.n > 0) P.push({ id: "front", n: +Z.front.n, lib: Z.front.lib, roles: ["front"] });
+  if (+Z.back.n > 0) P.push({ id: "back", n: +Z.back.n, lib: Z.back.lib, roles: ["back"] });
+  for (const p of P) p.avail = p.n * sh.usable;
+  return P;
+}
+const zwArea = (set, pools) => Object.fromEntries(pools.map((P) => [P.id, set.reduce((a, it) => a + P.roles.reduce((b, r) => b + it.area[r], 0), 0)]));
+let zwWorker = null;
+/** pack every variant's pieces on the pools' sheets (one worker call): sheets used per pool and whether it fits */
+async function zwEval(variants, pools, timeCap) {
+  const sh = zwSheet(), groups = [];
+  variants.forEach((set, vi) => { for (const P of pools) { const parts = set.flatMap((it) => P.roles.flatMap((r) => it.pools[r])); if (parts.length) groups.push({ key: `${vi}#${P.id}`, sheetW: sh.W, sheetH: sh.H, parts }); } });
+  const opts = { kerf: sh.kerf, trim: sh.trim, timeCap };
+  let out;
+  try {
+    if (!zwWorker) zwWorker = new Worker(new URL("./cutworker.js", import.meta.url), { type: "module" });
+    out = await new Promise((res, rej) => { const id = "zw" + Date.now() + Math.random(); zwWorker.onmessage = (e) => { if (e.data.id === id) res(e.data.out); }; zwWorker.onerror = rej; zwWorker.postMessage({ id, groups, opts }); });
+  } catch { out = groups.map((g) => ({ key: g.key, result: optimize(g.parts, { ...opts, sheetW: g.sheetW, sheetH: g.sheetH }) })); }
+  const by = Object.fromEntries(out.map((x) => [x.key, x.result]));
+  return variants.map((set, vi) => {
+    const used = {}; let fits = true;
+    for (const P of pools) { const r = by[`${vi}#${P.id}`]; const n = r ? (r.stats?.sheets ?? 0) + ((r.oversized?.length || 0) ? 99 : 0) : 0; used[P.id] = n; if (n > P.n) fits = false; }
+    const area = zwArea(set, pools), avail = pools.reduce((a, P) => a + P.avail, 0), tot = pools.reduce((a, P) => a + area[P.id], 0);
+    return { set, used, fits, area, waste: avail ? 1 - tot / avail : 1, plans: fits ? Object.fromEntries(pools.map((P) => [P.id, by[`${vi}#${P.id}`] || null])) : null };
+  });
+}
+/** a set's units lined up: base units along the wall, wall units above with their own run */
+function zwLineUp(set) {
+  let xb = 0, xw = 0;
+  return set.map((it) => { const u = clone(it.u); const at = it.row === "wall" ? xw : xb; if (it.row === "wall") xw += it.w; else xb += it.w; return { u, at, it }; });
+}
+const zwKey = (set) => set.map((it) => `${it.c.k}:${it.w}`).sort().join(",");
+async function zwRun() {
+  const Z = zw(), pools = zwPools(), sh = zwSheet();
+  if (!(sh.W > 0 && sh.H > 0)) { alertBar("حدد مقاس اللوح في إعدادات القص الأول."); return; }
+  Z.busy = true; Z.res = null; Z.msg = "بيجهّز الوحدات…"; renderPop();
+  await new Promise((r) => setTimeout(r, 30));
+  const rows = Z.mode === "kitchen" ? ["base", "wall"] : [Z.mode];
+  const cands = rows.flatMap((r) => ZW_CANDS[r].map((c) => ({ ...c, row: r })));
+  const items = cands.flatMap((c) => c.w.map((w) => zwUnit(c, w)).filter(Boolean));
+  if (!items.length) { Z.busy = false; Z.msg = ""; alertBar("مفيش وحدات اتحسبت."); renderPop(); return; }
+  const avail = pools.reduce((a, P) => a + P.avail, 0);
+  const areaOf = (it) => pools.reduce((a, P) => a + P.roles.reduce((b, r) => b + it.area[r], 0), 0);
+  const smallest = Math.min(...items.map(areaOf));
+  // 3 seeds: a balanced kitchen, drawer-heavy, door-heavy — each grown until the sheets are full
+  const seeds = [
+    ["k_sink", "k_base_drawers", "k_wall2", "k_base2", "k_wall_flip", "k_base1_45", "k_wall1_40", "k_drawer_doors", "k_wall2", "k_base2", "k_wall1_40"],
+    ["k_base_drawers", "k_wall2", "k_sink", "k_base_drawers", "k_wall_flip", "k_drawer_doors", "k_wall1_40", "k_base_drawers", "k_wall2"],
+    ["k_base2", "k_wall2", "k_sink", "k_base1_45", "k_wall1_40", "k_base2", "k_wall2", "k_base1_45", "k_wall_flip", "k_base2"],
+  ].map((l) => l.filter((k) => cands.some((c) => c.k === k)));
+  const found = new Map();
+  const t0 = performance.now(), budget = 14000;
+  const note = (m) => { Z.msg = m; const el = $("#pop [data-zwmsg]"); if (el) el.textContent = m; };
+  const pick = (k, w0) => { const l = items.filter((it) => it.c.k === k); if (!l.length) return null; return l.reduce((a, b) => (Math.abs(b.w - w0) < Math.abs(a.w - w0) ? b : a)); };
+  for (let si = 0; si < seeds.length; si++) {
+    if (performance.now() - t0 > budget) break;
+    const order = seeds[si]; if (!order.length) continue;
+    // start: typical widths, stop at ~75% of the sheets
+    let set = []; let i = 0;
+    const typical = { k_sink: 80, k_base_drawers: 60, k_wall2: 80, k_base2: 80, k_wall_flip: 60, k_base1_45: 45, k_wall1_40: 40, k_drawer_doors: 80, k_base_open30: 30, k_wall_open60: 60 };
+    while (i < order.length * 3) { const k = order[i % order.length]; i++; if (cands.find((c) => c.k === k)?.once && set.some((it) => it.c.k === k)) continue; const it = pick(k, typical[k] || 60); if (!it) continue; const a = zwArea([...set, it], pools); if (pools.some((P) => a[P.id] > P.avail * 0.78)) break; set.push(it); }
+    if (!set.length) continue;
+    let cur = (await zwEval([set], pools, 0.25))[0];
+    if (!cur.fits) { // shrink until it fits
+      let guard = 0; while (!cur.fits && cur.set.length > 1 && guard++ < 6) { const s2 = cur.set.slice(0, -1); cur = (await zwEval([s2], pools, 0.25))[0]; }
+      if (!cur.fits) continue;
+    }
+    found.set(zwKey(cur.set), cur);
+    let stale = 0, round = 0;
+    while (stale < 3 && round++ < 12 && performance.now() - t0 < budget) {
+      note(`بيكمّل الألواح… (تجربة ${si + 1}/${seeds.length}، خطوة ${round}) — هدر دلوقتي ${Math.round(cur.waste * 100)}%`);
+      const room = pools.map((P) => P.avail - cur.area[P.id]);
+      const variants = [];
+      // widen a unit a step
+      cur.set.forEach((it, idx) => { const wider = items.filter((x) => x.c.k === it.c.k && x.w > it.w).sort((a, b) => a.w - b.w)[0]; if (wider) { const v = cur.set.slice(); v[idx] = wider; variants.push(v); } });
+      // add a unit that still fits in the remaining area
+      const adds = items.filter((it) => !(it.c.once && cur.set.some((x) => x.c.k === it.c.k)) && pools.every((P, pi) => P.roles.reduce((b, r) => b + it.area[r], 0) <= room[pi] * 1.02)).sort((a, b) => areaOf(b) - areaOf(a));
+      for (const it of adds.slice(0, 5)) variants.push([...cur.set, it]);
+      // swap one unit for a different kind of a similar width
+      cur.set.slice(0, 3).forEach((it, idx) => { const alt = items.filter((x) => x.c.k !== it.c.k && x.row === it.row && Math.abs(x.w - it.w) <= 10 && !(x.c.once && cur.set.some((y) => y.c.k === x.c.k))); if (alt.length) { const v = cur.set.slice(); v[idx] = alt[(round + idx) % alt.length]; variants.push(v); } });
+      // narrow one unit a step and add a small unit in the freed room
+      cur.set.forEach((it, idx) => { const narrower = items.filter((x) => x.c.k === it.c.k && x.w < it.w).sort((a, b) => b.w - a.w)[0]; if (!narrower) return; const freed = areaOf(it) - areaOf(narrower); const small = items.filter((x) => x.row === it.row && areaOf(x) <= freed + Math.min(...room) && !(x.c.once && cur.set.some((y) => y.c.k === x.c.k))).sort((a, b) => areaOf(b) - areaOf(a))[0]; if (small) { const v = cur.set.slice(); v[idx] = narrower; v.push(small); variants.push(v); } });
+      const uniq = [...new Map(variants.map((v) => [zwKey(v), v])).values()].filter((v) => !found.has(zwKey(v)) && pools.every((P) => zwArea(v, pools)[P.id] <= P.avail)).slice(0, 8);
+      if (!uniq.length) break;
+      const ev = await zwEval(uniq, pools, 0.18);
+      for (const e of ev) if (e.fits) found.set(zwKey(e.set), e);
+      const best = ev.filter((e) => e.fits).sort((a, b) => a.waste - b.waste)[0];
+      if (best && best.waste < cur.waste - 0.002) { cur = best; stale = 0; } else stale++;
+      if (cur.waste < 0.045) break;
+    }
+  }
+  const all = [...found.values()].sort((a, b) => a.waste - b.waste);
+  // keep results that differ from each other (not the same set plus one small change)
+  const res = []; for (const r of all) { if (res.length >= 4) break; if (res.every((x) => Math.abs(x.waste - r.waste) > 0.01 || zwKey(x.set) !== zwKey(r.set))) res.push(r); }
+  Z.res = { list: res.map((r, i) => ({ ...r, id: "zw" + i, line: zwLineUp(r.set) })), tried: found.size, pools, sh, secs: Math.round((performance.now() - t0) / 100) / 10 };
+  Z.busy = false; Z.msg = "";
+  renderPop();
+  setTimeout(() => { for (const x of Z.res.list) { const im = $(`[data-zwthumb="${x.id}"]`); if (!im || im.src) continue; try { const sh2 = thumbs.shot(x.line.map(({ u, at }) => ({ u, at })), 300, 170); if (sh2?.url) im.src = sh2.url; } catch { /* no 3D */ } } }, 60);
+}
+/** the set's units with the pools' materials, lined up and added to the project */
+function zwAdd(id) {
+  const Z = zw(), x = Z.res?.list.find((r) => r.id === id); if (!x) return;
+  const P = state.project, set = x.line.map(({ u, at, it }) => {
+    const v = clone(u); v.id = uid(); delete v.pos; v.libs ??= {};
+    for (const pool of Z.res.pools) if (pool.lib) for (const role of pool.roles) { if (!KU.K_MATS[role]) continue; v.libs[role] = pool.lib; v.params[KU.K_MATS[role][1]] = Catalog.LIB[pool.lib] ? Catalog.libName(pool.lib) : Mat.get(pool.lib)?.name || ""; if (role === "front" && Catalog.LIB[pool.lib]) v.params.door_color = Catalog.LIB[pool.lib][2]; }
+    return { u: v, at, it };
+  });
+  pinOthers(null);
+  for (const { u } of set) P.units.push(u);
+  const poses = projectPoses(P);
+  const first = set.find((s) => s.it.row !== "wall") || set[0];
+  const L0 = poses.get(first.u.id);
+  if (L0?.wall) { const s0 = L0.s - first.at; for (const { u, at } of set) u.pos = { wall: L0.wall, s: Math.max(0, Math.round((s0 + at) * 10) / 10) }; }
+  state.whole = true; state.sel = set[0].u.id; ensureCodes(P);
+  ui.pop = null; renderPop(); save(); render(true);
+  alertBar(`♻️ اتضاف ${set.length} وحدات بهدر ${Math.round(x.waste * 100)}% — افتح خطة القص تشوف الألواح.`);
+}
+function zwPop() {
+  const Z = zw(), sh = zwSheet();
+  const libs = [...Object.entries(Catalog.LIB).filter(([k]) => !STONE(k) && !/^(glass_|mirror|alu_|stainless|copper)/.test(k)).map(([k, v]) => [k, v[0]]), ...Mat.all().map((m) => [m.id, m.name])];
+  const matRow = (key, label, hint) => `<div class="zwrow"><b>${label}</b><select data-zwlib="${key}"><option value="">${hint}</option>${libs.map(([k, l]) => `<option value="${k}" ${Z[key].lib === k ? "selected" : ""}>${esc(l)}</option>`).join("")}</select><label class="f"><span>عدد الألواح</span><input type="text" inputmode="numeric" data-numf data-zwn="${key}" value="${Z[key].n}"></label></div>`;
+  let h = `<div class="popbox scrapbox" role="dialog" aria-label="صفر هدر"><div class="libhead"><h2>♻️ صفر هدر — مطبخ من الألواح اللي عندك</h2><button class="x" data-close aria-label="قفل">×</button></div>
+    <p class="hint">قول عندك كام لوح من كل خامة، والبرنامج يركّب مطبخ (أو وحدات) مقاساته متظبطة بحيث القطع تاكل الألواح دي بالكامل — بيجرّب عشرات التوليفات ويقصّها فعلاً على اللوح ${n1(sh.W)}×${n1(sh.H)} ويختار الأقل هدراً. الهدر اللي بيفضل هو شريحة المنشار (${n1(sh.kerf * 10)} مم) وتهذيب الحرف.</p>
+    <div class="seg">${Object.entries(ZW_MODES).map(([k, l]) => `<button data-zwmode="${k}" class="${Z.mode === k ? "on" : ""}">${l}</button>`).join("")}</div>
+    ${matRow("carcass", "الهيكل (18 مم)", "لوح خام (أي خامة)")}
+    ${matRow("front", "الضلف ووش الأدراج", "نفس لوح الهيكل (0 = من نفس الألواح)")}
+    ${matRow("back", "الظهور 6 مم", "0 = من غير حساب (لوح رفيع براه)")}
+    <div class="btnrow"><button class="primary" data-zwrun ${Z.busy ? "disabled" : ""}>${Z.busy ? "بيحسب…" : "♻️ صمّملي"}</button></div>
+    ${Z.busy ? `<p class="hint" data-zwmsg>${esc(Z.msg || "بيحسب…")}</p>` : ""}`;
+  if (Z.res) {
+    const R0 = Z.res;
+    h += `<p class="hint">اتجرّبت ${R0.tried} توليفة في ${R0.secs} ثانية · الألواح: ${R0.pools.map((P) => `${P.n} ${P.id === "carcass" ? "هيكل" : P.id === "front" ? "ضلف" : "ظهور"}`).join(" + ")}.</p>`;
+    if (!R0.list.length) h += `<p class="e">مفيش توليفة لقيت تدخل في الألواح دي — زوّد لوح أو جرّب «سفلي بس».</p>`;
+    h += `<div class="zwgrid">` + R0.list.map((x, i) => {
+      const names = x.set.map((it) => `${it.u.name}`).join("، ");
+      const runB = x.set.filter((it) => it.row !== "wall").reduce((a, it) => a + it.w, 0), runW = x.set.filter((it) => it.row === "wall").reduce((a, it) => a + it.w, 0);
+      return `<div class="sccard zwcard"><img data-zwthumb="${x.id}" alt=""><div class="scinfo"><b>${i === 0 ? "⭐ " : ""}هدر ${Math.round(x.waste * 100)}% — ${x.set.length} وحدات${runB ? ` · سفلي ${n1(runB)} سم` : ""}${runW ? ` · علوي ${n1(runW)} سم` : ""}</b><small>${esc(names)}</small><small>${R0.pools.map((P) => `${P.id === "carcass" ? "الهيكل" : P.id === "front" ? "الضلف" : "الظهور"}: ${x.used[P.id]} من ${P.n} لوح · ${n1(x.area[P.id] / 10000)} م² من ${n1(P.avail / 10000)}`).join(" · ")}</small></div><div class="scbtns"><button class="primary sm" data-zwadd="${x.id}">➕ ضيف المطبخ للمشروع</button></div></div>`;
+    }).join("") + `</div>`;
+  }
+  return h + `</div>`;
 }
 
 const EXPORTS = [
