@@ -38,6 +38,7 @@ cd /home/claude/novera-app && python3 tools/build_pwa.py && python3 tools/build_
 - Kitchen units: base depth 58 includes the door (inset, face at y=0); corner units get their depth from `cornerFit()` in app.js unless set by hand.
 
 ## History (latest first)
+- Tour video (v63): scratchpad/tour/{capture.py (Playwright 1920×1080 frames per shot, __dbg hooks), cards.py (IBM Plex Arabic captions/chapter cards via Chromium), music.py (numpy pad), assemble.py + final.py (ffmpeg zoompan/xfade, run final.py in the background — the 50-input xfade takes ~5 min)} → outputs/NOVERA-Studio-tour-v63.mp4 (1:53, 14 chapters). Re-run capture+cards+assemble after big UI changes.
 - v63: worker mode «👷 وضع العمال» (menu item + command palette; app.js workerOn/workerOff/renderWorker/workerTap/workerIsolate/sayAr, `ui.worker`, body.worker, #workerBar on the stage):
   unit chips by code, icon tabs — pieces (list + big card: pieceSvg, L/W/T big digits, «لوحدها» isolate via ui.hidePart, «اسمع» speech ar-EG), drawings (projSvg front/side/plan), hardware (HW_ICON emoji + counts),
   steps (asmPlan with ui.asm driving the 3D), install (unit dims, wall mount height, counter height, kick, hood clearance, distance along the wall); tapping a piece in the 3D opens its card. CSS .workerbar*.
