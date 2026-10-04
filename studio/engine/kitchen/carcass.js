@@ -1419,8 +1419,31 @@ export class CarcassBuilder {
         }
         if (!glass)
             this.recordDoorLabel(label, x0, x1, dz0, frontDz1, null); // the glass front's frame rails and glass were labelled by buildFramedGlassDoor
-        const [floorTop, floorBottom] = this.drawerBoxesEnabled() && boxDz1 > dz0 ? this.buildDrawerBox(sub, x0, x1, fy1, dz0, boxDz1, label, null, glass) : [dz0, dz0];
+        // an inner (hidden) drawer behind a tall front: the main box takes the lower half, the inner box with its own small front sits above it
+        const inner = this.drawerBoxesEnabled() && this.drawerInnerAt(index) && frontDz1 - dz0 >= cm(24.0);
+        const mainDz1 = inner ? dz0 + (frontDz1 - dz0) * 0.5 - cm(0.5) : boxDz1;
+        const [floorTop, floorBottom] = this.drawerBoxesEnabled() && mainDz1 > dz0 ? this.buildDrawerBox(sub, x0, x1, fy1, dz0, mainDz1, label, null, glass, inner ? cm(1.0) : null) : [dz0, dz0];
         this.buildDrawerInsertFor(sub, index, x0, x1, fy1, dz0, floorTop);
+        if (inner) {
+            const t = this.drawerBoxT(), ig = e.addGroup();
+            ig.name = `${label} - درج داخلي`;
+            const ie = ig.entities;
+            const iz0 = mainDz1 + cm(1.0), iz1 = frontDz1 - cm(1.5), ify0 = fy1 + cm(1.0), ify1 = ify0 + t;
+            const ix0 = x0 + this.drawerBoxSideClearance(), ix1 = x1 - this.drawerBoxSideClearance();
+            if (iz1 - iz0 >= cm(6.0) && ix1 > ix0) {
+                const f = createBox(this.ctx, ie, `${label} - وش داخلي`, ix0, ify0, iz0, ix1, ify1, iz1, this.carcassMaterial());
+                assignLayer(this.ctx, f, TAGS.front);
+                if (this.edgeBandingEnabled())
+                    bandAllSideEdges(this.ctx, f, this.edgeBandingMaterial());
+                this.ctx.labels.add(this.unitId, this.unitGroupName(), `${label} - وش داخلي`, ix1 - ix0, iz1 - iz0, t, {
+                    banded: { top: true, bottom: true, left: true, right: true }, material: this.carcassMaterialName(),
+                    note: "درج داخلي مخفي ورا الوش الكبير — بيتسحب لوحده على مجاريه بعد ما الدرج الكبير يتفتح؛ قصّة إيد في الحرف العلوي",
+                });
+                this.buildDrawerBox(ie, ix0, ix1, ify1, iz0, iz1, `${label} - داخلي`, rmax(this.drawerBoxDepthCm() - cm(3.0), cm(20.0)), false, cm(1.0));
+                this.ctx.labels.addAssemblyMark(this.unitId, this.unitGroupName(), "drawer", `${label} - داخلي`, iz0 - this.drawerSlideClearance() - this.z0Carcass());
+                tagDrawerSlide(ig, this.drawerSlideBase() + index * this.drawerSlideStep() + cm(8.0));
+            }
+        }
         this.ctx.labels.addAssemblyMark(this.unitId, this.unitGroupName(), "drawer", label, floorBottom - this.drawerSlideClearance() - this.z0Carcass());
         const openDistance = this.drawerSlideBase() + index * this.drawerSlideStep();
         tagDrawerSlide(group, openDistance);
@@ -1552,7 +1575,14 @@ export class CarcassBuilder {
     drawerBoxBaseGroove() {
         return pcm(this.p["drawer_box_base_groove"]);
     }
-    buildDrawerBox(e, fx0, fx1, fby, dz0, dz1, label, depthOverride = null, glassFront = false) {
+    /** NOVERA v56: «درج تيربو» in wood — the box walls rise almost to the front's top (like a metal turbo box), on side runners */
+    drawerTurbo() {
+        return truthy(this.p["drawer_turbo"]);
+    }
+    drawerInnerAt(index) {
+        return truthy(this.p[`drawer_inner_${index + 1}`]);
+    }
+    buildDrawerBox(e, fx0, fx1, fby, dz0, dz1, label, depthOverride = null, glassFront = false, wallDropOverride = null) {
         const bx0 = fx0 + this.drawerBoxSideClearance();
         const bx1 = fx1 - this.drawerBoxSideClearance();
         if (bx1 <= bx0)
@@ -1566,7 +1596,7 @@ export class CarcassBuilder {
         if (t <= 0)
             return [dz0, dz0];
         const fh = dz1 - dz0;
-        const wallH = rmin(rmax(fh - this.drawerBoxWallDrop(), cm(1)), fh);
+        const wallH = rmin(rmax(fh - (wallDropOverride ?? (this.drawerTurbo() ? cm(1.5) : this.drawerBoxWallDrop())), cm(1)), fh);
         const sz0 = rmin(dz0 + this.drawerBoxBottomOffset(), dz0 + wallH - cm(1));
         const sz1 = dz0 + wallH;
         if (sz1 <= sz0)

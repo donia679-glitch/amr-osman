@@ -38,6 +38,10 @@ cd /home/claude/novera-app && python3 tools/build_pwa.py && python3 tools/build_
 - Kitchen units: base depth 58 includes the door (inset, face at y=0); corner units get their depth from `cornerFit()` in app.js unless set by hand.
 
 ## History (latest first)
+- v56: wooden turbo drawers + inner drawers + wooden pull-out (no metal mechanisms). carcass.js: `drawer_turbo` (box walls to 1.5 under the front top, `buildDrawerBox(..., wallDropOverride)`),
+  `drawer_inner_N` (main box takes the lower half, an inner box with a carcass-material «وش داخلي» sits above it in a sibling group tagged as a drawer, slide +8); hardware labels renamed for turbo (side full-extension).
+  Kitchen category `pullout` → `PulloutBuilder` (one tall front + full-height box via buildDrawerBox + N «صينية بول أوت» trays with front/back lips, two runner pairs; `pullout_tray_count`, `pullout_tray_lip`;
+  engine/kitchen/app.js replaces the slide count with «مجاري فول إكستنشن L سم للبول أوت (زوج)» ×2). Presets k_pullout20/30, k_pullout_tall, k_turbo_drawers; props: «أدراج تيربو خشب» bool + per-drawer «درج داخلي مخفي»; chips.
 - v55: freestanding cooker gap + built-in hood. Kitchen category `cooker_gap` → `CookerGapBuilder extends WasherGapBuilder` (no head/countertop; vented deck «قعدة البوتجاز»
   of `cooker_base_height` (10): deck board with vent-slot markers + front rail with Ø3 hole markers (createHoleMarkerY) + back/side rails; side via `washer_gap_side`; presets k_cooker_gap/k_cooker_gap90).
   Wall units: `include_hood` + `hood_height` (18) + `hood_duct_diameter` (15) in config.js; carcass.js `hoodEnabled/hoodLift/hoodDuctR`, inner/outerOpening z0 += hoodLift, `buildBottom` → `buildHoodShelf`
@@ -88,6 +92,7 @@ Amr wants the plugin updated in one go after all app edits are done. Pending for
 - corners: L-corner counter + plinth to the door face (engine/kitchen/corners.js v45), and the corner depth defaults (app.js `cornerFit()`:
   L corner_depth = depth − 1.8, diagonal cut = leg − depth) so corner units line up with the straight units.
 - dressing: compartment `drawer_glass` (glass drawer fronts: 4 frame rails + glass insert, v50) — port to the plugin's dressing layout + schema.
+- kitchen: `pullout` category (PulloutBuilder), `drawer_turbo`, `drawer_inner_N` (carcass.js buildSingleDrawer/buildDrawerBox wallDropOverride, v56) — port to the plugin.
 - kitchen: `cooker_gap` category + `include_hood`/`hood_height`/`hood_duct_diameter` on wall units (carcass hoodLift + buildHoodShelf, v55) — port to builders/config/dialog.
 - kitchen: `washer_gap` category (WasherGapBuilder + `washer_gap_side` param, v54) — port to the plugin's builders_categories.rb + config/dialog.
 - kitchen: `drawer_glass` param + carcass.js `drawerGlassAt`/`buildSingleDrawer`/`buildDrawerBox(glassFront)` (v53); panel: zone `glass` + catalog `glass` material + templates buildDrawers + checker skips (v53).

@@ -166,5 +166,15 @@ export function computeKitchen(input, opts = {}) {
     if (hj)
         for (const [k, v] of Object.entries(JSON.parse(String(hj))))
             res.hardware[k] = (res.hardware[k] ?? 0) + v;
+    // NOVERA v56: a wooden pull-out runs on two pairs of full-extension runners (top + bottom), not one
+    if (String(params["unit_category"]) === "pullout" && stats.drawers > 0) {
+        const L = Math.min(55, Math.max(30, Math.round((Number(params["depth"]) || 58) - 8)));
+        delete res.hardware["أزواج سكك أدراج"];
+        res.hardware[`مجاري فول إكستنشن ${L} سم للبول أوت (زوج)`] = 2 * stats.drawers;
+    }
+    if (String(params["drawer_turbo"]) === "true" || params["drawer_turbo"] === true) {
+        const n = res.hardware["أزواج سكك أدراج"];
+        if (n) { delete res.hardware["أزواج سكك أدراج"]; res.hardware["أزواج سكك أدراج جانبية فول إكستنشن (تيربو خشب)"] = n; }
+    }
     return res;
 }

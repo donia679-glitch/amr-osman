@@ -2240,8 +2240,10 @@ function renderChips() {
     if (p.unit_category === "washer_gap") { h += cycleChip("washer_gap_side", "جنب يمسك الرأس", "K_GAP_SIDE", p.washer_gap_side || "none") + cycleChip("top_style", "الرأس", "K_TOP", p.top_style) + togChip("include_assembly_holes", "أليتا", p.include_assembly_holes); el.innerHTML = `<div class="cbody">${h}</div>`; return; }
     if (p.unit_category === "cooker_gap") { h += cycleChip("washer_gap_side", "جنب تقفيلة", "K_GAP_SIDE", p.washer_gap_side || "none") + stepChip("cooker_base_height", "القعدة", n1(+p.cooker_base_height || 0), 1); el.innerHTML = `<div class="cbody">${h}</div>`; return; }
     if (p.unit_type === "wall" && !["open_shelf", "corner_glass_display", "corner"].includes(p.unit_category)) h += togChip("include_hood", "شفاط مدمج", p.include_hood) + (p.include_hood ? stepChip("hood_height", "فراغ الشفاط", n1(+p.hood_height || 18), 1) : "");
-    h += cycleChip("door_type", "الضلف", "K_DOORS", p.door_type);
+    if (p.unit_category === "pullout") h += stepChip("pullout_tray_count", "صواني", p.pullout_tray_count ?? 3, 1);
+    else h += cycleChip("door_type", "الضلف", "K_DOORS", p.door_type);
     if (p.door_type === "drawers" || p.door_type === "drawer_top_two_doors_bottom") h += stepChip("drawer_count", "أدراج", p.drawer_count, 1);
+    if (p.include_drawer_boxes && (p.door_type === "drawers" || p.door_type === "drawer_top_two_doors_bottom")) h += togChip("drawer_turbo", "تيربو خشب", p.drawer_turbo);
     if (p.include_shelves) h += stepChip("shelf_count", "أرفف", p.shelf_count, 1);
     h += cycleChip("door_position", "التركيب", "K_POS", p.door_position);
     h += cycleChip("kud_handles.type", "المقبض", "K_HANDLES", p.kud_handles?.type || "none");
@@ -2872,8 +2874,10 @@ function kitchenProps(p) {
     const n = Math.max(1, Math.min(8, +p.drawer_count || 1));
     let dr = "";
     for (let i = 1; i <= n; i++) dr += `<div class="grid2">${numF(`drawer${i}_height`, `ارتفاع درج ${i} (0 = تلقائي)`, p[`drawer${i}_height`])}${selF(`drawer_insert_${i}`, `تقسيمة درج ${i}`, KU.K_INSERT, p[`drawer_insert_${i}`] || "none")}</div>
+      ${p.include_drawer_boxes ? `<div class="bools">${boolF(`drawer_inner_${i}`, `درج داخلي مخفي ورا درج ${i} (لو ارتفاعه ≥ 24)`, p[`drawer_inner_${i}`])}</div>` : ""}
       ${p[`drawer_insert_${i}`] === "custom" ? `<div class="grid2">${textF(`drawer_insert_v_${i}`, "فواصل رأسية (سم من الشمال)", p[`drawer_insert_v_${i}`], "مثلاً 20, 45")}${textF(`drawer_insert_h_${i}`, "فواصل أفقية (سم من قدام)", p[`drawer_insert_h_${i}`], "مثلاً 15")}</div>` : ""}`;
-    h += `<details><summary>الأدراج بالتفصيل</summary><div class="grid2">${numF("drawer_gap", "المسافة بين الأدراج", p.drawer_gap, 0.1)}${numF("drawer_slide_base", "فتح أول درج (للعرض)", p.drawer_slide_base)}</div>${dr}
+    h += `<details><summary>الأدراج بالتفصيل</summary><div class="grid2">${numF("drawer_gap", "المسافة بين الأدراج", p.drawer_gap, 0.1)}${numF("drawer_slide_base", "فتح أول درج (للعرض)", p.drawer_slide_base)}</div>
+      ${p.include_drawer_boxes ? `<div class="bools">${boolF("drawer_turbo", "أدراج تيربو خشب (جوانب الصندوق عالية لحد الوش)", p.drawer_turbo)}</div><p class="hint">التيربو الخشب: صندوق خشب جوانبه بتطلع لحد 1.5 سم تحت حرف الوش بدل ما تنزل 5 سم — شكل التيربو المعدن بس بالخشب ومجاري جانبية. والدرج الداخلي: صندوق تاني بوش صغير من خامة الهيكل مستخبي ورا الوش الكبير على مجاريه لوحده.</p>` : ""}${dr}
       <div class="grid2">${numF("drawer_insert_height", "ارتفاع الفواصل", p.drawer_insert_height, 0.5)}${numF("drawer_insert_thickness", "سمك الفواصل", p.drawer_insert_thickness, 0.1)}${numF("drawer_insert_divider_count", "عدد الفواصل المستقيمة", p.drawer_insert_divider_count, 1)}</div>
       <p class="hint">سيب الارتفاع 0 والأدراج هتتقسم بالتساوي على المساحة الباقية.</p>${kglassField(p, n)}</details>`;
   }
