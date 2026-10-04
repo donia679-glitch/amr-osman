@@ -1147,7 +1147,8 @@ export class Engine {
             const key = `s${sec.index}c${ci}d${i}`;
             const grp = { key, kind: "drawer", name, open_distance: rround(boxLen * 0.75, 2) };
             this.drawer_groups.push(grp);
-            if (hasFront && c.drawer_glass) {
+            const glassHere = c.drawer_glass === true || (Array.isArray(c.drawer_glass) && c.drawer_glass.includes(i + 1));
+            if (hasFront && glassHere) {
                 // NOVERA v50: a glass drawer front — a wood frame (4 rails) with a glass panel in a groove; pulled from the top rail, no handle
                 // frame 4 cm wide (narrower on small fronts), glass 4 mm sits 8 mm deep in a groove in the middle of the rails;
                 // the frame IS the drawer's front wall: the box sides screw into the back of the stiles, the bottom runs into the bottom rail's groove
@@ -1176,7 +1177,7 @@ export class Engine {
                 this.placeHandle(name, key, fp, plan, fx0, fz0, fy0);
             }
             this.drawer_groups[this.drawer_groups.length - 1].slide_len = boxLen;
-            this.buildDrawerBox(name, key, bx0, bx1, boxY0, boxY0 + boxLen, bz0, bz1, hasFront && c.drawer_glass);
+            this.buildDrawerBox(name, key, bx0, bx1, boxY0, boxY0 + boxLen, bz0, bz1, hasFront && glassHere);
         });
     }
     hingeFixSides() {

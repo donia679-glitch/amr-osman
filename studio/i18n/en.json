@@ -2272,7 +2272,7 @@
 "لزق من": "Glue from",
 "مستطيل": "Rectangle",
 "مقبض/.": "handle/.",
-"من غير": "Without",
+"من غير": "none",
 "أدراج": "Drawers",
 "أورزة": "Grooves",
 "اتعمد": "Approved",
@@ -2700,7 +2700,7 @@
 "يمين": "Right",
 "ج.م": "EGP",
 "حفظ": "Save",
-"درج": "Drawer",
+"درج": "drawer",
 "سطح": "Top",
 "صرف": "Drain",
 "ظهر": "Back",
@@ -4662,5 +4662,8 @@
 "الحرف اللي تحت ليه مفحار الزجاج — الحرف اللي فوق هو مسكة السحب": "the bottom edge has the glass groove — the top edge is the pull",
 "مفحار الزجاج فوق، ومفحار قاعدة الدرج من ورا": "glass groove on top, drawer-bottom groove at the back",
 "جنب الصندوق بيتثبت في ضهره بدويلين ومسمارين": "the box side fixes to its back with two dowels and two screws",
-"القاعدة بتدخل في مفحار الفريم التحتاني من قدام": "the bottom runs into the bottom rail's groove at the front"
+"القاعدة بتدخل في مفحار الفريم التحتاني من قدام": "the bottom runs into the bottom rail's groove at the front",
+"كل الأدراج": "all drawers",
+"(تحت)": "(bottom)",
+"(فوق)": "(top)"
 }

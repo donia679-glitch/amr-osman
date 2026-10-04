@@ -2959,6 +2959,14 @@ function advancedFields(p, shown) {
   return h + "</details>";
 }
 
+/** which drawers get a glass front: none / all / tick the ones you want (1 = the bottom drawer) */
+function dglassField(si, ci, c) {
+  const n = Math.max(1, +c.drawer_count || 3), g = c.drawer_glass;
+  const all = g === true, list = Array.isArray(g) ? g : typeof g === "string" ? g.split(/[,\s،]+/).map(Number).filter((x) => x >= 1) : [];
+  const path = `sections.${si}.compartments.${ci}.drawer_glass`;
+  const chip = (v, l, on) => `<button class="chip tog ${on ? "on" : ""}" data-dglass="${path}" data-dgv="${v}">${l}</button>`;
+  return `<div class="dglass"><span>وش زجاج بفريم خشب</span><div class="chips2">${chip("none", "من غير", !all && !list.length)}${chip("all", "كل الأدراج", all)}${Array.from({ length: n }, (_, i) => chip(String(i + 1), `درج ${i + 1}${i === 0 ? " (تحت)" : i === n - 1 ? " (فوق)" : ""}`, !all && list.includes(i + 1))).join("")}</div></div>`;
+}
 function dressingProps(p) {
   let h = `<details open><summary>المقاسات والنظام</summary><div class="grid3">${numF("width", "العرض", p.width)}${numF("height", "الارتفاع", p.height)}${numF("depth", "العمق", p.depth)}</div><div class="grid2">
     ${numF("panel_t", "سمك الخشب", p.panel_t, 0.1)}${selF("construction", "تركيب الأجناب", D.CONSTRUCTIONS, p.construction)}
@@ -2991,7 +2999,7 @@ function dressingProps(p) {
         ${c.content === "dividers" ? numF(`sections.${si}.compartments.${ci}.sub_shelf_count`, "أرفف بين القواطيع", c.sub_shelf_count, 1) : ""}
         ${p.doors.layout === "per_section" ? selF(`sections.${si}.compartments.${ci}.door`, "الضلفة", D.DOORS, c.door) : ""}
         ${selF(`sections.${si}.compartments.${ci}.led`, "الليد", D.LED_MODES, c.led)}
-        ${c.content === "drawers" ? boolF(`sections.${si}.compartments.${ci}.drawer_front`, "الأدراج بوش", c.drawer_front) + (c.drawer_front !== false ? boolF(`sections.${si}.compartments.${ci}.drawer_glass`, "وش زجاج بفريم خشب", c.drawer_glass) : "") : ""}</div></div>`;
+        ${c.content === "drawers" ? boolF(`sections.${si}.compartments.${ci}.drawer_front`, "الأدراج بوش", c.drawer_front) + (c.drawer_front !== false ? dglassField(si, ci, c) : "") : ""}</div></div>`;
     });
     h += `</div><button class="add sm2" data-compadd="${si}">${ICON.plus}ضيف فراغ (من فوق)</button></div>`;
   });
@@ -3252,6 +3260,16 @@ props.addEventListener("click", (e) => {
   const b = e.target.closest("button");
   if (!u || !b) return;
   const d = b.dataset;
+  if (b.dataset.dglass) {
+    const path = b.dataset.dglass, v = b.dataset.dgv;
+    setParams(u, (p) => {
+      const cur = getPath(p, path), n = +getPath(p, path.replace(/drawer_glass$/, "drawer_count")) || 3;
+      if (v === "none") setPath(p, path, false);
+      else if (v === "all") setPath(p, path, true);
+      else { let list = cur === true ? Array.from({ length: n }, (_, i) => i + 1) : Array.isArray(cur) ? [...cur] : []; const k = +v; list = list.includes(k) ? list.filter((x) => x !== k) : [...list, k].sort((a, c) => a - c); setPath(p, path, list.length === n ? true : list.length ? list : false); }
+    });
+    return;
+  }
   if (b.hasAttribute("data-asm")) { ui.asm = { id: u.id, step: 0 }; ui.planOn = false; render(true); return; }
   if (b.hasAttribute("data-asmpdf2")) { b.disabled = true; exportAsmBooklet(u.id).catch((err) => alertBar(err.message || "ما كملش")).finally(() => { b.disabled = false; }); return; }
   if (b.hasAttribute("data-unitdwg2")) { b.disabled = true; exportUnitDrawings(u.id).catch((err) => alertBar(err.message || "ما كملش")).finally(() => { b.disabled = false; }); return; }

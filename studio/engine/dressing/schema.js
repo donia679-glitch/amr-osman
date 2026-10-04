@@ -480,7 +480,10 @@ export function normalizeCompartment(c0, tag, errors) {
     if (!has(DOORS, out.door))
         errors.push(`${tag}: نوع الضلفة '${out.door}' مش معروف.`);
     out.drawer_front = notFalse(c.drawer_front);
-    out.drawer_glass = c.drawer_glass === true || c.drawer_glass === "true";
+    // glass drawer fronts: true = all, or a list of drawer numbers (1 = the bottom drawer), e.g. [1, 3] or "1,3"
+    const dg = c.drawer_glass;
+    out.drawer_glass = dg === true || dg === "true" ? true : Array.isArray(dg) || typeof dg === "string" ? [...new Set(String(Array.isArray(dg) ? dg.join(",") : dg).split(/[,\s،]+/).map((x) => parseInt(x, 10)).filter((n) => n >= 1))] : false;
+    if (Array.isArray(out.drawer_glass) && !out.drawer_glass.length) out.drawer_glass = false;
     out.led = rs(c.led);
     if (out.led === "")
         out.led = "none";
