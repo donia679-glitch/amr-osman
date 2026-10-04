@@ -38,6 +38,9 @@ cd /home/claude/novera-app && python3 tools/build_pwa.py && python3 tools/build_
 - Kitchen units: base depth 58 includes the door (inset, face at y=0); corner units get their depth from `cornerFit()` in app.js unless set by hand.
 
 ## History (latest first)
+- v62: studio pick modes «بتختار إيه؟» (ui.pickMode solid|face|edge|vertex, buttons data-pmode in the side panel; select tool picks a face directly, `pickEdge`/`pickVertex` nearest on screen,
+  `edgeOf`/`vertexOf`, highlights in rebuild, panels `edgeHtml` (length, set length by moving the far corner, split mid-edge, move) / `vertexHtml` (plane x/y, move, delete), `subAction`;
+  move tool starts from a picked edge (`moveEdge`, both corners slide in-plane) or vertex; eraser in vertex mode deletes a corner (≥3 kept). __ds exposes click/pickEdge/pickVertex/rebuild.
 - v61: wood grain direction system. app.js: `GRAIN_DEF/grainPolicy(u)` (project default `userDefs().grain` + `state.project.grain` + `u.grain` {fronts v|h|free, carcass std|free, match, applies wood|all}),
   `grainKind(pt)` (front/vert/horiz/box/back/none by role+name), `grainOf(u, pt, lib)` → "h"|"w"|null with per-piece override `u.grainOv[name]`; projectPieces carries grain/kind/uid;
   cutGroups locks grained pieces (h → laid along the sheet length, w → along width) and merges a unit's drawer fronts of equal width into one strip «وشوش الأدراج 1+2+3 (عروق متتالية)» (strip dividers + grain arrows in sheetSvg);

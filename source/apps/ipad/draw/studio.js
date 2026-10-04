@@ -143,7 +143,7 @@ export function close() {
   cancelAnimationFrame(raf);
 }
 export const isOpen = () => !!el && !el.hidden;
-if (typeof window !== "undefined" && location.protocol === "http:" && /^(localhost|127\.0\.0\.1)$/.test(location.hostname)) window.__ds = { M: () => M, ui, scr: (P) => scr(P), setTool: (t) => setTool(t), G, pick: (x, y) => { const h = pickAny(x, y); return h && { ref: h.ref, kind: h.face?.kind, sid: h.sid }; } };
+if (typeof window !== "undefined" && location.protocol === "http:" && /^(localhost|127\.0\.0\.1)$/.test(location.hostname)) window.__ds = { M: () => M, ui, scr: (P) => scr(P), setTool: (t) => setTool(t), G, pick: (x, y) => { const h = pickAny(x, y); return h && { ref: h.ref, kind: h.face?.kind, sid: h.sid }; }, click: (x, y) => TOOL[ui.tool]?.click?.([x, y]), pickEdge, pickVertex, rebuild: () => { rebuild(); renderUI(); } };
 function normalize(m) {
   for (const k of ["solids", "sketches", "paths", "sweeps", "guides", "dims", "texts", "groups"]) if (!Array.isArray(m[k])) m[k] = [];
   for (const s of m.solids) { s.id ||= uid(); s.holes ||= []; s.pockets ||= []; s.mat ||= "carcass"; s.name ||= "لوح"; s.outer = G.ccw(s.outer); }
@@ -434,6 +434,10 @@ function rebuild() {
     m.renderOrder = 4; extraG.add(m);
     extraG.add(fatLine([...fsel.f.outer, fsel.f.outer[0]], 0xd98b00, 3, false, { order: 7 }));
   }
+  const esel = edgeOf(ui.edge);
+  if (esel) { extraG.add(fatLine([esel.a, esel.b], 0xd98b00, 5, false, { order: 8 })); for (const P of [esel.a, esel.b]) { const d = new THREE.Mesh(new THREE.SphereGeometry(1.1, 10, 10), new THREE.MeshBasicMaterial({ color: 0xd98b00, depthTest: false })); d.position.copy(T3(P)); d.renderOrder = 9; extraG.add(d); } }
+  const vsel = vertexOf(ui.vertex);
+  if (vsel) { const d = new THREE.Mesh(new THREE.SphereGeometry(1.6, 12, 12), new THREE.MeshBasicMaterial({ color: 0xd98b00, depthTest: false })); d.position.copy(T3(vsel.p)); d.renderOrder = 9; extraG.add(d); }
   grid.visible = !ui.face2d;
   need();
   renderLabelsList();
@@ -534,6 +538,56 @@ function pickSketch(cx, cy) {
     }
   }
   return best;
+}
+/** v62: sub-entity picking — the nearest outline vertex / hard edge of a solid to the tap (screen distance), for the «ركن» / «حرف» pick modes */
+function pickVertex(cx, cy, sid = null) {
+  let best = null;
+  for (const s of M.solids) {
+    if (sid && s.id !== sid) continue;
+    for (const q of G.solidPoints(s)) {
+      const a = scr(q.p), d = Math.hypot(a[0] - cx, a[1] - cy);
+      if (d < 18 && (!best || d < best.d)) best = { sid: s.id, d, p: q.p, vi: q.i, loop: q.loop, w: q.w };
+    }
+  }
+  if (!best) return null;
+  const s = M.solids.find((x) => x.id === best.sid);
+  const loopIdx = best.loop === s.outer ? -1 : s.holes.indexOf(best.loop);
+  if (loopIdx < -1 || (loopIdx === -1 && best.loop !== s.outer)) return null; // pocket corners: not editable here
+  return { sid: s.id, loopIdx, vi: best.vi, p: best.p, level: best.w > s.depth / 2 ? "top" : "bottom" };
+}
+function pickEdge(cx, cy, sid = null) {
+  let best = null;
+  for (const s of M.solids) {
+    if (sid && s.id !== sid) continue;
+    const loops = [s.outer, ...(s.holes || [])];
+    loops.forEach((L, li) => {
+      for (let i = 0; i < L.length; i++) {
+        const j = (i + 1) % L.length;
+        for (const [lvl, w] of [["top", s.depth], ["bottom", 0]]) {
+          const A = G.toWorld(s.plane, L[i], w), B = G.toWorld(s.plane, L[j], w), d = segDist2([cx, cy], scr(A), scr(B));
+          if (d.d < 12 && (!best || d.d < best.d)) best = { sid: s.id, loopIdx: li - 1, i, j, level: lvl, a: A, b: B, d: d.d };
+        }
+        const A = G.toWorld(s.plane, L[i], 0), B = G.toWorld(s.plane, L[i], s.depth), d = segDist2([cx, cy], scr(A), scr(B));
+        if (d.d < 12 && (!best || d.d < best.d)) best = { sid: s.id, loopIdx: li - 1, i, j: i, level: "vert", a: A, b: B, d: d.d };
+      }
+    });
+  }
+  return best;
+}
+function edgeOf(e) {
+  if (!e) return null;
+  const s = M.solids.find((x) => x.id === e.sid); if (!s) return null;
+  const L = e.loopIdx < 0 ? s.outer : s.holes[e.loopIdx]; if (!L || !L[e.i]) return null;
+  const w = e.level === "top" ? s.depth : 0;
+  const a = e.level === "vert" ? G.toWorld(s.plane, L[e.i], 0) : G.toWorld(s.plane, L[e.i], w);
+  const b = e.level === "vert" ? G.toWorld(s.plane, L[e.i], s.depth) : G.toWorld(s.plane, L[e.j], w);
+  return { s, L, a, b };
+}
+function vertexOf(v) {
+  if (!v) return null;
+  const s = M.solids.find((x) => x.id === v.sid); if (!s) return null;
+  const L = v.loopIdx < 0 ? s.outer : s.holes[v.loopIdx]; if (!L || !L[v.vi]) return null;
+  return { s, L, p: G.toWorld(s.plane, L[v.vi], v.level === "top" ? s.depth : 0) };
 }
 function pickAny(cx, cy) {
   let m = pickMesh(cx, cy);
@@ -931,7 +985,11 @@ TOOL.select = {
     if (ref?.startsWith("s:") && ui.editGroup) { const s = M.solids.find((x) => "s:" + x.id === ref); if (s?.group !== ui.editGroup) { ui.editGroup = null; if (s?.group) ref = "G:" + s.group; } }
     ui.rsel = null;
     if (ref && /^[WOE]:/.test(ref)) { ui.sel.clear(); ui.face = null; ui.rsel = { ref, kind: ref[0], id: ref.slice(2) }; rebuild(); renderUI(); return; }
-    const prevFace = ui.face; ui.face = null;
+    const prevFace = ui.face; ui.face = null; ui.edge = null; ui.vertex = null;
+    // v62: pick modes — one tap picks a face / edge / corner straight away
+    if (ui.pickMode === "vertex") { const v = pickVertex(...xy); if (v) { ui.vertex = v; ui.sel.clear(); ui.sel.add("s:" + v.sid); rebuild(); renderUI(); setMsg("اتختار الركن — حرّكه بأداة التحريك، أو امسحه بالممحاة"); return; } }
+    if (ui.pickMode === "edge") { const e = pickEdge(...xy); if (e) { ui.edge = e; ui.sel.clear(); ui.sel.add("s:" + e.sid); rebuild(); renderUI(); setMsg("اتختار الحرف — حرّكه بأداة التحريك، أو اكتب طوله في اللوحة"); return; } }
+    if (ui.pickMode === "face" && ref?.startsWith("s:") && hit.face) { ui.face = { sid: hit.sid, kind: hit.face.kind, ref: hit.face.ref }; ui.sel.clear(); ui.sel.add(ref); rebuild(); renderUI(); setMsg("اتختار الوش — من اللوحة: إزاحة، سحب/زق، أو ارسم عليه"); return; }
     if (ref?.startsWith("s:") && hit.face && ui.sel.size === 1 && ui.sel.has(ref) && !ui.addSel) {
       // a second tap on the selected board: that one face
       const same = prevFace && prevFace.sid === hit.sid && prevFace.kind === hit.face.kind && JSON.stringify(prevFace.ref) === JSON.stringify(hit.face.ref);
@@ -1406,6 +1464,9 @@ TOOL.move = {
     const st = ui.st;
     if (!st) {
       const inf = infer(...xy, {});
+      // v62: a picked corner / edge moves as such (in the board's plane)
+      if (ui.vertex && vertexOf(ui.vertex)) { const v = vertexOf(ui.vertex); ui.st = { mode: "vertex", s: v.s, loopIdx: ui.vertex.loopIdx, vi: ui.vertex.vi, a: inf.p }; return; }
+      if (ui.edge && edgeOf(ui.edge)) { const e = edgeOf(ui.edge); ui.st = ui.edge.level === "vert" ? { mode: "vertex", s: e.s, loopIdx: ui.edge.loopIdx, vi: ui.edge.i, a: inf.p } : { mode: "edge", s: e.s, loopIdx: ui.edge.loopIdx, i: ui.edge.i, j: ui.edge.j, a: inf.p }; return; }
       // a corner or the middle of an edge of an unselected board: reshape it
       if ((inf.kind === "end" || inf.kind === "mid") && inf.sid && !selected("s:" + inf.sid)) {
         const s = M.solids.find((x) => x.id === inf.sid);
@@ -1445,6 +1506,7 @@ TOOL.move = {
       oLine([st.a, inf.p], inf.kind === "axis" ? [0xe0413a, 0x2f9e44, 0x2f6fdf][inf.axis] : 0x2f6fdf, true);
       liveLen(st.a, inf.p);
       if (st.mode === "vertex") { const s2 = G.clone(st.s); moveVertex(s2, st, dv); oGhost(G.solidFaces(s2)); }
+      else if (st.mode === "edge") { const s2 = G.clone(st.s); moveEdge(s2, st, dv); oGhost(G.solidFaces(s2)); }
       else for (const r of st.refs) ghostOf(r, (P) => G.add(P, dv));
     });
     if (st) vcbSet(G.len(G.sub(inf.p, st.a)), ui.copy ? "مسافة النسخ" : "المسافة");
@@ -1467,6 +1529,11 @@ TOOL.move = {
     }
   },
 };
+/** slide one outline edge in the board's plane: both its corners move by the in-plane part of dv */
+function moveEdge(s, st, dv) {
+  const L = st.loopIdx < 0 ? s.outer : s.holes[st.loopIdx];
+  for (const k of [st.i, st.j]) { const q = G.toPlane(s.plane, G.add(G.toWorld(s.plane, L[k]), dv)); L[k] = [G.r2(q[0]), G.r2(q[1])]; }
+}
 function moveVertex(s, st, dv) {
   const L = st.loopIdx < 0 ? s.outer : s.holes[st.loopIdx];
   const q = G.toPlane(s.plane, G.add(G.toWorld(s.plane, L[st.vi]), dv));
@@ -1485,6 +1552,7 @@ function commitMove(dv) {
   if (!st || G.len(dv) < 0.01) { overlay(); return; }
   edit(() => {
     if (st.mode === "vertex") { moveVertex(st.s, st, dv); st.s.outer = G.ccw(st.s.outer); return; }
+    if (st.mode === "edge") { moveEdge(st.s, st, dv); st.s.outer = G.ccw(st.s.outer); return; }
     let refs = st.refs, made = [];
     if (ui.copy) { refs = copyRefs(st.refs); made = refs; }
     for (const r of refs) xform(r, { p: (P) => G.add(P, dv) });
@@ -1783,6 +1851,13 @@ TOOL.paint = {
   },
 };
 function eraseAt(cx, cy) {
+  // v62: in «ركن» mode the eraser removes one corner of the outline (the board keeps its other corners)
+  if (ui.pickMode === "vertex") {
+    const v = pickVertex(cx, cy); const vv = vertexOf(v);
+    if (vv && vv.L.length > 3) { edit(() => { vv.L.splice(v.vi, 1); }); ui.vertex = null; setMsg("اتمسح الركن"); }
+    else if (vv) setMsg("اللوح لازم يفضل فيه 3 أركان على الأقل");
+    return;
+  }
   const hit = pickAny(cx, cy);
   if (!hit?.ref) return;
   edit(() => delEnt(hit.ref));
@@ -1969,6 +2044,10 @@ function sideHtml() {
   if (ui.tool === "paint" && M.room?.pts?.length) h += `<div class="dsbox"><b>🎨 لون دهان الحيطان</b><p class="hint">دوس على أي حيطة تتدهن باللون ده (ويظهر في التصميم والريندر). للألواح: اختار الخامة تحت ودوس على اللوح.</p>${wallSwatches(ui.wallPaint || "#e9e2d0", "wpaint")}</div>`;
   h += roomHtml();
   const pal = Object.keys(MATS).map((k) => `<button class="dsmat ${ui.mat === k ? "on" : ""}" data-mat="${k}" title="${esc(matName(k))}"><i style="background:${matColor(k)}"></i><span>${esc(matName(k))}</span></button>`).join("");
+  h += edgeHtml() + vertexHtml();
+  const PM = [["solid", "⬚ لوح"], ["face", "🟨 وش"], ["edge", "— حرف"], ["vertex", "• ركن"]];
+  h += `<div class="dsbox"><div class="dsrow"><b>بتختار إيه؟</b></div><div class="dsseg">${PM.map(([k, l]) => `<button class="dsb ${(ui.pickMode || "solid") === k ? "on" : ""}" data-pmode="${k}">${l}</button>`).join("")}</div>
+    <p class="hint">لوح = القطعة كلها · وش = وش واحد (إزاحة / سحب) · حرف = ضلع واحد تحرّكه أو تكتب طوله · ركن = نقطة واحدة تحرّكها أو تمسحها.</p></div>`;
   h += `<div class="dsbox"><div class="dsrow"><b>الاختيار</b><label class="dschk"><input type="checkbox" data-ds="addsel" ${ui.addSel ? "checked" : ""}> + اختيار متعدد</label></div>
     <div class="dsrow"><label class="dschk"><input type="checkbox" data-ds="copy" ${ui.copy ? "checked" : ""}> نسخة (مع التحريك واللف)</label></div>
     <div class="dsrow"><label class="dschk"><input type="checkbox" data-ds="boxsel" ${ui.boxSel ? "checked" : ""}> ⬚ اختيار بالسحب (مربع)</label></div>
@@ -2047,6 +2126,7 @@ function onClick(e) {
   const d = b.dataset;
   if (d.tgh != null) { toolGroupToggle(+d.tgh); return; }
   if (d.tool) { setTool(d.tool); return; }
+  if (d.pmode) { ui.pickMode = d.pmode; ui.face = null; ui.edge = null; ui.vertex = null; setTool("select"); rebuild(); renderUI(); setMsg({ solid: "دوس على لوح", face: "دوس على وش من اللوح", edge: "دوس قريب من حرف", vertex: "دوس قريب من ركن" }[ui.pickMode]); return; }
   if (d.view) { setView(d.view); renderUI(); return; }
   if (d.axis != null) { lockAxis(+d.axis); return; }
   if (d.room) { roomAction(d.room, b); return; }
@@ -2104,6 +2184,7 @@ function onClick(e) {
     case "mylib": ctx.saveLib?.(G.clone(M), mname); break;
     case "selall": selectAll(); break;
     case "facex": faceAction("x"); break;
+    case "edgex": case "edgelen": case "edgesplit": case "edgemove": case "vertexx": case "vertexset": case "vertexmove": case "vertexdel": subAction(d.ds); break;
     case "faceoff": faceAction("off"); break;
     case "facepush": faceAction("push"); break;
     case "face2dsel": faceAction("2d"); break;
@@ -2634,6 +2715,48 @@ function faceOf(fs) {
   if (!s) return null;
   const f = G.solidFaces(s).find((q) => q.kind === fs.kind && JSON.stringify(q.ref) === JSON.stringify(fs.ref));
   return f ? { s, f } : null;
+}
+function edgeHtml() {
+  const e = edgeOf(ui.edge); if (!e) return "";
+  const len = G.dist(e.a, e.b), vert = ui.edge.level === "vert";
+  return `<div class="dsbox on2d"><div class="dsrow"><b>— حرف ${vert ? "رأسي (السمك)" : ui.edge.level === "top" ? "على الوش العلوي" : "على الوش السفلي"}</b><button class="dsb" data-ds="edgex">✕</button></div>
+    <div class="dsrow"><span>الطول</span><b dir="ltr">${f1(len)}</b></div>
+    ${vert ? `<p class="hint">ده حرف السمك — طوله هو سمك اللوح (${f1(e.s.depth)}). حرّكه بأداة التحريك يتحرّك الركن كله.</p>` : `<div class="dsgrid"><label><span>طول جديد (الطرف التاني يتحرّك)</span><input type="text" inputmode="decimal" data-numf id="edgeLen" value="${f1(len)}"></label></div>
+    <div class="dsbtns"><button class="dsb" data-ds="edgelen">↔ طبّق الطول</button><button class="dsb" data-ds="edgesplit">✚ ضيف ركن في النص</button><button class="dsb" data-ds="edgemove">✥ حرّك الحرف</button></div>`}
+    <p class="hint">أداة التحريك وأنت ماسك الحرف بتزحلقه في مستوى اللوح (الركنين بتوعه مع بعض).</p></div>`;
+}
+function vertexHtml() {
+  const v = vertexOf(ui.vertex); if (!v) return "";
+  const q = G.toPlane(v.s.plane, v.p);
+  return `<div class="dsbox on2d"><div class="dsrow"><b>• ركن ${ui.vertex.vi + 1}${ui.vertex.loopIdx >= 0 ? ` (فتحة ${ui.vertex.loopIdx + 1})` : ""}</b><button class="dsb" data-ds="vertexx">✕</button></div>
+    <div class="dsgrid"><label><span>س (في مستوى اللوح)</span><input type="text" inputmode="decimal" data-numf id="vxX" value="${f1(q[0])}"></label><label><span>ص</span><input type="text" inputmode="decimal" data-numf id="vxY" value="${f1(q[1])}"></label></div>
+    <div class="dsbtns"><button class="dsb" data-ds="vertexset">✓ طبّق المكان</button><button class="dsb" data-ds="vertexmove">✥ حرّكه</button><button class="dsb danger" data-ds="vertexdel" ${v.L.length <= 3 ? "disabled" : ""}>⌫ امسح الركن</button></div>
+    <p class="hint">الركن بيتحرّك في مستوى اللوح (فوق وتحت مع بعض عشان اللوح يفضل بسمك واحد).</p></div>`;
+}
+function subAction(kind) {
+  if (kind === "edgex") { ui.edge = null; rebuild(); renderUI(); return; }
+  if (kind === "vertexx") { ui.vertex = null; rebuild(); renderUI(); return; }
+  const e = edgeOf(ui.edge), v = vertexOf(ui.vertex);
+  if (kind === "edgemove" && e) { setTool("move"); setMsg("دوس على نقطة وبعدين على مكانها الجديد — الحرف هيتزحلق"); return; }
+  if (kind === "vertexmove" && v) { setTool("move"); setMsg("دوس على نقطة وبعدين على مكانها الجديد — الركن هيتحرّك"); return; }
+  if (kind === "edgelen" && e && ui.edge.level !== "vert") {
+    const nl = +String(el.querySelector("#edgeLen").value).replace(/[^\d.]/g, "");
+    if (!(nl > 0.1)) return;
+    edit(() => { const L = e.L, a = L[ui.edge.i], b = L[ui.edge.j]; const dx = b[0] - a[0], dy = b[1] - a[1], ll = Math.hypot(dx, dy) || 1; L[ui.edge.j] = [G.r2(a[0] + (dx / ll) * nl), G.r2(a[1] + (dy / ll) * nl)]; });
+    return;
+  }
+  if (kind === "edgesplit" && e && ui.edge.level !== "vert") {
+    edit(() => { const L = e.L, a = L[ui.edge.i], b = L[ui.edge.j]; L.splice(ui.edge.i + 1, 0, [G.r2((a[0] + b[0]) / 2), G.r2((a[1] + b[1]) / 2)]); });
+    ui.vertex = { sid: e.s.id, loopIdx: ui.edge.loopIdx, vi: ui.edge.i + 1, level: ui.edge.level }; ui.edge = null; ui.pickMode = "vertex"; rebuild(); renderUI(); setMsg("اتضاف ركن في نص الحرف وهو مختار — حرّكه بأداة التحريك");
+    return;
+  }
+  if (kind === "vertexset" && v) {
+    const x = +String(el.querySelector("#vxX").value).replace(/[^\d.\-]/g, ""), y = +String(el.querySelector("#vxY").value).replace(/[^\d.\-]/g, "");
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+    edit(() => { v.L[ui.vertex.vi] = [G.r2(x), G.r2(y)]; if (ui.vertex.loopIdx < 0) v.s.outer = G.ccw(v.s.outer); });
+    return;
+  }
+  if (kind === "vertexdel" && v && v.L.length > 3) { edit(() => { v.L.splice(ui.vertex.vi, 1); }); ui.vertex = null; rebuild(); renderUI(); return; }
 }
 function faceHtml() {
   const fs = faceOf(ui.face);
