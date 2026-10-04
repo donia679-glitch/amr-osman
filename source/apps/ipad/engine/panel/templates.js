@@ -441,22 +441,45 @@ export class TemplateBuilder {
                 continue;
             }
             this.d.addGroup({ key, kind: "drawer", name, open_distance: rround(slide * 0.75, 2), slide_len: slide });
-            this.add(`وش ${name}`, "door", this.frontMat(), this.box(g / 2.0, -ft, f0, w - g / 2.0, 0.0, f1), {
-                label_axes: ["x", "z"], band: ["left", "right", "top", "bottom"], band_all_sides: true, layer: "front", group: key, grain: "x", note: this.doorNote(),
-            });
-            this.handleHw(1);
+            const glassHere = zn.glass === true || (Array.isArray(zn.glass) && zn.glass.includes(i + 1));
+            const fx0 = g / 2.0, fx1 = w - g / 2.0;
+            if (glassHere) {
+                // NOVERA v53: a glass drawer front — a wood frame (4 rails) with a 4 mm glass panel in a groove; pulled from the top rail, no handle.
+                // the frame IS the drawer's front wall: the box sides screw into the back of the stiles, the bottom runs into the bottom rail's groove
+                const W = fx1 - fx0, H = f1 - f0, fw = Math.min(4.0, W / 4.0, H / 3.0), eng = 0.8, gt = 0.4;
+                const gnote = `فريم وش درج زجاج: مفحار ${fmt(gt * 10 + 1)} مم عرض × 8 مم عمق في نص السمك على الحرف الداخلي، الزجاج بيتركب أثناء تجميع الفريم (دويلين في الأركان)`;
+                const rails = [["فوق", fx0, f1 - fw, fx1, f1, "الحرف اللي تحت ليه مفحار الزجاج — الحرف اللي فوق هو مسكة السحب"], ["تحت", fx0, f0, fx1, f0 + fw, "مفحار الزجاج فوق، ومفحار قاعدة الدرج من ورا"],
+                    ["شمال", fx0, f0 + fw, fx0 + fw, f1 - fw, "جنب الصندوق بيتثبت في ضهره بدويلين ومسمارين"], ["يمين", fx1 - fw, f0 + fw, fx1, f1 - fw, "جنب الصندوق بيتثبت في ضهره بدويلين ومسمارين"]];
+                for (const [lbl, a0, b0, a1, b1, extra] of rails) {
+                    this.add(`فريم ${lbl} ${name}`, "door", this.frontMat(), this.box(a0, -ft, b0, a1, 0.0, b1), {
+                        label_axes: ["x", "z"], band: ["left", "right", "top", "bottom"], band_all_sides: true, layer: "front", group: key, grain: lbl === "فوق" || lbl === "تحت" ? "x" : "z", note: `${gnote} · ${extra}`,
+                    });
+                }
+                this.add(`زجاج وش ${name}`, "door", "glass", this.box(fx0 + fw - eng, -ft / 2.0 - gt / 2.0, f0 + fw - eng, fx1 - fw + eng, -ft / 2.0 + gt / 2.0, f1 - fw + eng), {
+                    label_axes: ["x", "z"], band: [], layer: "front", group: key,
+                });
+                inc(this.d.hardware, "دوبل خشب 8 مم (فريم زجاج)", 8);
+            }
+            else {
+                this.add(`وش ${name}`, "door", this.frontMat(), this.box(fx0, -ft, f0, fx1, 0.0, f1), {
+                    label_axes: ["x", "z"], band: ["left", "right", "top", "bottom"], band_all_sides: true, layer: "front", group: key, grain: "x", note: this.doorNote(),
+                });
+                this.handleHw(1);
+            }
             const gz = z0 + 1.0 + bb / 2.0;
             for (const [sd, x0, x1] of [["شمال", bx0, bx0 + bt], ["يمين", bx1 - bt, bx1]]) {
                 const bx = this.box(x0, 0.0, z0, x1, slide, z1);
                 const pt = this.add(`جنب ${name} ${sd}`, "drawer_box", "drawer_box", bx, { label_axes: ["y", "z"], band: ["top"], group: key, grain: "y" });
                 pt.label.groove = this.d.grooveFor(bx, pt.axes, "y", gz);
             }
-            for (const [nm, y0, y1] of [["أمامي", 0.0, bt], ["خلفي", slide - bt, slide]]) {
+            // a glass front: the frame itself is the front wall — no wood wall behind the glass
+            for (const [nm, y0, y1] of (glassHere ? [["خلفي", slide - bt, slide]] : [["أمامي", 0.0, bt], ["خلفي", slide - bt, slide]])) {
                 const bx = this.box(bx0 + bt, y0, z0, bx1 - bt, y1, z1);
                 const pt = this.add(`${nm} صندوق ${name}`, "drawer_box", "drawer_box", bx, { label_axes: ["x", "z"], band: ["top"], group: key, grain: "x" });
                 pt.label.groove = this.d.grooveFor(bx, pt.axes, "x", gz);
             }
-            this.add(`قاعدة ${name}`, "drawer_bottom", "drawer_bottom", this.box(bx0 + bt - gd, bt - gd, z0 + 1.0, bx1 - bt + gd, slide - bt + gd, z0 + 1.0 + bb), { label_axes: ["x", "y"], band: [], group: key });
+            const by0 = glassHere ? -ft + gd : bt - gd; // into the bottom rail's groove when the front is a frame
+            this.add(`قاعدة ${name}`, "drawer_bottom", "drawer_bottom", this.box(bx0 + bt - gd, by0, z0 + 1.0, bx1 - bt + gd, slide - bt + gd, z0 + 1.0 + bb), { label_axes: ["x", "y"], band: [], group: key, note: glassHere ? "القاعدة بتدخل في مفحار الفريم التحتاني من قدام" : undefined });
             inc(this.d.hardware, `مجرى تاندم مخفي سوفت كلوز ${slide} سم (زوج)`, 1);
             inc(this.d.hardware, "دوبل صندوق درج", 8);
         }

@@ -2665,7 +2665,7 @@ function panelProps(p, r) {
       h += `<div class="zone-ed"><div class="zh"><b>جزء ${i + 1}</b><button data-zdel="${i}" class="danger sm" aria-label="شيل الجزء">${ICON.trash}</button></div><div class="grid2">
         ${selF(`fronts.${i}.type`, "النوع", Schema.FRONT_TYPES, z.type)}${autoF(`fronts.${i}.height`, "الارتفاع", z.height)}
         ${numF(`fronts.${i}.count`, "العدد", z.count, 1)}${numF(`fronts.${i}.shelves`, "الأرفف", z.shelves, 1)}
-        ${selF(`fronts.${i}.hinge`, "المفصلة", { left: "شمال", right: "يمين" }, z.hinge)}${boolF(`fronts.${i}.led`, "ليد في الخانة", z.led)}</div></div>`;
+        ${selF(`fronts.${i}.hinge`, "المفصلة", { left: "شمال", right: "يمين" }, z.hinge)}${boolF(`fronts.${i}.led`, "ليد في الخانة", z.led)}</div>${z.type === "drawers" ? glassChips(`fronts.${i}.glass`, z.glass, Math.max(1, +z.count || 1)) : ""}</div>`;
     });
     h += `<button class="add" data-zadd>${ICON.plus}ضيف جزء</button></details>`;
   }
@@ -2859,7 +2859,7 @@ function kitchenProps(p) {
       ${p[`drawer_insert_${i}`] === "custom" ? `<div class="grid2">${textF(`drawer_insert_v_${i}`, "فواصل رأسية (سم من الشمال)", p[`drawer_insert_v_${i}`], "مثلاً 20, 45")}${textF(`drawer_insert_h_${i}`, "فواصل أفقية (سم من قدام)", p[`drawer_insert_h_${i}`], "مثلاً 15")}</div>` : ""}`;
     h += `<details><summary>الأدراج بالتفصيل</summary><div class="grid2">${numF("drawer_gap", "المسافة بين الأدراج", p.drawer_gap, 0.1)}${numF("drawer_slide_base", "فتح أول درج (للعرض)", p.drawer_slide_base)}</div>${dr}
       <div class="grid2">${numF("drawer_insert_height", "ارتفاع الفواصل", p.drawer_insert_height, 0.5)}${numF("drawer_insert_thickness", "سمك الفواصل", p.drawer_insert_thickness, 0.1)}${numF("drawer_insert_divider_count", "عدد الفواصل المستقيمة", p.drawer_insert_divider_count, 1)}</div>
-      <p class="hint">سيب الارتفاع 0 والأدراج هتتقسم بالتساوي على المساحة الباقية.</p></details>`;
+      <p class="hint">سيب الارتفاع 0 والأدراج هتتقسم بالتساوي على المساحة الباقية.</p>${kglassField(p, n)}</details>`;
   }
   const customShelves = String(p.shelf_positions || "").trim() !== "";
   h += `<details open><summary>من جوه</summary><div class="grid2">${p.include_shelves && !customShelves ? numF("shelf_count", "عدد الأرفف", p.shelf_count, 1) : ""}${p.include_vertical_dividers ? numF("vertical_divider_count", "عدد القواطيع", p.vertical_divider_count, 1) : ""}</div>
@@ -2959,13 +2959,21 @@ function advancedFields(p, shown) {
   return h + "</details>";
 }
 
-/** which drawers get a glass front: none / all / tick the ones you want (1 = the bottom drawer) */
-function dglassField(si, ci, c) {
-  const n = Math.max(1, +c.drawer_count || 3), g = c.drawer_glass;
+/** kitchen drawers: which fronts are a wood frame + glass (the frame is the box front; width/thickness from the glass-door settings) */
+function kglassField(p, n) {
+  const v = String(p.drawer_glass || "").trim().toLowerCase();
+  const all = v === "all" || v === "true", list = all || !v ? [] : v.split(/[,\s،]+/).map(Number).filter((x) => x >= 1);
+  const chip = (val, l, on) => `<button class="chip tog ${on ? "on" : ""}" data-kglass="${val}">${l}</button>`;
+  return `<div class="dglass"><span>وش زجاج بفريم خشب (عرض الفريم وسمك الزجاج من إعدادات الضلف الزجاج)</span><div class="chips2">${chip("none", "من غير", !all && !list.length)}${chip("all", "كل الأدراج", all)}${Array.from({ length: n }, (_, i) => chip(String(i + 1), `درج ${i + 1}${i === 0 ? " (تحت)" : i === n - 1 ? " (فوق)" : ""}`, !all && list.includes(i + 1))).join("")}</div></div>`;
+}
+/** which drawers get a glass front: none / all / tick the ones you want (1 = the bottom drawer) — value true | [1,3] | false at `path` */
+function glassChips(path, g, n) {
   const all = g === true, list = Array.isArray(g) ? g : typeof g === "string" ? g.split(/[,\s،]+/).map(Number).filter((x) => x >= 1) : [];
-  const path = `sections.${si}.compartments.${ci}.drawer_glass`;
-  const chip = (v, l, on) => `<button class="chip tog ${on ? "on" : ""}" data-dglass="${path}" data-dgv="${v}">${l}</button>`;
+  const chip = (v, l, on) => `<button class="chip tog ${on ? "on" : ""}" data-dglass="${path}" data-dgn="${n}" data-dgv="${v}">${l}</button>`;
   return `<div class="dglass"><span>وش زجاج بفريم خشب</span><div class="chips2">${chip("none", "من غير", !all && !list.length)}${chip("all", "كل الأدراج", all)}${Array.from({ length: n }, (_, i) => chip(String(i + 1), `درج ${i + 1}${i === 0 ? " (تحت)" : i === n - 1 ? " (فوق)" : ""}`, !all && list.includes(i + 1))).join("")}</div></div>`;
+}
+function dglassField(si, ci, c) {
+  return glassChips(`sections.${si}.compartments.${ci}.drawer_glass`, c.drawer_glass, Math.max(1, +c.drawer_count || 3));
 }
 function dressingProps(p) {
   let h = `<details open><summary>المقاسات والنظام</summary><div class="grid3">${numF("width", "العرض", p.width)}${numF("height", "الارتفاع", p.height)}${numF("depth", "العمق", p.depth)}</div><div class="grid2">
@@ -3260,10 +3268,20 @@ props.addEventListener("click", (e) => {
   const b = e.target.closest("button");
   if (!u || !b) return;
   const d = b.dataset;
+  if (b.dataset.kglass) {
+    const v = b.dataset.kglass;
+    setParams(u, (p) => {
+      const n = +p.drawer_count || 3, cur = String(p.drawer_glass || "").trim().toLowerCase();
+      if (v === "none") p.drawer_glass = "";
+      else if (v === "all") p.drawer_glass = "all";
+      else { let list = cur === "all" || cur === "true" ? Array.from({ length: n }, (_, i) => i + 1) : cur ? cur.split(/[,\s،]+/).map(Number).filter((x) => x >= 1) : []; const k = +v; list = list.includes(k) ? list.filter((x) => x !== k) : [...list, k].sort((a, c) => a - c); p.drawer_glass = list.length === n ? "all" : list.join(","); }
+    });
+    return;
+  }
   if (b.dataset.dglass) {
     const path = b.dataset.dglass, v = b.dataset.dgv;
     setParams(u, (p) => {
-      const cur = getPath(p, path), n = +getPath(p, path.replace(/drawer_glass$/, "drawer_count")) || 3;
+      const cur = getPath(p, path), n = +b.dataset.dgn || +getPath(p, path.replace(/drawer_glass$/, "drawer_count")) || 3;
       if (v === "none") setPath(p, path, false);
       else if (v === "all") setPath(p, path, true);
       else { let list = cur === true ? Array.from({ length: n }, (_, i) => i + 1) : Array.isArray(cur) ? [...cur] : []; const k = +v; list = list.includes(k) ? list.filter((x) => x !== k) : [...list, k].sort((a, c) => a - c); setPath(p, path, list.length === n ? true : list.length ? list : false); }

@@ -18,6 +18,8 @@ export function run(design, params, materialNames) {
     const longMax = Number(saw.sheet_length) - 2 * Number(saw.trim);
     const shortMax = Number(saw.sheet_width) - 2 * Number(saw.trim);
     for (const pt of design.cutParts()) {
+        if (pt.material === "glass" || pt.material === "mirror")
+            continue; // glass/mirror come from the glazier, not from the boards
         const b = pt.box;
         const thin = design.thinAxisOf(b);
         const tt = design.ext(b, thin);
@@ -63,7 +65,7 @@ export function run(design, params, materialNames) {
 }
 const SKIP_OVERLAP = ["back", "drawer_bottom"];
 function overlaps(design, add) {
-    const list = design.cutParts().filter((pt) => !SKIP_OVERLAP.includes(pt.role));
+    const list = design.cutParts().filter((pt) => !SKIP_OVERLAP.includes(pt.role) && pt.material !== "glass" && pt.material !== "mirror"); // glass sits in the frame's groove on purpose
     list.forEach((a, i) => {
         for (const b of list.slice(i + 1)) {
             const v = AXES.map((ax) => Math.min(a.box[`${ax}1`], b.box[`${ax}1`]) - Math.max(a.box[`${ax}0`], b.box[`${ax}0`]));

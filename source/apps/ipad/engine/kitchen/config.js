@@ -104,6 +104,7 @@ export const DEFAULTS = {
     "door_handle_recess": 0.0,
     "door_bottom_extension": 0.0,
     "glass_frame_width": 6.0,
+    "drawer_glass": "",
     "side_glass_door": "none",
     "glass_thickness": 0.5,
     "material_glass_name": "",

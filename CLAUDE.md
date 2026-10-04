@@ -38,6 +38,11 @@ cd /home/claude/novera-app && python3 tools/build_pwa.py && python3 tools/build_
 - Kitchen units: base depth 58 includes the door (inset, face at y=0); corner units get their depth from `cornerFit()` in app.js unless set by hand.
 
 ## History (latest first)
+- v53: glass-front drawers on every engine. Kitchen: param `drawer_glass` ("" | "all" | "1,3" bottom-first, chips `kglassField` at the end of «الأدراج بالتفصيل», handler `data-kglass`);
+  carcass.js `drawerGlassAt`, `buildSingleDrawer` → `buildFramedGlassDoor(..., railWIn=min(4, h/3))`, `buildDrawerBox(..., glassFront)` omits the front wall, no solid door label.
+  Panel furniture (chests/nightstands/vanities…): zone field `fronts[i].glass` (true | [1,3] | false, schema.js normalizeZone), catalog MATERIAL_KEYS `glass` (+ DEFAULT_MATERIALS "زجاج شفاف 4 مم"),
+  templates.js buildDrawers builds 4 frame rails (material front, 4 cm) + 0.4 glass + no "أمامي" wall, bottom into the bottom rail; checker.js skips glass/mirror in board/overlap checks.
+  app.js: generic `glassChips(path, value, n)` (data-dglass + data-dgn) used by dglassField and the panel zone editor (shown when zone type = drawers).
 - v50–v52: glass-front drawers (per-drawer choice: `drawer_glass` = true | [1,3] bottom-first, chips in the compartment editor via dglassField) in the dressing engine (compartment flag `drawer_glass`: 4 rails 4 cm + 4 mm glass 8 mm in a groove, the frame is the box front wall (no wood front), bottom runs into the bottom rail, no handle; engine/dressing/layout.js buildDrawers, schema.js);
   library presets d_glass_drawers90 / d_glass_walkin240 (oak + clear glass); toggle «وش زجاج بفريم خشب» in the dressing compartment editor.
 - v49: offcut wizard «♻️ أعمل إيه من الفضلات؟» (scrap*, SCRAP_CANDIDATES, pools by material+thickness from stock keys or typed rows with lib/thickness,
@@ -72,3 +77,4 @@ Amr wants the plugin updated in one go after all app edits are done. Pending for
 - corners: L-corner counter + plinth to the door face (engine/kitchen/corners.js v45), and the corner depth defaults (app.js `cornerFit()`:
   L corner_depth = depth − 1.8, diagonal cut = leg − depth) so corner units line up with the straight units.
 - dressing: compartment `drawer_glass` (glass drawer fronts: 4 frame rails + glass insert, v50) — port to the plugin's dressing layout + schema.
+- kitchen: `drawer_glass` param + carcass.js `drawerGlassAt`/`buildSingleDrawer`/`buildDrawerBox(glassFront)` (v53); panel: zone `glass` + catalog `glass` material + templates buildDrawers + checker skips (v53).

@@ -1242,14 +1242,14 @@ export class CarcassBuilder {
         assignLayer(this.ctx, group, TAGS.front);
         return group;
     }
-    buildFramedGlassDoor(e, x0, x1, z0, z1, fy0, fy1, label, frameMatIn = null) {
+    buildFramedGlassDoor(e, x0, x1, z0, z1, fy0, fy1, label, frameMatIn = null, railWIn = null) {
         const frameMat = frameMatIn ?? this.frontColor();
         const group = e.addGroup();
         group.name = label;
         const sub = group.entities;
         const L = this.ctx.labels;
         const ug = this.unitGroupName();
-        const railW = rmin(cm(toF(this.p["glass_frame_width"])), (x1 - x0) / 2.5, (z1 - z0) / 2.5);
+        const railW = rmin(railWIn ?? cm(toF(this.p["glass_frame_width"])), (x1 - x0) / 2.5, (z1 - z0) / 2.5);
         if (railW > 0 && x1 - railW > x0 + railW && z1 - railW > z0 + railW) {
             const ft = Math.abs(fy1 - fy0);
             const fmn = materialLabelName(frameMat);
@@ -1351,18 +1351,36 @@ export class CarcassBuilder {
             z = full + this.drawerGap();
         });
     }
+    /** which drawers get a glass front (NOVERA v53): "" none · "all" · "1,3" (1 = the bottom drawer) */
+    drawerGlassAt(index) {
+        const v = strip(toS(this.p["drawer_glass"])).toLowerCase();
+        if (v === "" || v === "none" || v === "false")
+            return false;
+        if (v === "all" || v === "true")
+            return true;
+        return v.split(/[,\s،]+/).map((x) => parseInt(x, 10)).includes(index + 1);
+    }
     buildSingleDrawer(e, x0, x1, fy0, fy1, dz0, frontDz1, boxDz1, index, _total, label) {
         if (frontDz1 <= dz0)
             return;
         const group = e.addGroup();
         group.name = label;
         const sub = group.entities;
-        const f = createBox(this.ctx, sub, label, x0, fy0, dz0, x1, fy1, frontDz1, this.frontColor());
-        assignLayer(this.ctx, f, TAGS.front);
-        if (this.edgeBandingEnabled())
-            bandAllSideEdges(this.ctx, f, this.edgeBandingMaterial());
-        this.recordDoorLabel(label, x0, x1, dz0, frontDz1, null);
-        const [floorTop, floorBottom] = this.drawerBoxesEnabled() && boxDz1 > dz0 ? this.buildDrawerBox(sub, x0, x1, fy1, dz0, boxDz1, label) : [dz0, dz0];
+        const glass = this.drawerGlassAt(index);
+        if (glass) {
+            // a wood frame with a glass panel; the frame is the box's front wall (no wood wall behind the glass)
+            // drawer frames are 4 cm (narrower on a low front) — the door setting's 6 cm would leave almost no glass
+            this.buildFramedGlassDoor(sub, x0, x1, dz0, frontDz1, fy0, fy1, label, this.frontColor(), rmin(cm(4.0), (frontDz1 - dz0) / 3.0));
+        }
+        else {
+            const f = createBox(this.ctx, sub, label, x0, fy0, dz0, x1, fy1, frontDz1, this.frontColor());
+            assignLayer(this.ctx, f, TAGS.front);
+            if (this.edgeBandingEnabled())
+                bandAllSideEdges(this.ctx, f, this.edgeBandingMaterial());
+        }
+        if (!glass)
+            this.recordDoorLabel(label, x0, x1, dz0, frontDz1, null); // the glass front's frame rails and glass were labelled by buildFramedGlassDoor
+        const [floorTop, floorBottom] = this.drawerBoxesEnabled() && boxDz1 > dz0 ? this.buildDrawerBox(sub, x0, x1, fy1, dz0, boxDz1, label, null, glass) : [dz0, dz0];
         this.buildDrawerInsertFor(sub, index, x0, x1, fy1, dz0, floorTop);
         this.ctx.labels.addAssemblyMark(this.unitId, this.unitGroupName(), "drawer", label, floorBottom - this.drawerSlideClearance() - this.z0Carcass());
         const openDistance = this.drawerSlideBase() + index * this.drawerSlideStep();
@@ -1495,7 +1513,7 @@ export class CarcassBuilder {
     drawerBoxBaseGroove() {
         return pcm(this.p["drawer_box_base_groove"]);
     }
-    buildDrawerBox(e, fx0, fx1, fby, dz0, dz1, label, depthOverride = null) {
+    buildDrawerBox(e, fx0, fx1, fby, dz0, dz1, label, depthOverride = null, glassFront = false) {
         const bx0 = fx0 + this.drawerBoxSideClearance();
         const bx1 = fx1 - this.drawerBoxSideClearance();
         if (bx1 <= bx0)
@@ -1553,13 +1571,15 @@ export class CarcassBuilder {
         const fbz1 = sz1;
         if (!(fbz1 > fbz0))
             return [bz1, bz0];
-        const fw = createBox(this.ctx, e, `${label} - جدار أمامي`, bx0 + t, by0, fbz0, bx1 - t, by0 + t, fbz1, this.carcassMaterial());
-        assignLayer(this.ctx, fw, TAGS.front);
-        if (eb)
-            bandEdge(this.ctx, fw, up, this.edgeBandingMaterial());
-        L.add(this.unitId, ug, `${label} - جدار أمامي`, bx1 - t - (bx0 + t), fbz1 - fbz0, t, {
-            banded: { top: true, bottom: false, left: false, right: false }, material: this.carcassMaterialName(),
-        });
+        if (!glassFront) {
+            const fw = createBox(this.ctx, e, `${label} - جدار أمامي`, bx0 + t, by0, fbz0, bx1 - t, by0 + t, fbz1, this.carcassMaterial());
+            assignLayer(this.ctx, fw, TAGS.front);
+            if (eb)
+                bandEdge(this.ctx, fw, up, this.edgeBandingMaterial());
+            L.add(this.unitId, ug, `${label} - جدار أمامي`, bx1 - t - (bx0 + t), fbz1 - fbz0, t, {
+                banded: { top: true, bottom: false, left: false, right: false }, material: this.carcassMaterialName(),
+            });
+        }
         const bw = createBox(this.ctx, e, `${label} - ظهر`, bx0 + t, by1 - t, fbz0, bx1 - t, by1, fbz1, this.carcassMaterial());
         assignLayer(this.ctx, bw, TAGS.front);
         if (eb)

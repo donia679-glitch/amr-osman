@@ -27,7 +27,7 @@ export const TOPS = { full: "رأس كامل", rails: "شريطين (قدام و
 export const HANDLES = { bar: "مقبض عادي", push: "Push (تاتش)", gola: "بروفايل بلت إن (الضلفة ناقصة 4 سم)", none: "من غير" };
 export const FRONT_STYLES = { wood: "لوح عادي", mirror: "لوح عليه مراية" };
 export const ROLES = ["side", "horizontal", "fixed_shelf", "divider", "shelf", "back", "door", "plinth", "other"];
-export const DEFAULT_ZONE = { type: "doors", count: 2, height: "auto", shelves: 1, hinge: "left" };
+export const DEFAULT_ZONE = { type: "doors", count: 2, height: "auto", shelves: 1, hinge: "left", glass: false };
 export const BASE_DEFAULTS = {
     schema_version: SCHEMA_VERSION,
     template: "cabinet",
@@ -342,6 +342,16 @@ function normalizeZone(zIn, i, errors) {
     z.shelves = clamp(toI(z.shelves, 0), 0, 12);
     z.hinge = ["left", "right"].includes(z.hinge) ? z.hinge : "left";
     z.led = truthy(z.led);
+    // NOVERA v53: glass-front drawers — true (all), a list of 1-based drawer numbers (bottom first, "1,3" or [1,3]), or false
+    const gl = z.glass;
+    if (gl === true || rs(gl).toLowerCase() === "all" || rs(gl).toLowerCase() === "true")
+        z.glass = true;
+    else if (Array.isArray(gl) || (typeof gl === "string" && gl.trim() !== ""))
+        z.glass = (Array.isArray(gl) ? gl : gl.split(/[,\s،]+/)).map((x) => toI(x, 0)).filter((x) => x >= 1 && x <= 6);
+    else
+        z.glass = false;
+    if (Array.isArray(z.glass) && !z.glass.length)
+        z.glass = false;
     return z;
 }
 const PANEL_KEYS = ["x", "y", "z", "w", "d", "h"];
