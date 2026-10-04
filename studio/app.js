@@ -4138,7 +4138,7 @@ const dimTags = {
   },
   target() {
     const u = selUnit();
-    if (!u || ui.mode !== "owner" || state.tab !== "design" || ui.planOn || ui.asm || ui.xdraw || ui.xmove || ui.moveMode || ui.multi || ui.present || view.final?.active || document.body.classList.contains("fs")) return null; // moving units: the size tags would sit under the finger
+    if (!u || ui.mode !== "owner" || state.tab !== "design" || ui.planOn || ui.asm || ui.xdraw || ui.xmove || ui.moveMode || ui.multi || ui.present || ui.worker || view.final?.active || document.body.classList.contains("fs")) return null; // moving units: the size tags would sit under the finger
     const r = R(u);
     if (!r.ok) return null;
     const d = this.dims(u, r);
@@ -9475,7 +9475,7 @@ function renderWorker() {
   let top = `<div class="wb-top"><button class="wb-x" data-wexit aria-label="خروج">✕</button><b>👷 ${esc(state.project.name)}</b>
     <button class="wb-ic ${W.voice ? "on" : ""}" data-wvoice title="صوت">🔊</button><button class="wb-ic ${ui.explode ? "on" : ""}" data-wexplode title="تفكيك">💥</button><button class="wb-ic ${state.xray ? "on" : ""}" data-wxray title="شفاف">◐</button><button class="wb-ic" data-wview="iso">⬢</button><button class="wb-ic" data-wview="front">⬜</button><button class="wb-ic" data-wview="fit">⛶</button></div>
     <div class="wb-units">${units.map((x) => `<button class="wb-u ${x.id === state.sel ? "on" : ""}" data-wunit="${x.id}"><b>${esc(unitCode(x))}</b><small>${esc(x.name)}</small></button>`).join("")}</div>`;
-  const TABS = [["pieces", "🧩", "القطع"], ["drawings", "📐", "الرسومات"], ["hardware", "🔩", "الهاردوير"], ["steps", "🪜", "التجميع"], ["install", "📏", "التركيب"]];
+  const TABS = [["pieces", "🧩", "القطع"], ["inside", "🪚", "من جوه"], ["drawings", "📐", "الرسومات"], ["hardware", "🔩", "الهاردوير"], ["steps", "🪜", "التجميع"], ["install", "📏", "التركيب"]];
   let side = `<div class="wb-tabs">${TABS.map(([k, ic, l]) => `<button class="${W.tab === k ? "on" : ""}" data-wtab="${k}"><span>${ic}</span><small>${l}</small></button>`).join("")}</div><div class="wb-body">`;
   if (!u || !r?.ok) side += `<p class="hint">اختار وحدة من فوق</p>`;
   else if (W.tab === "pieces") {
@@ -9492,7 +9492,24 @@ function renderWorker() {
       side += `<p class="hint">دوس على أي قطعة في الـ3D أو من القايمة</p><div class="wlist">${pcs.map((pc) => `<button class="wrow" data-wpiece="${esc(pc.key)}"><b class="wcode">${esc(pc.key)}</b><span class="wmini">${pieceSvg(pc, 0.55)}</span><span class="wdims" dir="ltr">${n1(pc.lb.h)} × ${n1(pc.lb.w)} × ${n1(pc.lb.t)}</span></button>`).join("")}</div>`;
     }
   } else if (W.tab === "drawings") {
-    side += `<div class="wdraw">${["front", "side", "plan"].map((m) => `<figure><figcaption>${{ front: "⬜ من قدام", side: "▯ من الجنب", plan: "⬛ من فوق" }[m]}</figcaption>${projSvg(u, r, m, 420, 300)}</figure>`).join("")}</div>`;
+    const L = asmLayout(u);
+    side += `<div class="wdraw"><figure><figcaption>⬜ من قدام (بارتفاعات الأرفف والمجاري)</figcaption>${L ? unitElevSvg(u, L, { W: 440, H: 520 }) : ""}</figure>${["side", "plan"].map((m) => `<figure><figcaption>${{ side: "▯ من الجنب", plan: "⬛ من فوق" }[m]}</figcaption>${projSvg(u, r, m, 440, 300)}</figure>`).join("")}</div>`;
+  } else if (W.tab === "inside") {
+    // every inside height in numbers: shelves, drawer runners and fronts, hinge cups, rails — all from the top of the unit's base («من القاعدة»)
+    const L = asmLayout(u);
+    if (!L) side += `<p class="hint">مفيش تفاصيل</p>`;
+    else {
+      const row = (ic, title, items, say) => `<div class="wirow" data-wsaytext="${esc(say)}"><div class="wih"><span class="wiic">${ic}</span><b>${esc(title)}</b></div><div class="wivals">${items.map(([l, v, cls]) => `<div class="${cls || ""}"><small>${l}</small><b class="wnum" dir="ltr">${typeof v === "number" ? n1(v) : esc(String(v))}</b></div>`).join("")}</div></div>`;
+      let h2 = `<p class="hint">كل الأرقام من <b>وش قاعدة الوحدة</b> لحد تحت القطعة. ↥ = الارتفاع. دوس على السطر تسمعه.</p>`;
+      h2 += `<figure class="wielev">${unitElevSvg(u, L, { W: 440, H: 460 })}</figure>`;
+      for (const sh of L.shelves) h2 += row(sh.fixed ? "📌" : "📚", `${sh.fixed ? "رف ثابت" : "رف"} ${sh.code || ""}`, [["↥ تحت الرف", sh.bottom], ["↥ فوق الرف", sh.top], ...(sh.gapBelow != null ? [["فراغ تحته", sh.gapBelow]] : []), ...(sh.gapAbove != null ? [["فراغ فوقه", sh.gapAbove]] : [])], `${sh.fixed ? "رف ثابت" : "رف"}: تحت الرف على ${arNum(sh.bottom)} سنتي من القاعدة`);
+      for (const d of L.drawers) h2 += row("🗄️", `${d.name} ${d.code || ""}`, [...(d.run != null ? [["↥ المجرى", d.run, "gold"]] : []), ["↥ تحت الوش", d.f0], ["↥ فوق الوش", d.f1], ["ارتفاع الوش", d.fh], ...(d.bh != null ? [["ارتفاع الصندوق", d.bh]] : []), ...(d.slide ? [["طول المجرى", d.slide]] : [])], `${d.name}: المجرى على ${arNum(d.run ?? d.f0)} سنتي من القاعدة، والوش من ${arNum(d.f0)} لحد ${arNum(d.f1)}${d.slide ? `، مجرى ${arNum(d.slide)}` : ""}`);
+      for (const dr of L.doors) h2 += row("🚪", `${dr.name} ${dr.code || ""}`, [["العرض", dr.w], ["الارتفاع", dr.h], ["↥ تحت الضلفة", dr.z0], ...(dr.side ? [["المفصلات ناحية", SIDE_AR[dr.side] || dr.side]] : []), ...(dr.hinges.length ? [[`الكبب من ${dr.side === "top" ? "الشمال" : "تحت"}${dr.sugg ? " (مقترح)" : ""}`, dr.hinges.map((x) => n1(x)).join(" · ")]] : []), ["بعد الكبة عن الحرف", dr.edge]], `${dr.name}: الكبب على ${dr.hinges.map(arNum).join(" و ")} سنتي`);
+      for (const dv of L.dividers) h2 += row("▯", `قاطوع ${dv.code || ""}`, [["بعده عن الجنب الشمال", dv.x]], `قاطوع على ${arNum(dv.x)} سنتي من الجنب الشمال`);
+      for (const rl of L.rails) h2 += row("👔", "شماعة", [["↥ من القاعدة", rl.z], ["بعدها عن الظهر", rl.back]], `شماعة على ${arNum(rl.z)} سنتي من القاعدة`);
+      if (!L.shelves.length && !L.drawers.length && !L.doors.length && !L.rails.length) h2 += `<p class="hint">الوحدة دي مفيهاش أرفف ولا أدراج ولا ضلف</p>`;
+      side += h2;
+    }
   } else if (W.tab === "hardware") {
     const hw = Object.entries(r.hardware || {});
     side += `<div class="whw">${hw.map(([k, v]) => `<div class="whwrow" data-wsaytext="${esc(k)}: ${v}"><span class="whwic">${hwIcon(k)}</span><b class="wnum" dir="ltr">${v}</b><small>${esc(k)}</small></div>`).join("") || `<p class="hint">مفيش هاردوير</p>`}</div>`;
