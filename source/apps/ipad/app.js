@@ -7538,13 +7538,16 @@ function asmLayout(u) {
     return { name: e.name, code: codeOf(e), sec: e.sec, fixed: /ثابت|جلسة/.test(e.name) || e.role === "fixed_shelf", t: r1(e.z1 - e.z0),
       bottom: r1(e.z0 - ref), top: r1(e.z1 - ref), gapBelow: lo === null ? null : r1(e.z0 - lo), gapAbove: hi === null ? null : r1(hi - e.z1), floor: r1(e.z0), e };
   });
+  // runner type: bottom runners sit under the box side (height = box bottom), side runners are screwed at the middle of the box side
+  const runner = (r.params || {}).drawer_runner === "side" ? "side" : "bottom";
   const drawers = E.filter((e) => e.cls === "drawer").sort((a, b) => a.x0 - b.x0 || a.z0 - b.z0).map((e) => {
     const ref = /^درج وزرة/.test(e.name) ? 0 : refOf(e); // the plinth drawer is measured from the floor
     const box = E.filter((x) => x.cls === "drawerBox" && (e.group ? x.group === e.group : x.name.startsWith(e.name + " - ")));
     const side = box.find((x) => /جنب/.test(x.tail)) || box[0];
     const depth = side ? side.y1 - side.y0 : 0;
+    const runZ = side ? (runner === "side" ? (side.z0 + side.z1) / 2 : side.z0) : null;
     return { name: e.name, code: codeOf(e), sec: e.sec, f0: r1(e.z0 - ref), f1: r1(e.z1 - ref), fh: r1(e.z1 - e.z0), fw: r1(e.x1 - e.x0),
-      run: side ? r1(side.z0 - ref) : null, bh: side ? r1(side.z1 - side.z0) : null, depth: r1(depth), slide: side ? SLIDES.filter((s) => s <= depth + 0.5).pop() || null : null,
+      run: side ? r1(runZ - ref) : null, runner, box0: side ? r1(side.z0 - ref) : null, bh: side ? r1(side.z1 - side.z0) : null, depth: r1(depth), slide: side ? SLIDES.filter((s) => s <= depth + 0.5).pop() || null : null,
       floor: r1(e.z0), e };
   });
   const p = r.params || {}, edge = +p.hinge_cup_edge_distance || 2.2;
@@ -7611,7 +7614,7 @@ function unitElevSvg(u, L = asmLayout(u), { W = 440, H = 520, print = false } = 
   };
   const right = L.shelves.map((sh) => ({ e: sh.e, zc: sh.e.z0, t: `${esc(sh.code || "")} ↥${n1(sh.bottom)}`, color: "#7a5f2e" }))
     .concat(L.rails.map((rl) => ({ e: rl.e, zc: (rl.e.z0 + rl.e.z1) / 2, t: `شماعة ↥${n1(rl.z)}`, color: "#555" })));
-  const left = L.drawers.filter((d) => d.run !== null).map((d) => ({ e: d.e, zc: d.e.z0 + (d.run - d.f0), t: `مجرى ↥${n1(d.run)}`, color: "#b07d12" }));
+  const left = L.drawers.filter((d) => d.run !== null).map((d) => ({ e: d.e, zc: d.e.z0 + (d.run - d.f0), t: `${d.runner === "side" ? "مجرى جانبي" : "مجرى سفلي"} ↥${n1(d.run)}`, color: "#b07d12" }));
   g += place(right, "r") + place(left, "l");
   // overall sizes
   const yb = H - padB + 22;
@@ -7633,7 +7636,7 @@ function layoutTables(L, step = null) {
   const fixed = L.shelves.filter((s) => s.fixed), loose = L.shelves.filter((s) => !s.fixed);
   if (want(2) && fixed.length) h += `<h4 class="advh">الأرفف الثابتة</h4>` + t(["القطعة", "تحت الرف", "فوق الرف", "الفراغ تحته"], fixed.map((s) => [nm(s), `${n1(s.bottom)}`, `${n1(s.top)}`, s.gapBelow === null ? "—" : n1(s.gapBelow)]));
   if (want(4) && loose.length) h += `<h4 class="advh">ارتفاعات الأرفف — الفرش تحت الرف على</h4>` + t(["القطعة", "تحت الرف", "فوق الرف", "الفراغ تحته", "الفراغ فوقه"], loose.map((s) => [nm(s), `<b>${n1(s.bottom)}</b>`, n1(s.top), s.gapBelow === null ? "—" : n1(s.gapBelow), s.gapAbove === null ? "—" : n1(s.gapAbove)]));
-  if (want(5) && L.drawers.length) h += `<h4 class="advh">الأدراج — المجرى وتحت الصندوق على</h4>` + t(["الدرج", "المجرى على", "الصندوق", "المجرى"], L.drawers.map((d) => [nm(d) + `<small class="blk">${/^درج وزرة/.test(d.name) ? "من الأرض · " : ""}الوش ${n1(d.f0)} ← ${n1(d.f1)}</small>`, d.run === null ? "—" : `<b>${n1(d.run)}</b>`, d.bh === null ? "—" : `${n1(d.bh)}×${n1(d.depth)}`, d.slide ? `${d.slide} سم` : "—"]));
+  if (want(5) && L.drawers.length) h += `<h4 class="advh">الأدراج — المجرى ${L.drawers[0].runner === "side" ? "الجانبي (نص جنب الصندوق)" : "السفلي (تحت جنب الصندوق)"} على</h4>` + t(["الدرج", "المجرى على", "الصندوق", "المجرى"], L.drawers.map((d) => [nm(d) + `<small class="blk">${/^درج وزرة/.test(d.name) ? "من الأرض · " : ""}الوش ${n1(d.f0)} ← ${n1(d.f1)}${d.runner === "side" && d.box0 !== null ? ` · تحت الصندوق ${n1(d.box0)}` : ""}</small>`, d.run === null ? "—" : `<b>${n1(d.run)}</b>`, d.bh === null ? "—" : `${n1(d.bh)}×${n1(d.depth)}`, d.slide ? `${d.slide} سم` : "—"]));
   if (want(6) && L.doors.length) h += `<h4 class="advh">الضلف والمفصلات</h4>` + t(["الضلفة", "المقاس", "من تحت على", "المفصلات", "أماكن الكبب"], L.doors.map((d) => [nm(d), `${n1(d.h)} × ${n1(d.w)}`, n1(d.z0), d.side ? SIDE_AR[d.side] || d.side : "—",
     d.hinges.length ? `${d.hinges.map(n1).join(" · ")}<small> ${d.side === "top" ? "من الشمال" : "من تحت"} · ${n1(d.edge)} من الحرف${d.sugg ? " · مقترح" : ""}</small>` : "—"]));
   if (want(7) && L.rails.length) h += `<h4 class="advh">الشماعات</h4>` + t(["القطعة", "الارتفاع", "من الأرض", "بعدها عن الظهر"], L.rails.map((r) => [esc(r.name), `<b>${n1(r.z)}</b>`, n1(r.floor), n1(r.back)]));
@@ -7650,7 +7653,7 @@ function layoutPages(u) {
   else lines.push({ t: "كل الارتفاعات من فوق القاعدة من جوه (سم)." });
   if (L.dividers.length) { H("القواطيع — من الجنب الشمال من جوه"); for (const d of L.dividers) lines.push({ t: `${nm(d)}: على ${n1(d.x)} سم` }); }
   if (L.shelves.length) { H("الأرفف — الفرش تحت الرف على"); for (const s of L.shelves) lines.push({ t: `${nm(s)}${s.fixed ? " (ثابت)" : ""}: تحت الرف ${n1(s.bottom)} · فوقه ${n1(s.top)}${s.gapBelow !== null ? ` · الفراغ تحته ${n1(s.gapBelow)}` : ""}${s.gapAbove !== null ? ` · فوقه ${n1(s.gapAbove)}` : ""}` }); }
-  if (L.drawers.length) { H("الأدراج — المجرى (تحت جنب الصندوق) على"); for (const d of L.drawers) lines.push({ t: `${nm(d)}: المجرى ${d.run === null ? "—" : n1(d.run)}${d.bh !== null ? ` · الصندوق ${n1(d.bh)} × ${n1(d.depth)}` : ""}${d.slide ? ` · مجرى ${d.slide} سم` : ""} · الوش ${n1(d.f0)} → ${n1(d.f1)}` }); }
+  if (L.drawers.length) { H(`الأدراج — المجرى ${L.drawers[0].runner === "side" ? "الجانبي (نص جنب الصندوق)" : "السفلي (تحت جنب الصندوق)"} على`); for (const d of L.drawers) lines.push({ t: `${nm(d)}: المجرى ${d.run === null ? "—" : n1(d.run)}${d.bh !== null ? ` · الصندوق ${n1(d.bh)} × ${n1(d.depth)}` : ""}${d.slide ? ` · مجرى ${d.slide} سم` : ""} · الوش ${n1(d.f0)} → ${n1(d.f1)}` }); }
   if (L.doors.length) { H("الضلف والمفصلات"); for (const d of L.doors) lines.push({ t: `${nm(d)}: ${n1(d.h)} × ${n1(d.w)} · من تحت ${n1(d.z0)}${d.side ? ` · مفصلات ${SIDE_AR[d.side] || d.side}` : ""}${d.hinges.length ? ` · الكبب على ${d.hinges.map(n1).join(" و ")} ${d.side === "top" ? "من الشمال" : "من تحت"} (${n1(d.edge)} من الحرف)${d.sugg ? " — مقترح" : ""}` : ""}` }); }
   if (L.rails.length) { H("الشماعات"); for (const r of L.rails) lines.push({ t: `${r.name}: على ${n1(r.z)} (من الأرض ${n1(r.floor)}) · بعدها عن الظهر ${n1(r.back)}` }); }
   const pages = [];
@@ -9503,7 +9506,7 @@ function renderWorker() {
       let h2 = `<p class="hint">كل الأرقام من <b>وش قاعدة الوحدة</b> لحد تحت القطعة. ↥ = الارتفاع. دوس على السطر تسمعه.</p>`;
       h2 += `<figure class="wielev">${unitElevSvg(u, L, { W: 440, H: 460 })}</figure>`;
       for (const sh of L.shelves) h2 += row(sh.fixed ? "📌" : "📚", `${sh.fixed ? "رف ثابت" : "رف"} ${sh.code || ""}`, [["↥ تحت الرف", sh.bottom], ["↥ فوق الرف", sh.top], ...(sh.gapBelow != null ? [["فراغ تحته", sh.gapBelow]] : []), ...(sh.gapAbove != null ? [["فراغ فوقه", sh.gapAbove]] : [])], `${sh.fixed ? "رف ثابت" : "رف"}: تحت الرف على ${arNum(sh.bottom)} سنتي من القاعدة`);
-      for (const d of L.drawers) h2 += row("🗄️", `${d.name} ${d.code || ""}`, [...(d.run != null ? [["↥ المجرى", d.run, "gold"]] : []), ["↥ تحت الوش", d.f0], ["↥ فوق الوش", d.f1], ["ارتفاع الوش", d.fh], ...(d.bh != null ? [["ارتفاع الصندوق", d.bh]] : []), ...(d.slide ? [["طول المجرى", d.slide]] : [])], `${d.name}: المجرى على ${arNum(d.run ?? d.f0)} سنتي من القاعدة، والوش من ${arNum(d.f0)} لحد ${arNum(d.f1)}${d.slide ? `، مجرى ${arNum(d.slide)}` : ""}`);
+      for (const d of L.drawers) h2 += row("🗄️", `${d.name} ${d.code || ""}`, [...(d.run != null ? [[d.runner === "side" ? "↥ المجرى الجانبي (نص الجنب)" : "↥ المجرى السفلي (تحت الجنب)", d.run, "gold"]] : []), ...(d.runner === "side" && d.box0 != null ? [["↥ تحت الصندوق", d.box0]] : []), ["↥ تحت الوش", d.f0], ["↥ فوق الوش", d.f1], ["ارتفاع الوش", d.fh], ...(d.bh != null ? [["ارتفاع الصندوق", d.bh]] : []), ...(d.slide ? [["طول المجرى", d.slide]] : [])], `${d.name}: ${d.runner === "side" ? "المجرى الجانبي في نص الجنب" : "المجرى السفلي تحت الجنب"} على ${arNum(d.run ?? d.f0)} سنتي من القاعدة${d.runner === "side" && d.box0 != null ? `، وتحت الصندوق على ${arNum(d.box0)}` : ""}، والوش من ${arNum(d.f0)} لحد ${arNum(d.f1)}${d.slide ? `، مجرى ${arNum(d.slide)}` : ""}`);
       for (const dr of L.doors) h2 += row("🚪", `${dr.name} ${dr.code || ""}`, [["العرض", dr.w], ["الارتفاع", dr.h], ["↥ تحت الضلفة", dr.z0], ...(dr.side ? [["المفصلات ناحية", SIDE_AR[dr.side] || dr.side]] : []), ...(dr.hinges.length ? [[`الكبب من ${dr.side === "top" ? "الشمال" : "تحت"}${dr.sugg ? " (مقترح)" : ""}`, dr.hinges.map((x) => n1(x)).join(" · ")]] : []), ["بعد الكبة عن الحرف", dr.edge]], `${dr.name}: الكبب على ${dr.hinges.map(arNum).join(" و ")} سنتي`);
       for (const dv of L.dividers) h2 += row("▯", `قاطوع ${dv.code || ""}`, [["بعده عن الجنب الشمال", dv.x]], `قاطوع على ${arNum(dv.x)} سنتي من الجنب الشمال`);
       for (const rl of L.rails) h2 += row("👔", "شماعة", [["↥ من القاعدة", rl.z], ["بعدها عن الظهر", rl.back]], `شماعة على ${arNum(rl.z)} سنتي من القاعدة`);

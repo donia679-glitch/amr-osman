@@ -38,6 +38,8 @@ cd /home/claude/novera-app && python3 tools/build_pwa.py && python3 tools/build_
 - Kitchen units: base depth 58 includes the door (inset, face at y=0); corner units get their depth from `cornerFit()` in app.js unless set by hand.
 
 ## History (latest first)
+- v66: runner height follows `drawer_runner`: asmLayout drawers carry `runner` + `box0` (box bottom) and `run` = middle of the box side for side runners / box bottom for bottom runners;
+  elevation label «مجرى جانبي/سفلي ↥N», worker «من جوه» row «↥ المجرى الجانبي (نص الجنب)» (+ «↥ تحت الصندوق») or «↥ المجرى السفلي (تحت الجنب)», voice + advanced table + text lines say which.
 - v65: worker mode text was faded in the dark theme (white cards inheriting light --ink/--muted) — .workerbar now pins its own --ink/--muted/--line and forces dark text on every card/label.
 - v64: worker mode — new tab «🪚 من جوه» (asmLayout: elevation via unitElevSvg + rows per shelf/drawer/door/divider/rail with heights from the base top, runner height, front range, slide length, hinge cups; tap = voice),
   drawings tab front = unitElevSvg (projSvg has only plan/side), 3D size tags hidden in worker mode (they overlapped the panel).

@@ -4960,5 +4960,16 @@
  "لحد": "to",
  "قاطوع على": "divider at",
  "سنتي من الجنب الشمال": "cm from the left side",
- "شماعة على": "rail at"
+ "شماعة على": "rail at",
+ "مجرى جانبي": "side runner",
+ "مجرى سفلي": "bottom runner",
+ "الأدراج — المجرى الجانبي (نص جنب الصندوق) على": "drawers — the side runner (middle of the box side) on",
+ "الأدراج — المجرى السفلي (تحت جنب الصندوق) على": "drawers — the bottom runner (under the box side) on",
+ "تحت الصندوق": "box bottom",
+ "↥ المجرى الجانبي (نص الجنب)": "↥ side runner (middle of the side)",
+ "↥ المجرى السفلي (تحت الجنب)": "↥ bottom runner (under the side)",
+ "↥ تحت الصندوق": "↥ box bottom",
+ "المجرى الجانبي في نص الجنب": "the side runner at the middle of the side",
+ "المجرى السفلي تحت الجنب": "the bottom runner under the side",
+ "وتحت الصندوق على": "and the box bottom at"
 }
