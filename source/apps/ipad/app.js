@@ -526,6 +526,8 @@ function partMovers(parts) {
       return;
     }
     if (!isDoor && !isDrawer) return;
+    // v57: a glass drawer front is 4 frame rails + glass in one group — they all ride the first rail's mover (one drawer, not four)
+    if (isDrawer && pt.group && byGroup.has(pt.group)) { of[i] = byGroup.get(pt.group); return; }
     const zc = (b.z0 + b.z1) / 2, yf = b.y0;
     let mv;
     if (isDrawer) mv = { kind: "drawer", name: pt.name, hinge: [0, 0, 0], axis: [0, 0, 1], free: [0, 0, 0], normal: [0, -1, 0], slide: 0 };
