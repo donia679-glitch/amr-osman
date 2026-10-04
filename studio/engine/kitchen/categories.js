@@ -361,6 +361,70 @@ export class WashingMachineHousingBuilder extends CarcassBuilder {
         this.buildBottomValancePanel(e, this.innerOpening().x0, this.innerOpening().x1);
     }
 }
+/** NOVERA v54: a washing-machine slot in a base run — no box, just a head (solid or two rails) that joins the neighbouring
+ *  units, and a side panel to carry it when the slot is at the end of the run (`washer_gap_side`: none/left/right/both).
+ *  The countertop runs over it as usual; no plinth, no bottom, no back, no doors. */
+export class WasherGapBuilder extends CarcassBuilder {
+    gapSides() {
+        const v = toS(this.p["washer_gap_side"]);
+        return { left: v === "left" || v === "both", right: v === "right" || v === "both" };
+    }
+    toeKick() { return false; }
+    shelvesEnabled() { return false; }
+    verticalDividersEnabled() { return false; }
+    buildBottom(_e) { }
+    buildBackPanel(_e) { }
+    buildFrontContent(_e) { }
+    headX() {
+        const pt = this.panelT(), g = this.gapSides();
+        return [g.left ? pt : 0, g.right ? this.width() - pt : this.width()];
+    }
+    buildSides(e) {
+        const pt = this.panelT(), g = this.gapSides(), d = this.depth();
+        const note = "جنب يمسك الرأس — الفتحة في آخر الصف";
+        if (g.left) {
+            const l = createBox(this.ctx, e, "جنب شمال", 0, 0, 0, pt, d, this.height(), this.carcassMaterial());
+            assignLayer(this.ctx, l, TAGS.carcass);
+            this.bandSideAllEdges(l);
+            this.ctx.labels.add(this.unitId, this.unitGroupName(), "جنب شمال", d, this.height(), pt, { banded: this.edgeBandingEnabled() ? { top: true, bottom: true, left: true, right: true } : { ...NO_BAND }, material: this.carcassMaterialName(), note });
+        }
+        if (g.right) {
+            const r = createBox(this.ctx, e, "جنب يمين", this.width() - pt, 0, 0, this.width(), d, this.height(), this.carcassMaterial());
+            assignLayer(this.ctx, r, TAGS.carcass);
+            this.bandSideAllEdges(r);
+            this.ctx.labels.add(this.unitId, this.unitGroupName(), "جنب يمين", d, this.height(), pt, { banded: this.edgeBandingEnabled() ? { top: true, bottom: true, left: true, right: true } : { ...NO_BAND }, material: this.carcassMaterialName(), note });
+        }
+    }
+    headLabel(name, x0, x1, y0, y1) {
+        const b = this.edgeBandingEnabled();
+        this.ctx.labels.add(this.unitId, this.unitGroupName(), name, x1 - x0, y1 - y0, this.panelT(), {
+            banded: { top: b, bottom: b, left: false, right: false }, material: this.carcassMaterialName(), note: "بتتثبت في أجناب الوحدات اللي جنبها (مسامير من جوه)",
+        });
+    }
+    buildTop(e) {
+        const pt = this.panelT(), [x0, x1] = this.headX(), z0 = this.height() - pt, z1 = this.height(), d = this.depth();
+        if (this.topRails() && this.topRailW() > 0) {
+            const by0 = rmax(d - this.topRailW(), 0);
+            const bp = createBox(this.ctx, e, "شريط علوي خلفي", x0, by0, z0, x1, d, z1, this.carcassMaterial());
+            assignLayer(this.ctx, bp, TAGS.carcass);
+            this.bandFrontAndBack(bp);
+            this.headLabel("شريط علوي خلفي", x0, x1, by0, d);
+            const fy0 = rmax(this.topRailFrontInset(), 0), fy1 = rmin(fy0 + this.topRailW(), by0);
+            if (fy1 > fy0) {
+                const f = createBox(this.ctx, e, "شريط علوي أمامي", x0, fy0, z0, x1, fy1, z1, this.carcassMaterial());
+                assignLayer(this.ctx, f, TAGS.carcass);
+                this.bandFrontAndBack(f);
+                this.headLabel("شريط علوي أمامي", x0, x1, fy0, fy1);
+            }
+        }
+        else {
+            const t = createBox(this.ctx, e, "رأس", x0, 0, z0, x1, d, z1, this.carcassMaterial());
+            assignLayer(this.ctx, t, TAGS.carcass);
+            this.bandFrontAndBack(t);
+            this.headLabel("رأس", x0, x1, 0, d);
+        }
+    }
+}
 export class OpenShelfBuilder extends CarcassBuilder {
     buildFrontContent(e) {
         this.buildTopValancePanel(e, this.innerOpening().x0, this.innerOpening().x1);

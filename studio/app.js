@@ -1750,7 +1750,7 @@ function swatches(colors) {
 }
 function kitchenGroup(s) {
   const p = s.params || {};
-  if (["fridge", "oven", "microwave", "washing_machine"].includes(p.unit_category) || /hob90|sink/.test(s.key || "")) return "🔌 أجهزة وتجاويف (تلاجة · فرن · ميكروويف · غسالة)";
+  if (["fridge", "oven", "microwave", "washing_machine", "washer_gap"].includes(p.unit_category) || /hob90|sink/.test(s.key || "")) return "🔌 أجهزة وتجاويف (تلاجة · فرن · ميكروويف · غسالة)";
   if (s.group) return s.group;
   if (p.element_mode === "accessory") return "مطابخ — إكسسوارات";
   if (p.unit_category === "bedroom_wardrobe") return "دواليب غرف النوم";
@@ -2205,7 +2205,7 @@ const stepChip = (path, label, val, d = 5) => `<span class="chip step"><button d
 const cycleChip = (path, label, table, v) => `<button class="chip" data-cyc="${path}" data-table="${table}">${esc(label)}: <b>${esc(short(TABLES[table][v] ?? String(v)))}</b>${ICON.cycle}</button>`;
 const togChip = (path, label, v) => `<button class="chip tog ${v ? "on" : ""}" data-toggle="${path}">${esc(label)}</button>`;
 const TABLES = { D_STYLES: D.DOOR_STYLES, D_LAYOUT: D.DOOR_LAYOUTS, D_HANDLES: D.HANDLE_TYPES, D_CONTENT: D.CONTENTS, D_DOORS: D.DOORS, D_CONSTR: D.CONSTRUCTIONS,
-  K_DOORS: KU.K_DOORS, K_POS: KU.K_POS, K_HANDLES: KU.K_HANDLES };
+  K_DOORS: KU.K_DOORS, K_POS: KU.K_POS, K_HANDLES: KU.K_HANDLES, K_GAP_SIDE: KU.K_GAP_SIDE, K_TOP: KU.K_TOP };
 
 function planChips() {
   const room = state.project.room, sel = ui.planSel;
@@ -2237,6 +2237,7 @@ function renderChips() {
   let h = "";
   if (u.kind === "kitchen") {
     for (const [path, label] of KU.dimsFor(p).slice(0, 3)) h += stepChip(path, label, n1(+p[path] || 0));
+    if (p.unit_category === "washer_gap") { h += cycleChip("washer_gap_side", "جنب يمسك الرأس", "K_GAP_SIDE", p.washer_gap_side || "none") + cycleChip("top_style", "الرأس", "K_TOP", p.top_style) + togChip("include_assembly_holes", "أليتا", p.include_assembly_holes); el.innerHTML = `<div class="cbody">${h}</div>`; return; }
     h += cycleChip("door_type", "الضلف", "K_DOORS", p.door_type);
     if (p.door_type === "drawers" || p.door_type === "drawer_top_two_doors_bottom") h += stepChip("drawer_count", "أدراج", p.drawer_count, 1);
     if (p.include_shelves) h += stepChip("shelf_count", "أرفف", p.shelf_count, 1);
@@ -2585,7 +2586,7 @@ function renderProps0() {
     h += `</div></details>`;
     el.innerHTML = h; return;
   }
-  if (u.kind === "kitchen" && r.ok) h += applianceField(u, p) + organizerField(u, r);
+  if (u.kind === "kitchen" && r.ok) h += applianceField(u, p) + (p.unit_category === "washer_gap" ? "" : organizerField(u, r));
   if (r.ok) h += summaryHtml(u);
   if (r.ok) h += `<div class="btnrow"><button class="ghost2" data-tostudio title="نسخة من الوحدة كألواح تعدّلها بحرية">✏️ عدّلها بحرية في ورشة الرسم</button></div>`;
   h += u.kind === "dressing" ? dressingProps(p) : u.kind === "kitchen" ? kitchenProps(p) : panelProps(p, r);
@@ -2837,6 +2838,13 @@ function kitchenProps(p) {
   if (extra.length) {
     h += `<details open><summary>إعدادات ${esc(KU.K_CATS[p.unit_category] || "")}</summary><div class="grid2">${extra.filter((x) => x[2] !== "bool").map(f).join("")}</div>
       <div class="bools">${extra.filter((x) => x[2] === "bool").map(f).join("")}</div></details>`;
+  }
+  if (p.unit_category === "washer_gap") {
+    // the washer slot has no box: just the head (+ a side at the end of the run) and the countertop over it
+    h += `<p class="hint">مكان الغسالة فاضي من غير قاعدة ولا ظهر ولا سكلو: الرأس بتتثبت في أجناب الوحدات اللي جنبها، ولو الفتحة في آخر الصف اختار جنب يمسكها. الكونتر بيكمل فوقها زي باقي الوحدات.</p>
+      <details><summary>الهيكل</summary><div class="grid2">${numF("panel_thickness", "سمك الخشب", p.panel_thickness, 0.1)}${numF("countertop_thickness", "سمك الكونتر", p.countertop_thickness, 0.1)}</div>
+      <div class="bools">${boolF("include_edge_banding", "شريط حواف", p.include_edge_banding)}</div></details>`;
+    return h;
   }
   const glassy = /glass/.test(p.door_type || "") || p.side_glass_door && p.side_glass_door !== "none";
   const drawersOn = ["drawers", "drawer_top_two_doors_bottom"].includes(p.door_type) || p.oven_bottom_front_type === "drawers";
@@ -3778,10 +3786,12 @@ function applianceMeshes(THREE, u, r) {
   const D1 = Math.max(...ms.filter((m) => m.mat !== "countertop").map((m) => m.box.y1));
   const label = `${p.unit_label || ""} ${u.name}`;
   // free heights between the fronts → the cavities
-  const appl = ["fridge", "oven", "microwave", "washing_machine"].includes(cat);
+  const appl = ["fridge", "oven", "microwave", "washing_machine", "washer_gap"].includes(cat);
   if (appl) {
     const sides = ms.filter((m) => /^جنب/.test(m.name));
-    const zLo = Math.min(...sides.map((m) => m.box.z0)), zHi = Math.max(...sides.map((m) => m.box.z1));
+    // the washer gap may have no sides at all: the slot is the full width from the floor to the head
+    const heads = cat === "washer_gap" ? ms.filter((m) => /^(رأس|شريط علوي)/.test(m.name)) : [];
+    const zLo = sides.length ? Math.min(...sides.map((m) => m.box.z0)) : 0, zHi = sides.length ? Math.max(...sides.map((m) => m.box.z1)) : heads.length ? Math.min(...heads.map((m) => m.box.z0)) : +p.height || 72;
     const wide = (m) => m.box.x1 - m.box.x0 > (W1 - W0) * 0.5;
     const blocks = ms.filter((m) => wide(m) && (m.layer === "Kitchen - Front" || m.door || m.drawer || /قاعدة|رأس|رف/.test(m.name) && m.box.z1 - m.box.z0 < 4)).map((m) => [m.box.z0, m.box.z1]).sort((a, b) => a[0] - b[0]);
     const gaps = [];
@@ -6954,6 +6964,13 @@ function designChecks(project = state.project) {
     if (big.length) add("e", `${u.code} ${u.name}: ${big.slice(0, 3).join("، ")} — أكبر من أي لوح (لحد 366×183 أو 280×207). قسّم الوحدة لوحدتين أو صغّر المقاس.`, u.id);
     if (thin.length) add("w", `${u.code} ${u.name}: شرايح رفيعة قوي ${thin.slice(0, 2).join("، ")} — صعب تتقص على المنشار، الأحسن بروفايل أو تزوّد الفيلر.`, u.id);
   }
+  // washer gap: the washer must fit under the head
+  for (const u of project.units) {
+    const p = R(u).params || {};
+    if (u.kind !== "kitchen" || p.unit_category !== "washer_gap") continue;
+    const clear = (+p.height || 72) - (+p.panel_thickness || 1.8), need = +p.washer_cavity_height || 85;
+    if (clear < need) add("w", `${u.code} ${u.name}: الفراغ تحت الرأس ${n1(clear)} سم والغسالة ${n1(need)} سم — ارفع الوحدة (ارتفاع ${n1(need + (+p.panel_thickness || 1.8))} سم) أو خد غسالة أقصر.`, u.id);
+  }
   // units the walls had no room for: they stand in the middle of the floor
   for (const it of items) if (it.pose.unplaced && room) add("w", `${label(it)}: مالقتش مكان على الحيطان (الحيطان مليانة أو قصيرة) — اتحطت في نص الأوضة. حرّكها لمكانها أو صغّر وحدات تانية.`, it.u.id);
   swingChecks(items, add, room, label);
@@ -7014,7 +7031,26 @@ function designChecks(project = state.project) {
         if (!near(it, ["fridge", "socket"], 120)) add("w", `${label(it)}: مفيش بريزة تلاجة قريبة.`, it.id);
         add("n", `${label(it)}: سيب تهوية 6 سم على الأقل حوالين التلاجة.`, it.id);
       }
-      if (p.unit_category === "washing_machine" && (!near(it, ["washer_cold", "cold"]) || !near(it, ["washer_drain", "drain"]))) add("w", `${label(it)}: الغسالة محتاجة تغذية على 90 وصرف على 70.`, it.id);
+      if ((p.unit_category === "washing_machine" || p.unit_category === "washer_gap") && (!near(it, ["washer_cold", "cold"]) || !near(it, ["washer_drain", "drain"]))) add("w", `${label(it)}: الغسالة محتاجة تغذية على 90 وصرف على 70.`, it.id);
+    }
+    // washer gap: a side panel where the slot is at the end of a run, and the washer must fit under the head
+    const range = (it, sg) => { const fp = Room.footprint(it.pose, it.box).map((q) => (q[0] - sg.A[0]) * sg.d[0] + (q[1] - sg.A[1]) * sg.d[1]); return [Math.min(...fp), Math.max(...fp)]; };
+    for (const it of items) {
+      const p = R(it.u).params || {};
+      if (it.u.kind !== "kitchen" || p.unit_category !== "washer_gap") continue;
+      const sg = segs.find((x) => x.id === it.pose.wall);
+      if (!sg) continue;
+      const [lo, hi] = range(it, sg);
+      const others = items.filter((o) => o !== it && o.pose.wall === sg.id && o.row !== "upper").map((o) => range(o, sg));
+      const hasL = others.some(([a, b]) => Math.abs(b - lo) < 2), hasR = others.some(([a, b]) => Math.abs(a - hi) < 2);
+      const side = p.washer_gap_side || "none";
+      // which end of the wall run is the unit's own left (engine x0)? project the footprint's x0 and x1 corners on the wall
+      const fp = Room.footprint(it.pose, it.box), pr = (q) => (q[0] - sg.A[0]) * sg.d[0] + (q[1] - sg.A[1]) * sg.d[1];
+      const leftIsLo = pr(fp[0]) < pr(fp[1]);
+      const wantL = leftIsLo ? !hasL : !hasR, wantR = leftIsLo ? !hasR : !hasL; // in the unit's own left/right
+      const have = { left: side === "left" || side === "both", right: side === "right" || side === "both" };
+      if ((wantL && !have.left) || (wantR && !have.right)) add("w", `${label(it)}: فتحة الغسالة في آخر الصف ومفيش جنب يمسك الرأس من الناحية الفاضية — اختار «جنب يمسك الرأس» في إعدادات الوحدة.`, it.id);
+      if ((!wantL && !wantR) && side !== "none") add("n", `${label(it)}: الفتحة بين وحدتين — الجنب مش لازم (الرأس بتتثبت في الوحدات اللي جنبها).`, it.id);
     }
     // sockets / switches hidden behind units
     for (const p of pts) {
@@ -8942,6 +8978,7 @@ function purchaseData() {
     if (p.unit_category === "oven") { add("oven", "فرن بلت إن", `تجويف ${n1(w - 4)} × ${n1(+p.oven_cavity_height || 60)} سم`); if (p.include_microwave === true || p.include_microwave === "true") add("microwave", "ميكروويف بلت إن", `تجويف ${n1(w - 4)} × ${n1(+p.microwave_cavity_height || 38)} سم`); }
     if (p.unit_category === "microwave") add("microwave", "ميكروويف بلت إن", `تجويف ${n1(w - 4)} سم`);
     if (p.unit_category === "washing_machine") add("washer", "غسالة", `تجويف ${n1(w - 4)} سم`);
+    if (p.unit_category === "washer_gap") add("washer", "غسالة", `فتحة ${n1(w)} سم`);
     if (p.include_sink_cutout === true || p.include_sink_cutout === "true") add("sink", "حوض", `فتحة ${n1(+p.sink_cutout_width || w - 10)} × ${n1(+p.sink_cutout_depth || 45)} سم`);
     if (/بوتجاز|مسطح|hob/i.test(`${p.unit_label || ""} ${u.name}`)) add("hob", "مسطح / بوتجاز بلت إن", `عرض ${n1(w)} سم`);
     if (/شفاط|hood/i.test(`${p.unit_label || ""} ${u.name}`)) add("hood", "شفاط", `عرض ${n1(w)} سم`);
@@ -9296,7 +9333,7 @@ function speakRun() {
   if (q.appliances.includes("oven") && !have(/oven|فرن/)) extra.push("k_oven_only");
   if (q.appliances.includes("microwave") && !have(/microwave|ميكرو/)) extra.push("k_micro_tall");
   if (q.appliances.includes("tall") && !have(/تموين|pantry/)) extra.push("k_pantry60");
-  if (q.appliances.includes("washer") && !have(/washing|غسالة/)) extra.push("k_washer");
+  if (q.appliances.includes("washer") && !have(/washing|washer_gap|غسالة/)) extra.push("k_washer_gap"); // NOVERA: the washer stands in a gap in the base run, under a head that joins the neighbours
   for (const k of extra) { const u = libUnit({ kitchen: k }); if (q.front?.lib && Catalog.LIB[q.front.lib]) Object.assign(u, applyFinish([u], q.front.lib)[0]); units.push(u); }
   applyKitchen(units, null);
   ui.pop = null; renderPop();

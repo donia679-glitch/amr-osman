@@ -285,6 +285,9 @@ export const SMART = {
   s_oven_micro: { label: "عمودين فرن وميكروويف + كارجو", desc: "عمود فرن · عمود ميكروويف وتخزين · ترولي طويل 40.", tier: "std", items: [
     { k: "k_oven_only", at: 0, p: { width: 60 } }, { k: "k_micro_tall", at: 60 }, { k: "k_cargo40", at: 120 },
   ] },
+  s_washer_run: { label: "صف غسالة 180: ضلفتين · فتحة غسالة · 3 أدراج", desc: "الغسالة في فتحة بين وحدتين — رأس شريطين فوقها والكونتر بيكمل. (طريقة NOVERA)", tier: "std", items: [
+    { k: "k_base2", at: 0 }, { k: "k_washer_gap", at: 60 }, { k: "k_base_drawers", at: 120 },
+  ] },
   s_laundry: { label: "ركن غسالة ومكانس 140", desc: "وحدة غسالة · دولاب مكانس 40 · تموين 40.", tier: "eco", items: [
     { k: "k_washer", at: 0, p: { width: 60 } }, { k: "k_broom40", at: 60 }, { k: "k_pantry40", at: 100 },
   ] },

@@ -200,6 +200,7 @@ export const DEFAULTS = {
     "washer_cavity_width": 60.0,
     "washer_cavity_height": 85.0,
     "washer_h_align": "center",
+    "washer_gap_side": "none",
     "fridge_cavity_width": 70.0,
     "fridge_cavity_height": 180.0,
     "fridge_include_left_side": true,

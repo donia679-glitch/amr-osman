@@ -322,6 +322,7 @@ export function classOf(params, name) {
     case "oven": return "oven";
     case "microwave": return "microwave";
     case "washing_machine": return "washer";
+    case "washer_gap": return "washer";
     default: break;
   }
   if (p.include_sink_cutout === true || p.include_sink_cutout === "true") return "sink";

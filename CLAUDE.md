@@ -38,6 +38,11 @@ cd /home/claude/novera-app && python3 tools/build_pwa.py && python3 tools/build_
 - Kitchen units: base depth 58 includes the door (inset, face at y=0); corner units get their depth from `cornerFit()` in app.js unless set by hand.
 
 ## History (latest first)
+- v54: washer gap unit (NOVERA practice: the washer stands in an open slot in the base run). Kitchen category `washer_gap` → `WasherGapBuilder` (engine/kitchen/categories.js):
+  no kick/bottom/back/doors, head = solid «رأس» or two rails (`top_style`, rails from the base defaults) spanning the slot and screwed into the neighbours, optional side `washer_gap_side`
+  (none/left/right/both, config.js) carrying the head when the slot ends the run; countertop as usual. kitchen_ui.js K_CATS/K_GAP_SIDE/extraFields/preset `k_washer_gap`; library SMART `s_washer_run`;
+  app.js: compact props + chips row for washer_gap, washer drawn in the slot (3D appliance gaps handle no sides), purchase list, classOf washer, «اوصفلي» adds k_washer_gap,
+  design checks: clearance under the head vs `washer_cavity_height` (85), and "gap at the end of the run with no side" (projects footprint on the wall to map the unit's left/right).
 - v53: glass-front drawers on every engine. Kitchen: param `drawer_glass` ("" | "all" | "1,3" bottom-first, chips `kglassField` at the end of «الأدراج بالتفصيل», handler `data-kglass`);
   carcass.js `drawerGlassAt`, `buildSingleDrawer` → `buildFramedGlassDoor(..., railWIn=min(4, h/3))`, `buildDrawerBox(..., glassFront)` omits the front wall, no solid door label.
   Panel furniture (chests/nightstands/vanities…): zone field `fronts[i].glass` (true | [1,3] | false, schema.js normalizeZone), catalog MATERIAL_KEYS `glass` (+ DEFAULT_MATERIALS "زجاج شفاف 4 مم"),
@@ -77,4 +82,5 @@ Amr wants the plugin updated in one go after all app edits are done. Pending for
 - corners: L-corner counter + plinth to the door face (engine/kitchen/corners.js v45), and the corner depth defaults (app.js `cornerFit()`:
   L corner_depth = depth − 1.8, diagonal cut = leg − depth) so corner units line up with the straight units.
 - dressing: compartment `drawer_glass` (glass drawer fronts: 4 frame rails + glass insert, v50) — port to the plugin's dressing layout + schema.
+- kitchen: `washer_gap` category (WasherGapBuilder + `washer_gap_side` param, v54) — port to the plugin's builders_categories.rb + config/dialog.
 - kitchen: `drawer_glass` param + carcass.js `drawerGlassAt`/`buildSingleDrawer`/`buildDrawerBox(glassFront)` (v53); panel: zone `glass` + catalog `glass` material + templates buildDrawers + checker skips (v53).

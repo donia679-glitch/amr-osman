@@ -5,8 +5,9 @@ import { TYPES as HANDLE_TYPES } from "./engine/handles/catalog.js";
 export const K_CATS = {
   standard: "عادية (ضلف/أدراج)", oven: "وحدة فرن", microwave: "وحدة ميكروويف", open_shelf: "مفتوحة (رفوف)",
   divided: "مقسّمة (فاصل رأسي)", corner: "وحدة زاوية", corner_glass_display: "فاترينة زاوية زجاج",
-  wardrobe: "دولاب دريسنج (مطبخ)", bedroom_wardrobe: "دولاب غرفة نوم", washing_machine: "وحدة غسالة", fridge: "تجويف ثلاجة",
+  wardrobe: "دولاب دريسنج (مطبخ)", bedroom_wardrobe: "دولاب غرفة نوم", washing_machine: "وحدة غسالة", washer_gap: "فتحة غسالة (رأس بس)", fridge: "تجويف ثلاجة",
 };
+export const K_GAP_SIDE = { none: "بدون — بين وحدتين", left: "جنب شمال (الفتحة آخر الصف من الشمال)", right: "جنب يمين (الفتحة آخر الصف من اليمين)", both: "جنبين" };
 export const K_TYPES = { base: "سفلية", wall: "حائط", tall: "دولاب طويل" };
 export const K_DOORS = {
   single: "ضلفة واحدة", double: "ضلفتين", drawer_top_two_doors_bottom: "درج + ضلفتين", drawers: "أدراج",
@@ -79,6 +80,9 @@ export function extraFields(p) {
     f.push(["microwave_cavity_height", "ارتفاع الميكروويف", "num"], ["microwave_cavity_bottom_offset", "ارتفاع الجلسة", "num"], ["microwave_cavity_width", "عرض الميكروويف", "num"], ["microwave_h_align", "مكان الميكروويف", "choice", K_ALIGN], ["include_appliance_frame_shelves", "رف جلسة وسقف", "bool"], ...APPLIANCE_ZONES);
   } else if (cat === "washing_machine") {
     f.push(["washer_cavity_width", "عرض الغسالة", "num"], ["washer_cavity_height", "ارتفاع الغسالة", "num"], ["washer_h_align", "مكان الغسالة", "choice", K_ALIGN], ["include_appliance_frame_shelves", "رف فوق الغسالة", "bool"], ["above_zone_shelf_count", "أرفف في الجزء العلوي", "int"]);
+  } else if (cat === "washer_gap") {
+    f.push(["washer_gap_side", "جنب يمسك الرأس", "choice", K_GAP_SIDE], ["top_style", "الرأس", "choice", K_TOP], ["washer_cavity_height", "ارتفاع الغسالة (للتأكد إنها داخلة)", "num"]);
+    if (p.top_style === "rails") f.push(["top_rail_width", "عرض الشريط", "num"], ["top_rail_front_inset", "رجوع الشريط الأمامي", "num"]);
   } else if (cat === "fridge") {
     f.push(["fridge_include_left_side", "جنب طويل شمال", "bool"], ["fridge_include_right_side", "جنب طويل يمين", "bool"]);
   } else if (cat === "divided") {
@@ -122,6 +126,7 @@ export const KITCHEN = {
   k_wall_glass: { label: "علوية زجاج بفريم معدن", desc: "ضلفتين زجاج شفاف بفريم ألومنيوم.", params: B({ unit_type: "wall", width: 80, height: 70, depth: 32, include_toe_kick: false, door_type: "double_glass_metal", shelf_count: 2 }) },
   k_oven: { label: "دولاب فرن + ميكروويف", desc: "طويل 220 سم: أدراج، فرن، ميكروويف، ضلف فوق.", params: B({ unit_category: "oven", unit_type: "tall", height: 220, include_microwave: true, oven_bottom_front_type: "drawers", drawer_count: 2, oven_cavity_bottom_offset: 52, microwave_cavity_bottom_offset: 116 }) },
   k_fridge: { label: "تجويف ثلاجة", desc: "جنبين طوال حوالين الثلاجة ووحدة فوقها.", params: B({ unit_category: "fridge", unit_type: "tall", height: 220, depth: 60 }) },
+  k_washer_gap: { label: "فتحة غسالة 60", desc: "مكان الغسالة فاضي: رأس بس بيتربط في الوحدات اللي جنبها، وجنب لو في آخر الصف. الكونتر بيكمل فوقها.", params: B({ unit_category: "washer_gap", width: 60, include_toe_kick: false, include_shelves: false, door_type: "none", washer_cavity_height: 85 }) },
   k_washer: { label: "وحدة غسالة", desc: "تجويف غسالة بفيلرات ووحدة فوقها.", params: B({ unit_category: "washing_machine", unit_type: "tall", height: 200 }) },
   k_bedroom_wr: { label: "دولاب غرفة نوم 120", desc: "طويل 220 سم، شماعة فوق وأرفف تحت، ضلفتين.", params: B({ unit_category: "bedroom_wardrobe", unit_type: "tall", width: 120, height: 220, depth: 60, wardrobe_zone_count: 2, wardrobe_zone1_type: "shelves_double", wardrobe_zone1_height: 90, wardrobe_zone1_count: 2, wardrobe_zone2_type: "rail_double" }) },
   k_bedroom_slide: { label: "دولاب نوم سحّاب 180", desc: "3 ألواح سحّاب، شماعة وأرفف.", params: B({ unit_category: "bedroom_wardrobe", unit_type: "tall", width: 180, height: 240, depth: 62, door_style: "sliding", sliding_panel_count: 3, wardrobe_zone_count: 2, wardrobe_zone1_type: "shelves_open", wardrobe_zone1_height: 100, wardrobe_zone1_count: 3, wardrobe_zone2_type: "rail_open" }) },
