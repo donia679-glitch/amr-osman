@@ -88,7 +88,7 @@ const STONE = (k) => /^(marble_|quartz_|terrazzo|concrete_|glass_|mirror)/.test(
 const hexRgb = (rgb) => "#" + rgb.map((c) => c.toString(16).padStart(2, "0")).join("");
 
 // ------------------------------------------------------------------ dressing starters
-const DC = (o) => ({ height: "auto", content: "empty", shelf_count: 2, drawer_count: 3, divider_count: 1, sub_shelf_count: 0, door: "none", door_style: "default", drawer_front: true, led: "none", ...o });
+const DC = (o) => ({ height: "auto", content: "empty", shelf_count: 2, drawer_count: 3, divider_count: 1, sub_shelf_count: 0, door: "none", door_style: "default", drawer_front: true, drawer_glass: false, led: "none", ...o });
 const DRESSING = {
   d_classic3: { label: "دريسنج 3 أقسام قياسي", desc: "شماعة طويلة، أرفف، وأدراج تحت شماعة قصيرة — 6 ضلف.", params: {
     width: 180, height: 240, depth: 60,
@@ -2991,7 +2991,7 @@ function dressingProps(p) {
         ${c.content === "dividers" ? numF(`sections.${si}.compartments.${ci}.sub_shelf_count`, "أرفف بين القواطيع", c.sub_shelf_count, 1) : ""}
         ${p.doors.layout === "per_section" ? selF(`sections.${si}.compartments.${ci}.door`, "الضلفة", D.DOORS, c.door) : ""}
         ${selF(`sections.${si}.compartments.${ci}.led`, "الليد", D.LED_MODES, c.led)}
-        ${c.content === "drawers" ? boolF(`sections.${si}.compartments.${ci}.drawer_front`, "الأدراج بوش", c.drawer_front) : ""}</div></div>`;
+        ${c.content === "drawers" ? boolF(`sections.${si}.compartments.${ci}.drawer_front`, "الأدراج بوش", c.drawer_front) + (c.drawer_front !== false ? boolF(`sections.${si}.compartments.${ci}.drawer_glass`, "وش زجاج بفريم خشب", c.drawer_glass) : "") : ""}</div></div>`;
     });
     h += `</div><button class="add sm2" data-compadd="${si}">${ICON.plus}ضيف فراغ (من فوق)</button></div>`;
   });

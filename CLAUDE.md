@@ -38,6 +38,8 @@ cd /home/claude/novera-app && python3 tools/build_pwa.py && python3 tools/build_
 - Kitchen units: base depth 58 includes the door (inset, face at y=0); corner units get their depth from `cornerFit()` in app.js unless set by hand.
 
 ## History (latest first)
+- v50: glass-front drawers in the dressing engine (compartment flag `drawer_glass`: 4 wood rails + glass insert, no handle; engine/dressing/layout.js buildDrawers, schema.js);
+  library presets d_glass_drawers90 / d_glass_walkin240 (oak + clear glass); toggle «وش زجاج بفريم خشب» in the dressing compartment editor.
 - v49: offcut wizard «♻️ أعمل إيه من الفضلات؟» (scrap*, SCRAP_CANDIDATES, pools by material+thickness from stock keys or typed rows with lib/thickness,
   role→pool assignments tried via the cut worker with timeCap 0.08, results with plan text, thumbnails, add with the pools' materials via scrapWithPlan). cutworker.js honours opts.timeCap.
 - v48: NOVERA factory defaults. `NOVERA_DEFAULTS` + `seedDefaults()` (seeded once per install, flag `defaults.seeded`), per-type defaults `defaults.by.{base,wall,tall}`,
@@ -69,3 +71,4 @@ auto-kitchen corner wall-unit warnings.
 Amr wants the plugin updated in one go after all app edits are done. Pending for that sync:
 - corners: L-corner counter + plinth to the door face (engine/kitchen/corners.js v45), and the corner depth defaults (app.js `cornerFit()`:
   L corner_depth = depth − 1.8, diagonal cut = leg − depth) so corner units line up with the straight units.
+- dressing: compartment `drawer_glass` (glass drawer fronts: 4 frame rails + glass insert, v50) — port to the plugin's dressing layout + schema.

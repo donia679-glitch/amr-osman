@@ -142,6 +142,7 @@ export const DEFAULT_COMPARTMENT = {
     door: "none",
     door_style: "default",
     drawer_front: true,
+    drawer_glass: false,
     led: "none",
 };
 export const DEFAULTS = {
@@ -479,6 +480,7 @@ export function normalizeCompartment(c0, tag, errors) {
     if (!has(DOORS, out.door))
         errors.push(`${tag}: نوع الضلفة '${out.door}' مش معروف.`);
     out.drawer_front = notFalse(c.drawer_front);
+    out.drawer_glass = c.drawer_glass === true || c.drawer_glass === "true";
     out.led = rs(c.led);
     if (out.led === "")
         out.led = "none";

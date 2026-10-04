@@ -1147,7 +1147,23 @@ export class Engine {
             const key = `s${sec.index}c${ci}d${i}`;
             const grp = { key, kind: "drawer", name, open_distance: rround(boxLen * 0.75, 2) };
             this.drawer_groups.push(grp);
-            if (hasFront) {
+            if (hasFront && c.drawer_glass) {
+                // NOVERA v50: a glass drawer front — a wood frame (4 rails) with a glass panel in a groove; pulled from the top rail, no handle
+                const W = fx1 - fx0, H = fz1 - fz0, fw = Math.min(3.0, W / 4.0, H / 3.0), eng = 0.6;
+                const gt = this.doors.glass_t;
+                const rails = [["فوق", fx0, fz1 - fw, fx1, fz1, ["left", "right", "top", "bottom"]], ["تحت", fx0, fz0, fx1, fz0 + fw, ["left", "right", "top", "bottom"]],
+                    ["شمال", fx0, fz0 + fw, fx0 + fw, fz1 - fw, ["left"]], ["يمين", fx1 - fw, fz0 + fw, fx1, fz1 - fw, ["right"]]];
+                for (const [lbl, a0, b0, a1, b1, band] of rails) {
+                    this.addPart(`${name} - فريم ${lbl}`, "drawer_front", "drawer_front", this.box(a0, fy0, b0, a1, fy1, b1), {
+                        label_axes: ["x", "z"], band, layer: "front", group: key, note: "فريم وش درج زجاج — مفحار 4 مم في النص للزجاج",
+                    });
+                }
+                const ym = (fy0 + fy1) / 2.0;
+                this.addPart(`${name} - زجاج الوش`, "door_insert", "glass", this.box(fx0 + fw - eng, ym - gt / 2.0, fz0 + fw - eng, fx1 - fw + eng, ym + gt / 2.0, fz1 - fw + eng), {
+                    label_axes: ["x", "z"], band: [], layer: "front", group: key,
+                });
+            }
+            else if (hasFront) {
                 const plan = this.handlePlan(name, "drawer", null, fx0, fx1, fz0, fz1, fy0, fy1, false);
                 const fr = plan.front;
                 const fp = this.addPart(name, "drawer_front", "drawer_front", this.box(fx0 + fr.x0, fy0, fz0 + fr.z0, fx0 + fr.x1, fy1, fz0 + fr.z1), {

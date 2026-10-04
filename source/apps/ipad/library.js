@@ -83,7 +83,7 @@ export const KITCHEN = {
 };
 
 // ------------------------------------------------------------------ dressing rooms
-const DC = (o) => ({ height: "auto", content: "empty", shelf_count: 2, drawer_count: 3, divider_count: 1, sub_shelf_count: 0, door: "none", door_style: "default", drawer_front: true, led: "none", ...o });
+const DC = (o) => ({ height: "auto", content: "empty", shelf_count: 2, drawer_count: 3, divider_count: 1, sub_shelf_count: 0, door: "none", door_style: "default", drawer_front: true, drawer_glass: false, led: "none", ...o });
 export const DRESSING = {
   d_open_led: { label: "دريسنج مفتوح بليد 240", desc: "من غير ضلف: شماعات وأرفف وأدراج، ليد في كل فراغ.", params: {
     width: 240, height: 250, depth: 55,
@@ -117,6 +117,18 @@ export const DRESSING = {
     sections: [
       { width: "auto", compartments: [DC({ height: 110, content: "rail", door: "double" }), DC({ content: "rail", door: "continue" })] },
       { width: "auto", compartments: [DC({ content: "dividers", divider_count: 1, sub_shelf_count: 5, door: "double" })] },
+    ] } },
+  d_glass_drawers90: { label: "عمود أدراج بوش زجاج 90", desc: "زي الصورة: 4 أدراج بفريم خشب وزجاج، فراغ مفتوح بليد تحت الرف، ورف فوق.", libs: { glass: "glass_clear", carcass: "wood_oak_natural_v", drawer_front: "wood_oak_natural_v", back: "wood_oak_natural_v" }, params: {
+    width: 90, materials: { carcass: { name: "NOVERA - خشب أوك طبيعي - عروق رأسي" }, drawer_front: { name: "NOVERA - خشب أوك طبيعي - عروق رأسي" }, back: { name: "NOVERA - خشب أوك طبيعي - عروق رأسي" }, glass: { name: "NOVERA - زجاج شفاف" } }, height: 240, depth: 58, handles: { type: "none" },
+    sections: [
+      { width: "auto", compartments: [DC({ height: 95, content: "drawers", drawer_count: 4, drawer_glass: true }), DC({ height: 110, content: "empty", led: "top" }), DC({ content: "shelves", shelf_count: 0 })] },
+    ] } },
+  d_glass_walkin240: { label: "دريسنج مفتوح بأدراج زجاج 240", desc: "شماعتين على الجنبين وعمود أدراج زجاج في النص، ليد تحت كل رف.", libs: { glass: "glass_clear", carcass: "wood_oak_natural_v", drawer_front: "wood_oak_natural_v", back: "wood_oak_natural_v" }, params: {
+    width: 240, materials: { carcass: { name: "NOVERA - خشب أوك طبيعي - عروق رأسي" }, drawer_front: { name: "NOVERA - خشب أوك طبيعي - عروق رأسي" }, back: { name: "NOVERA - خشب أوك طبيعي - عروق رأسي" }, glass: { name: "NOVERA - زجاج شفاف" } }, height: 250, depth: 58, handles: { type: "none" },
+    sections: [
+      { width: 70, compartments: [DC({ height: 120, content: "rail", led: "top" }), DC({ content: "rail", led: "top" })] },
+      { width: "auto", compartments: [DC({ height: 95, content: "drawers", drawer_count: 4, drawer_glass: true }), DC({ height: 115, content: "empty", led: "top" }), DC({ content: "shelves", shelf_count: 0 })] },
+      { width: 70, compartments: [DC({ content: "shelves", shelf_count: 5, led: "shelves" })] },
     ] } },
   d_wall_long: { label: "حيطة دريسنج كاملة 360", desc: "5 أقسام: شماعات، أرفف، أدراج، ركن جزم.", params: {
     width: 360, height: 260, depth: 60, plinth: { enabled: true, style: "legs" },
