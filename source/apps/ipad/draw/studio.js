@@ -114,6 +114,9 @@ function fatLine(pts, color, width = 3, closed = false, opts = {}) {
   return mesh;
 }
 const matColor = (k) => ctx.matColor?.(k) || MCOL[k] || "#cccccc";
+const libList = () => { try { return ctx.libs?.() || []; } catch { return []; } };
+const solidColor = (s) => { if (s.lib) { const l = libList().find((x) => x[0] === s.lib); if (l) return l[2]; } return matColor(s.mat); };
+const libSelect = (cur) => `<select data-sp="lib"><option value="">— خامة الدور (${esc(matName("carcass"))}…)</option>${libList().map(([k, n]) => `<option value="${esc(k)}" ${cur === k ? "selected" : ""}>${esc(n)}</option>`).join("")}</select>`;
 const matName = (k) => ctx.matName?.(k) || MATS[k] || k;
 
 // ================================================================== open / close
@@ -367,7 +370,7 @@ function rebuild() {
     if (s.hidden) continue;
     const ref = "s:" + s.id, faces = G.solidFaces(s), { geo, tri2face } = triFaces(faces);
     const sel = selected(ref), dim = ui.editGroup && s.group !== ui.editGroup;
-    const mat = new THREE.MeshStandardMaterial({ color: matColor(s.mat), roughness: 0.75, metalness: 0, side: THREE.DoubleSide, transparent: ui.xray || dim, opacity: ui.xray ? 0.35 : dim ? 0.25 : 1,
+    const mat = new THREE.MeshStandardMaterial({ color: solidColor(s), roughness: 0.75, metalness: 0, side: THREE.DoubleSide, transparent: ui.xray || dim, opacity: ui.xray ? 0.35 : dim ? 0.25 : 1,
       emissive: new THREE.Color(sel ? 0x2f6fdf : 0x000000), emissiveIntensity: sel ? 0.28 : 0, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1, clippingPlanes: clip });
     const mesh = new THREE.Mesh(geo, mat);
     mesh.userData = { ref, sid: s.id, tri2face, faces };
@@ -2045,9 +2048,10 @@ function curCab() {
 }
 /** rebuild a cabinet's boards from its description (keeps the group, replaces the boards) */
 function cabRegen(c) {
+  const libs = new Map(M.solids.filter((s) => s.cab === c.id && s.lib).map((s) => [s.name, s.lib])); // a piece's own material survives a rebuild (by name)
   M.solids = M.solids.filter((s) => s.cab !== c.id);
   let g = M.groups.find((x) => x.id === c.id); if (!g) { g = { id: c.id, name: c.name }; M.groups.push(g); } g.name = c.name;
-  for (const s of Cab.cabSolids(c)) M.solids.push(s);
+  for (const s of Cab.cabSolids(c)) { if (libs.has(s.name)) s.lib = libs.get(s.name); M.solids.push(s); }
 }
 function cabAdd() {
   edit(() => { const c = Cab.newCab((M.cabs?.length || 0) + 1, freeX()); (M.cabs ||= []).push(c); cabRegen(c); ui.cab = c.id; ui.sel = new Set(["G:" + c.id]); });
@@ -2159,7 +2163,8 @@ function cabFocusHtml(c, cavs, bands, cellsL) {
     return h;
   }
   const s = M.solids.find((x) => x.id === F.sid); if (!s || s.cab !== c.id) { ui.cabFocus = null; return null; }
-  const r = s.cabRef || {}, head = `<div class="dsbox focus"><b>🔎 ${esc(s.name)}</b> <small dir="ltr">${f1(G.boardSize(s).w)} × ${f1(G.boardSize(s).h)} × ${f1(s.depth)}</small>${back}`;
+  const r = s.cabRef || {}, head = `<div class="dsbox focus"><b>🔎 ${esc(s.name)}</b> <small dir="ltr">${f1(G.boardSize(s).w)} × ${f1(G.boardSize(s).h)} × ${f1(s.depth)}</small>${back}
+    <label class="dsf"><span>🎨 خامة القطعة دي</span>${libSelect(s.lib || "")}</label><p class="hint">سيبها «خامة الدور» تاخد خامة الوحدة، أو اختار خامة بعينها تتقطع منها القطعة دي بس.</p>`;
   if (r.k === "div" && c.dividers[r.i]) { const d = c.dividers[r.i], i = r.i; return head + `<h4>▥ القاطوع الرأسي</h4><div class="dsrow">${cabSel(`dividers.${i}.from`, d.from, { left: "من الجنب الشمال", right: "من الجنب اليمين" })}<input class="dsin sm" type="text" inputmode="decimal" data-numf data-cf="dividers.${i}.at" value="${f1(d.at)}" aria-label="المسافة">${bands.length > 1 ? cabSel(`dividers.${i}.band`, d.band == null ? "" : String(d.band), { "": "كل الارتفاع", ...Object.fromEntries(bands.map((b, bi) => [String(bi), `حزام ${bi + 1} بس`])) }) : ""}<button class="dsb" data-cab="deldiv:${i}">✕ امسحه</button></div><p class="hint">المسافة من وش الجنب من جوه لحد القاطوع.</p></div>`; }
   if (r.k === "hdiv" && c.hdividers?.[r.i]) { const d = c.hdividers[r.i], i = r.i; return head + `<h4>▬ القاطوع الأفقي</h4><div class="dsrow">${cabSel(`hdividers.${i}.from`, d.from, { bottom: "من القاعدة", top: "من الرأس" })}<input class="dsin sm" type="text" inputmode="decimal" data-numf data-cf="hdividers.${i}.at" value="${f1(d.at)}" aria-label="المسافة"><button class="dsb" data-cab="delhdiv:${i}">✕ امسحه</button></div></div>`; }
   if (r.k === "vpart" && c.vparts?.[r.i]) { const v = c.vparts[r.i], i = r.i; return head + `<h4>▥ الفاصل الرأسي</h4><div class="dsrow"><span>من شمال الفراغ</span><input class="dsin sm" type="text" inputmode="decimal" data-numf data-cf="vparts.${i}.x" value="${f1(v.x)}"><label><span>داخل من قدام</span><input class="dsin sm" type="text" inputmode="decimal" data-numf data-cf="vparts.${i}.setback" value="${f1(v.setback ?? 1)}"></label><button class="dsb" data-cab="delvpart:${i}">✕ امسحه</button></div></div>`; }
@@ -2272,6 +2277,7 @@ function sideHtml() {
         ${G.plainRect(s) ? `<label><span>الطول</span><input type="text" inputmode="decimal" data-numf data-sp="w" value="${f1(G.bbox2(s.outer)[2] - G.bbox2(s.outer)[0])}"></label><label><span>العرض</span><input type="text" inputmode="decimal" data-numf data-sp="h" value="${f1(G.bbox2(s.outer)[3] - G.bbox2(s.outer)[1])}"></label>` : ""}
       </div>
       <label class="dsf"><span>الخامة</span><select data-sp="mat">${Object.keys(MATS).map((k) => `<option value="${k}" ${s.mat === k ? "selected" : ""}>${esc(matName(k))}</option>`).join("")}</select></label>
+      <label class="dsf"><span>🎨 خامة بعينها للوح ده</span>${libSelect(s.lib || "")}</label>
       <div class="dsrow"><label class="dschk"><input type="checkbox" data-sp="band" ${s.band !== false ? "checked" : ""}> شريط حرف على كل الحروف</label></div>
       <label class="dsf"><span>اتجاه الألياف</span><select data-sp="grain"><option value="">تلقائي (على الطول)</option><option value="u" ${s.grain === "u" ? "selected" : ""}>على المحور الأول</option><option value="v" ${s.grain === "v" ? "selected" : ""}>على المحور التاني</option></select></label>
       ${s.holes.length || s.pockets.length ? `<p class="hint">${s.holes.length ? `${s.holes.length} تفريغة` : ""}${s.holes.length && s.pockets.length ? " · " : ""}${s.pockets.length ? `${s.pockets.length} حفر` : ""} — بتطلع في ملفات الـCNC.</p>` : ""}
@@ -2455,13 +2461,14 @@ function onChange(e) {
   if (d.gp) { edit(() => { const g = M.groups.find((x) => x.id === d.gp); if (g) g.name = t.value.trim() || g.name; }); return; }
   if (d.wp) { const w = ent(selRefs()[0]); if (w) edit(() => { w[d.wp] = t.value; }); return; }
   if (d.sp) {
-    const s = selSolids()[0];
+    const s = selSolids()[0] || (ui.cabFocus?.kind === "piece" ? M.solids.find((x) => x.id === ui.cabFocus.sid) : null);
     if (!s) return;
     const v = t.type === "checkbox" ? t.checked : t.value;
     edit(() => {
       const num = +String(v).replace(/[^\d.\-]/g, "");
       if (d.sp === "name") s.name = String(v).trim() || s.name;
       else if (d.sp === "mat") s.mat = v;
+      else if (d.sp === "lib") { if (v) s.lib = v; else delete s.lib; }
       else if (d.sp === "band") s.band = !!v;
       else if (d.sp === "grain") { if (v) s.grain = v; else delete s.grain; }
       else if (d.sp === "depth" && num > 0.05) s.depth = num;

@@ -5174,5 +5174,9 @@
  "↥ تحته من القاعدة": "↥ under it from the bottom",
  "↥ فوقه": "↥ over it",
  "من اليمين": "from right",
- "تحته": "under"
+ "تحته": "under",
+ "🎨 خامة بعينها للوح ده": "🎨 a material of its own for this board",
+ "🎨 خامة القطعة دي": "🎨 this piece's material",
+ "— خامة الدور": "— the role's material",
+ "سيبها «خامة الدور» تاخد خامة الوحدة، أو اختار خامة بعينها تتقطع منها القطعة دي بس.": "Leave it on the role's material to follow the unit, or pick a specific material this piece alone is cut from."
 }

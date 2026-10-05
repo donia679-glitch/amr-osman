@@ -38,6 +38,7 @@ cd /home/claude/novera-app && python3 tools/build_pwa.py && python3 tools/build_
 - Kitchen units: base depth 58 includes the door (inset, face at y=0); corner units get their depth from `cornerFit()` in app.js unless set by hand.
 
 ## History (latest first)
+- v82: a piece's own material in the studio too: solids carry `s.lib` (select `data-sp="lib"` in the board panel and in the focused cabinet piece; `libSelect`, `solidColor` for the 3D colour, ctx.libs() from app.js), `cabRegen` keeps libs by name, studio onDone turns them into `u.matOv`; «🎨 خامة لكل قطعة» is a basic-level section.
 - v81: free-model (studio) pieces keep their cabinet role: adaptModel reads `s.role` (door/drawer_front → role door with explicit `door_label.hinge_side` from the name, whatever material the door is painted with; drawer_box → side/other; drawer_bottom) and gives drawer parts a `group` "<cab>:drawer N" so the box rides its front's mover;
   panel schema normalizePanel keeps `group` + `door_label`, ROLES gains drawer_bottom (overlap check skips the box bottom in its groove), templates buildFree passes group/door_label through.
 - v80: (1) material per piece on any unit: `u.matOv = { [pieceName]: libId }` applied in R(u) by `withMatOv` (parts get material key "ov:<lib>", names/colors/libOf extended, kitchen meshes' faces remapped) → cut plan groups by that sheet, 3D colour, label name; props section «🎨 خامة لكل قطعة» (`matOvProps`, selects data-matov per cut piece: project materials / my materials / catalogue, data-matovreset); R cache key includes matOv.

@@ -779,6 +779,7 @@ function openStudio(u, extra = {}) {
     tool: extra.tool,
     matColor: (k) => { const l = u && libs(k); return l && Catalog.LIB[l] ? Catalog.LIB[l][2] : null; },
     matName: (k) => PANEL_MATS[k] || k,
+    libs: () => [...Object.entries(Catalog.LIB).filter(([k]) => !STONE(k)).map(([k, v]) => [k, v[0], v[2]]), ...Mat.all().map((m) => [m.id, m.name, m.color || "#ccc"])],
     onDone: (model, name, x = {}) => {
       // walls, doors, windows and MEP points drawn in the studio are the project's room
       if (x.roomChanged) {
@@ -789,8 +790,11 @@ function openStudio(u, extra = {}) {
         state.project.room = nr; if (nr) { state.whole = true; ui.planOn = false; plan.vb = null; }
       }
       const empty = !model.solids.length && !model.sweeps.length && !model.sketches.length;
-      if (u && state.project.units.includes(u)) { u.params = { ...u.params, model, template: "free" }; u.name = name || u.name; }
-      else if (!empty) { const nu = { id: uid(), kind: "panel", name: name || "تصميم حر", params: { template: "free", model, materials: {} } }; state.project.units.push(nu); state.sel = nu.id; }
+      // a board given a material of its own in the studio → that piece's material on the unit
+      const ov = {}; for (const sd of model.solids || []) if (sd.lib) ov[sd.name] = sd.lib;
+      if (u && state.project.units.includes(u)) { u.params = { ...u.params, model, template: "free" }; u.name = name || u.name; if (Object.keys(ov).length) u.matOv = { ...(u.matOv || {}), ...ov }; }
+      else if (!empty) { const nu = { id: uid(), kind: "panel", name: name || "تصميم حر", params: { template: "free", model, materials: {} }, ...(Object.keys(ov).length ? { matOv: ov } : {}) }; state.project.units.push(nu); state.sel = nu.id; }
+      for (const lib of Object.values(ov)) if (!Catalog.LIB[lib]) { const m = Mat.get(lib); if (m && !(state.project.mats || []).some((x) => x.id === lib)) state.project.mats = [...(state.project.mats || []), m]; }
       state.libOpen = false; save(); render(true);
       if (empty && !u) { if (x.roomChanged) alertBar("اتحفظت الحيطان ✓ — بقت حيطان المشروع في المسقط والواجهات والـ3D"); }
       else alertBar(x.roomChanged ? "اتحفظ التصميم والحيطان ✓ — الألواح في القص والملصقات، والحيطان في المسقط" : "اتحفظ التصميم ✓ — ألواحه في القص والملصقات وملفات الـCNC");
@@ -4141,7 +4145,7 @@ function applyLibTo(u, key, lib) {
   } else setParams(u, (p) => { p.materials ??= {}; p.materials[key] = lib ? { lib } : {}; });
 }
 // ---- the settings panel: "basic" shows only what most units need, search finds any field
-const BASIC_SECTIONS = ["✏️ ورشة الرسم", "درج الوزرة", "الحيطة الجاية بالمقاس", "الرسم بالقلم", "الأبواب والشبابيك", "المكان", "المقاسات", "المقاسات والنظام", "الوحدة", "الواجهة", "من جوه", "الخامات", "الأقسام (من الشمال لليمين)", "الواجهة (من تحت لفوق)", "الألواح", "اللون والتشطيب", "🧩 التقسيمات الداخلية", "الأوضة", "كل الحيطان"];
+const BASIC_SECTIONS = ["✏️ ورشة الرسم", "درج الوزرة", "الحيطة الجاية بالمقاس", "الرسم بالقلم", "الأبواب والشبابيك", "المكان", "المقاسات", "المقاسات والنظام", "الوحدة", "الواجهة", "من جوه", "الخامات", "الأقسام (من الشمال لليمين)", "الواجهة (من تحت لفوق)", "الألواح", "اللون والتشطيب", "🧩 التقسيمات الداخلية", "الأوضة", "كل الحيطان", "🎨 خامة لكل قطعة"];
 /** the sections the workshop cares about: construction, joints, hinges, grooves, banding, drawers, assembly sizes, summary */
 const SHOP_SECTIONS = /التصنيع والتجميع|الهيكل والتجميع|الأليتا|كبب المفصلات|مفحار|الأورزة|درج الوزرة|صناديق الأدراج|الأدراج بالتفصيل|مقاسات التركيب|ملخص الوحدة|تفاصيل الضلف|المقاسات|القطع|الجهاز اللي هيتركب|مجرى الليد/;
 const normAr = (t) => String(t || "").toLowerCase().replace(/[أإآ]/g, "ا").replace(/ة/g, "ه").replace(/ى/g, "ي").replace(/[ًٌٍَُِّْـ]/g, "");
