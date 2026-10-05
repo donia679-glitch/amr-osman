@@ -65,7 +65,7 @@ const objs = new Map(); // entity ref → three object(s), for picking and ghost
 const ui = { tool: "select", sel: new Set(), st: null, axis: null, plane: "auto", copy: false, xray: false, section: null, secPos: 0, ortho: false, mat: "carcass",
   segs: 32, sides: 6, filletR: 5, chamferD: 2, editGroup: null, face2d: null, info: null, addSel: false, lastPush: null, lastMove: null, thick: 1.8, panel: true, outline: false, msg: "",
   step: 1, boxSel: false, recent: [], face: null, wallT: Room.WALL_T, wallH: Room.WALL_H, mepKind: "socket", rsel: null, showWalls: true,
-  snap: { on: true, end: true, mid: true, center: true, int: true, edge: true, face: true, axis: true, par: true, align: true, angle: true, strength: 1.3 }, dimEdit: null, clip: null, arr: { n: 3, d: 40, ax: 0, pn: 6, pa: 360, px: 0, py: 0 }, alignAx: 0 };
+  snap: { on: true, end: true, mid: true, center: true, int: true, edge: true, face: true, axis: true, par: true, align: true, angle: true, strength: 1.3 }, dimEdit: null, clip: null, rdir: [1, 1], mvD: 10, arr: { n: 3, d: 40, ax: 0, pn: 6, pa: 360, px: 0, py: 0 }, alignAx: 0 };
 const hist = { u: [], r: [] };
 
 export const newModel = () => ({ v: 1, solids: [], sketches: [], paths: [], sweeps: [], guides: [], dims: [], texts: [], groups: [] });
@@ -1114,7 +1114,7 @@ function twoClick(make, label) {
     click(xy) {
       const st = ui.st;
       const inf = infer(...xy, st ? { anchor: st.a, plane: st.plane, axes: ui.tool === "rect" ? [] : inPlaneAxes(st.plane) } : {});
-      if (!st) { const pl = drawPlaneFor(inf); ui.st = { plane: pl, a: inf.p, a2: G.toPlane(pl, inf.p).slice(0, 2) }; return; }
+      if (!st) { const pl = drawPlaneFor(inf); ui.st = { plane: pl, a: inf.p, a2: G.toPlane(pl, inf.p).slice(0, 2) }; if (ui.tool === "rect") { setMsg(`الركن الأول اتحدد (${planeName(pl)}) — دوس الركن التاني، أو اكتب العرض والطول في الجنب ودوس «ارسم»`); renderUI(); } return; }
       const b2 = G.toPlane(st.plane, inf.p).slice(0, 2);
       if (Math.hypot(b2[0] - st.a2[0], b2[1] - st.a2[1]) < 0.2) return;
       const sh = make(st.a2, b2);
@@ -1142,7 +1142,7 @@ function twoClick(make, label) {
       if (ui.tool === "rect") {
         const [w, h] = v.list || [v.v, v.v];
         if (!(w > 0) || !(h > 0)) return;
-        const sx = Math.sign((st.hb?.[0] ?? st.a2[0] + 1) - st.a2[0]) || 1, sy = Math.sign((st.hb?.[1] ?? st.a2[1] + 1) - st.a2[1]) || 1;
+        const sx = st.hb ? Math.sign(st.hb[0] - st.a2[0]) || 1 : ui.rdir[0], sy = st.hb ? Math.sign(st.hb[1] - st.a2[1]) || 1 : ui.rdir[1];
         commitShape(make(st.a2, [st.a2[0] + sx * w, st.a2[1] + sy * h]), st.plane);
       } else if (v.v > 0) {
         const ang = st.hb ? Math.atan2(st.hb[1] - st.a2[1], st.hb[0] - st.a2[0]) : 0;
@@ -1493,6 +1493,8 @@ TOOL.move = {
         ui.sel.add(ref); rebuild();
       }
       ui.st = { mode: "move", a: inf.p, refs: selRefs() };
+      setMsg("ماسكها — حرّك صباعك ودوس المكان الجديد، أو اكتب المسافة تحت ↵ (في اتجاه صباعك) أو من «↔ حرّك بمقاس» في الجنب");
+      renderUI();
       return;
     }
     const inf = infer(...xy, { anchor: st.a });
@@ -2245,6 +2247,52 @@ function renderUI() {
   el.classList.toggle("noside", !ui.panel);
   el.querySelector("#dsSide").innerHTML = sideHtml();
 }
+const PLANES = [["auto", "🖐 تلقائي (الوش اللي تحت صباعك)"], ["ground", "▭ نايم على الأرض"], ["front", "▯ واقف — وشه لقدام"], ["side", "◫ واقف — وشه للجنب"]];
+function planeName(pl) { const n = G.norm(G.nOf(pl)); return Math.abs(n[2]) > 0.9 ? "نايم" : Math.abs(n[1]) > 0.9 ? "واقف وشه لقدام" : Math.abs(n[0]) > 0.9 ? "واقف وشه للجنب" : "مايل"; }
+/** drawing tools: pick the plane with one tap, and type the rectangle's size */
+function drawHtml() {
+  if (ui.face2d || !DRAWTOOLS_WALL.includes(ui.tool)) return "";
+  const st = ui.st, vert = st ? Math.abs(G.norm(G.nOf(st.plane))[2]) < 0.5 : ui.plane === "front" || ui.plane === "side";
+  let h = `<div class="dsbox dsdraw"><b>📐 بترسم على إيه؟</b><div class="dsseg dsplanes">${PLANES.map(([k, l]) => `<button class="dsb ${ui.plane === k ? "on" : ""}" data-plane="${k}">${l}</button>`).join("")}</div>
+    <p class="hint">«واقف» = الشكل بيطلع رأسي (زي جنب أو ظهر بين دولابين) · «نايم» = على الأرض زي رف. ارسم من ركن الدولاب: المغناطيس بيمسك الركن.</p>`;
+  if (ui.tool === "rect") h += `<div class="dsrow"><b>⬜ مستطيل بالمقاس</b><small class="hint">${st ? "✅ الركن الأول اتحدد" : "دوس الركن الأول في الرسم الأول (أو ابدأ من نقطة الأصل)"}</small></div>
+    <div class="dsgrid"><label><span>العرض</span><input type="text" inputmode="decimal" data-numf id="dsRw" value="${ui.rw ?? 60}"></label><label><span>${vert ? "الارتفاع" : "الطول"}</span><input type="text" inputmode="decimal" data-numf id="dsRh" value="${ui.rh ?? 40}"></label></div>
+    <div class="dsrow"><span>اتجاهه من الركن</span><span class="dsgrp"><button class="dsb ${ui.rdir[0] > 0 ? "on" : ""}" data-rdir="0">→ يمين</button><button class="dsb ${ui.rdir[0] < 0 ? "on" : ""}" data-rdir="1">← شمال</button><button class="dsb ${ui.rdir[1] > 0 ? "on" : ""}" data-rdir="2">${vert ? "↑ فوق" : "↑ لورا"}</button><button class="dsb ${ui.rdir[1] < 0 ? "on" : ""}" data-rdir="3">${vert ? "↓ تحت" : "↓ لقدام"}</button></span></div>
+    <button class="dsb primary" data-ds="rectgo">⬜ ارسم بالمقاس ده</button>
+    <p class="hint">أو بعد الركن الأول اكتب تحت «العرض,الطول» (مثلاً 60,72) واضغط ↵.</p>`;
+  return h + `</div>`;
+}
+/** move / copy the selection by an exact typed distance along one axis */
+function moveByHtml() {
+  if (!ui.sel.size && ui.tool !== "move") return "";
+  const busy = ui.tool === "move" && ui.st;
+  return `<div class="dsbox dsmv"><b>↔ حرّك بمقاس</b><small class="hint">${busy ? "القطعة ماسكها — اكتب المسافة ودوس الاتجاه" : ui.sel.size ? `${ui.sel.size} مختار — اكتب المسافة ودوس الاتجاه` : "اختار القطعة الأول (أو دوس عليها بأداة التحريك)"}</small>
+    <div class="dsgrid"><label><span>المسافة (سم)</span><input type="text" inputmode="decimal" data-numf id="dsMvD" value="${f1(ui.mvD)}"></label></div>
+    <div class="dsgrp dsmvbtns"><button class="dsb ax0" data-mv="0,1">+X ←</button><button class="dsb ax0" data-mv="0,-1">−X →</button><button class="dsb ax1" data-mv="1,1">+Y لورا</button><button class="dsb ax1" data-mv="1,-1">−Y لقدام</button><button class="dsb ax2" data-mv="2,1">+Z فوق</button><button class="dsb ax2" data-mv="2,-1">−Z تحت</button></div>
+    <p class="hint">X = العرض (أحمر) · Y = العمق (أخضر) · Z = الارتفاع (أزرق). علّم «نسخة» فوق تعمل نسخة على المسافة دي بدل ما تحرّك. وفي أداة التحريك: امسك القطعة واكتب الرقم تحت ↵ يحرّكها على المسافة دي في اتجاه صباعك.</p></div>`;
+}
+function rectGo() {
+  const w = +el.querySelector("#dsRw").value, hh = +el.querySelector("#dsRh").value;
+  if (!(w > 0) || !(hh > 0)) { setMsg("اكتب العرض والطول الأول"); return; }
+  ui.rw = w; ui.rh = hh;
+  if (ui.tool !== "rect") setTool("rect");
+  if (!ui.st) { const pl = basePlane(null); ui.st = { plane: pl, a: [...pl.o], a2: [0, 0] }; setMsg("اترسم من نقطة الأصل — دوس الركن الأول بعد كده لو عايزه في مكان تاني"); }
+  ui.st.hb = null;
+  TOOL.rect.vcb({ list: [w, hh] });
+  renderUI();
+}
+function moveSelBy(dv) {
+  if (ui.tool === "move" && ui.st) { commitMove(dv); renderUI(); return; }
+  const refs = selRefs(); if (!refs.length) { setMsg("اختار القطعة الأول"); return; }
+  edit(() => {
+    let rs = refs, made = [];
+    if (ui.copy) { rs = copyRefs(refs); made = rs; ui.sel = new Set(rs); }
+    for (const r of rs) xform(r, { p: (P) => G.add(P, dv) });
+    ui.lastMove = { dv, copy: ui.copy, refs, made };
+  });
+  const ax = dv.findIndex((v) => v); setMsg(`${ui.copy ? "اتنسخت" : "اتحرّكت"} ${f1(Math.abs(dv[ax]))} سم على ${AXN[ax]}`);
+  renderUI();
+}
 function sideHtml() {
   let h = "";
   if (ui.face2d) h += `<div class="dsbox on2d"><b>✏️ بترسم شكل القطعة 2D</b><p class="hint">ارسم خطوط وأقواس ودواير على وشها، وبعدين بـ«سحب/زق» زق الشكل لجوه: تفريغ أو قصة من الحرف أو حفر. «تدوير ركن» و«شطف ركن» على أركانها.</p><button class="dsb" data-ds="exit2d">↩ رجوع للـ3D</button></div>`;
@@ -2256,6 +2304,7 @@ function sideHtml() {
   h += roomHtml();
   const pal = Object.keys(MATS).map((k) => `<button class="dsmat ${ui.mat === k ? "on" : ""}" data-mat="${k}" title="${esc(matName(k))}"><i style="background:${matColor(k)}"></i><span>${esc(matName(k))}</span></button>`).join("");
   h += edgeHtml() + vertexHtml();
+  h += drawHtml() + moveByHtml();
   const PM = [["solid", "⬚ لوح"], ["face", "🟨 وش"], ["edge", "— حرف"], ["vertex", "• ركن"]];
   h += `<div class="dsbox"><div class="dsrow"><b>بتختار إيه؟</b></div><div class="dsseg">${PM.map(([k, l]) => `<button class="dsb ${(ui.pickMode || "solid") === k ? "on" : ""}" data-pmode="${k}">${l}</button>`).join("")}</div>
     <p class="hint">لوح = القطعة كلها · وش = وش واحد (إزاحة / سحب) · حرف = ضلع واحد تحرّكه أو تكتب طوله · ركن = نقطة واحدة تحرّكها أو تمسحها.</p></div>`;
@@ -2354,6 +2403,9 @@ function onClick(e) {
   if (d.mat) { ui.mat = d.mat; renderUI(); if (ui.sel.size) edit(() => selRefs().forEach((r) => { const x = ent(r); if (x && (r[0] === "s" || r[0] === "w")) x.mat = d.mat; })); return; }
   if (d.rot90 != null) { rotSel90(+d.rot90); return; }
   if (d.orient) { orientSel(d.orient); return; }
+  if (d.plane) { ui.plane = d.plane; if (ui.face2d) { ui.face2d = null; applyControls(); } if (ui.st && DRAWTOOLS_WALL.includes(ui.tool)) ui.st = null; renderUI(); setMsg(d.plane === "auto" ? "الرسم على الوش اللي تحت صباعك" : `الرسم ${PLANES.find((x) => x[0] === d.plane)[1].replace(/^\S+ /, "")}`); return; }
+  if (d.rdir != null) { const i = +d.rdir; if (i < 2) ui.rdir[0] = i === 0 ? 1 : -1; else ui.rdir[1] = i === 2 ? 1 : -1; renderUI(); return; }
+  if (d.mv) { const [ax, sg] = d.mv.split(",").map(Number); const dist = +el.querySelector("#dsMvD").value; if (!(dist > 0)) { setMsg("اكتب المسافة الأول"); return; } ui.mvD = dist; moveSelBy(G.mul(AX[ax], sg * dist)); return; }
   if (d.align != null) { alignSel(+el.querySelector("#dsAlAx").value, d.align); return; }
   if (d.mirror != null) { mirrorSel(+d.mirror); return; }
   if (d.pick) { ui.sel = new Set([d.pick]); ui.outline = true; rebuild(); renderUI(); return; }
@@ -2365,6 +2417,7 @@ function onClick(e) {
     i.dataset.typed = "1"; i.value += d.vk; i.focus(); return;
   }
   switch (d.ds) {
+    case "rectgo": rectGo(); break;
     case "done": finishDone(); break;
     case "cancel": if (!changed()) { ctx.onCancel?.(); close(); } else leaveSheet(); break;
     case "leavesave": el.querySelector(".dsleave")?.remove(); finishDone(); break;
@@ -2445,6 +2498,7 @@ function onChange(e) {
   const t = e.target, d = t.dataset;
   if (t.id === "dsToolQ") { toolSearch(t.value); return; }
   if (t.id === "dsStep") { ui.step = +t.value || 0; return; }
+  if (t.id === "dsRw") { ui.rw = +t.value || ui.rw; return; } if (t.id === "dsRh") { ui.rh = +t.value || ui.rh; return; } if (t.id === "dsMvD") { ui.mvD = +t.value || ui.mvD; return; }
   if (d.rp || d.rset) { roomChange(t); return; }
   if (d.cf) { cabChange(t); return; }
   if (t.hasAttribute?.("data-wpaintin")) { ui.wallPaint = t.value; renderUI(); return; }
