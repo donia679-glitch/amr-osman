@@ -38,6 +38,10 @@ cd /home/claude/novera-app && python3 tools/build_pwa.py && python3 tools/build_
 - Kitchen units: base depth 58 includes the door (inset, face at y=0); corner units get their depth from `cornerFit()` in app.js unless set by hand.
 
 ## History (latest first)
+- v72: studio «🧰 مصمّم الوحدات بالقطع» — `draw/cabinet.js` (pure: `newCab`, `inner`, `dividerBoxes`, `columns`, `cavities`, `cabSolids(c)` → studio solids tagged `cab`/`role`, joint options BOTTOM_JOINTS between|under, TOP_JOINTS between|over|rails|none,
+  BACK_KINDS groove|rabbet|overlay|none (groove/rabbet become real `pockets` on sides/bottom/top), dividers {from left|right, at}, shelves {col, z from the bottom top, fixed, setback}, fills per cavity key "col:row" {kind open|door1|door2|flap|drawers, hinge, n, hs} —
+  overlay fronts cover shared boards by half minus gap/2 and outer boards by t − reveal; drawers get wooden boxes when ≥5 cm high). studio.js: `M.cabs`, `cabHtml` (top of the panel when a cab is current, else collapsed near the quick box), `cabAction` (data-cab add/close/del/regen/detach/adddiv/deldiv:i/addshelf:col/delshelf:i/fill:key:kind/fillall:kind),
+  `cabChange` (data-cf dotted paths), `cabRegen` (replaces the cab's solids, keeps the group), `cabSyncPos` (follows a moved group). CSS .dscol/.dscav/details.dsbox. __ds exposes cabAdd/cabRegen/curCab/Cab. Test scratchpad/lib/p32.py.
 - v71: NO background computing any more (it made the iPad heavy). The zero-waste library ships precomputed in `apps/ipad/zwlib.js` (`export default {sig, items}`, re-exported as `More.ZW_PRE`;
   built by `tools/zwpre.py` = Playwright run of zwSolve for every ZW_LIB preset with budget 45 s, default sheet 244×122/kerf 0.4/trim 1/NOVERA shelf rules — re-run it after changing the solver or presets).
   `zwLibStore()` uses ZW_PRE when `zwSig()` matches (zwSig seeds defaults first), else localStorage, else empty; computing happens only via the «🧮 احسب…» button (`L.want` toggles the pump) or by tapping an uncomputed card (solved once, saved).

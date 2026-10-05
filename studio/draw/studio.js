@@ -6,6 +6,7 @@
 import * as THREE from "three";
 import * as G from "./geom.js";
 import * as Room from "../room.js";
+import * as Cab from "./cabinet.js";
 
 const WALL_PAINTS = ["#f3f1ea", "#ffffff", "#e9e2d0", "#d8cfc0", "#c9b9a3", "#e8d5c4", "#c9d3c6", "#a8b5a0", "#b7c7d3", "#8fa3b0", "#6f7d86", "#3f4a45"];
 const wallSwatches = (cur, attr) => `<div class="dspaints">${WALL_PAINTS.map((c) => `<button class="dspaint ${String(cur || "").toLowerCase() === c ? "on" : ""}" style="background:${c}" data-${attr}="${c}" aria-label="${c}"></button>`).join("")}<label class="dspaint dspick" title="لون تاني"><input type="color" data-${attr}in value="${cur || "#e9e2d0"}"></label></div>`;
@@ -143,9 +144,9 @@ export function close() {
   cancelAnimationFrame(raf);
 }
 export const isOpen = () => !!el && !el.hidden;
-if (typeof window !== "undefined" && location.protocol === "http:" && /^(localhost|127\.0\.0\.1)$/.test(location.hostname)) window.__ds = { M: () => M, ui, scr: (P) => scr(P), setTool: (t) => setTool(t), G, pick: (x, y) => { const h = pickAny(x, y); return h && { ref: h.ref, kind: h.face?.kind, sid: h.sid }; }, click: (x, y) => TOOL[ui.tool]?.click?.([x, y]), pickEdge, pickVertex, rebuild: () => { rebuild(); renderUI(); } };
+if (typeof window !== "undefined" && location.protocol === "http:" && /^(localhost|127\.0\.0\.1)$/.test(location.hostname)) window.__ds = { cabAdd, cabRegen, curCab, Cab, M: () => M, ui, scr: (P) => scr(P), setTool: (t) => setTool(t), G, pick: (x, y) => { const h = pickAny(x, y); return h && { ref: h.ref, kind: h.face?.kind, sid: h.sid }; }, click: (x, y) => TOOL[ui.tool]?.click?.([x, y]), pickEdge, pickVertex, rebuild: () => { rebuild(); renderUI(); } };
 function normalize(m) {
-  for (const k of ["solids", "sketches", "paths", "sweeps", "guides", "dims", "texts", "groups"]) if (!Array.isArray(m[k])) m[k] = [];
+  for (const k of ["solids", "sketches", "paths", "sweeps", "guides", "dims", "texts", "groups", "cabs"]) if (!Array.isArray(m[k])) m[k] = [];
   for (const s of m.solids) { s.id ||= uid(); s.holes ||= []; s.pockets ||= []; s.mat ||= "carcass"; s.name ||= "لوح"; s.outer = G.ccw(s.outer); }
   return m;
 }
@@ -2016,6 +2017,110 @@ function addBox(W, H, D, t, back) {
   zoomExtents();
 }
 
+// ================================================================== مصمّم الوحدات بالقطع (v72): a cabinet by roles and joints → boards
+function cabOf(id) { return (M.cabs || []).find((c) => c.id === id) || null; }
+/** the cabinet being edited: the chosen one, else the one the selected board belongs to */
+function curCab() {
+  if (ui.cab) { const c = cabOf(ui.cab); if (c) return c; ui.cab = null; }
+  const r = selRefs()[0]; if (!r) return null;
+  if (r.startsWith("G:")) return cabOf(r.slice(2));
+  const e = ent(r); return e?.cab ? cabOf(e.cab) : null;
+}
+/** rebuild a cabinet's boards from its description (keeps the group, replaces the boards) */
+function cabRegen(c) {
+  M.solids = M.solids.filter((s) => s.cab !== c.id);
+  let g = M.groups.find((x) => x.id === c.id); if (!g) { g = { id: c.id, name: c.name }; M.groups.push(g); } g.name = c.name;
+  for (const s of Cab.cabSolids(c)) M.solids.push(s);
+}
+function cabAdd() {
+  edit(() => { const c = Cab.newCab((M.cabs?.length || 0) + 1, freeX()); (M.cabs ||= []).push(c); cabRegen(c); ui.cab = c.id; ui.sel = new Set(["G:" + c.id]); });
+  zoomExtents(); setMsg("علبة جديدة — غيّر المقاسات والوصلات من اللوحة، وكل قطعة بتتحدث لوحدها");
+}
+function cabDel(c) { edit(() => { M.solids = M.solids.filter((s) => s.cab !== c.id); M.groups = M.groups.filter((g) => g.id !== c.id); M.cabs = M.cabs.filter((x) => x.id !== c.id); ui.cab = null; ui.sel.clear(); }); }
+/** the position the group is at now (the user may have moved it) → keep it as the cabinet's origin before regenerating */
+function cabSyncPos(c) {
+  const left = M.solids.find((s) => s.cab === c.id && s.role === "side");
+  if (left) { const b = G.solidBox(left); const z0 = c.bottom.joint === "under" ? c.bottom.kick + c.t : 0; c.pos = [G.r2(b.x0), G.r2(b.y0), G.r2(b.z0 - z0)]; }
+}
+const cabNum = (v, d) => { const n = parseFloat(String(v).replace(/[^\d.\-]/g, "")); return Number.isFinite(n) ? n : d; };
+function cabChange(t) {
+  const c = curCab(); if (!c) return;
+  const path = t.dataset.cf.split("."), v = t.type === "checkbox" ? t.checked : t.value;
+  edit(() => {
+    cabSyncPos(c);
+    let o = c; for (let i = 0; i < path.length - 1; i++) { const k = path[i]; o = o[k] ??= {}; }
+    const k = path[path.length - 1], cur = o[k];
+    if (k === "hs") o[k] = String(v).split(/[،,\s]+/).map(Number).filter((x) => x > 0);
+    else if (typeof cur === "number" || /^(W|H|D|t|tb|kick|insetF|insetB|railW|railInset|off|groove|rabbet|gap|reveal|clr|boxT|baseT|drop|lowerFront|at|z|n|setback)$/.test(k)) o[k] = Math.max(k === "n" ? 1 : 0, cabNum(v, cur ?? 0));
+    else if (typeof cur === "boolean" || t.type === "checkbox") o[k] = !!v;
+    else o[k] = v;
+    if (k === "name") { o[k] = String(v).trim() || cur; }
+    // a fill that becomes drawers starts with 3 equal drawers
+    if (path[0] === "fills" && k === "kind" && v === "drawers") { o.n ??= 3; }
+    cabRegen(c);
+  });
+}
+function cabAction(kind, b) {
+  if (kind === "add") { cabAdd(); return; }
+  const c = curCab();
+  if (kind === "close") { ui.cab = null; renderUI(); return; }
+  if (!c) return;
+  if (kind === "del") { if (confirm(`تمسح «${c.name}» بكل قطعها؟`)) cabDel(c); return; }
+  if (kind === "regen") { edit(() => { cabSyncPos(c); cabRegen(c); }); setMsg("اتجدّدت القطع"); return; }
+  if (kind === "detach") { edit(() => { for (const s of M.solids) if (s.cab === c.id) { delete s.cab; delete s.role; } M.cabs = M.cabs.filter((x) => x.id !== c.id); ui.cab = null; }); setMsg("بقت ألواح حرة — عدّلها بأدوات الرسم"); return; }
+  const I = Cab.inner(c);
+  edit(() => {
+    cabSyncPos(c);
+    if (kind === "adddiv") { const col = Cab.columns(c).sort((a, b) => (b.x1 - b.x0) - (a.x1 - a.x0))[0]; if (col) c.dividers.push({ id: uid(), from: "left", at: Math.round(col.x0 - I.x0 + (col.x1 - col.x0 - c.t) / 2) }); }
+    else if (kind.startsWith("deldiv:")) c.dividers.splice(+kind.split(":")[1], 1);
+    else if (kind.startsWith("addshelf:")) { const col = +kind.split(":")[1]; const ns = c.shelves.filter((x) => x.col === col).length; c.shelves.push({ id: uid(), col, z: Math.round(((I.z1 - I.z0) * (ns + 1)) / (ns + 2)), fixed: false, setback: 1 }); }
+    else if (kind.startsWith("delshelf:")) c.shelves.splice(+kind.split(":")[1], 1);
+    else if (kind.startsWith("fill:")) { const [, key, fk] = kind.split(":"); c.fills[key] = { ...(c.fills[key] || {}), kind: fk, ...(fk === "drawers" ? { n: c.fills[key]?.n || 3 } : {}) }; }
+    else if (kind.startsWith("fillall:")) { const fk = kind.split(":")[1]; for (const cv of Cab.cavities(c)) c.fills[cv.key] = { ...(c.fills[cv.key] || {}), kind: fk, ...(fk === "drawers" ? { n: 3 } : {}) }; }
+    cabRegen(c);
+  });
+}
+const cabSel = (path, v, opts) => `<select data-cf="${path}">${Object.entries(opts).map(([k, l]) => `<option value="${k}" ${k === v ? "selected" : ""}>${esc(l)}</option>`).join("")}</select>`;
+const cabNumIn = (path, label, v, step = 0.1) => `<label><span>${label}</span><input type="text" inputmode="decimal" data-numf data-cf="${path}" value="${f1(v)}"></label>`;
+function cabHtml() {
+  const c = curCab();
+  let h = `<details class="dsbox" ${c ? "open" : ""}><summary>🧰 مصمّم الوحدات بالقطع</summary>
+    <p class="hint">اوصف العلبة بالأدوار: جنب، قاعدة، رأس، ظهر، قواطيع، أرفف — واختار الوصلات (القاعدة بين الجنبين ولا تحتهم، الظهر في مفحار…) والمقاسات بالسنتي، وكل فراغ يطلع تختار يبقى أدراج أو ضلفة أو قلاب أو ضلفتين. القطع بتتحدث لوحدها وبتدخل القص والملصقات والـCNC (المفحار بيطلع كجيب).</p>
+    <div class="dsbtns"><button class="dsb primary" data-cab="add">＋ علبة جديدة</button>${(M.cabs || []).filter((x) => !c || x.id !== c.id).map((x) => `<button class="dsb" data-pick="G:${x.id}">${esc(x.name)}</button>`).join("")}</div>`;
+  if (!c) return h + `</details>`;
+  const I = Cab.inner(c), cols = Cab.columns(c), cavs = Cab.cavities(c);
+  h += `<div class="dsrow"><input class="dsin" data-cf="name" value="${esc(c.name)}" aria-label="اسم العلبة"><button class="dsb" data-cab="close" title="قفل">✕</button></div>
+    <div class="dsgrid">${cabNumIn("W", "العرض", c.W)}${cabNumIn("H", "الارتفاع", c.H)}${cabNumIn("D", "العمق", c.D)}${cabNumIn("t", "سمك اللوح", c.t)}${cabNumIn("tb", "سمك الظهر", c.tb)}${cabNumIn("bottom.kick", "ارتفاع السكلو (القاعدة من الأرض)", c.bottom.kick)}</div>
+    <details open><summary>🔩 الوصلات</summary>
+      <label><span>القاعدة</span>${cabSel("bottom.joint", c.bottom.joint, Cab.BOTTOM_JOINTS)}</label>
+      <div class="dsgrid">${cabNumIn("bottom.insetF", "القاعدة داخلة من قدام", c.bottom.insetF)}${cabNumIn("bottom.insetB", "القاعدة داخلة من ورا", c.bottom.insetB)}</div>
+      <label><span>الرأس</span>${cabSel("top.joint", c.top.joint, Cab.TOP_JOINTS)}</label>
+      ${c.top.joint === "rails" ? `<div class="dsgrid">${cabNumIn("top.railW", "عرض الشريط", c.top.railW)}${cabNumIn("top.railInset", "الشريط الأمامي داخل", c.top.railInset)}</div>` : ""}
+      <label><span>الظهر</span>${cabSel("back.kind", c.back.kind, Cab.BACK_KINDS)}</label>
+      ${c.back.kind === "groove" ? `<div class="dsgrid">${cabNumIn("back.off", "الظهر داخل عن الحرف الخلفي", c.back.off)}${cabNumIn("back.groove", "عمق المفحار", c.back.groove)}</div>` : c.back.kind === "rabbet" ? `<div class="dsgrid">${cabNumIn("back.rabbet", "عمق الأورزة", c.back.rabbet)}</div>` : ""}
+    </details>
+    <details open><summary>▥ القواطيع الرأسية (${c.dividers.length})</summary>
+      ${c.dividers.map((d, i) => `<div class="dsrow"><span>قاطوع ${i + 1}</span>${cabSel(`dividers.${i}.from`, d.from, { left: "من الجنب الشمال", right: "من الجنب اليمين" })}<input class="dsin sm" type="text" inputmode="decimal" data-numf data-cf="dividers.${i}.at" value="${f1(d.at)}" aria-label="المسافة"><button class="dsb" data-cab="deldiv:${i}">✕</button></div>`).join("")}
+      <p class="hint">المسافة من وش الجنب من جوه لحد القاطوع. الفراغ من جوه ${f1(I.x1 - I.x0)} سم.</p><button class="dsb" data-cab="adddiv">＋ قاطوع</button>
+    </details>
+    <details open><summary>▤ الأرفف (${c.shelves.length})</summary>
+      ${cols.map((col, ci) => `<div class="dscol"><b>${cols.length > 1 ? `عمود ${ci + 1} (${f1(col.x1 - col.x0)} سم)` : `الفراغ (${f1(col.x1 - col.x0)} سم)`}</b>
+        ${c.shelves.map((sh, i) => sh.col === ci ? `<div class="dsrow"><span>رف</span><input class="dsin sm" type="text" inputmode="decimal" data-numf data-cf="shelves.${i}.z" value="${f1(sh.z)}" aria-label="الارتفاع من القاعدة"><label class="dschk"><input type="checkbox" data-cf="shelves.${i}.fixed" ${sh.fixed ? "checked" : ""}> ثابت</label><button class="dsb" data-cab="delshelf:${i}">✕</button></div>` : "").join("")}
+        <button class="dsb" data-cab="addshelf:${ci}">＋ رف</button></div>`).join("")}
+      <p class="hint">الرقم = ارتفاع تحت الرف من فوق القاعدة من جوه (الفراغ ${f1(I.z1 - I.z0)} سم). الرف المتحرك بيدخل 1 سم من قدام و1.5 مم من كل جنب.</p>
+    </details>
+    <details open><summary>🚪 الفراغات (${cavs.length}) — أدراج / ضلف</summary>
+      ${cavs.map((cv, i) => { const f = c.fills[cv.key] || { kind: "open" }; return `<div class="dscav"><div class="dsrow"><b>فراغ ${i + 1}</b><small dir="ltr">${f1(cv.x1 - cv.x0)} × ${f1(cv.z1 - cv.z0)}</small>${cabSel(`fills.${cv.key}.kind`, f.kind, Cab.FILL_KINDS)}</div>
+        ${f.kind === "door1" ? `<div class="dsrow">${cabSel(`fills.${cv.key}.hinge`, f.hinge || "left", { left: "مفصلات شمال", right: "مفصلات يمين" })}</div>` : ""}
+        ${f.kind === "drawers" ? `<div class="dsrow"><label><span>عدد الأدراج</span><input class="dsin sm" type="text" inputmode="numeric" data-numf data-cf="fills.${cv.key}.n" value="${f.n || 3}"></label><label><span>ارتفاعات الوشوش (من تحت، اختياري)</span><input class="dsin" type="text" inputmode="decimal" data-cf="fills.${cv.key}.hs" value="${(f.hs || []).map(f1).join("، ")}" placeholder="مثلاً 20، 20، 30"></label></div>` : ""}</div>`; }).join("")}
+      <div class="dsbtns"><button class="dsb" data-cab="fillall:door2">الكل ضلفتين</button><button class="dsb" data-cab="fillall:door1">الكل ضلفة</button><button class="dsb" data-cab="fillall:drawers">الكل أدراج</button><button class="dsb" data-cab="fillall:open">الكل فاضي</button></div>
+      <p class="hint">الضلف أوفرلاي: بتغطي الجنب ما عدا ${f1(c.front.reveal)} سم، وبين كل ضلفتين ${f1(c.front.gap)} سم. الأدراج: صندوق خشب بخلوص ${f1(c.drawers.clr)} سم لكل مجرى.</p>
+    </details>
+    <details><summary>⚙ تفاصيل الضلف والأدراج</summary><div class="dsgrid">${cabNumIn("front.gap", "الفراغ بين الضلف", c.front.gap)}${cabNumIn("front.reveal", "الباين من الجنب", c.front.reveal)}${cabNumIn("drawers.clr", "خلوص المجرى (كل جنب)", c.drawers.clr)}${cabNumIn("drawers.boxT", "سمك صندوق الدرج", c.drawers.boxT)}${cabNumIn("drawers.drop", "الصندوق تحت وش الدرج بـ", c.drawers.drop)}${cabNumIn("drawers.lowerFront", "الصندوق فوق حرف الوش بـ", c.drawers.lowerFront)}</div></details>
+    <div class="dsbtns"><button class="dsb" data-cab="regen">↻ جدّد القطع</button><button class="dsb" data-cab="detach">🔓 فكّها ألواح حرة</button><button class="dsb danger" data-cab="del">🗑 امسح العلبة</button></div>
+    <p class="hint">${M.solids.filter((s) => s.cab === c.id).length} قطعة. لو حرّكت العلبة كلها بأداة التحريك بتفضل متجمّعة؛ أي تعديل من هنا بيعيد بناء القطع في مكانها.</p></details>`;
+  return h;
+}
 // ================================================================== side panel + bars
 function renderUI() {
   if (!el) return;
@@ -2040,6 +2145,7 @@ function sideHtml() {
   if (ui.face2d) h += `<div class="dsbox on2d"><b>✏️ بترسم شكل القطعة 2D</b><p class="hint">ارسم خطوط وأقواس ودواير على وشها، وبعدين بـ«سحب/زق» زق الشكل لجوه: تفريغ أو قصة من الحرف أو حفر. «تدوير ركن» و«شطف ركن» على أركانها.</p><button class="dsb" data-ds="exit2d">↩ رجوع للـ3D</button></div>`;
   const refs = selRefs(), solids = refs.filter((r) => r[0] === "s").map(ent).filter(Boolean);
   h += faceHtml();
+  if (curCab()) h += cabHtml();
   if (ui.tool === "tape") h += `<div class="dsbox"><b>📏 شريط القياس</b><p class="hint">دوس نقطتين: بيقيس المسافة بينهم (والفرق في العرض والطول والارتفاع) من غير ما يرسم حاجة.</p><label class="dschk"><input type="checkbox" data-ds="tapeguide" ${ui.tapeGuide ? "checked" : ""}> سيب خط مساعد مكان القياس</label></div>`;
   if (ui.tool === "paint" && M.room?.pts?.length) h += `<div class="dsbox"><b>🎨 لون دهان الحيطان</b><p class="hint">دوس على أي حيطة تتدهن باللون ده (ويظهر في التصميم والريندر). للألواح: اختار الخامة تحت ودوس على اللوح.</p>${wallSwatches(ui.wallPaint || "#e9e2d0", "wpaint")}</div>`;
   h += roomHtml();
@@ -2100,6 +2206,7 @@ function sideHtml() {
     <div class="dsbtns"><button class="dsb" data-qb="h">▭ لوح نايم</button><button class="dsb" data-qb="v">▯ لوح واقف</button><button class="dsb" data-qb="s">◫ جنب</button></div>
     <div class="dsgrid"><label><span>عرض الصندوق</span><input type="text" inputmode="decimal" data-numf id="qxW" value="60"></label><label><span>ارتفاع</span><input type="text" inputmode="decimal" data-numf id="qxH" value="72"></label><label><span>عمق</span><input type="text" inputmode="decimal" data-numf id="qxD" value="58"></label></div>
     <div class="dsbtns"><label class="dschk"><input type="checkbox" id="qxB" checked> بظهر</label><button class="dsb" data-ds="qbox">▣ صندوق (هيكل)</button></div></details>`;
+  if (!curCab()) h += cabHtml();
   const hid = M.solids.filter((s) => s.hidden).length + M.sweeps.filter((w) => w.hidden).length;
   const list = [...M.groups.map((g) => ({ ref: "G:" + g.id, n: `▣ ${g.name}`, sub: M.solids.filter((s) => s.group === g.id).length + " لوح" })), ...M.solids.filter((s) => !s.group).map((s) => ({ ref: "s:" + s.id, n: `${s.hidden ? "🙈 " : ""}${s.name}`, sub: `${f1(G.boardSize(s).w)}×${f1(G.boardSize(s).h)}×${f1(s.depth)}` })), ...M.sweeps.map((w) => ({ ref: "w:" + w.id, n: `➰ ${w.name}`, sub: f1(G.pathLength(w.path, w.closed)) + " سم" }))];
   h += `<details class="dsbox" ${ui.outline ? "open" : ""} data-ds-outline><summary>📋 كل اللي في الرسمة (${M.solids.length} لوح${M.sweeps.length ? ` · ${M.sweeps.length} بروفايل` : ""})</summary>
@@ -2125,6 +2232,7 @@ function onClick(e) {
   if (!b) return;
   const d = b.dataset;
   if (d.tgh != null) { toolGroupToggle(+d.tgh); return; }
+  if (d.cab) { cabAction(d.cab, b); return; }
   if (d.tool) { setTool(d.tool); return; }
   if (d.pmode) { ui.pickMode = d.pmode; ui.face = null; ui.edge = null; ui.vertex = null; setTool("select"); rebuild(); renderUI(); setMsg({ solid: "دوس على لوح", face: "دوس على وش من اللوح", edge: "دوس قريب من حرف", vertex: "دوس قريب من ركن" }[ui.pickMode]); return; }
   if (d.view) { setView(d.view); renderUI(); return; }
@@ -2231,6 +2339,7 @@ function onChange(e) {
   if (t.id === "dsToolQ") { toolSearch(t.value); return; }
   if (t.id === "dsStep") { ui.step = +t.value || 0; return; }
   if (d.rp || d.rset) { roomChange(t); return; }
+  if (d.cf) { cabChange(t); return; }
   if (t.hasAttribute?.("data-wpaintin")) { ui.wallPaint = t.value; renderUI(); return; }
   if (t.hasAttribute?.("data-wcolin")) { const e = roomEnt(ui.rsel); if (e && ui.rsel.kind === "W") { edit(() => Object.assign(e, { finish: "paint", color: t.value })); ui.wallPaint = t.value; rebuild(); renderUI(); } return; }
   if (t.dataset.snap) { const k = t.dataset.snap; ui.snap[k] = k === "strength" ? +t.value : t.checked; renderUI(); return; }
