@@ -38,6 +38,8 @@ cd /home/claude/novera-app && python3 tools/build_pwa.py && python3 tools/build_
 - Kitchen units: base depth 58 includes the door (inset, face at y=0); corner units get their depth from `cornerFit()` in app.js unless set by hand.
 
 ## History (latest first)
+- v77: cabinet builder focus mode — every generated solid carries `cabRef` ({k: div|hdiv|shelf, i} or {k: zone, path, key}); tapping a piece in the 3D sets `ui.cabFocus = {kind:"piece", sid}`, tapping a cavity pane (`cabGhosts()` in rebuild: translucent panes in extraG with ref "C:<cab>|<key>") sets `{kind:"cav", key}`;
+  `cabFocusHtml` renders only that piece's / cavity's settings (joints for carcass pieces, the divider/shelf row, the front's fields, the cavity's front + shelves + join), «☰ كل إعدادات العلبة» (data-cab="unfocus") returns to the full editor. CSS .dsbox.focus.
 - v76: cabinet fronts — per-front details (`recess` + `recessAt` top|bottom for built-in handles, `trim {l,r,t,b}`, `inset`) and zone kind `split` ({dir h|v, parts:[{size, kind, …}]} — sub-fronts inside one cavity with no board, last part takes the rest, recursive `renderFront`/`frontRect` with edge kinds outerX|board|virt).
   studio: `cabFrontFields` (shared by zones and parts), `cabZoneHtml`, `cabPath`, actions partadd:path / partdel:path:i. SUB_KINDS for parts.
 - v75: cabinet cavities = cells only (between sides, vertical + horizontal dividers, bottom, top; key "band:col") — shelves live inside a cavity and never split it (a door covers the shelves behind it).

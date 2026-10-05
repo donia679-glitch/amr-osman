@@ -83,7 +83,8 @@ export function cabSolids(c) {
   const out = [];
   // banding by role: carcass boards get their front edge, fronts all four, backs and drawer bottoms none, drawer box walls the top edge
   const BAND = { side: ["front"], bottom: ["front"], top: ["front"], rail: ["front"], hdivider: ["front"], divider: ["front"], shelf: ["front"], fixed_shelf: ["front"], door: ["left", "right", "top", "bottom"], drawer_front: ["left", "right", "top", "bottom"], back: [], drawer_box: ["top"], drawer_bottom: [] };
-  const add = (s, role) => { s.cab = c.id; s.role = role; s.group = c.id; s.bandEdges = BAND[role] || ["front"]; if (!s.bandEdges.length) s.band = false; out.push(s); return s; };
+  let curRef = null; // the description item being generated (set around each part)
+  const add = (s, role, ref = curRef) => { s.cab = c.id; s.role = role; s.group = c.id; if (ref) s.cabRef = ref; s.bandEdges = BAND[role] || ["front"]; if (!s.bandEdges.length) s.band = false; out.push(s); return s; };
   const underJ = c.bottom.joint === "under", overT = c.top.joint === "over";
   const sideZ0 = underJ ? c.bottom.kick + t : 0, sideZ1 = overT ? H - t : H;
   const sideD = c.back.kind === "overlay" ? D : D; // the carcass depth; an overlay back is nailed behind it
@@ -120,13 +121,13 @@ export function cabSolids(c) {
     }
   }
   // horizontal dividers (full width, structural) and the bands between them
-  hdividerBoxes(c).forEach((b, i) => add(S(`قاطوع أفقي ${i + 1}`, "carcass", [I.x0, 0, b.z0], X, Y, I.x1 - I.x0, I.y1, t), "hdivider"));
+  hdividerBoxes(c).forEach((b, i) => add(S(`قاطوع أفقي ${i + 1}`, "carcass", [I.x0, 0, b.z0], X, Y, I.x1 - I.x0, I.y1, t), "hdivider", { k: "hdiv", i: c.hdividers.indexOf(b.d) }));
   const BD = bands(c);
   // vertical dividers: one board per band they live in (a full-height one is cut by the horizontal dividers)
   c.dividers.forEach((d, i) => {
     const x0 = d.from === "right" ? c.W - c.t - d.at - c.t : c.t + d.at; if (x0 < I.x0 - 0.01 || x0 + t > I.x1 + 0.01) return;
     const mine = BD.map((bd, bi) => ({ bd, bi })).filter(({ bi }) => d.band == null || d.band === "" || +d.band === bi);
-    mine.forEach(({ bd, bi }) => add(S(`قاطوع ${i + 1}${mine.length > 1 ? ` (حزام ${bi + 1})` : ""}`, "carcass", [x0, 0, bd.z0], Y, Z, I.y1, bd.z1 - bd.z0, t), "divider"));
+    mine.forEach(({ bd, bi }) => add(S(`قاطوع ${i + 1}${mine.length > 1 ? ` (حزام ${bi + 1})` : ""}`, "carcass", [x0, 0, bd.z0], Y, Z, I.y1, bd.z1 - bd.z0, t), "divider", { k: "div", i }));
   });
   // shelves
   const CELLS = cells(c);
@@ -135,7 +136,7 @@ export function cabSolids(c) {
     const col = cell;
     const z = cell.z0 + s.z; if (z < cell.z0 - 0.01 || z + t > cell.z1 + 0.01) return;
     const loose = !s.fixed, side = loose ? 0.15 : 0, sb = s.setback ?? (loose ? 1 : 0);
-    add(S(`${s.fixed ? "رف ثابت" : "رف متحرك"} ${i + 1}`, "carcass", [col.x0 + side, sb, z], X, Y, col.x1 - col.x0 - 2 * side, I.y1 - sb, t), s.fixed ? "fixed_shelf" : "shelf");
+    add(S(`${s.fixed ? "رف ثابت" : "رف متحرك"} ${i + 1}`, "carcass", [col.x0 + side, sb, z], X, Y, col.x1 - col.x0 - 2 * side, I.y1 - sb, t), s.fixed ? "fixed_shelf" : "shelf", { k: "shelf", i });
   });
   // fronts: each zone covers one or more cavities (a whole divided space can be one door, the whole box can be two doors…);
   // a zone may be split into sub-fronts (drawers over a door, say) without any board in the box; every front has its own details
@@ -152,8 +153,9 @@ export function cabSolids(c) {
     const rc = +f.recess || 0; if (rc > 0) { if (f.recessAt === "bottom") fz0 += rc; else fz1 -= rc; } // built-in handle clearance
     return { x0: fx0, x1: fx1, z0: fz0, z1: fz1 };
   };
-  const renderFront = (cv, f, oneCol) => {
+  const renderFront = (cv, f, oneCol, path) => {
     if (!f || f.kind === "open") return;
+    curRef = { k: "zone", path, key: cv.key || null };
     if (f.kind === "split") {
       // sub-cavities along z (dir "h": parts from the bottom up) or x (dir "v": parts from the left); sizes in cm, the last one takes the rest
       const parts = (f.parts || []).length ? f.parts : [{ kind: "drawers", n: 1, size: 20 }, { kind: "door1" }];
@@ -165,7 +167,7 @@ export function cabSolids(c) {
         const sub = { ...cv };
         if (dir === "h") { sub.z0 = at; sub.z1 = at + sz; sub.below = i === 0 ? cv.below : "virt"; sub.above = i === parts.length - 1 ? cv.above : "virt"; }
         else { sub.x0 = at; sub.x1 = at + sz; sub.left = i === 0 ? cv.left : "virt"; sub.right = i === parts.length - 1 ? cv.right : "virt"; }
-        renderFront(sub, p, oneCol);
+        renderFront(sub, p, oneCol, `${path}.parts.${i}`);
         at += sz;
       });
       return;
@@ -199,16 +201,18 @@ export function cabSolids(c) {
       });
     }
   };
-  for (const f of frontZones(c)) {
-    if (!f || f.kind === "open") continue;
-    const list = cavs.filter((cv) => f.cavs.includes(cv.key)); if (!list.length) continue;
+  frontZones(c).forEach((f, zi) => {
+    if (!f || f.kind === "open") return;
+    const list = cavs.filter((cv) => f.cavs.includes(cv.key)); if (!list.length) return;
     const cv = { x0: Math.min(...list.map((q) => q.x0)), x1: Math.max(...list.map((q) => q.x1)), z0: Math.min(...list.map((q) => q.z0)), z1: Math.max(...list.map((q) => q.z1)), y1: list[0].y1 };
     // what the front meets on each side: the outer carcass (outerX) or a shared board (divider / horizontal divider)
     cv.left = Math.abs(cv.x0 - I.x0) < 0.01 ? "outerX" : "board"; cv.right = Math.abs(cv.x1 - I.x1) < 0.01 ? "outerX" : "board";
     cv.below = Math.abs(cv.z0 - I.z0) < 0.01 ? "outerX" : "board"; cv.above = Math.abs(cv.z1 - I.z1) < 0.01 ? "outerX" : "board";
     const oneCol = new Set(list.map((q) => `${q.band}:${q.col}`)).size === 1; // drawer boxes only fit when no divider crosses the zone
-    renderFront(cv, f, oneCol);
-  }
+    cv.key = list[0].key;
+    renderFront(cv, f, oneCol, `fronts.${zi}`);
+  });
+  curRef = null;
   // place the cabinet
   for (const s of out) s.plane.o = G.add(s.plane.o, c.pos);
   return out;

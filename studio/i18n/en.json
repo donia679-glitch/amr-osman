@@ -5133,5 +5133,21 @@
  "قصّ من فوق": "trim top",
  "قصّ من تحت": "trim bottom",
  "ضلفة داخلية (جوه الفراغ بدل ما تغطي الجنب)": "inset front (inside the cavity instead of covering the sides)",
- "دوس ⚙ لتفاصيل كل ضلفة": "tap ⚙ for each front's details"
+ "دوس ⚙ لتفاصيل كل ضلفة": "tap ⚙ for each front's details",
+ "☰ كل إعدادات العلبة": "☰ all cabinet settings",
+ "💡 دوس على أي قطعة في الـ3D تفتح إعداداتها هي بس، أو على الفراغ الفاضي (اللوح الشفاف) تشتغل جواه.": "💡 Tap any piece in the 3D to open just its settings, or the empty cavity (the translucent pane) to work inside it.",
+ "الفراغ ده — إعداداته في اللوحة": "this cavity — its settings are in the panel",
+ "🚪 الوش بتاعه": "🚪 its front",
+ "▤ الأرفف جواه": "▤ shelves inside",
+ "☑ ضمّه مع فراغات تانية": "☑ join it with other cavities",
+ "مضموم مع": "joined with",
+ "▥ القاطوع الرأسي": "▥ the vertical divider",
+ "▬ القاطوع الأفقي": "▬ the horizontal divider",
+ "▤ الرف": "▤ the shelf",
+ "ارتفاع تحته": "height under it",
+ "داخل من قدام": "set in at the front",
+ "✕ امسحه": "✕ delete it",
+ "⇵ فكّها لكل فراغ": "⇵ split per cavity",
+ "✕ شيل الوش": "✕ remove the front",
+ "🔩 الوصلات والمقاسات": "🔩 joints and sizes"
 }
