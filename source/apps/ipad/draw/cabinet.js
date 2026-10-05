@@ -64,18 +64,12 @@ export function cells(c) {
   return out;
 }
 const shelfBand = (s) => (s.band == null || s.band === "" ? 0 : +s.band);
-/** the cavities: every cell split by its shelves (bottom → top); key "band:col:row" */
+/** the cavities the fronts work on = the cells between the sides, the dividers (vertical and horizontal), the bottom and the top; key "band:col".
+ *  Shelves live inside a cavity and never split it (a door covers the shelves behind it). */
 export function cavities(c) {
-  const I = inner(c), out = [];
-  for (const cell of cells(c)) {
-    const sh = c.shelves.filter((s) => shelfBand(s) === cell.band && s.col === cell.col).map((s) => ({ s, z0: cell.z0 + s.z, z1: cell.z0 + s.z + c.t })).filter((b) => b.z0 >= cell.z0 - 0.01 && b.z1 <= cell.z1 + 0.01).sort((a, b) => a.z0 - b.z0);
-    let z = cell.z0, ri = 0;
-    const edgeBelow = Math.abs(cell.z0 - I.z0) < 0.01 ? "bottom" : "hdiv", edgeAbove = Math.abs(cell.z1 - I.z1) < 0.01 ? "top" : "hdiv";
-    const push = (z0, z1, below, above) => { if (z1 - z0 > 0.5) out.push({ key: `${cell.band}:${cell.col}:${ri++}`, band: cell.band, col: cell.col, row: ri - 1, x0: cell.x0, x1: cell.x1, z0, z1, y1: I.y1, below, above }); };
-    for (const b of sh) { push(z, b.z0, z === cell.z0 ? edgeBelow : "shelf", "shelf"); z = b.z1; }
-    push(z, cell.z1, z === cell.z0 ? edgeBelow : "shelf", edgeAbove);
-  }
-  return out;
+  const I = inner(c);
+  return cells(c).map((cell) => ({ key: `${cell.band}:${cell.col}`, band: cell.band, col: cell.col, x0: cell.x0, x1: cell.x1, z0: cell.z0, z1: cell.z1, y1: I.y1,
+    below: Math.abs(cell.z0 - I.z0) < 0.01 ? "bottom" : "hdiv", above: Math.abs(cell.z1 - I.z1) < 0.01 ? "top" : "hdiv" }));
 }
 const S = (name, mat, o, u, v, w, h, d, extra = {}) => ({ id: uid(), name, mat, plane: { o, u, v }, outer: G.rect(0, 0, r1(w), r1(h)), holes: [], pockets: [], depth: r1(d), ...extra });
 const X = [1, 0, 0], Y = [0, 1, 0], Z = [0, 0, 1];
