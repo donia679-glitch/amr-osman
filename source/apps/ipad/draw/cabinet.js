@@ -16,6 +16,7 @@ export function newCab(n = 1, x0 = 0) {
     front: { overlay: true, gap: 0.3, reveal: 0.2 },                      // overlay fronts cover the carcass edges; reveal = what stays visible at the outer edges
     drawers: { clr: 0.6, boxT: 1.8, baseT: 0.6, drop: 3, lowerFront: 2 }, // runner clearance per side, box walls, box bottom, box lower than the front
     hdividers: [], // horizontal structural dividers across the whole width {id, from: bottom|top, at}
+    vparts: [],    // inner vertical partitions inside a cavity, like shelves but upright {id, band, col, x (from the cavity's left face), setback}
     dividers: [], shelves: [], fronts: [], // fronts: zones over one or more cavities {id, cavs:[keys], kind, hinge, n, hs}
   };
 }
@@ -82,7 +83,7 @@ export function cabSolids(c) {
   const t = c.t, W = c.W, H = c.H, D = c.D, tb = c.tb, I = inner(c);
   const out = [];
   // banding by role: carcass boards get their front edge, fronts all four, backs and drawer bottoms none, drawer box walls the top edge
-  const BAND = { side: ["front"], bottom: ["front"], top: ["front"], rail: ["front"], hdivider: ["front"], divider: ["front"], shelf: ["front"], fixed_shelf: ["front"], door: ["left", "right", "top", "bottom"], drawer_front: ["left", "right", "top", "bottom"], back: [], drawer_box: ["top"], drawer_bottom: [] };
+  const BAND = { side: ["front"], bottom: ["front"], top: ["front"], rail: ["front"], hdivider: ["front"], divider: ["front"], partition: ["front"], shelf: ["front"], fixed_shelf: ["front"], door: ["left", "right", "top", "bottom"], drawer_front: ["left", "right", "top", "bottom"], back: [], drawer_box: ["top"], drawer_bottom: [] };
   let curRef = null; // the description item being generated (set around each part)
   const add = (s, role, ref = curRef) => { s.cab = c.id; s.role = role; s.group = c.id; if (ref) s.cabRef = ref; s.bandEdges = BAND[role] || ["front"]; if (!s.bandEdges.length) s.band = false; out.push(s); return s; };
   const underJ = c.bottom.joint === "under", overT = c.top.joint === "over";
@@ -129,8 +130,15 @@ export function cabSolids(c) {
     const mine = BD.map((bd, bi) => ({ bd, bi })).filter(({ bi }) => d.band == null || d.band === "" || +d.band === bi);
     mine.forEach(({ bd, bi }) => add(S(`قاطوع ${i + 1}${mine.length > 1 ? ` (حزام ${bi + 1})` : ""}`, "carcass", [x0, 0, bd.z0], Y, Z, I.y1, bd.z1 - bd.z0, t), "divider", { k: "div", i }));
   });
-  // shelves
+  // inner vertical partitions (inside a cavity, like an upright shelf — they never split the cavity for fronts)
   const CELLS = cells(c);
+  (c.vparts || []).forEach((v, i) => {
+    const cell = CELLS.find((q) => q.band === (v.band || 0) && q.col === v.col); if (!cell) return;
+    const x0 = cell.x0 + v.x; if (x0 < cell.x0 - 0.01 || x0 + t > cell.x1 + 0.01) return;
+    const sb = v.setback ?? 1;
+    add(S(`فاصل رأسي ${i + 1}`, "carcass", [x0, sb, cell.z0], Y, Z, I.y1 - sb, cell.z1 - cell.z0, t), "partition", { k: "vpart", i });
+  });
+  // shelves
   c.shelves.forEach((s, i) => {
     const cell = CELLS.find((q) => q.band === shelfBand(s) && q.col === s.col); if (!cell) return;
     const col = cell;

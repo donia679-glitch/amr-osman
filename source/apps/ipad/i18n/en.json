@@ -5149,5 +5149,10 @@
  "✕ امسحه": "✕ delete it",
  "⇵ فكّها لكل فراغ": "⇵ split per cavity",
  "✕ شيل الوش": "✕ remove the front",
- "🔩 الوصلات والمقاسات": "🔩 joints and sizes"
+ "🔩 الوصلات والمقاسات": "🔩 joints and sizes",
+ "▥ فواصل رأسية جواه": "▥ upright partitions inside",
+ "＋ فاصل رأسي": "＋ upright partition",
+ "▥ الفاصل الرأسي": "▥ the upright partition",
+ "من شمال الفراغ": "from the cavity's left",
+ "لوح واقف جوه الفراغ من قاعه لسقفه (زي الرف بس رأسي) — الرقم = المسافة من وش الفراغ الشمال. مش بيقسم الفراغ للضلف": "An upright board inside the cavity from its floor to its ceiling (like a shelf, but vertical) — the number = distance from the cavity's left face. It doesn't split the cavity for the fronts"
 }
