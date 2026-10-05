@@ -697,11 +697,16 @@ function adaptModel(u) {
   const S = ALL.filter((s) => DG.isBoard(s)), blocks = ALL.filter((s) => !DG.isBoard(s));
   const panels = S.map((s, i) => {
     const b = DG.solidBox(s), ax = axisOf(DG.nOf(s.plane));
-    const role = s.mat === "back" ? "back" : ax === 2 ? "horizontal" : ax === 0 ? "side" : ax === 1 && s.mat === "front" ? "door" : "other";
+    // a cabinet piece says what it is (a door stays a door whatever material it is cut from); a free board is read from its direction and material
+    const cr = s.role || "";
+    const isFront = ax === 1 && (s.mat === "front" || /^(door|drawer_front)$/.test(cr) || /^(ضلفة|باب|وش درج|قلاب)/.test(s.name || ""));
+    const role = cr === "drawer_box" ? (ax === 0 ? "side" : "other") : cr === "drawer_bottom" ? "drawer_bottom" : s.mat === "back" && !isFront ? "back" : isFront ? "door" : ax === 2 ? "horizontal" : ax === 0 ? "side" : "other";
+    const hinge = isFront ? (/قلاب/.test(s.name || "") ? "top" : /يمين/.test(s.name || "") ? "right" : "left") : null;
+    const grp = /درج (\d+)/.test(s.name || "") && /^(drawer_front|drawer_box|drawer_bottom)$/.test(cr) ? `${s.cab || "m"}:drawer ${/درج (\d+)/.exec(s.name)[1]}` : null;
     const ends = [["left", "right"], ["front", "back"], ["bottom", "top"]];
     // a cabinet piece carries its own edges (front edge of a side, all four of a door…); a free board is banded all round unless turned off
     const band = Array.isArray(s.bandEdges) ? s.bandEdges.filter((e) => ends.flat().includes(e)) : s.band === false || s.mat === "back" ? [] : [0, 1, 2].filter((k) => k !== (ax >= 0 ? ax : 1)).flatMap((k) => ends[k]);
-    return { name: s.name || `لوح ${i + 1}`, role, material: s.mat || "carcass", x: b.x0, y: b.y0, z: b.z0, w: Math.max(0.1, b.x1 - b.x0), d: Math.max(0.1, b.y1 - b.y0), h: Math.max(0.1, b.z1 - b.z0), band };
+    return { name: s.name || `لوح ${i + 1}`, role, material: s.mat || "carcass", x: b.x0, y: b.y0, z: b.z0, w: Math.max(0.1, b.x1 - b.x0), d: Math.max(0.1, b.y1 - b.y0), h: Math.max(0.1, b.z1 - b.z0), band, group: grp, door_label: hinge && cr !== "drawer_front" ? { hinge_side: hinge } : null };
   });
   let base;
   if (panels.length) {

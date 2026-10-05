@@ -208,7 +208,7 @@ export class TemplateBuilder {
             const bx = this.box(pn.x, pn.y, pn.z, pn.x + pn.w, pn.y + pn.d, pn.z + pn.h);
             const role = pn.role;
             const layer = { back: "back", door: "front", shelf: "shelf", plinth: "plinth" }[role] ?? "carcass";
-            this.add(pn.name, role, pn.material, bx, { band: pn.band, grain: pn.grain ?? null, layer });
+            this.add(pn.name, role, pn.material, bx, { band: pn.band, grain: pn.grain ?? null, layer, group: pn.group ?? null, door_label: pn.door_label ?? null });
         }
         if (!this.d.parts.length)
             return;

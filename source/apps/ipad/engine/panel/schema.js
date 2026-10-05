@@ -26,7 +26,7 @@ export const MOUNTS = { floor: "على الأرض (رجول + وزرة)", wall: 
 export const TOPS = { full: "رأس كامل", rails: "شريطين (قدام وورا)" };
 export const HANDLES = { bar: "مقبض عادي", push: "Push (تاتش)", gola: "بروفايل بلت إن (الضلفة ناقصة 4 سم)", none: "من غير" };
 export const FRONT_STYLES = { wood: "لوح عادي", mirror: "لوح عليه مراية" };
-export const ROLES = ["side", "horizontal", "fixed_shelf", "divider", "shelf", "back", "door", "plinth", "other"];
+export const ROLES = ["side", "horizontal", "fixed_shelf", "divider", "shelf", "back", "door", "plinth", "drawer_bottom", "other"];
 export const DEFAULT_ZONE = { type: "doors", count: 2, height: "auto", shelves: 1, hinge: "left", glass: false };
 export const BASE_DEFAULTS = {
     schema_version: SCHEMA_VERSION,
@@ -381,6 +381,10 @@ function normalizePanel(pn, i, errors) {
     if (pn.band == null)
         out.band = ["front"];
     out.grain = ["x", "y", "z"].includes(rs(pn.grain)) ? rs(pn.grain) : null;
+    if (pn.group != null && pn.group !== "")
+        out.group = rs(pn.group); // parts that move together (a drawer front and its box)
+    if (isHash(pn.door_label))
+        out.door_label = { hinge_side: ["left", "right", "top"].includes(rs(pn.door_label.hinge_side)) ? rs(pn.door_label.hinge_side) : null };
     return out;
 }
 function normalizeMaterials(mIn) {
