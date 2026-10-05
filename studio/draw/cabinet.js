@@ -15,6 +15,7 @@ export function newCab(n = 1, x0 = 0) {
     back: { kind: "groove", off: 1.8, groove: 0.8, rabbet: 0.9 },         // groove = مفحار · rabbet = أورزة · overlay = مسمّر من ورا · none
     front: { overlay: true, gap: 0.3, reveal: 0.2 },                      // overlay fronts cover the carcass edges; reveal = what stays visible at the outer edges
     drawers: { clr: 0.6, boxT: 1.8, baseT: 0.6, drop: 3, lowerFront: 2 }, // runner clearance per side, box walls, box bottom, box lower than the front
+    hdividers: [], // horizontal structural dividers across the whole width {id, from: bottom|top, at}
     dividers: [], shelves: [], fronts: [], // fronts: zones over one or more cavities {id, cavs:[keys], kind, hinge, n, hs}
   };
 }
@@ -30,29 +31,50 @@ export function inner(c) {
   const Db = c.back.kind === "none" ? c.D : c.back.kind === "overlay" ? c.D : c.D - c.back.off - c.tb; // y of the back's front face
   return { x0: t, x1: c.W - t, z0, z1, y0: 0, y1: Db };
 }
-/** the vertical dividers sorted left → right with their x range */
-export function dividerBoxes(c) {
+/** the horizontal dividers (full width) sorted bottom → top with their z range */
+export function hdividerBoxes(c) {
   const I = inner(c);
-  return c.dividers.map((d) => { const x0 = d.from === "right" ? c.W - c.t - d.at - c.t : c.t + d.at; return { d, x0: r1(x0), x1: r1(x0 + c.t) }; }).filter((b) => b.x0 >= I.x0 - 0.01 && b.x1 <= I.x1 + 0.01).sort((a, b) => a.x0 - b.x0);
+  return (c.hdividers || []).map((d) => { const z0 = d.from === "top" ? I.z1 - d.at - c.t : I.z0 + d.at; return { d, z0: r1(z0), z1: r1(z0 + c.t) }; }).filter((b) => b.z0 >= I.z0 - 0.01 && b.z1 <= I.z1 + 0.01).sort((a, b) => a.z0 - b.z0);
 }
-/** the columns between the sides and the dividers */
-export function columns(c) {
-  const I = inner(c), D = dividerBoxes(c), cols = [];
+/** the bands between the bottom, the horizontal dividers and the top */
+export function bands(c) {
+  const I = inner(c), H = hdividerBoxes(c), out = [];
+  let z = I.z0;
+  for (const b of H) { if (b.z0 - z > 0.5) out.push({ z0: z, z1: b.z0 }); z = b.z1; }
+  if (I.z1 - z > 0.5) out.push({ z0: z, z1: I.z1 });
+  return out;
+}
+/** the vertical dividers of one band (full-height ones + the ones limited to this band) sorted left → right */
+export function dividerBoxes(c, bi = null) {
+  const I = inner(c);
+  return c.dividers.filter((d) => bi === null || d.band == null || d.band === "" || +d.band === bi).map((d) => { const x0 = d.from === "right" ? c.W - c.t - d.at - c.t : c.t + d.at; return { d, x0: r1(x0), x1: r1(x0 + c.t) }; }).filter((b) => b.x0 >= I.x0 - 0.01 && b.x1 <= I.x1 + 0.01).sort((a, b) => a.x0 - b.x0);
+}
+/** the columns of one band between the sides and its dividers */
+export function columns(c, bi = 0) {
+  const I = inner(c), D = dividerBoxes(c, bi), cols = [];
   let x = I.x0;
   for (const b of D) { if (b.x0 - x > 0.5) cols.push({ x0: x, x1: b.x0 }); x = b.x1; }
   if (I.x1 - x > 0.5) cols.push({ x0: x, x1: I.x1 });
   return cols;
 }
-/** the cavities: every column split by its shelves (bottom → top); key "col:row" */
+/** every cell = band × column */
+export function cells(c) {
+  const out = [];
+  bands(c).forEach((bd, bi) => columns(c, bi).forEach((col, ci) => out.push({ band: bi, col: ci, x0: col.x0, x1: col.x1, z0: bd.z0, z1: bd.z1 })));
+  return out;
+}
+const shelfBand = (s) => (s.band == null || s.band === "" ? 0 : +s.band);
+/** the cavities: every cell split by its shelves (bottom → top); key "band:col:row" */
 export function cavities(c) {
-  const I = inner(c), cols = columns(c), out = [];
-  cols.forEach((col, ci) => {
-    const sh = c.shelves.filter((s) => s.col === ci).map((s) => ({ s, z0: I.z0 + s.z, z1: I.z0 + s.z + c.t })).filter((b) => b.z0 >= I.z0 - 0.01 && b.z1 <= I.z1 + 0.01).sort((a, b) => a.z0 - b.z0);
-    let z = I.z0, ri = 0;
-    const push = (z0, z1, below, above) => { if (z1 - z0 > 0.5) out.push({ key: `${ci}:${ri++}`, col: ci, row: ri - 1, x0: col.x0, x1: col.x1, z0, z1, y1: I.y1, below, above }); };
-    for (const b of sh) { push(z, b.z0, z === I.z0 ? "bottom" : "shelf", "shelf"); z = b.z1; }
-    push(z, I.z1, z === I.z0 ? "bottom" : "shelf", "top");
-  });
+  const I = inner(c), out = [];
+  for (const cell of cells(c)) {
+    const sh = c.shelves.filter((s) => shelfBand(s) === cell.band && s.col === cell.col).map((s) => ({ s, z0: cell.z0 + s.z, z1: cell.z0 + s.z + c.t })).filter((b) => b.z0 >= cell.z0 - 0.01 && b.z1 <= cell.z1 + 0.01).sort((a, b) => a.z0 - b.z0);
+    let z = cell.z0, ri = 0;
+    const edgeBelow = Math.abs(cell.z0 - I.z0) < 0.01 ? "bottom" : "hdiv", edgeAbove = Math.abs(cell.z1 - I.z1) < 0.01 ? "top" : "hdiv";
+    const push = (z0, z1, below, above) => { if (z1 - z0 > 0.5) out.push({ key: `${cell.band}:${cell.col}:${ri++}`, band: cell.band, col: cell.col, row: ri - 1, x0: cell.x0, x1: cell.x1, z0, z1, y1: I.y1, below, above }); };
+    for (const b of sh) { push(z, b.z0, z === cell.z0 ? edgeBelow : "shelf", "shelf"); z = b.z1; }
+    push(z, cell.z1, z === cell.z0 ? edgeBelow : "shelf", edgeAbove);
+  }
   return out;
 }
 const S = (name, mat, o, u, v, w, h, d, extra = {}) => ({ id: uid(), name, mat, plane: { o, u, v }, outer: G.rect(0, 0, r1(w), r1(h)), holes: [], pockets: [], depth: r1(d), ...extra });
@@ -64,7 +86,9 @@ const groove = (s, u0, u1, v0, v1, depth, face) => { s.pockets.push({ loop: G.re
 export function cabSolids(c) {
   const t = c.t, W = c.W, H = c.H, D = c.D, tb = c.tb, I = inner(c);
   const out = [];
-  const add = (s, role) => { s.cab = c.id; s.role = role; s.group = c.id; out.push(s); return s; };
+  // banding by role: carcass boards get their front edge, fronts all four, backs and drawer bottoms none, drawer box walls the top edge
+  const BAND = { side: ["front"], bottom: ["front"], top: ["front"], rail: ["front"], hdivider: ["front"], divider: ["front"], shelf: ["front"], fixed_shelf: ["front"], door: ["left", "right", "top", "bottom"], drawer_front: ["left", "right", "top", "bottom"], back: [], drawer_box: ["top"], drawer_bottom: [] };
+  const add = (s, role) => { s.cab = c.id; s.role = role; s.group = c.id; s.bandEdges = BAND[role] || ["front"]; if (!s.bandEdges.length) s.band = false; out.push(s); return s; };
   const underJ = c.bottom.joint === "under", overT = c.top.joint === "over";
   const sideZ0 = underJ ? c.bottom.kick + t : 0, sideZ1 = overT ? H - t : H;
   const sideD = c.back.kind === "overlay" ? D : D; // the carcass depth; an overlay back is nailed behind it
@@ -81,7 +105,7 @@ export function cabSolids(c) {
   else if (c.top.joint === "rails") {
     const rw = c.top.railW, fy = c.top.railInset;
     TF = add(S("شريط علوي أمامي", "carcass", [t, fy, H - t], X, Y, W - 2 * t, rw, t), "rail");
-    TB = add(S("شريط علوي خلفي", "carcass", [t, I.y1 - rw, H - t], X, Y, W - 2 * t, rw, t), "rail");
+    TB = add(S("شريط علوي خلفي", "carcass", [t, I.y1 - rw, H - t], X, Y, W - 2 * t, rw, t), "rail"); TB.bandEdges = []; TB.band = false;
   }
   // back
   if (c.back.kind !== "none") {
@@ -100,13 +124,21 @@ export function cabSolids(c) {
       if (T) groove(T, 0, (overT ? W : W - 2 * t), yA, yB, depth, "bottom");
     }
   }
-  // dividers
-  dividerBoxes(c).forEach((b, i) => add(S(`قاطوع ${i + 1}`, "carcass", [b.x0, 0, I.z0], Y, Z, I.y1, I.z1 - I.z0, t), "divider"));
+  // horizontal dividers (full width, structural) and the bands between them
+  hdividerBoxes(c).forEach((b, i) => add(S(`قاطوع أفقي ${i + 1}`, "carcass", [I.x0, 0, b.z0], X, Y, I.x1 - I.x0, I.y1, t), "hdivider"));
+  const BD = bands(c);
+  // vertical dividers: one board per band they live in (a full-height one is cut by the horizontal dividers)
+  c.dividers.forEach((d, i) => {
+    const x0 = d.from === "right" ? c.W - c.t - d.at - c.t : c.t + d.at; if (x0 < I.x0 - 0.01 || x0 + t > I.x1 + 0.01) return;
+    const mine = BD.map((bd, bi) => ({ bd, bi })).filter(({ bi }) => d.band == null || d.band === "" || +d.band === bi);
+    mine.forEach(({ bd, bi }) => add(S(`قاطوع ${i + 1}${mine.length > 1 ? ` (حزام ${bi + 1})` : ""}`, "carcass", [x0, 0, bd.z0], Y, Z, I.y1, bd.z1 - bd.z0, t), "divider"));
+  });
   // shelves
-  const cols = columns(c);
+  const CELLS = cells(c);
   c.shelves.forEach((s, i) => {
-    const col = cols[s.col]; if (!col) return;
-    const z = I.z0 + s.z; if (z < I.z0 - 0.01 || z + t > I.z1 + 0.01) return;
+    const cell = CELLS.find((q) => q.band === shelfBand(s) && q.col === s.col); if (!cell) return;
+    const col = cell;
+    const z = cell.z0 + s.z; if (z < cell.z0 - 0.01 || z + t > cell.z1 + 0.01) return;
     const loose = !s.fixed, side = loose ? 0.15 : 0, sb = s.setback ?? (loose ? 1 : 0);
     add(S(`${s.fixed ? "رف ثابت" : "رف متحرك"} ${i + 1}`, "carcass", [col.x0 + side, sb, z], X, Y, col.x1 - col.x0 - 2 * side, I.y1 - sb, t), s.fixed ? "fixed_shelf" : "shelf");
   });
@@ -117,8 +149,8 @@ export function cabSolids(c) {
     if (!f || f.kind === "open") continue;
     const list = cavs.filter((cv) => f.cavs.includes(cv.key)); if (!list.length) continue;
     const cv = { x0: Math.min(...list.map((q) => q.x0)), x1: Math.max(...list.map((q) => q.x1)), z0: Math.min(...list.map((q) => q.z0)), z1: Math.max(...list.map((q) => q.z1)), y1: list[0].y1 };
-    cv.below = Math.abs(cv.z0 - I.z0) < 0.01 ? "bottom" : "shelf"; cv.above = Math.abs(cv.z1 - I.z1) < 0.01 ? "top" : "shelf";
-    const oneCol = new Set(list.map((q) => q.col)).size === 1; // drawer boxes only fit when no divider crosses the zone
+    cv.below = Math.abs(cv.z0 - I.z0) < 0.01 ? "bottom" : "shelf"; cv.above = Math.abs(cv.z1 - I.z1) < 0.01 ? "top" : "shelf"; // a horizontal divider or a shelf: the front covers half of it
+    const oneCol = new Set(list.map((q) => `${q.band}:${q.col}`)).size === 1; // drawer boxes only fit when no divider crosses the zone
     // the front's rectangle: overlay fronts cover the carcass boards around the zone (half of a shared board, the whole of an outer one minus the reveal)
     const leftOuter = Math.abs(cv.x0 - I.x0) < 0.01, rightOuter = Math.abs(cv.x1 - I.x1) < 0.01;
     const fx0 = cv.x0 - (leftOuter ? t - rv : t / 2 - gap / 2), fx1 = cv.x1 + (rightOuter ? t - rv : t / 2 - gap / 2);

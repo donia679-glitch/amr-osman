@@ -5109,5 +5109,13 @@
  "الفراغات دي مش بتعمل مستطيل واحد — الضلفة لازم تكون مستطيلة (اختار فراغات فوق بعض أو جنب بعض)": "those cavities don't make one rectangle — a door must be rectangular (pick cavities stacked or side by side)",
  "علّم الفراغات اللي عايز تضمها الأول (☑ ضم)": "tick the cavities to join first (☑ join)",
  "فكّها لكل فراغ لوحده": "split into one per cavity",
- "ارتفاعات من تحت، مثلاً 20، 20، 30": "heights from the bottom, e.g. 20, 20, 30"
+ "ارتفاعات من تحت، مثلاً 20، 20، 30": "heights from the bottom, e.g. 20, 20, 30",
+ "▬ القواطيع الأفقية": "▬ horizontal dividers",
+ "قاطوع أفقي": "horizontal divider",
+ "من الرأس": "from the top",
+ "＋ قاطوع أفقي": "＋ horizontal divider",
+ "كل الارتفاع": "full height",
+ "حزام": "band",
+ "لوح أفقي بعرض العلبة كلها بيقسمها أحزمة (مش رف): المسافة من فوق القاعدة من جوه لحد تحته (أو من تحت الرأس). القواطيع الرأسية بتتقطع عنده.": "A full-width horizontal board that splits the box into bands (not a shelf): the distance from the inside of the bottom up to its underside (or down from the top). Vertical dividers are cut at it.",
+ "الرقم = ارتفاع تحت الرف من فوق القاعدة من جوه (أو من فوق القاطوع الأفقي). الرف المتحرك بيدخل 1 سم من قدام و1.5 مم من كل جنب.": "The number = height under the shelf from the inside of the bottom (or from the top of the horizontal divider). A loose shelf is set in 1 cm at the front and 1.5 mm each side."
 }

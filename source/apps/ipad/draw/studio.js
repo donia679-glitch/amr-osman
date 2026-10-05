@@ -2072,9 +2072,11 @@ function cabAction(kind, b) {
   const I = Cab.inner(c);
   edit(() => {
     cabSyncPos(c);
-    if (kind === "adddiv") { const col = Cab.columns(c).sort((a, b) => (b.x1 - b.x0) - (a.x1 - a.x0))[0]; if (col) c.dividers.push({ id: uid(), from: "left", at: Math.round(col.x0 - I.x0 + (col.x1 - col.x0 - c.t) / 2) }); }
+    if (kind === "adddiv") { const col = Cab.columns(c, 0).sort((a, b) => (b.x1 - b.x0) - (a.x1 - a.x0))[0]; if (col) c.dividers.push({ id: uid(), from: "left", at: Math.round(col.x0 - I.x0 + (col.x1 - col.x0 - c.t) / 2), band: "" }); }
+    else if (kind === "addhdiv") { const bd = Cab.bands(c).sort((a, b) => (b.z1 - b.z0) - (a.z1 - a.z0))[0]; (c.hdividers ||= []); if (bd) c.hdividers.push({ id: uid(), from: "bottom", at: Math.round(bd.z0 - I.z0 + (bd.z1 - bd.z0 - c.t) / 2) }); }
+    else if (kind.startsWith("delhdiv:")) c.hdividers.splice(+kind.split(":")[1], 1);
     else if (kind.startsWith("deldiv:")) c.dividers.splice(+kind.split(":")[1], 1);
-    else if (kind.startsWith("addshelf:")) { const col = +kind.split(":")[1]; const ns = c.shelves.filter((x) => x.col === col).length; c.shelves.push({ id: uid(), col, z: Math.round(((I.z1 - I.z0) * (ns + 1)) / (ns + 2)), fixed: false, setback: 1 }); }
+    else if (kind.startsWith("addshelf:")) { const [, bs, cs] = kind.split(":"); const band = +bs || 0, col = +cs || 0; const cell = Cab.cells(c).find((q) => q.band === band && q.col === col); const ns = c.shelves.filter((x) => (x.band || 0) === band && x.col === col).length; if (cell) c.shelves.push({ id: uid(), band, col, z: Math.round(((cell.z1 - cell.z0) * (ns + 1)) / (ns + 2)), fixed: false, setback: 1 }); }
     else if (kind.startsWith("delshelf:")) c.shelves.splice(+kind.split(":")[1], 1);
     else if (kind.startsWith("each:")) { const fk = kind.split(":")[1]; for (const cv of Cab.cavities(c)) Cab.setZone(c, [cv.key], fk); } // every cavity on its own
     else if (kind.startsWith("whole:")) { const fk = kind.split(":")[1]; Cab.setZone(c, Cab.cavities(c).map((cv) => cv.key), fk); } // the whole box behind one zone
@@ -2092,7 +2094,7 @@ function cabHtml() {
     <p class="hint">اوصف العلبة بالأدوار: جنب، قاعدة، رأس، ظهر، قواطيع، أرفف — واختار الوصلات (القاعدة بين الجنبين ولا تحتهم، الظهر في مفحار…) والمقاسات بالسنتي، وكل فراغ يطلع تختار يبقى أدراج أو ضلفة أو قلاب أو ضلفتين. القطع بتتحدث لوحدها وبتدخل القص والملصقات والـCNC (المفحار بيطلع كجيب).</p>
     <div class="dsbtns"><button class="dsb primary" data-cab="add">＋ علبة جديدة</button>${(M.cabs || []).filter((x) => !c || x.id !== c.id).map((x) => `<button class="dsb" data-pick="G:${x.id}">${esc(x.name)}</button>`).join("")}</div>`;
   if (!c) return h + `</details>`;
-  const I = Cab.inner(c), cols = Cab.columns(c), cavs = Cab.cavities(c);
+  const I = Cab.inner(c), cavs = Cab.cavities(c), bands = Cab.bands(c), cellsL = Cab.cells(c);
   h += `<div class="dsrow"><input class="dsin" data-cf="name" value="${esc(c.name)}" aria-label="اسم العلبة"><button class="dsb" data-cab="close" title="قفل">✕</button></div>
     <div class="dsgrid">${cabNumIn("W", "العرض", c.W)}${cabNumIn("H", "الارتفاع", c.H)}${cabNumIn("D", "العمق", c.D)}${cabNumIn("t", "سمك اللوح", c.t)}${cabNumIn("tb", "سمك الظهر", c.tb)}${cabNumIn("bottom.kick", "ارتفاع السكلو (القاعدة من الأرض)", c.bottom.kick)}</div>
     <details open><summary>🔩 الوصلات</summary>
@@ -2103,15 +2105,19 @@ function cabHtml() {
       <label><span>الظهر</span>${cabSel("back.kind", c.back.kind, Cab.BACK_KINDS)}</label>
       ${c.back.kind === "groove" ? `<div class="dsgrid">${cabNumIn("back.off", "الظهر داخل عن الحرف الخلفي", c.back.off)}${cabNumIn("back.groove", "عمق المفحار", c.back.groove)}</div>` : c.back.kind === "rabbet" ? `<div class="dsgrid">${cabNumIn("back.rabbet", "عمق الأورزة", c.back.rabbet)}</div>` : ""}
     </details>
+    <details open><summary>▬ القواطيع الأفقية (${(c.hdividers || []).length})</summary>
+      ${(c.hdividers || []).map((d, i) => `<div class="dsrow"><span>قاطوع أفقي ${i + 1}</span>${cabSel(`hdividers.${i}.from`, d.from, { bottom: "من القاعدة", top: "من الرأس" })}<input class="dsin sm" type="text" inputmode="decimal" data-numf data-cf="hdividers.${i}.at" value="${f1(d.at)}" aria-label="المسافة"><button class="dsb" data-cab="delhdiv:${i}">✕</button></div>`).join("")}
+      <p class="hint">لوح أفقي بعرض العلبة كلها بيقسمها أحزمة (مش رف): المسافة من فوق القاعدة من جوه لحد تحته (أو من تحت الرأس). القواطيع الرأسية بتتقطع عنده.</p><button class="dsb" data-cab="addhdiv">＋ قاطوع أفقي</button>
+    </details>
     <details open><summary>▥ القواطيع الرأسية (${c.dividers.length})</summary>
-      ${c.dividers.map((d, i) => `<div class="dsrow"><span>قاطوع ${i + 1}</span>${cabSel(`dividers.${i}.from`, d.from, { left: "من الجنب الشمال", right: "من الجنب اليمين" })}<input class="dsin sm" type="text" inputmode="decimal" data-numf data-cf="dividers.${i}.at" value="${f1(d.at)}" aria-label="المسافة"><button class="dsb" data-cab="deldiv:${i}">✕</button></div>`).join("")}
+      ${c.dividers.map((d, i) => `<div class="dsrow"><span>قاطوع ${i + 1}</span>${cabSel(`dividers.${i}.from`, d.from, { left: "من الجنب الشمال", right: "من الجنب اليمين" })}<input class="dsin sm" type="text" inputmode="decimal" data-numf data-cf="dividers.${i}.at" value="${f1(d.at)}" aria-label="المسافة">${bands.length > 1 ? cabSel(`dividers.${i}.band`, d.band == null ? "" : String(d.band), { "": "كل الارتفاع", ...Object.fromEntries(bands.map((b, bi) => [String(bi), `حزام ${bi + 1} بس`])) }) : ""}<button class="dsb" data-cab="deldiv:${i}">✕</button></div>`).join("")}
       <p class="hint">المسافة من وش الجنب من جوه لحد القاطوع. الفراغ من جوه ${f1(I.x1 - I.x0)} سم.</p><button class="dsb" data-cab="adddiv">＋ قاطوع</button>
     </details>
     <details open><summary>▤ الأرفف (${c.shelves.length})</summary>
-      ${cols.map((col, ci) => `<div class="dscol"><b>${cols.length > 1 ? `عمود ${ci + 1} (${f1(col.x1 - col.x0)} سم)` : `الفراغ (${f1(col.x1 - col.x0)} سم)`}</b>
-        ${c.shelves.map((sh, i) => sh.col === ci ? `<div class="dsrow"><span>رف</span><input class="dsin sm" type="text" inputmode="decimal" data-numf data-cf="shelves.${i}.z" value="${f1(sh.z)}" aria-label="الارتفاع من القاعدة"><label class="dschk"><input type="checkbox" data-cf="shelves.${i}.fixed" ${sh.fixed ? "checked" : ""}> ثابت</label><button class="dsb" data-cab="delshelf:${i}">✕</button></div>` : "").join("")}
-        <button class="dsb" data-cab="addshelf:${ci}">＋ رف</button></div>`).join("")}
-      <p class="hint">الرقم = ارتفاع تحت الرف من فوق القاعدة من جوه (الفراغ ${f1(I.z1 - I.z0)} سم). الرف المتحرك بيدخل 1 سم من قدام و1.5 مم من كل جنب.</p>
+      ${cellsL.map((cell) => `<div class="dscol"><b>${bands.length > 1 ? `حزام ${cell.band + 1} · ` : ""}${Cab.columns(c, cell.band).length > 1 ? `عمود ${cell.col + 1}` : "الفراغ"} (${f1(cell.x1 - cell.x0)} × ${f1(cell.z1 - cell.z0)})</b>
+        ${c.shelves.map((sh, i) => (sh.band || 0) === cell.band && sh.col === cell.col ? `<div class="dsrow"><span>رف</span><input class="dsin sm" type="text" inputmode="decimal" data-numf data-cf="shelves.${i}.z" value="${f1(sh.z)}" aria-label="الارتفاع من تحت"><label class="dschk"><input type="checkbox" data-cf="shelves.${i}.fixed" ${sh.fixed ? "checked" : ""}> ثابت</label><button class="dsb" data-cab="delshelf:${i}">✕</button></div>` : "").join("")}
+        <button class="dsb" data-cab="addshelf:${cell.band}:${cell.col}">＋ رف</button></div>`).join("")}
+      <p class="hint">الرقم = ارتفاع تحت الرف من فوق القاعدة من جوه (أو من فوق القاطوع الأفقي). الرف المتحرك بيدخل 1 سم من قدام و1.5 مم من كل جنب.</p>
     </details>
     <details open><summary>🚪 الفراغات (${cavs.length}) — أدراج / ضلف</summary>
       <p class="hint">كل فراغ اختاره لوحده، أو علّم كذا فراغ (☑ ضم) واعملهم ضلفة واحدة / ضلفتين / قلاب — أو العلبة كلها ضلفة واحدة.</p>

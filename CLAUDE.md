@@ -38,6 +38,8 @@ cd /home/claude/novera-app && python3 tools/build_pwa.py && python3 tools/build_
 - Kitchen units: base depth 58 includes the door (inset, face at y=0); corner units get their depth from `cornerFit()` in app.js unless set by hand.
 
 ## History (latest first)
+- v74: cabinet builder — horizontal dividers `c.hdividers [{from bottom|top, at}]` (full-width structural boards «قاطوع أفقي N», `hdividerBoxes/bands`), vertical dividers get `band` ("" = full height → one board per band «قاطوع 1 (حزام k)»), `columns(c, band)`, `cells(c)` (band × column),
+  shelves carry `band` + `col`, cavity keys "band:col:row", fronts treat a horizontal divider like a shared board. Banding per role: `s.bandEdges` on every cabinet solid (carcass front edge, fronts all four, back/drawer bottom/back rail none, drawer box walls top) honoured by app.js free-model pipeline (also for pocketed boards) → labels show the right edges.
 - v73: cabinet fronts as zones over one or more cavities: `c.fronts = [{id, cavs:[keys], kind, hinge, n, hs}]` (legacy `fills` read by `frontZones`), `setZone(c, keys, kind)` (takes the cavities out of other zones), `rectZone` (a zone must be one rectangle — no L shapes),
   `zoneOf`; drawer boxes only when the zone sits in one column. Studio UI: per-cavity select (`data-cf="cav.<key>"`), ☑ join checkboxes (`data-cavpick`) + join:kind buttons, whole:kind (the whole box one door / two doors / flap), each:kind, zones list with hinge / drawer count / heights, split ⇵ and ✕.
 - v72: studio «🧰 مصمّم الوحدات بالقطع» — `draw/cabinet.js` (pure: `newCab`, `inner`, `dividerBoxes`, `columns`, `cavities`, `cabSolids(c)` → studio solids tagged `cab`/`role`, joint options BOTTOM_JOINTS between|under, TOP_JOINTS between|over|rails|none,

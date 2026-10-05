@@ -663,7 +663,8 @@ function adaptModel(u) {
     const b = DG.solidBox(s), ax = axisOf(DG.nOf(s.plane));
     const role = s.mat === "back" ? "back" : ax === 2 ? "horizontal" : ax === 0 ? "side" : ax === 1 && s.mat === "front" ? "door" : "other";
     const ends = [["left", "right"], ["front", "back"], ["bottom", "top"]];
-    const band = s.band === false || s.mat === "back" ? [] : [0, 1, 2].filter((k) => k !== (ax >= 0 ? ax : 1)).flatMap((k) => ends[k]);
+    // a cabinet piece carries its own edges (front edge of a side, all four of a door…); a free board is banded all round unless turned off
+    const band = Array.isArray(s.bandEdges) ? s.bandEdges.filter((e) => ends.flat().includes(e)) : s.band === false || s.mat === "back" ? [] : [0, 1, 2].filter((k) => k !== (ax >= 0 ? ax : 1)).flatMap((k) => ends[k]);
     return { name: s.name || `لوح ${i + 1}`, role, material: s.mat || "carcass", x: b.x0, y: b.y0, z: b.z0, w: Math.max(0.1, b.x1 - b.x0), d: Math.max(0.1, b.y1 - b.y0), h: Math.max(0.1, b.z1 - b.z0), band };
   });
   let base;
@@ -694,8 +695,10 @@ function adaptModel(u) {
     }
     const W = (l) => l.map((p) => toL(DG.toWorld(s.plane, p, 0)));
     out.cnc = { outline: W(s.outer), holes: (s.holes || []).map(W), pockets: (s.pockets || []).map((pk) => ({ loop: W(pk.loop), depth: pk.depth, face: pk.face || "top" })) };
-    out.band_len = s.band === false ? 0 : Math.round(DG.perimeter(s.outer) * 10) / 10;
-    if (s.band !== false) out.label.banded = { left: true, right: true, top: true, bottom: true };
+    if (!Array.isArray(s.bandEdges)) { // a cabinet piece keeps the engine's per-edge banding; a free shaped board is banded all round
+      out.band_len = s.band === false ? 0 : Math.round(DG.perimeter(s.outer) * 10) / 10;
+      if (s.band !== false) out.label.banded = { left: true, right: true, top: true, bottom: true };
+    }
     const notes = [];
     if (DG.clean(s.outer).length > 4 || !aligned) notes.push("✂ قطعة مشكّلة — القص بالراوتر/CNC على شكلها");
     if ((s.holes || []).length) notes.push(`⭕ ${s.holes.length} تفريغة`);
