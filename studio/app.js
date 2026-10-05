@@ -236,7 +236,7 @@ function setCloud(s) {
 // ------------------------------------------------------------------ engines adapter
 const cache = new Map();
 function R(u) {
-  const key = u.kind + JSON.stringify(u.params) + JSON.stringify(u.libs || {}) + (u.org || "") + (u.orgOpts ? JSON.stringify(u.orgOpts) : "") + (u.extra?.length ? JSON.stringify(u.extra) : "");
+  const key = u.kind + JSON.stringify(u.params) + JSON.stringify(u.libs || {}) + (u.org || "") + (u.orgOpts ? JSON.stringify(u.orgOpts) : "") + (u.extra?.length ? JSON.stringify(u.extra) : "") + (u.matOv ? JSON.stringify(u.matOv) : "");
   if (cache.has(key)) return cache.get(key);
   if (cache.size > 80) cache.delete(cache.keys().next().value);
   let out = u.kind === "dressing" ? adaptDressing(u) : u.kind === "kitchen" ? adaptKitchen(u) : u.kind === "pieces" ? adaptPieces(u) : u.params?.model ? adaptModel(u) : adaptPanel(u);
@@ -246,8 +246,44 @@ function R(u) {
       pieces: (out.pieces || 0) + ob.parts.length - out.parts.length, banding: bandM(ob.parts) };
   }
   if (u.extra?.length && out.ok) out = withExtra(u, out);
+  if (u.matOv && out.ok) out = withMatOv(u, out);
   if (!R.noCache) cache.set(key, out);
   return out;
+}
+// ---- v80: a material of its own for one piece (a door in another colour, a drawer front in glass-look…): u.matOv = { [pieceName]: libId }
+const libDisplay = (lib) => (Catalog.LIB[lib] ? Catalog.libName(lib) : Mat.get(lib)?.name || lib);
+const libColorOf = (lib) => Catalog.LIB[lib]?.[2] || Mat.get(lib)?.color || "#cccccc";
+function withMatOv(u, out) {
+  const ov = u.matOv || {}, names = { ...(out.names || {}) }, colors = { ...(out.colors || {}) }, used = new Set();
+  const keyOf = (lib) => "ov:" + lib;
+  const parts = (out.parts || []).map((pt) => { const lib = ov[pt.name]; if (!lib || !pt.cut_piece) return pt; used.add(lib); return { ...pt, material: keyOf(lib), label: pt.label ? { ...pt.label, material: libDisplay(lib) } : pt.label }; });
+  const meshes = out.meshes ? out.meshes.map((m) => { const lib = ov[m.name]; if (!lib) return m; used.add(lib); const k = keyOf(lib); return { ...m, mat: k, faces: (m.faces || []).map((f) => ({ ...f, mat: k })) }; }) : out.meshes;
+  if (!used.size) return out;
+  for (const lib of used) { names[keyOf(lib)] = libDisplay(lib); colors[keyOf(lib)] = libColorOf(lib); }
+  const libOf = (k) => (typeof k === "string" && k.startsWith("ov:") ? k.slice(3) : out.libOf?.(k));
+  return { ...out, parts, meshes, names, colors, libOf, matOv: true };
+}
+/** the libraries a unit may pick for one piece: the project's materials first, then the catalogue */
+function matOvOptions(u, r) {
+  const own = [...new Set([...Object.values(u.libs || {}), ...(state.project.mats || []).map((m) => m.id), ...(r.parts || []).map((pt) => r.libOf?.(pt.material))].filter(Boolean))];
+  const cat = Object.keys(Catalog.LIB).filter((k) => !own.includes(k) && !STONE(k));
+  const mine = Mat.all().map((m) => m.id).filter((k) => !own.includes(k));
+  return { own, cat, mine };
+}
+function matOvProps(u, r) {
+  const ov = u.matOv || {};
+  const pieces = (r.parts || []).filter((pt) => pt.cut_piece && pt.label);
+  if (!pieces.length) return "";
+  const rank = (pt) => (/ضلفة|باب|وش درج|قلاب/.test(pt.name) ? 0 : /رف|قاطوع|فاصل/.test(pt.name) ? 1 : 2);
+  const list = pieces.slice().sort((a, b) => rank(a) - rank(b));
+  const O = matOvOptions(u, r);
+  const opt = (k, cur) => `<option value="${esc(k)}" ${cur === k ? "selected" : ""}>${esc(libDisplay(k))}</option>`;
+  const sel = (pt) => { const cur = ov[pt.name] || ""; return `<select data-matov="${esc(pt.name)}"><option value="">— خامة الوحدة (${esc(r.names?.[(r.matOv && cur) ? pt.material : pt.material] || "")})</option><optgroup label="خامات المشروع">${O.own.map((k) => opt(k, cur)).join("")}</optgroup>${O.mine.length ? `<optgroup label="خاماتي">${O.mine.map((k) => opt(k, cur)).join("")}</optgroup>` : ""}<optgroup label="الكتالوج">${O.cat.map((k) => opt(k, cur)).join("")}</optgroup></select>`; };
+  const n = Object.keys(ov).length;
+  return `<details class="grainbox matovbox"><summary>🎨 خامة لكل قطعة${n ? ` · ${n} مخصصة` : ""}</summary>
+    <p class="hint">غيّر خامة قطعة بعينها (ضلفة واحدة بلون تاني، وش درج زجاجي…) — بتتقطع من لوح الخامة دي في خطة القص وبتظهر بلونها في الـ3D والملصق.</p>
+    <div class="grainlist">${list.map((pt) => `<div class="grow ${ov[pt.name] ? "on" : ""}"><span class="gname"><i style="background:${esc(ov[pt.name] ? libColorOf(ov[pt.name]) : r.colors?.[pt.material] || "#ccc")}"></i>${esc(pt.name)} <small>${n1(pt.label.h)}×${n1(pt.label.w)}</small></span>${sel(pt)}</div>`).join("")}</div>
+    ${n ? `<button class="ghost2" data-matovreset>رجّع كل القطع لخامة الوحدة</button>` : ""}</details>`;
 }
 // ---- extra pieces drawn onto / merged into any unit: boards in the unit's own frame, cut-listed like the rest
 const EXTRA_MATS = { kitchen: { carcass: "الهيكل", front: "الواجهة", back: "الظهر" }, dressing: { carcass: "الهيكل", door: "الضلف", shelf: "الأرفف", back: "الظهر" },
@@ -2672,6 +2708,7 @@ function renderProps0() {
   if (u.kind === "panel" && r.ok) h += softProps(u, r);
   if (r.ok && (u.kind === "dressing" || u.kind === "panel") && r.params?.template !== "free") h += obstaclesProps(p);
   if (r.ok) h += grainProps(u, r);
+  if (r.ok) h += matOvProps(u, r);
   if (r.ok) h += extraProps(u, r);
 
   h += `<details open><summary>الخامات</summary><div class="mats">`;
@@ -3189,6 +3226,7 @@ props.addEventListener("change", (e) => {
     return;
   }
   if (t.hasAttribute("data-grainmatch")) { u.grain = { ...(u.grain || {}), match: t.checked }; cutKey = ""; save(); render(true); return; }
+  if (t.dataset.matov) { const name = t.dataset.matov, v = t.value; u.matOv = { ...(u.matOv || {}) }; if (v) u.matOv[name] = v; else delete u.matOv[name]; if (!Object.keys(u.matOv).length) delete u.matOv; if (v && !Catalog.LIB[v]) { const m = Mat.get(v); if (m && !(state.project.mats || []).some((x) => x.id === v)) state.project.mats = [...(state.project.mats || []), m]; } cutKey = ""; save(); render(true); return; }
   if (t.hasAttribute("data-runner")) { const R0 = userDefs().rules || {}; const clr = R0.runnerClr?.[t.value]; setParams(u, (p) => { p.drawer_runner = t.value; if (clr != null) p.drawer_box_side_clearance = +clr; }); return; }
   if (d.appl) {
     u.appliance ??= {};
@@ -3382,6 +3420,7 @@ props.addEventListener("click", (e) => {
     cutKey = ""; save(); render(true); return;
   }
   if (b.hasAttribute("data-grainreset")) { delete u.grain; delete u.grainOv; cutKey = ""; save(); render(true); return; }
+  if (b.hasAttribute("data-matovreset")) { delete u.matOv; cutKey = ""; save(); render(true); return; }
   if (b.dataset.grainov) {
     const name = b.dataset.grainov, v = b.dataset.gv;
     u.grainOv = { ...(u.grainOv || {}) };
@@ -7611,7 +7650,11 @@ function asmLayout(u) {
     }
     return { name: e.name, code, sec: e.sec, w: r1(w), h: r1(h), z0: r1(e.z0 - refOf(e)), floor: r1(e.z0), side, hinges, sugg, edge, e };
   });
-  const dividers = E.filter((e) => e.cls === "divider" && (/قاطوع|ضلع|فاصل/.test(e.tail) || e.z1 - e.z0 > 0.6 * (zMax - zMin))).sort((a, b) => a.x0 - b.x0).map((e) => ({ name: e.name, code: codeOf(e), x: r1(e.x0 - leftIn), t: r1(e.x1 - e.x0), e }));
+  const rightIn = sides.length ? Math.max(...sides.map((s) => s.x0)) : Math.max(...carc.map((e) => e.x1));
+  const dividers = E.filter((e) => e.cls === "divider" && (/قاطوع|ضلع|فاصل/.test(e.tail) || e.z1 - e.z0 > 0.6 * (zMax - zMin))).sort((a, b) => a.x0 - b.x0 || a.z0 - b.z0).map((e) => {
+    const ref = refOf(e);
+    return { name: e.name, code: codeOf(e), x: r1(e.x0 - leftIn), xr: r1(rightIn - e.x1), t: r1(e.x1 - e.x0), z0: r1(e.z0 - ref), z1: r1(e.z1 - ref), h: r1(e.z1 - e.z0), d: r1(e.y1 - e.y0), horiz: /أفقي/.test(e.name), e };
+  });
   const backY = Math.max(...E.filter((e) => e.cls === "back" || e.cls === "side").map((e) => e.y1), 0);
   const rails = E.filter((e) => e.cls === "rail").map((e) => ({ name: e.name, sec: e.sec, z: r1((e.z0 + e.z1) / 2 - refOf(e)), floor: r1((e.z0 + e.z1) / 2), back: r1(backY - (e.y0 + e.y1) / 2), e }));
   const kitchen = u.kind === "kitchen";
@@ -7678,7 +7721,7 @@ function layoutTables(L, step = null) {
   let h = "";
   const want = (i) => step === null || step === i;
   if (want(ASM.side1) && L.kitchen) h += `<p class="hint">${L.wall ? `الوحدة بتتعلّق وتحتها على <b>${n1(L.zMin)} سم</b> من الأرض.` : `قاعدة الوحدة من جوه على <b>${n1(L.baseTop)} سم</b> من الأرض (بالسكلو).`} كل الارتفاعات تحت من فوق القاعدة من جوه.</p>`;
-  if (want(ASM.dividers) && L.dividers.length) h += `<h4 class="advh">أماكن القواطيع (من الجنب الشمال من جوه)</h4>` + t(["القطعة", "مكانه", "التخانة"], L.dividers.map((d) => [nm(d), `${n1(d.x)} سم`, n1(d.t)]));
+  if (want(ASM.dividers) && L.dividers.length) h += `<h4 class="advh">أماكن القواطيع (من الجنب الشمال من جوه)</h4>` + t(["القطعة", "من الشمال", "من اليمين", "تحته", "فوقه", "الارتفاع"], L.dividers.map((d) => [nm(d), `<b>${n1(d.x)}</b>`, n1(d.xr), n1(d.z0), n1(d.z1), n1(d.h)]));
   const fixed = L.shelves.filter((s) => s.fixed), loose = L.shelves.filter((s) => !s.fixed);
   if (want(ASM.dividers) && fixed.length) h += `<h4 class="advh">الأرفف الثابتة</h4>` + t(["القطعة", "تحت الرف", "فوق الرف", "الفراغ تحته"], fixed.map((s) => [nm(s), `${n1(s.bottom)}`, `${n1(s.top)}`, s.gapBelow === null ? "—" : n1(s.gapBelow)]));
   if (want(ASM.shelves) && loose.length) h += `<h4 class="advh">ارتفاعات الأرفف — الفرش تحت الرف على</h4>` + t(["القطعة", "تحت الرف", "فوق الرف", "الفراغ تحته", "الفراغ فوقه"], loose.map((s) => [nm(s), `<b>${n1(s.bottom)}</b>`, n1(s.top), s.gapBelow === null ? "—" : n1(s.gapBelow), s.gapAbove === null ? "—" : n1(s.gapAbove)]));
@@ -7697,7 +7740,7 @@ function layoutPages(u) {
   const nm = (x) => `${x.name}${x.code ? ` (${x.code})` : ""}`;
   if (L.kitchen) lines.push({ t: L.wall ? `الوحدة بتتعلّق وتحتها على ${n1(L.zMin)} سم من الأرض.` : `القاعدة من جوه على ${n1(L.baseTop)} سم من الأرض.` + " كل الارتفاعات من فوق القاعدة من جوه." });
   else lines.push({ t: "كل الارتفاعات من فوق القاعدة من جوه (سم)." });
-  if (L.dividers.length) { H("القواطيع — من الجنب الشمال من جوه"); for (const d of L.dividers) lines.push({ t: `${nm(d)}: على ${n1(d.x)} سم` }); }
+  if (L.dividers.length) { H("القواطيع — من الجنب الشمال من جوه"); for (const d of L.dividers) lines.push({ t: `${nm(d)}: على ${n1(d.x)} سم من الشمال (${n1(d.xr)} من اليمين) · من ${n1(d.z0)} لحد ${n1(d.z1)} من القاعدة · ارتفاع ${n1(d.h)}` }); }
   if (L.shelves.length) { H("الأرفف — الفرش تحت الرف على"); for (const s of L.shelves) lines.push({ t: `${nm(s)}${s.fixed ? " (ثابت)" : ""}: تحت الرف ${n1(s.bottom)} · فوقه ${n1(s.top)}${s.gapBelow !== null ? ` · الفراغ تحته ${n1(s.gapBelow)}` : ""}${s.gapAbove !== null ? ` · فوقه ${n1(s.gapAbove)}` : ""}` }); }
   if (L.drawers.length) { H(`الأدراج — المجرى ${L.drawers[0].runner === "side" ? "الجانبي (نص جنب الصندوق)" : "السفلي (تحت جنب الصندوق)"} على`); for (const d of L.drawers) lines.push({ t: `${nm(d)}: المجرى ${d.run === null ? "—" : n1(d.run)}${d.bh !== null ? ` · الصندوق ${n1(d.bh)} × ${n1(d.depth)}` : ""}${d.slide ? ` · مجرى ${d.slide} سم` : ""} · الوش ${n1(d.f0)} → ${n1(d.f1)}` }); }
   if (L.doors.length) { H("الضلف والمفصلات"); for (const d of L.doors) lines.push({ t: `${nm(d)}: ${n1(d.h)} × ${n1(d.w)} · من تحت ${n1(d.z0)}${d.side ? ` · مفصلات ${SIDE_AR[d.side] || d.side}` : ""}${d.hinges.length ? ` · الكبب على ${d.hinges.map(n1).join(" و ")} ${d.side === "top" ? "من الشمال" : "من تحت"} (${n1(d.edge)} من الحرف)${d.sugg ? " — مقترح" : ""}` : ""}` }); }
@@ -9632,7 +9675,9 @@ function renderWorker() {
       for (const sh of L.shelves) h2 += row(sh.fixed ? "📌" : "📚", `${sh.fixed ? "رف ثابت" : "رف"} ${sh.code || ""}`, [["↥ تحت الرف", sh.bottom], ["↥ فوق الرف", sh.top], ...(sh.gapBelow != null ? [["فراغ تحته", sh.gapBelow]] : []), ...(sh.gapAbove != null ? [["فراغ فوقه", sh.gapAbove]] : [])], `${sh.fixed ? "رف ثابت" : "رف"}: تحت الرف على ${arNum(sh.bottom)} سنتي من القاعدة`);
       for (const d of L.drawers) h2 += row("🗄️", `${d.name} ${d.code || ""}`, [...(d.run != null ? [[d.runner === "side" ? "↥ المجرى الجانبي (نص الجنب)" : "↥ المجرى السفلي (تحت الجنب)", d.run, "gold"]] : []), ...(d.runner === "side" && d.box0 != null ? [["↥ تحت الصندوق", d.box0]] : []), ["↥ تحت الوش", d.f0], ["↥ فوق الوش", d.f1], ["ارتفاع الوش", d.fh], ...(d.bh != null ? [["ارتفاع الصندوق", d.bh]] : []), ...(d.slide ? [["طول المجرى", d.slide]] : [])], `${d.name}: ${d.runner === "side" ? "المجرى الجانبي في نص الجنب" : "المجرى السفلي تحت الجنب"} على ${arNum(d.run ?? d.f0)} سنتي من القاعدة${d.runner === "side" && d.box0 != null ? `، وتحت الصندوق على ${arNum(d.box0)}` : ""}، والوش من ${arNum(d.f0)} لحد ${arNum(d.f1)}${d.slide ? `، مجرى ${arNum(d.slide)}` : ""}`);
       for (const dr of L.doors) h2 += row("🚪", `${dr.name} ${dr.code || ""}`, [["العرض", dr.w], ["الارتفاع", dr.h], ["↥ تحت الضلفة", dr.z0], ...(dr.side ? [["المفصلات ناحية", SIDE_AR[dr.side] || dr.side]] : []), ...(dr.hinges.length ? [[`الكبب من ${dr.side === "top" ? "الشمال" : "تحت"}${dr.sugg ? " (مقترح)" : ""}`, dr.hinges.map((x) => n1(x)).join(" · ")]] : []), ["بعد الكبة عن الحرف", dr.edge]], `${dr.name}: الكبب على ${dr.hinges.map(arNum).join(" و ")} سنتي`);
-      for (const dv of L.dividers) h2 += row("▯", `قاطوع ${dv.code || ""}`, [["بعده عن الجنب الشمال", dv.x]], `قاطوع على ${arNum(dv.x)} سنتي من الجنب الشمال`);
+      for (const dv of L.dividers) h2 += dv.horiz
+        ? row("▬", `${dv.name} ${dv.code || ""}`, [["↥ تحته من القاعدة", dv.z0, "gold"], ["↥ فوقه", dv.z1], ["الطول", r1(dv.e.x1 - dv.e.x0)], ["العمق", dv.d]], `${dv.name}: تحته على ${arNum(dv.z0)} سنتي من القاعدة، وفوقه على ${arNum(dv.z1)}`)
+        : row("▯", `${dv.name} ${dv.code || ""}`, [["↔ من الجنب الشمال", dv.x, "gold"], ["↔ من الجنب اليمين", dv.xr], ["↥ تحته من القاعدة", dv.z0], ["↥ فوقه", dv.z1], ["الارتفاع", dv.h], ["العمق", dv.d]], `${dv.name}: على ${arNum(dv.x)} سنتي من الجنب الشمال و${arNum(dv.xr)} من اليمين، من ${arNum(dv.z0)} لحد ${arNum(dv.z1)} من القاعدة، ارتفاعه ${arNum(dv.h)} وعمقه ${arNum(dv.d)}`);
       for (const rl of L.rails) h2 += row("👔", "شماعة", [["↥ من القاعدة", rl.z], ["بعدها عن الظهر", rl.back]], `شماعة على ${arNum(rl.z)} سنتي من القاعدة`);
       if (!L.shelves.length && !L.drawers.length && !L.doors.length && !L.rails.length) h2 += `<p class="hint">الوحدة دي مفيهاش أرفف ولا أدراج ولا ضلف</p>`;
       side += h2;

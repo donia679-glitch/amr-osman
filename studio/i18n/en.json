@@ -5162,5 +5162,17 @@
  "اسم العلبة في المكتبة:": "cabinet name in the library:",
  "اتحفظت العلبة في مكتبتي ⭐": "the cabinet is saved in my library ⭐",
  "مفيش حاجة مرسومة لسه": "nothing drawn yet",
- "اتحفظ في مكتبتي ⭐ — هتلاقيه في المكتبة تحت «مكتبتي»": "saved to my library ⭐ — find it in the library under \"my library\""
+ "اتحفظ في مكتبتي ⭐ — هتلاقيه في المكتبة تحت «مكتبتي»": "saved to my library ⭐ — find it in the library under \"my library\"",
+ "🎨 خامة لكل قطعة": "🎨 material per piece",
+ "غيّر خامة قطعة بعينها (ضلفة واحدة بلون تاني، وش درج زجاجي…) — بتتقطع من لوح الخامة دي في خطة القص وبتظهر بلونها في الـ3D والملصق.": "Change one piece's material (one door in another colour, a glass-look drawer front…) — it is cut from that material's sheet in the cutting plan and shows in its colour in the 3D and on the label.",
+ "— خامة الوحدة": "— the unit's material",
+ "خامات المشروع": "project materials",
+ "الكتالوج": "catalogue",
+ "رجّع كل القطع لخامة الوحدة": "reset every piece to the unit's material",
+ "↔ من الجنب الشمال": "↔ from the left side",
+ "↔ من الجنب اليمين": "↔ from the right side",
+ "↥ تحته من القاعدة": "↥ under it from the bottom",
+ "↥ فوقه": "↥ over it",
+ "من اليمين": "from right",
+ "تحته": "under"
 }
