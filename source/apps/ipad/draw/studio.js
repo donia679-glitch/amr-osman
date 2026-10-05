@@ -157,7 +157,7 @@ function build() {
   el = document.createElement("div");
   el.id = "drawStudio"; el.className = "ds"; el.hidden = true;
   el.innerHTML = `<header class="dsbar">
-      <button class="dsb primary" data-ds="done">✓ خلصت</button><button class="dsb" data-ds="cancel" title="اقفل من غير حفظ">✕</button>
+      <button class="dsb" data-ds="mylib" title="احفظ التصميم ده في مكتبتي">⭐ للمكتبة</button><button class="dsb primary" data-ds="done">✓ خلصت</button><button class="dsb" data-ds="cancel" title="اقفل من غير حفظ">✕</button>
       <input class="dsname" id="dsName" aria-label="اسم التصميم">
       <span class="dsgrp"><button class="dsb" data-ds="undo" title="تراجع">↶</button><button class="dsb" data-ds="redo" title="إعادة">↷</button></span>
       <span class="dsgrp dsviews"><button class="dsb primary" data-ds="home" title="رجّع الكاميرا للوضع الأساسي">🏠</button><button class="dsb" data-view="iso" title="منظور">⬢</button><button class="dsb" data-view="top" title="من فوق">فوق</button><button class="dsb" data-view="front" title="من قدام">قدام</button><button class="dsb" data-view="right" title="من الجنب">جنب</button><button class="dsb" data-view="back" title="من ورا">ورا</button><button class="dsb" data-view="left" title="من الشمال">شمال</button><button class="dsb" data-ds="zoomx" title="شوف الكل">⤢</button><button class="dsb" data-ds="ortho" title="منظور / مسطّح">⊡</button></span>
@@ -2217,7 +2217,7 @@ function cabHtml() {
       <p class="hint">الضلف أوفرلاي: بتغطي الجنب ما عدا ${f1(c.front.reveal)} سم، وبين كل ضلفتين ${f1(c.front.gap)} سم. الأدراج: صندوق خشب بخلوص ${f1(c.drawers.clr)} سم لكل مجرى (الصندوق بيتعمل لما الدرج في عمود واحد).</p>
     </details>
     <details><summary>⚙ تفاصيل الضلف والأدراج</summary><div class="dsgrid">${cabNumIn("front.gap", "الفراغ بين الضلف", c.front.gap)}${cabNumIn("front.reveal", "الباين من الجنب", c.front.reveal)}${cabNumIn("drawers.clr", "خلوص المجرى (كل جنب)", c.drawers.clr)}${cabNumIn("drawers.boxT", "سمك صندوق الدرج", c.drawers.boxT)}${cabNumIn("drawers.drop", "الصندوق تحت وش الدرج بـ", c.drawers.drop)}${cabNumIn("drawers.lowerFront", "الصندوق فوق حرف الوش بـ", c.drawers.lowerFront)}</div></details>
-    <div class="dsbtns"><button class="dsb" data-cab="regen">↻ جدّد القطع</button><button class="dsb" data-cab="detach">🔓 فكّها ألواح حرة</button><button class="dsb danger" data-cab="del">🗑 امسح العلبة</button></div>
+    <div class="dsbtns"><button class="dsb primary" data-ds="cablib">⭐ احفظ العلبة في المكتبة</button><button class="dsb" data-cab="regen">↻ جدّد القطع</button><button class="dsb" data-cab="detach">🔓 فكّها ألواح حرة</button><button class="dsb danger" data-cab="del">🗑 امسح العلبة</button></div>
     <p class="hint">${M.solids.filter((s) => s.cab === c.id).length} قطعة. لو حرّكت العلبة كلها بأداة التحريك بتفضل متجمّعة؛ أي تعديل من هنا بيعيد بناء القطع في مكانها.</p></details>`;
   return h;
 }
@@ -2389,7 +2389,8 @@ function onClick(e) {
     case "clrguides": edit(() => { M.guides = []; }); break;
     case "extrude": { const k = ent(selRefs()[0]); const t = +el.querySelector("#dsQuickT").value || ui.thick; ui.thick = t; ui.st = { kind: "sketch", k, plane: k.plane, n: G.nOf(k.plane), a: G.toWorld(k.plane, k.pts[0]) }; commitPush(t); break; }
     case "qbox": addBox(+el.querySelector("#qxW").value || 60, +el.querySelector("#qxH").value || 72, +el.querySelector("#qxD").value || 58, ui.thick, el.querySelector("#qxB").checked); break;
-    case "mylib": ctx.saveLib?.(G.clone(M), mname); break;
+    case "mylib": { if (!M.solids.length && !M.sweeps.length) { setMsg("مفيش حاجة مرسومة لسه"); break; } const nm = prompt("اسم التصميم في المكتبة:", mname || "تصميم"); if (nm === null) break; mname = nm.trim() || mname; ctx.saveLib?.(G.clone(M), mname); setMsg("اتحفظ في مكتبتي ⭐ — هتلاقيه في المكتبة تحت «مكتبتي»"); break; }
+    case "cablib": { const c = curCab(); if (!c) break; const nm = prompt("اسم العلبة في المكتبة:", c.name); if (nm === null) break; cabSyncPos(c); const sub = Cab.newCab(); Object.assign(sub, G.clone(c), { pos: [0, 0, 0], name: nm.trim() || c.name }); const m = newModel(); m.cabs = [sub]; m.groups = [{ id: sub.id, name: sub.name }]; m.solids = Cab.cabSolids(sub); ctx.saveLib?.(m, sub.name); setMsg("اتحفظت العلبة في مكتبتي ⭐"); break; }
     case "selall": selectAll(); break;
     case "facex": faceAction("x"); break;
     case "edgex": case "edgelen": case "edgesplit": case "edgemove": case "vertexx": case "vertexset": case "vertexmove": case "vertexdel": subAction(d.ds); break;

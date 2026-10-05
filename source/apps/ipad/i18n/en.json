@@ -5154,5 +5154,13 @@
  "＋ فاصل رأسي": "＋ upright partition",
  "▥ الفاصل الرأسي": "▥ the upright partition",
  "من شمال الفراغ": "from the cavity's left",
- "لوح واقف جوه الفراغ من قاعه لسقفه (زي الرف بس رأسي) — الرقم = المسافة من وش الفراغ الشمال. مش بيقسم الفراغ للضلف": "An upright board inside the cavity from its floor to its ceiling (like a shelf, but vertical) — the number = distance from the cavity's left face. It doesn't split the cavity for the fronts"
+ "لوح واقف جوه الفراغ من قاعه لسقفه (زي الرف بس رأسي) — الرقم = المسافة من وش الفراغ الشمال. مش بيقسم الفراغ للضلف": "An upright board inside the cavity from its floor to its ceiling (like a shelf, but vertical) — the number = distance from the cavity's left face. It doesn't split the cavity for the fronts",
+ "⭐ للمكتبة": "⭐ to library",
+ "احفظ التصميم ده في مكتبتي": "save this design to my library",
+ "⭐ احفظ العلبة في المكتبة": "⭐ save the cabinet to the library",
+ "اسم التصميم في المكتبة:": "name in the library:",
+ "اسم العلبة في المكتبة:": "cabinet name in the library:",
+ "اتحفظت العلبة في مكتبتي ⭐": "the cabinet is saved in my library ⭐",
+ "مفيش حاجة مرسومة لسه": "nothing drawn yet",
+ "اتحفظ في مكتبتي ⭐ — هتلاقيه في المكتبة تحت «مكتبتي»": "saved to my library ⭐ — find it in the library under \"my library\""
 }

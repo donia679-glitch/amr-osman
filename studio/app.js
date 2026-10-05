@@ -758,8 +758,8 @@ function openStudio(u, extra = {}) {
       const tmp = { id: uid(), kind: "panel", name: name || "تصميم حر", params: { template: "free", model, materials: u?.params?.materials || {} } };
       state.myUnits ||= [];
       state.myUnits.push(myUnitFrom(tmp, tmp.name, "من ورشة الرسم"));
-      save(); myLibPush?.();
-      alertBar("اتحفظ في مكتبتي ⭐");
+      save(); myLibPush?.(); renderLib();
+      alertBar("اتحفظ في مكتبتي ⭐ — هتلاقيه في المكتبة تحت «مكتبتي»");
     },
   });
 }
@@ -1893,7 +1893,7 @@ function myLibHtml() {
     if (g) h += `<div class="mygroup" style="grid-column:1/-1">${esc(g)}</div>`;
     for (const it of items.sort((a, b) => b.at - a.at)) {
       const icon = it.kind === "kitchen" ? "🍳" : it.kind === "dressing" ? "👔" : it.kind === "pieces" ? "✂" : "🪑";
-      h += `<div class="card mycard" data-myunit="${it.id}" role="button" tabindex="0"><span class="sw" style="font-size:22px">${icon}</span><b>${esc(it.label)}</b><small>${esc(it.dims ? it.dims + " سم" : "")}${it.pieces ? ` · ${it.pieces} قطعة` : ""}</small>
+      h += `<div class="card mycard" data-myunit="${it.id}" role="button" tabindex="0"><img class="th" data-th="m:${it.id}" alt="" loading="lazy"><span class="sw" style="font-size:22px">${icon}</span><b>${esc(it.label)}</b><small>${esc(it.dims ? it.dims + " سم" : "")}${it.pieces ? ` · ${it.pieces} قطعة` : ""}</small>
         <span class="myact"><button class="sm" data-myren="${it.id}" aria-label="غيّر الاسم">✎</button><button class="sm danger" data-mydel="${it.id}" aria-label="امسحها من مكتبتي">${ICON.trash}</button></span></div>`;
     }
   }
@@ -2056,6 +2056,7 @@ function tierFinish(u, tier) {
 }
 /** the units of a card, each with its place along the run (cm): one unit, or a whole smart set */
 function libSet(ds) {
+  if (ds.myunit) { const it = (state.myUnits || []).find((x) => x.id === ds.myunit); if (!it) return []; const u = { id: "my-" + it.id }; for (const k of MY_KEYS) if (it[k] !== undefined) u[k] = clone(it[k]); u.name = it.label; return [{ u, at: 0 }]; }
   if (ds.smart) {
     const S = More.SMART[ds.smart];
     if (!S) return [];
