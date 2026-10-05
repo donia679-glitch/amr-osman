@@ -15,7 +15,7 @@ export function newCab(n = 1, x0 = 0) {
     back: { kind: "groove", off: 1.8, groove: 0.8, rabbet: 0.9 },         // groove = مفحار · rabbet = أورزة · overlay = مسمّر من ورا · none
     front: { overlay: true, gap: 0.3, reveal: 0.2 },                      // overlay fronts cover the carcass edges; reveal = what stays visible at the outer edges
     drawers: { clr: 0.6, boxT: 1.8, baseT: 0.6, drop: 3, lowerFront: 2 }, // runner clearance per side, box walls, box bottom, box lower than the front
-    dividers: [], shelves: [], fills: {},
+    dividers: [], shelves: [], fronts: [], // fronts: zones over one or more cavities {id, cavs:[keys], kind, hinge, n, hs}
   };
 }
 export const BOTTOM_JOINTS = { between: "القاعدة بين الجنبين", under: "الجنبين واقفين على القاعدة" };
@@ -110,12 +110,16 @@ export function cabSolids(c) {
     const loose = !s.fixed, side = loose ? 0.15 : 0, sb = s.setback ?? (loose ? 1 : 0);
     add(S(`${s.fixed ? "رف ثابت" : "رف متحرك"} ${i + 1}`, "carcass", [col.x0 + side, sb, z], X, Y, col.x1 - col.x0 - 2 * side, I.y1 - sb, t), s.fixed ? "fixed_shelf" : "shelf");
   });
-  // fronts + drawers per cavity
+  // fronts: each zone covers one or more cavities (a whole divided space can be one door, the whole box can be two doors…)
   const cavs = cavities(c), gap = c.front.gap, rv = c.front.reveal;
   let drawerN = 0, doorN = 0;
-  for (const cv of cavs) {
-    const f = c.fills[cv.key]; if (!f || f.kind === "open") continue;
-    // the front's rectangle: overlay fronts cover the carcass boards around the cavity (half of a shared board, the whole of an outer one minus the reveal)
+  for (const f of frontZones(c)) {
+    if (!f || f.kind === "open") continue;
+    const list = cavs.filter((cv) => f.cavs.includes(cv.key)); if (!list.length) continue;
+    const cv = { x0: Math.min(...list.map((q) => q.x0)), x1: Math.max(...list.map((q) => q.x1)), z0: Math.min(...list.map((q) => q.z0)), z1: Math.max(...list.map((q) => q.z1)), y1: list[0].y1 };
+    cv.below = Math.abs(cv.z0 - I.z0) < 0.01 ? "bottom" : "shelf"; cv.above = Math.abs(cv.z1 - I.z1) < 0.01 ? "top" : "shelf";
+    const oneCol = new Set(list.map((q) => q.col)).size === 1; // drawer boxes only fit when no divider crosses the zone
+    // the front's rectangle: overlay fronts cover the carcass boards around the zone (half of a shared board, the whole of an outer one minus the reveal)
     const leftOuter = Math.abs(cv.x0 - I.x0) < 0.01, rightOuter = Math.abs(cv.x1 - I.x1) < 0.01;
     const fx0 = cv.x0 - (leftOuter ? t - rv : t / 2 - gap / 2), fx1 = cv.x1 + (rightOuter ? t - rv : t / 2 - gap / 2);
     const fz0 = cv.z0 - (cv.below === "bottom" ? t - rv : t / 2 - gap / 2);
@@ -138,7 +142,7 @@ export function cabSolids(c) {
         front(`وش درج ${drawerN}`, fx0, z, fw, h, "drawer_front");
         // the box: sides + front/back walls + a thin bottom; it hangs `drop` under the front's top and `lowerFront` above the front's bottom
         const bz0 = Math.max(cv.z0 + 0.5, z + dr.lowerFront), bz1 = Math.min(cv.z1 - 0.5, z + h - dr.drop), bh = bz1 - bz0;
-        if (bh >= 5) {
+        if (bh >= 5 && oneCol) {
           const bx = cv.x0 + dr.clr, k = drawerN;
           add(S(`جنب درج ${k} شمال`, "carcass", [bx, 0, bz0], Y, Z, boxD, bh, dr.boxT), "drawer_box");
           add(S(`جنب درج ${k} يمين`, "carcass", [bx + boxW - dr.boxT, 0, bz0], Y, Z, boxD, bh, dr.boxT), "drawer_box");
@@ -153,6 +157,29 @@ export function cabSolids(c) {
   // place the cabinet
   for (const s of out) s.plane.o = G.add(s.plane.o, c.pos);
   return out;
+}
+/** the front zones (legacy per-cavity `fills` are read as single-cavity zones) */
+export function frontZones(c) {
+  const zones = (c.fronts || []).map((z) => ({ ...z, cavs: z.cavs || [] }));
+  for (const [key, f] of Object.entries(c.fills || {})) if (f && f.kind !== "open" && !zones.some((z) => z.cavs.includes(key))) zones.push({ id: "legacy-" + key, cavs: [key], ...f });
+  return zones;
+}
+/** do these cavities make one rectangle (no L shapes — a door is a rectangle)? */
+export function rectZone(c, keys) {
+  const list = cavities(c).filter((cv) => keys.includes(cv.key)); if (!list.length) return false;
+  const x0 = Math.min(...list.map((q) => q.x0)), x1 = Math.max(...list.map((q) => q.x1)), z0 = Math.min(...list.map((q) => q.z0)), z1 = Math.max(...list.map((q) => q.z1));
+  const area = list.reduce((a, q) => a + (q.x1 - q.x0) * (q.z1 - q.z0), 0);
+  // the boards between the cavities (dividers / shelves) are part of the rectangle; allow their area
+  return area >= (x1 - x0) * (z1 - z0) - (list.length - 1) * c.t * Math.max(x1 - x0, z1 - z0) - 0.5;
+}
+/** the zone a cavity belongs to */
+export const zoneOf = (c, key) => frontZones(c).find((z) => z.cavs.includes(key)) || null;
+/** set what a cavity (or a set of cavities) is: makes one zone over them, taking those cavities out of other zones */
+export function setZone(c, keys, kind, opts = {}) {
+  c.fronts ||= []; delete c.fills;
+  for (const z of c.fronts) z.cavs = z.cavs.filter((k) => !keys.includes(k));
+  c.fronts = c.fronts.filter((z) => z.cavs.length);
+  if (kind && kind !== "open") c.fronts.push({ id: uid(), cavs: [...keys], kind, ...(kind === "drawers" ? { n: 3 } : {}), ...opts });
 }
 /** a short description of what a cavity is filled with */
 export function fillLabel(f) {

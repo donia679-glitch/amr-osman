@@ -38,6 +38,8 @@ cd /home/claude/novera-app && python3 tools/build_pwa.py && python3 tools/build_
 - Kitchen units: base depth 58 includes the door (inset, face at y=0); corner units get their depth from `cornerFit()` in app.js unless set by hand.
 
 ## History (latest first)
+- v73: cabinet fronts as zones over one or more cavities: `c.fronts = [{id, cavs:[keys], kind, hinge, n, hs}]` (legacy `fills` read by `frontZones`), `setZone(c, keys, kind)` (takes the cavities out of other zones), `rectZone` (a zone must be one rectangle — no L shapes),
+  `zoneOf`; drawer boxes only when the zone sits in one column. Studio UI: per-cavity select (`data-cf="cav.<key>"`), ☑ join checkboxes (`data-cavpick`) + join:kind buttons, whole:kind (the whole box one door / two doors / flap), each:kind, zones list with hinge / drawer count / heights, split ⇵ and ✕.
 - v72: studio «🧰 مصمّم الوحدات بالقطع» — `draw/cabinet.js` (pure: `newCab`, `inner`, `dividerBoxes`, `columns`, `cavities`, `cabSolids(c)` → studio solids tagged `cab`/`role`, joint options BOTTOM_JOINTS between|under, TOP_JOINTS between|over|rails|none,
   BACK_KINDS groove|rabbet|overlay|none (groove/rabbet become real `pockets` on sides/bottom/top), dividers {from left|right, at}, shelves {col, z from the bottom top, fixed, setback}, fills per cavity key "col:row" {kind open|door1|door2|flap|drawers, hinge, n, hs} —
   overlay fronts cover shared boards by half minus gap/2 and outer boards by t − reveal; drawers get wooden boxes when ≥5 cm high). studio.js: `M.cabs`, `cabHtml` (top of the panel when a cab is current, else collapsed near the quick box), `cabAction` (data-cab add/close/del/regen/detach/adddiv/deldiv:i/addshelf:col/delshelf:i/fill:key:kind/fillall:kind),

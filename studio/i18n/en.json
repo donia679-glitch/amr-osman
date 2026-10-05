@@ -5099,5 +5099,15 @@
  "وش درج": "drawer front",
  "جنب درج": "drawer side",
  "أمامي درج": "drawer front wall",
- "خلفي درج": "drawer back wall"
+ "خلفي درج": "drawer back wall",
+ "كل فراغ اختاره لوحده، أو علّم كذا فراغ (☑ ضم) واعملهم ضلفة واحدة / ضلفتين / قلاب — أو العلبة كلها ضلفة واحدة.": "Pick each cavity on its own, or tick several (☑ join) and make them one door / two doors / a flap — or the whole box one door.",
+ "المعلّمين ☑ →": "ticked ☑ →",
+ "العلبة كلها →": "whole box →",
+ "كل فراغ لوحده →": "each cavity →",
+ "الضلف والأدراج": "doors and drawers",
+ "ضم": "join",
+ "الفراغات دي مش بتعمل مستطيل واحد — الضلفة لازم تكون مستطيلة (اختار فراغات فوق بعض أو جنب بعض)": "those cavities don't make one rectangle — a door must be rectangular (pick cavities stacked or side by side)",
+ "علّم الفراغات اللي عايز تضمها الأول (☑ ضم)": "tick the cavities to join first (☑ join)",
+ "فكّها لكل فراغ لوحده": "split into one per cavity",
+ "ارتفاعات من تحت، مثلاً 20، 20، 30": "heights from the bottom, e.g. 20, 20, 30"
 }
