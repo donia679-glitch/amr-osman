@@ -22,7 +22,8 @@ export function newCab(n = 1, x0 = 0) {
 export const BOTTOM_JOINTS = { between: "القاعدة بين الجنبين", under: "الجنبين واقفين على القاعدة" };
 export const TOP_JOINTS = { between: "رأس بين الجنبين", over: "رأس فوق الجنبين", rails: "شريطين (أمامي وخلفي)", none: "من غير رأس" };
 export const BACK_KINDS = { groove: "ظهر في مفحار", rabbet: "ظهر في أورزة", overlay: "ظهر مسمّر من ورا", none: "من غير ظهر" };
-export const FILL_KINDS = { open: "فاضي (مفتوح)", door1: "ضلفة واحدة", door2: "ضلفتين", flap: "ضلفة قلاب", drawers: "أدراج" };
+export const FILL_KINDS = { open: "فاضي (مفتوح)", door1: "ضلفة واحدة", door2: "ضلفتين", flap: "ضلفة قلاب", drawers: "أدراج", split: "مقسّم (فراغات جوه الفراغ)" };
+export const SUB_KINDS = { door1: "ضلفة واحدة", door2: "ضلفتين", flap: "ضلفة قلاب", drawers: "أدراج", open: "فاضي" };
 
 /** the inner box the dividers/shelves/fronts work in */
 export function inner(c) {
@@ -136,22 +137,40 @@ export function cabSolids(c) {
     const loose = !s.fixed, side = loose ? 0.15 : 0, sb = s.setback ?? (loose ? 1 : 0);
     add(S(`${s.fixed ? "رف ثابت" : "رف متحرك"} ${i + 1}`, "carcass", [col.x0 + side, sb, z], X, Y, col.x1 - col.x0 - 2 * side, I.y1 - sb, t), s.fixed ? "fixed_shelf" : "shelf");
   });
-  // fronts: each zone covers one or more cavities (a whole divided space can be one door, the whole box can be two doors…)
+  // fronts: each zone covers one or more cavities (a whole divided space can be one door, the whole box can be two doors…);
+  // a zone may be split into sub-fronts (drawers over a door, say) without any board in the box; every front has its own details
   const cavs = cavities(c), gap = c.front.gap, rv = c.front.reveal;
   let drawerN = 0, doorN = 0;
-  for (const f of frontZones(c)) {
-    if (!f || f.kind === "open") continue;
-    const list = cavs.filter((cv) => f.cavs.includes(cv.key)); if (!list.length) continue;
-    const cv = { x0: Math.min(...list.map((q) => q.x0)), x1: Math.max(...list.map((q) => q.x1)), z0: Math.min(...list.map((q) => q.z0)), z1: Math.max(...list.map((q) => q.z1)), y1: list[0].y1 };
-    cv.below = Math.abs(cv.z0 - I.z0) < 0.01 ? "bottom" : "shelf"; cv.above = Math.abs(cv.z1 - I.z1) < 0.01 ? "top" : "shelf"; // a horizontal divider or a shelf: the front covers half of it
-    const oneCol = new Set(list.map((q) => `${q.band}:${q.col}`)).size === 1; // drawer boxes only fit when no divider crosses the zone
-    // the front's rectangle: overlay fronts cover the carcass boards around the zone (half of a shared board, the whole of an outer one minus the reveal)
-    const leftOuter = Math.abs(cv.x0 - I.x0) < 0.01, rightOuter = Math.abs(cv.x1 - I.x1) < 0.01;
-    const fx0 = cv.x0 - (leftOuter ? t - rv : t / 2 - gap / 2), fx1 = cv.x1 + (rightOuter ? t - rv : t / 2 - gap / 2);
-    const fz0 = cv.z0 - (cv.below === "bottom" ? t - rv : t / 2 - gap / 2);
-    const fz1 = cv.z1 + (cv.above === "top" ? (c.top.joint === "none" ? -gap : t - rv) : t / 2 - gap / 2);
-    const fw = fx1 - fx0, fh = fz1 - fz0;
-    const front = (name, x0, z0, w, h, role = "door") => add(S(name, "front", [x0, 0, z0], X, Z, w, h, t), role);
+  const front = (name, x0, z0, w, h, role = "door") => (w > 0.5 && h > 0.5 ? add(S(name, "front", [x0, 0, z0], X, Z, w, h, t), role) : null);
+  /** the cavity rectangle (cv: x0,x1,z0,z1,y1, edges) → its overlay front rectangle; `virt` edges are splits between fronts (just the gap) */
+  const frontRect = (cv, f) => {
+    const cover = (edge) => (edge === "outerX" ? t - rv : edge === "virt" ? -gap / 2 : t / 2 - gap / 2);
+    let fx0 = cv.x0 - cover(cv.left), fx1 = cv.x1 + cover(cv.right);
+    let fz0 = cv.z0 - cover(cv.below), fz1 = cv.z1 + (cv.above === "outerX" && c.top.joint === "none" ? -gap : cover(cv.above));
+    if (f.inset) { fx0 = cv.x0 + gap; fx1 = cv.x1 - gap; fz0 = cv.z0 + gap; fz1 = cv.z1 - gap; } // an inset front sits inside the cavity
+    const tr = f.trim || {}; fx0 += +tr.l || 0; fx1 -= +tr.r || 0; fz0 += +tr.b || 0; fz1 -= +tr.t || 0;
+    const rc = +f.recess || 0; if (rc > 0) { if (f.recessAt === "bottom") fz0 += rc; else fz1 -= rc; } // built-in handle clearance
+    return { x0: fx0, x1: fx1, z0: fz0, z1: fz1 };
+  };
+  const renderFront = (cv, f, oneCol) => {
+    if (!f || f.kind === "open") return;
+    if (f.kind === "split") {
+      // sub-cavities along z (dir "h": parts from the bottom up) or x (dir "v": parts from the left); sizes in cm, the last one takes the rest
+      const parts = (f.parts || []).length ? f.parts : [{ kind: "drawers", n: 1, size: 20 }, { kind: "door1" }];
+      const dir = f.dir === "v" ? "v" : "h", span = dir === "h" ? cv.z1 - cv.z0 : cv.x1 - cv.x0;
+      const fixed = parts.slice(0, -1).map((p) => Math.max(0, +p.size || 0)), rest = span - fixed.reduce((a, b) => a + b, 0);
+      let at = dir === "h" ? cv.z0 : cv.x0;
+      parts.forEach((p, i) => {
+        const sz = i < parts.length - 1 ? fixed[i] : Math.max(0, rest); if (sz <= 0.5) return;
+        const sub = { ...cv };
+        if (dir === "h") { sub.z0 = at; sub.z1 = at + sz; sub.below = i === 0 ? cv.below : "virt"; sub.above = i === parts.length - 1 ? cv.above : "virt"; }
+        else { sub.x0 = at; sub.x1 = at + sz; sub.left = i === 0 ? cv.left : "virt"; sub.right = i === parts.length - 1 ? cv.right : "virt"; }
+        renderFront(sub, p, oneCol);
+        at += sz;
+      });
+      return;
+    }
+    const R0 = frontRect(cv, f), fx0 = R0.x0, fz0 = R0.z0, fw = R0.x1 - R0.x0, fh = R0.z1 - R0.z0;
     if (f.kind === "door1") { doorN++; front(`ضلفة ${f.hinge === "right" ? "يمين" : "شمال"} ${doorN}`, fx0, fz0, fw, fh); }
     else if (f.kind === "flap") { doorN++; front(`ضلفة قلاب ${doorN}`, fx0, fz0, fw, fh); }
     else if (f.kind === "door2") { doorN++; const w2 = (fw - gap) / 2; front(`ضلفة شمال ${doorN}`, fx0, fz0, w2, fh); front(`ضلفة يمين ${doorN}`, fx0 + w2 + gap, fz0, w2, fh); }
@@ -163,7 +182,7 @@ export function cabSolids(c) {
       else { const sum = hs.reduce((a, b) => a + b, 0); hs = hs.map((v) => (v * total) / sum); } // typed heights are scaled to fill the cavity exactly
       const dr = c.drawers, boxW = cv.x1 - cv.x0 - 2 * dr.clr, boxD = Math.max(20, Math.floor((cv.y1 - 2) / 5) * 5);
       let z = fz0;
-      hs.forEach((h, i) => {
+      hs.forEach((h) => {
         drawerN++;
         front(`وش درج ${drawerN}`, fx0, z, fw, h, "drawer_front");
         // the box: sides + front/back walls + a thin bottom; it hangs `drop` under the front's top and `lowerFront` above the front's bottom
@@ -179,6 +198,16 @@ export function cabSolids(c) {
         z += h + gap;
       });
     }
+  };
+  for (const f of frontZones(c)) {
+    if (!f || f.kind === "open") continue;
+    const list = cavs.filter((cv) => f.cavs.includes(cv.key)); if (!list.length) continue;
+    const cv = { x0: Math.min(...list.map((q) => q.x0)), x1: Math.max(...list.map((q) => q.x1)), z0: Math.min(...list.map((q) => q.z0)), z1: Math.max(...list.map((q) => q.z1)), y1: list[0].y1 };
+    // what the front meets on each side: the outer carcass (outerX) or a shared board (divider / horizontal divider)
+    cv.left = Math.abs(cv.x0 - I.x0) < 0.01 ? "outerX" : "board"; cv.right = Math.abs(cv.x1 - I.x1) < 0.01 ? "outerX" : "board";
+    cv.below = Math.abs(cv.z0 - I.z0) < 0.01 ? "outerX" : "board"; cv.above = Math.abs(cv.z1 - I.z1) < 0.01 ? "outerX" : "board";
+    const oneCol = new Set(list.map((q) => `${q.band}:${q.col}`)).size === 1; // drawer boxes only fit when no divider crosses the zone
+    renderFront(cv, f, oneCol);
   }
   // place the cabinet
   for (const s of out) s.plane.o = G.add(s.plane.o, c.pos);
@@ -205,7 +234,7 @@ export function setZone(c, keys, kind, opts = {}) {
   c.fronts ||= []; delete c.fills;
   for (const z of c.fronts) z.cavs = z.cavs.filter((k) => !keys.includes(k));
   c.fronts = c.fronts.filter((z) => z.cavs.length);
-  if (kind && kind !== "open") c.fronts.push({ id: uid(), cavs: [...keys], kind, ...(kind === "drawers" ? { n: 3 } : {}), ...opts });
+  if (kind && kind !== "open") c.fronts.push({ id: uid(), cavs: [...keys], kind, ...(kind === "drawers" ? { n: 3 } : {}), ...(kind === "split" ? { dir: "h", parts: [{ kind: "drawers", n: 1, size: 20 }, { kind: "door1", hinge: "left" }] } : {}), ...opts });
 }
 /** a short description of what a cavity is filled with */
 export function fillLabel(f) {

@@ -38,6 +38,8 @@ cd /home/claude/novera-app && python3 tools/build_pwa.py && python3 tools/build_
 - Kitchen units: base depth 58 includes the door (inset, face at y=0); corner units get their depth from `cornerFit()` in app.js unless set by hand.
 
 ## History (latest first)
+- v76: cabinet fronts — per-front details (`recess` + `recessAt` top|bottom for built-in handles, `trim {l,r,t,b}`, `inset`) and zone kind `split` ({dir h|v, parts:[{size, kind, …}]} — sub-fronts inside one cavity with no board, last part takes the rest, recursive `renderFront`/`frontRect` with edge kinds outerX|board|virt).
+  studio: `cabFrontFields` (shared by zones and parts), `cabZoneHtml`, `cabPath`, actions partadd:path / partdel:path:i. SUB_KINDS for parts.
 - v75: cabinet cavities = cells only (between sides, vertical + horizontal dividers, bottom, top; key "band:col") — shelves live inside a cavity and never split it (a door covers the shelves behind it).
 - v74: cabinet builder — horizontal dividers `c.hdividers [{from bottom|top, at}]` (full-width structural boards «قاطوع أفقي N», `hdividerBoxes/bands`), vertical dividers get `band` ("" = full height → one board per band «قاطوع 1 (حزام k)»), `columns(c, band)`, `cells(c)` (band × column),
   shelves carry `band` + `col`, cavity keys "band:col:row", fronts treat a horizontal divider like a shared board. Banding per role: `s.bandEdges` on every cabinet solid (carcass front edge, fronts all four, back/drawer bottom/back rail none, drawer box walls top) honoured by app.js free-model pipeline (also for pocketed boards) → labels show the right edges.

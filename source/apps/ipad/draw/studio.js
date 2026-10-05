@@ -2042,6 +2042,8 @@ function cabSyncPos(c) {
   const left = M.solids.find((s) => s.cab === c.id && s.role === "side");
   if (left) { const b = G.solidBox(left); const z0 = c.bottom.joint === "under" ? c.bottom.kick + c.t : 0; c.pos = [G.r2(b.x0), G.r2(b.y0), G.r2(b.z0 - z0)]; }
 }
+/** walk a dotted path into the cabinet ("fronts.0.parts.1") */
+function cabPath(c, path) { let o = c; for (const k of path.split(".")) { if (o == null) return null; o = o[k]; } return o ?? null; }
 const cabNum = (v, d) => { const n = parseFloat(String(v).replace(/[^\d.\-]/g, "")); return Number.isFinite(n) ? n : d; };
 function cabChange(t) {
   const c = curCab(); if (!c) return;
@@ -2052,12 +2054,13 @@ function cabChange(t) {
     let o = c; for (let i = 0; i < path.length - 1; i++) { const k = path[i]; o = o[k] ??= {}; }
     const k = path[path.length - 1], cur = o[k];
     if (k === "hs") o[k] = String(v).split(/[،,\s]+/).map(Number).filter((x) => x > 0);
-    else if (typeof cur === "number" || /^(W|H|D|t|tb|kick|insetF|insetB|railW|railInset|off|groove|rabbet|gap|reveal|clr|boxT|baseT|drop|lowerFront|at|z|n|setback)$/.test(k)) o[k] = Math.max(k === "n" ? 1 : 0, cabNum(v, cur ?? 0));
+    else if (typeof cur === "number" || /^(W|H|D|t|tb|kick|insetF|insetB|railW|railInset|off|groove|rabbet|gap|reveal|clr|boxT|baseT|drop|lowerFront|at|z|n|setback|recess|size|l|r|b)$/.test(k) || (k === "t" )) o[k] = Math.max(k === "n" ? 1 : 0, cabNum(v, cur ?? 0));
     else if (typeof cur === "boolean" || t.type === "checkbox") o[k] = !!v;
     else o[k] = v;
     if (k === "name") { o[k] = String(v).trim() || cur; }
     // a fill that becomes drawers starts with 3 equal drawers
     if (path[0] === "fronts" && k === "kind" && v === "drawers") { o.n ??= 3; }
+    if (path[0] === "fronts" && k === "kind" && v === "split") { o.dir ||= "h"; if (!(o.parts || []).length) o.parts = [{ kind: "drawers", n: 1, size: 20 }, { kind: "door1", hinge: "left" }]; }
     cabRegen(c);
   });
 }
@@ -2081,6 +2084,8 @@ function cabAction(kind, b) {
     else if (kind.startsWith("each:")) { const fk = kind.split(":")[1]; for (const cv of Cab.cavities(c)) Cab.setZone(c, [cv.key], fk); } // every cavity on its own
     else if (kind.startsWith("whole:")) { const fk = kind.split(":")[1]; Cab.setZone(c, Cab.cavities(c).map((cv) => cv.key), fk); } // the whole box behind one zone
     else if (kind.startsWith("join:")) { const fk = kind.split(":")[1], keys = [...el.querySelectorAll("[data-cavpick]:checked")].map((x) => x.dataset.cavpick); if (!keys.length) setMsg("علّم الفراغات اللي عايز تضمها الأول (☑ ضم)"); else if (!Cab.rectZone(c, keys)) setMsg("الفراغات دي مش بتعمل مستطيل واحد — الضلفة لازم تكون مستطيلة (اختار فراغات فوق بعض أو جنب بعض)"); else Cab.setZone(c, keys, fk); }
+    else if (kind.startsWith("partadd:")) { const o = cabPath(c, kind.slice(8)); if (o) { o.parts ||= []; o.parts.push({ kind: "door1", hinge: "left", size: 20 }); } }
+    else if (kind.startsWith("partdel:")) { const [, path, pi] = kind.split(":"); const o = cabPath(c, path); if (o?.parts) o.parts.splice(+pi, 1); }
     else if (kind.startsWith("zonedel:")) { const id = kind.slice(8); c.fronts = (c.fronts || []).filter((z) => z.id !== id); }
     else if (kind.startsWith("zonesplit:")) { const id = kind.slice(10); const z = (c.fronts || []).find((x) => x.id === id); if (z) { const keys = z.cavs; c.fronts = c.fronts.filter((x) => x.id !== id); for (const k of keys) Cab.setZone(c, [k], z.kind, { hinge: z.hinge, n: z.n }); } }
     cabRegen(c);
@@ -2088,6 +2093,32 @@ function cabAction(kind, b) {
 }
 const cabSel = (path, v, opts) => `<select data-cf="${path}">${Object.entries(opts).map(([k, l]) => `<option value="${k}" ${k === v ? "selected" : ""}>${esc(l)}</option>`).join("")}</select>`;
 const cabNumIn = (path, label, v, step = 0.1) => `<label><span>${label}</span><input type="text" inputmode="decimal" data-numf data-cf="${path}" value="${f1(v)}"></label>`;
+/** one front's details: kind, hinge, drawer count/heights, handle recess, trims, inset — and the sub-fronts of a split */
+function cabFrontFields(path, f, { sub = false } = {}) {
+  const kinds = sub ? Cab.SUB_KINDS : Cab.FILL_KINDS;
+  let h = `<div class="dsrow">${sub ? `<input class="dsin sm" type="text" inputmode="decimal" data-numf data-cf="${path}.size" value="${f.size != null ? f1(f.size) : ""}" placeholder="المقاس" title="مقاس الجزء (الأخير بياخد الباقي)">` : ""}${cabSel(`${path}.kind`, f.kind, kinds)}${f.kind === "door1" ? cabSel(`${path}.hinge`, f.hinge || "left", { left: "مفصلات شمال", right: "مفصلات يمين" }) : ""}${f.kind === "drawers" ? `<input class="dsin sm" type="text" inputmode="numeric" data-numf data-cf="${path}.n" value="${f.n || 3}" title="عدد الأدراج"><input class="dsin" type="text" inputmode="decimal" data-cf="${path}.hs" value="${(f.hs || []).map(f1).join("، ")}" placeholder="ارتفاعات من تحت، مثلاً 20، 20، 30">` : ""}</div>`;
+  if (f.kind === "split") {
+    h += `<div class="dscol"><div class="dsrow"><b>تقسيم الفراغ</b>${cabSel(`${path}.dir`, f.dir || "h", { h: "فوق بعض (من تحت لفوق)", v: "جنب بعض (من الشمال لليمين)" })}</div>
+      ${(f.parts || []).map((p, pi) => `<div class="dscav"><div class="dsrow"><b>جزء ${pi + 1}</b><button class="dsb" data-cab="partdel:${path}:${pi}">✕</button></div>${cabFrontFields(`${path}.parts.${pi}`, p, { sub: true })}</div>`).join("")}
+      <button class="dsb" data-cab="partadd:${path}">＋ جزء</button><p class="hint">كل جزء له مقاسه بالسنتي (الأخير بياخد الباقي) ونوعه: أدراج فوق وضلفة تحت مثلاً — من غير أي لوح في العلبة.</p></div>`;
+  } else if (f.kind !== "open") {
+    const tr = f.trim || {};
+    h += `<details class="dsdet"><summary>⚙ تفاصيل الضلفة</summary><div class="dsgrid">
+      <label><span>خلوص مقبض بلت إن</span><input type="text" inputmode="decimal" data-numf data-cf="${path}.recess" value="${f1(+f.recess || 0)}"></label>
+      <label><span>الخلوص فين</span>${cabSel(`${path}.recessAt`, f.recessAt || "top", { top: "فوق", bottom: "تحت" })}</label>
+      <label><span>قصّ من الشمال</span><input type="text" inputmode="decimal" data-numf data-cf="${path}.trim.l" value="${f1(+tr.l || 0)}"></label>
+      <label><span>قصّ من اليمين</span><input type="text" inputmode="decimal" data-numf data-cf="${path}.trim.r" value="${f1(+tr.r || 0)}"></label>
+      <label><span>قصّ من فوق</span><input type="text" inputmode="decimal" data-numf data-cf="${path}.trim.t" value="${f1(+tr.t || 0)}"></label>
+      <label><span>قصّ من تحت</span><input type="text" inputmode="decimal" data-numf data-cf="${path}.trim.b" value="${f1(+tr.b || 0)}"></label></div>
+      <label class="dschk"><input type="checkbox" data-cf="${path}.inset" ${f.inset ? "checked" : ""}> ضلفة داخلية (جوه الفراغ بدل ما تغطي الجنب)</label>
+      <p class="hint">الخلوص بيقصّر الضلفة من الناحية دي علشان المقبض البلت إن. القصّ بيصغّر الضلفة من الجهة اللي تختارها (الفراغ بين الضلفتين ثابت ${f1(cur_gap())} سم).</p></details>`;
+  }
+  return h;
+}
+const cur_gap = () => curCab()?.front?.gap ?? 0.3;
+function cabZoneHtml(c, z, zi, cavs) {
+  return `<div class="dscav"><div class="dsrow"><span>${esc(Cab.FILL_KINDS[z.kind] || z.kind)} — ${z.cavs.map((k) => "فراغ " + (cavs.findIndex((q) => q.key === k) + 1)).join(" + ")}</span>${z.cavs.length > 1 ? `<button class="dsb" data-cab="zonesplit:${z.id}" title="فكّها لكل فراغ لوحده">⇵</button>` : ""}<button class="dsb" data-cab="zonedel:${z.id}">✕</button></div>${cabFrontFields(`fronts.${zi}`, z)}</div>`;
+}
 function cabHtml() {
   const c = curCab();
   let h = `<details class="dsbox" ${c ? "open" : ""}><summary>🧰 مصمّم الوحدات بالقطع</summary>
@@ -2125,7 +2156,7 @@ function cabHtml() {
       <div class="dsbtns"><small>المعلّمين ☑ →</small><button class="dsb" data-cab="join:door1">ضلفة واحدة</button><button class="dsb" data-cab="join:door2">ضلفتين</button><button class="dsb" data-cab="join:flap">قلاب</button><button class="dsb" data-cab="join:drawers">أدراج</button></div>
       <div class="dsbtns"><small>العلبة كلها →</small><button class="dsb" data-cab="whole:door1">ضلفة واحدة</button><button class="dsb" data-cab="whole:door2">ضلفتين</button><button class="dsb" data-cab="whole:flap">قلاب</button></div>
       <div class="dsbtns"><small>كل فراغ لوحده →</small><button class="dsb" data-cab="each:door2">ضلفتين</button><button class="dsb" data-cab="each:door1">ضلفة</button><button class="dsb" data-cab="each:drawers">أدراج</button><button class="dsb" data-cab="each:open">فاضي</button></div>
-      ${(c.fronts || []).length ? `<div class="dscol"><b>الضلف والأدراج (${c.fronts.length})</b>${c.fronts.map((z, zi) => `<div class="dsrow"><span>${esc(Cab.FILL_KINDS[z.kind] || z.kind)} — ${z.cavs.map((k) => "فراغ " + (cavs.findIndex((q) => q.key === k) + 1)).join(" + ")}</span>${z.kind === "door1" ? cabSel(`fronts.${zi}.hinge`, z.hinge || "left", { left: "مفصلات شمال", right: "مفصلات يمين" }) : ""}${z.kind === "drawers" ? `<input class="dsin sm" type="text" inputmode="numeric" data-numf data-cf="fronts.${zi}.n" value="${z.n || 3}" title="عدد الأدراج"><input class="dsin" type="text" inputmode="decimal" data-cf="fronts.${zi}.hs" value="${(z.hs || []).map(f1).join("، ")}" placeholder="ارتفاعات من تحت، مثلاً 20، 20، 30">` : ""}${z.cavs.length > 1 ? `<button class="dsb" data-cab="zonesplit:${z.id}" title="فكّها لكل فراغ لوحده">⇵</button>` : ""}<button class="dsb" data-cab="zonedel:${z.id}">✕</button></div>`).join("")}</div>` : ""}
+      ${(c.fronts || []).length ? `<div class="dscol"><b>الضلف والأدراج (${c.fronts.length}) — دوس ⚙ لتفاصيل كل ضلفة</b>${c.fronts.map((z, zi) => cabZoneHtml(c, z, zi, cavs)).join("")}</div>` : ""}
       <p class="hint">الضلف أوفرلاي: بتغطي الجنب ما عدا ${f1(c.front.reveal)} سم، وبين كل ضلفتين ${f1(c.front.gap)} سم. الأدراج: صندوق خشب بخلوص ${f1(c.drawers.clr)} سم لكل مجرى (الصندوق بيتعمل لما الدرج في عمود واحد).</p>
     </details>
     <details><summary>⚙ تفاصيل الضلف والأدراج</summary><div class="dsgrid">${cabNumIn("front.gap", "الفراغ بين الضلف", c.front.gap)}${cabNumIn("front.reveal", "الباين من الجنب", c.front.reveal)}${cabNumIn("drawers.clr", "خلوص المجرى (كل جنب)", c.drawers.clr)}${cabNumIn("drawers.boxT", "سمك صندوق الدرج", c.drawers.boxT)}${cabNumIn("drawers.drop", "الصندوق تحت وش الدرج بـ", c.drawers.drop)}${cabNumIn("drawers.lowerFront", "الصندوق فوق حرف الوش بـ", c.drawers.lowerFront)}</div></details>

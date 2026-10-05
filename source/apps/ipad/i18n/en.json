@@ -5117,5 +5117,21 @@
  "كل الارتفاع": "full height",
  "حزام": "band",
  "لوح أفقي بعرض العلبة كلها بيقسمها أحزمة (مش رف): المسافة من فوق القاعدة من جوه لحد تحته (أو من تحت الرأس). القواطيع الرأسية بتتقطع عنده.": "A full-width horizontal board that splits the box into bands (not a shelf): the distance from the inside of the bottom up to its underside (or down from the top). Vertical dividers are cut at it.",
- "الرقم = ارتفاع تحت الرف من فوق القاعدة من جوه (أو من فوق القاطوع الأفقي). الرف المتحرك بيدخل 1 سم من قدام و1.5 مم من كل جنب.": "The number = height under the shelf from the inside of the bottom (or from the top of the horizontal divider). A loose shelf is set in 1 cm at the front and 1.5 mm each side."
+ "الرقم = ارتفاع تحت الرف من فوق القاعدة من جوه (أو من فوق القاطوع الأفقي). الرف المتحرك بيدخل 1 سم من قدام و1.5 مم من كل جنب.": "The number = height under the shelf from the inside of the bottom (or from the top of the horizontal divider). A loose shelf is set in 1 cm at the front and 1.5 mm each side.",
+ "مقسّم (فراغات جوه الفراغ)": "split (sub-fronts inside)",
+ "تقسيم الفراغ": "split the cavity",
+ "فوق بعض (من تحت لفوق)": "stacked (bottom to top)",
+ "جنب بعض (من الشمال لليمين)": "side by side (left to right)",
+ "＋ جزء": "＋ part",
+ "مقاس الجزء (الأخير بياخد الباقي)": "part size (the last takes the rest)",
+ "كل جزء له مقاسه بالسنتي (الأخير بياخد الباقي) ونوعه: أدراج فوق وضلفة تحت مثلاً — من غير أي لوح في العلبة.": "Each part has its size in cm (the last takes the rest) and its kind: drawers over a door, say — with no board in the box.",
+ "⚙ تفاصيل الضلفة": "⚙ front details",
+ "خلوص مقبض بلت إن": "built-in handle clearance",
+ "الخلوص فين": "clearance at",
+ "قصّ من الشمال": "trim left",
+ "قصّ من اليمين": "trim right",
+ "قصّ من فوق": "trim top",
+ "قصّ من تحت": "trim bottom",
+ "ضلفة داخلية (جوه الفراغ بدل ما تغطي الجنب)": "inset front (inside the cavity instead of covering the sides)",
+ "دوس ⚙ لتفاصيل كل ضلفة": "tap ⚙ for each front's details"
 }
