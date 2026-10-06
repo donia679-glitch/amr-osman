@@ -129,7 +129,7 @@ struct NoveraWebView: UIViewRepresentable {
         }
 
         // MARK: the projects vault — every project is also kept as a file in Documents/Projects
-        // (Files app → On My iPad → NOVERA Studio → Projects), so nothing is lost when WebKit clears its storage.
+        // so nothing is lost when WebKit clears its storage (not shown in the Files app — the app reads them back itself).
         static var vaultDir: URL? {
             guard let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return nil }
             let dir = docs.appendingPathComponent("Projects", isDirectory: true)
