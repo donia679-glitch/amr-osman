@@ -330,7 +330,7 @@ export class FridgeHousingBuilder extends CarcassBuilder {
         const b = this.edgeBandingEnabled();
         this.ctx.labels.add(this.unitId, this.unitGroupName(), name, this.depth(), this.height(), this.panelT(), {
             // v98: visible edges only — the front edge, and the top when the panel is lower than 2 m (else it meets the ceiling / bridge)
-            banded: { left: b, top: b && this.height() < cm(200.0), bottom: false, right: false }, material: materialLabelName(this.fridgeSideMaterial()),
+            banded: { left: b, right: b, top: b && this.height() < cm(200.0), bottom: false }, material: materialLabelName(this.fridgeSideMaterial()), // v100: + the wall edge
         });
     }
     fridgeSideMaterial() {
@@ -449,7 +449,7 @@ export class CookerGapBuilder extends WasherGapBuilder {
         assignLayer(this.ctx, top, TAGS.carcass);
         if (b) bandAllSideEdges(this.ctx, top, this.edgeBandingMaterial());
         const slotNote = `تهوية: شقوق 2×12 سم كل 8 سم على عرض القعدة في النص (من ${rround((d / cm(1.0)) * 0.3, 0)} لـ ${rround((d / cm(1.0)) * 0.7, 0)} سم من قدام) — تتقص بالراوتر`;
-        this.ctx.labels.add(this.unitId, this.unitGroupName(), "قعدة البوتجاز", x1 - x0, d, pt, { banded: banded({ bottom: b }), material: this.carcassMaterialName(), note: `${slotNote} · البوتجاز بيقف عليها وبتتثبت في الوحدات اللي جنبها` });
+        this.ctx.labels.add(this.unitId, this.unitGroupName(), "قعدة البوتجاز", x1 - x0, d, pt, { banded: banded({ bottom: b, top: b }), material: this.carcassMaterialName(), note: `${slotNote} · البوتجاز بيقف عليها وبتتثبت في الوحدات اللي جنبها` });
         // vent slots drawn on the deck (markers only)
         const sw = cm(2.0), sl = cm(12.0), gap = cm(8.0), y0 = d * 0.3, y1 = d * 0.7;
         for (let x = x0 + gap; x + sw <= x1 - gap / 2; x += gap)

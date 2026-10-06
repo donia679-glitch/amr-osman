@@ -42,8 +42,7 @@ export class Design {
         let bandAll = o.band_all_sides ?? false;
         const cutPiece = o.cut_piece ?? true;
         const grain = o.grain ?? null;
-        if (cutPiece && this.p.environment === "wet" && this.banding() && !["back", "drawer_bottom"].includes(role))
-            bandAll = true;
+        // v100: wet areas no longer band every edge — the NOVERA rule (visible edges + the wall edge) applies everywhere
         let label = null;
         let axes = null;
         if (cutPiece) {

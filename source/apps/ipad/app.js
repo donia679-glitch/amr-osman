@@ -298,7 +298,8 @@ function hideBands(u, out) {
       const others = ["x", "y", "z"].filter((a) => a !== ax);
       const had = !!(lb.banded || {})[edge];
       // the wall behind a cabinet, the floor, the top of a tall unit
-      if (!free && ax === "y" && dir > 0 && plane >= maxY - 3) { nb[edge] = false; continue; }
+      // v100 (Amr): the edge against the wall counts as VISIBLE and is banded — unless a board (the back panel) covers it first
+      const atWall = !free && ax === "y" && dir > 0 && plane >= maxY - 3;
       if (ax === "z" && dir < 0 && plane <= 0.3) { nb[edge] = false; continue; }
       if (!had && ax === "z" && dir < 0 && plinthTop > 0 && plane <= plinthTop + 1) { nb[edge] = false; continue; }
       if (!free && ax === "z" && dir > 0 && plane >= 200) { nb[edge] = false; continue; }
@@ -309,9 +310,10 @@ function hideBands(u, out) {
         const a0 = others[0], a1 = others[1];
         q[AX[a0]] = lo(a0) + (hi(a0) - lo(a0)) * ((a0 === ta ? j : i) + 0.5) / (a0 === ta ? 3 : 7);
         q[AX[a1]] = lo(a1) + (hi(a1) - lo(a1)) * ((a1 === ta ? j : i) + 0.5) / (a1 === ta ? 3 : 7);
-        n++; if (inside(q, pt)) hit++; else if (!had && !blocked(q, ax, plane, dir, pt)) seen++;
+        n++; if (inside(q, pt)) hit++; else if ((!had || atWall) && !blocked(q, ax, plane, dir, pt)) seen++;
       }
-      nb[edge] = had ? hit / n < 0.7 : seen / n >= 0.7;
+      // at the wall: banded only when nothing stands between the edge and the wall (a shelf stopping short of the back panel is not at the wall)
+      nb[edge] = atWall ? (had || canAdd) && seen / n >= 0.7 : had ? hit / n < 0.7 : seen / n >= 0.7;
     }
     if (["left", "right", "top", "bottom"].every((k) => !!nb[k] === !!(lb.banded || {})[k])) return pt;
     changed = true;

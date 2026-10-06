@@ -3,7 +3,7 @@
 // ± step, next field, done. It types into the field and fires the same input / change / Enter events
 // the keyboard would, so the rest of the app does not know the difference.
 const SEL = "input[data-numf], input[data-len], input[data-keypad]";
-let on = () => true, pad = null, cur = null, fresh = false, pendingSel = null, closedAt = 0;
+let on = () => true, pad = null, cur = null, fresh = false, pendingSel = null, closedAt = 0, lastDown = null;
 /** true for a moment after the pad closed: the tap that closed it must not also hit what was under it */
 export const justClosed = () => Date.now() - closedAt < 600;
 
@@ -14,6 +14,7 @@ export function init({ enabled } = {}) {
   if (enabled) on = enabled;
   // before the field takes focus: no system keyboard for it
   document.addEventListener("pointerdown", (e) => {
+    lastDown = e.target;
     const t = e.target.closest?.(SEL);
     if (!t) return;
     t.inputMode = active() ? "none" : t.dataset.len !== undefined || t.hasAttribute("data-numf") ? "decimal" : t.inputMode;
@@ -24,6 +25,11 @@ export function init({ enabled } = {}) {
     if (t.inputMode !== "none") t.inputMode = "none";
     show(t);
   });
+  // a real button / link tapped while the pad is open: the typed number is saved and the pad closes before the button acts
+  document.addEventListener("click", (e) => {
+    if (!cur || !pad?.classList.contains("on") || e.target.closest?.(".kpad") || e.target.closest?.(SEL)) return;
+    if (e.target.closest?.("button, a, select, summary, [role=button], [data-unit]")) hide();
+  }, true);
   document.addEventListener("focusout", (e) => {
     if (e.target !== cur) return;
     const was = cur, sel = selOf(was);
@@ -34,6 +40,12 @@ export function init({ enabled } = {}) {
       const want = pendingSel || (!was.isConnected ? sel : null); // the panel was re-drawn: the field we were going to
       pendingSel = null;
       if (want) { const again = document.querySelector(want); if (again) { again.focus(); again.select?.(); return; } }
+      // v100 (Amr: the pad closed by itself as if he had tapped the background): a tap on empty space keeps the pad open on the same
+      // field — only ✓ / ⌄ / «التالي», a real button or link, or another text field close it
+      const d = lastDown;
+      const real = d && d.isConnected && d.closest?.("button, a, select, textarea, input, label, summary, [role=button], [data-unit], [data-jump], canvas");
+      if (!real && was.isConnected) { was.focus({ preventScroll: true }); return; }
+      if (!real && !was.isConnected && sel) { const again = document.querySelector(sel); if (again) { again.focus({ preventScroll: true }); return; } }
       hide();
     }, 30);
   });
@@ -64,8 +76,9 @@ function labelOf(t) {
 }
 function show(t) {
   if (!pad) build();
+  const same = t === cur && pad.classList.contains("on"); // the same field taking the focus back (a tap on the background): keep what is typed
   if (cur && cur !== t && dirty) commit(cur); // tapped straight into another field: the number typed so far still counts
-  cur = t; fresh = true; dirty = false;
+  if (!same) { cur = t; fresh = true; dirty = false; }
   pad.querySelector(".kplabel").textContent = labelOf(t);
   // the drawing studio's size box: sizes like 60,40 · x5 · /4 · 24s · −2 (a cut), and the pad off to the side
   const ex = t.hasAttribute("data-kpextra");
@@ -75,7 +88,7 @@ function show(t) {
   pad.classList.add("on");
   document.body.classList.add("kpad-on");
   document.documentElement.style.setProperty("--kpad-h", pad.offsetHeight + "px");
-  setTimeout(() => t.scrollIntoView?.({ block: "center", behavior: "smooth" }), 60);
+  if (!same) setTimeout(() => t.scrollIntoView?.({ block: "center", behavior: "smooth" }), 60);
 }
 function hide(fromKey = false) {
   if (!pad) return;
