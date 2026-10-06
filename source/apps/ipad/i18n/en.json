@@ -5303,5 +5303,16 @@
  "مكتبات": "Bookshelves",
  "انتريه أنبوبين أبيض وسطح بلوط": "Two white tubes coffee table with oak top",
  "مكتبة بعمودين أسود وصناديق بلوط": "Bookshelf with black ring columns and oak boxes",
- "مكتبة S أبيض بأعمدة بلوط": "White S bookshelf with oak columns"
+ "مكتبة S أبيض بأعمدة بلوط": "White S bookshelf with oak columns",
+ "🪵 الألواح — مقاس وسعر كل لوح لوحده": "🪵 Boards — size and price of each board",
+ "مقاس تاني…": "Other size…",
+ "اللوح الأخير يتحسب بالجزء المستخدم بس (والباقي بيرجع المخزن)": "Charge the last sheet only for the used part (the rest goes back to stock)",
+ "سعر المتر الطولي للمطبخ": "Kitchen price per running metre",
+ "الهيكل — الخامة الافتراضية": "Carcass — default material",
+ "الضلف — الخامة الافتراضية": "Fronts — default material",
+ "الظهر — الخامة الافتراضية": "Back — default material",
+ "🔩 الشريط والهاردوير والمشتريات": "🔩 Banding, hardware and purchases",
+ "سعر اللوح لأي لوح مش متسعّر": "Sheet price for any unpriced board",
+ "المستهلك": "Used",
+ "طريقة التسعير: كل لوح بيتحسب باللي خطة القص بتستهلكه فعلاً (عدد الألواح × سعر اللوح)، وتمنه بيتوزّع على الوحدات حسب مسطح قطع كل وحدة على اللوح ده — فمجموع أسعار الوحدات = التكلفة الحقيقية بالظبط. وبعدين الشريط والهاردوير والمصنعية والربح. الأسعار ومقاسات الألواح بتتحفظ لكل المشاريع.": "Pricing: each board is charged by what the cut plan really uses (sheets × sheet price), shared between the units by the area of their pieces on that board — so the unit prices add up to the real cost exactly. Then banding, hardware, labour and margin. Prices and sheet sizes are saved for all projects."
 }
