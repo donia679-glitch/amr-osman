@@ -260,42 +260,60 @@ const BAND_KEEP = new Set(["door", "drawer_front", "drawer_box", "drawer_bottom"
 const BAND_SKIP_MAT = new Set(["glass", "mirror", "led", "__led", "__hole", "rail", "frame"]);
 function hideBands(u, out) {
   const parts = out.parts || [];
-  const cover = parts.filter((p) => p.box && !BAND_KEEP.has(p.role) && p.layer !== "front" && p.layer !== "drawer" && !BAND_SKIP_MAT.has(p.material) && p.role !== "hole" && p.role !== "led");
+  // the back panel hides the back edges of the shelves / bottom / top in front of it, so it counts as a cover too (v99)
+  const cover = parts.filter((p) => p.box && (!BAND_KEEP.has(p.role) || p.role === "back") && p.layer !== "front" && p.layer !== "drawer" && !BAND_SKIP_MAT.has(p.material) && p.role !== "hole" && p.role !== "led");
   if (!cover.length) return out;
   const tpl = out.params?.template || u.params?.template || "";
   const prm = out.params || u.params || {};
   const free = u.kind === "panel" && !prm.against_wall && (tpl === "blocks" || TableSpec.isTable(tpl) || !!u.params?.model);
+  // v99: the rule both ways — a visible edge the engine left bare gets banded too (a low unit's side top under a top set between the sides,
+  // a floating unit's side bottom…), unless banding is switched off for the unit
+  const canAdd = prm.edge_banding !== false && prm.include_edge_banding !== false && u.params?.edge_banding !== false;
   let maxY = -1e9; for (const p of cover) maxY = Math.max(maxY, p.box.y1);
   const E = 0.02, OFF = 0.15;
   const inside = (q, self) => cover.some((c) => c !== self && q[0] > c.box.x0 - E && q[0] < c.box.x1 + E && q[1] > c.box.y0 - E && q[1] < c.box.y1 + E && q[2] > c.box.z0 - E && q[2] < c.box.z1 + E);
   const AX = { x: 0, y: 1, z: 2 };
+  // line of sight for ADDING a band: anything solid in front of the edge (fronts and lids too, not glass) means it faces inside the unit
+  const sight = parts.filter((p) => p.box && !BAND_SKIP_MAT.has(p.material) && p.material !== "glass" && p.role !== "hole" && p.role !== "led");
+  const blocked = (q, ax, plane, dir, self) => sight.some((c) => {
+    if (c === self) return false;
+    const b = c.box;
+    for (const a of ["x", "y", "z"]) if (a !== ax && !(q[AX[a]] > b[a + "0"] - E && q[AX[a]] < b[a + "1"] + E)) return false;
+    return dir > 0 ? b[ax + "1"] > plane + OFF && b[ax + "0"] >= plane - E : b[ax + "0"] < plane - OFF && b[ax + "1"] <= plane + E;
+  });
   let changed = false;
+  // like the kitchen base units: a unit standing on a plinth hides the bottom edges that sit on it, and the plinth itself takes no banding
+  let plinthTop = -1; for (const p of parts) if (p.role === "plinth" && p.box) plinthTop = Math.max(plinthTop, p.box.z1);
   const res = parts.map((pt) => {
     const lb = pt.label;
-    if (!pt.cut_piece || !lb?.banded || !pt.box || !pt.axes || pt.band_all_sides || BAND_KEEP.has(pt.role) || pt.layer === "front" || pt.layer === "drawer") return pt;
+    if (!pt.cut_piece || !lb || !pt.box || !pt.axes || pt.band_all_sides || BAND_KEEP.has(pt.role) || pt.layer === "front" || pt.layer === "drawer" || BAND_SKIP_MAT.has(pt.material)) return pt;
+    if (!lb.banded && !canAdd) return pt;
+    const noAdd = pt.role === "plinth"; // a plinth may lose hidden bands but never gains any (kitchen practice)
     const [wa, ha] = pt.axes, ta = ["x", "y", "z"].find((a) => a !== wa && a !== ha), b = pt.box;
     const lo = (a) => b[a + "0"], hi = (a) => b[a + "1"];
-    const nb = { ...lb.banded };
+    const nb = { ...(lb.banded || {}) };
     for (const [edge, ax, end] of [["left", wa, 0], ["right", wa, 1], ["bottom", ha, 0], ["top", ha, 1]]) {
-      if (!nb[edge]) continue;
+      if (!nb[edge] && (!canAdd || noAdd)) continue;
       const plane = end ? hi(ax) : lo(ax), dir = end ? 1 : -1;
       const others = ["x", "y", "z"].filter((a) => a !== ax);
+      const had = !!(lb.banded || {})[edge];
       // the wall behind a cabinet, the floor, the top of a tall unit
       if (!free && ax === "y" && dir > 0 && plane >= maxY - 3) { nb[edge] = false; continue; }
       if (ax === "z" && dir < 0 && plane <= 0.3) { nb[edge] = false; continue; }
+      if (!had && ax === "z" && dir < 0 && plinthTop > 0 && plane <= plinthTop + 1) { nb[edge] = false; continue; }
       if (!free && ax === "z" && dir > 0 && plane >= 200) { nb[edge] = false; continue; }
-      let n = 0, hit = 0;
+      let n = 0, hit = 0, seen = 0;
       for (let i = 0; i < 7; i++) for (let j = 0; j < 3; j++) {
         const q = [0, 0, 0];
         q[AX[ax]] = plane + dir * OFF;
         const a0 = others[0], a1 = others[1];
         q[AX[a0]] = lo(a0) + (hi(a0) - lo(a0)) * ((a0 === ta ? j : i) + 0.5) / (a0 === ta ? 3 : 7);
         q[AX[a1]] = lo(a1) + (hi(a1) - lo(a1)) * ((a1 === ta ? j : i) + 0.5) / (a1 === ta ? 3 : 7);
-        n++; if (inside(q, pt)) hit++;
+        n++; if (inside(q, pt)) hit++; else if (!had && !blocked(q, ax, plane, dir, pt)) seen++;
       }
-      if (hit / n >= 0.7) nb[edge] = false;
+      nb[edge] = had ? hit / n < 0.7 : seen / n >= 0.7;
     }
-    if (["left", "right", "top", "bottom"].every((k) => nb[k] === lb.banded[k])) return pt;
+    if (["left", "right", "top", "bottom"].every((k) => !!nb[k] === !!(lb.banded || {})[k])) return pt;
     changed = true;
     return { ...pt, label: { ...lb, banded: nb } };
   });
@@ -4613,6 +4631,7 @@ function renderPop() {
     const it = (k, ic, t, d) => `<button class="mitem" data-menu="${k}"><span class="mic">${ic}</span><span><b>${t}</b><small>${d}</small></span></button>`;
     h = `<div class="popbox menubox" role="dialog" aria-label="القائمة"><div class="libhead"><h2>القائمة</h2><button class="x" data-close aria-label="قفل">×</button></div>
       <h3>المشروع</h3>${it("projects", "📁", "مشاريعي", "افتح مشروع تاني أو ابدأ جديد")}${it("export", "⬆", "تصدير وطباعة", STORE_BUILD ? "الملصقات، خطة القص، CNC، عرض السعر، موديل 3D" : "الملصقات، خطة القص، CNC، عرض السعر، سكتش أب")}${it("survey", "📐", "رفع مقاسات", "شاشة الرفع في الموقع خطوة بخطوة")}${it("studio", "✏️", "ورشة الرسم", "صمّم أي قطعة أو وحدة من الصفر برسم 3D حر")}
+      ${it("gostock", "📦", "المخزن والبواقي", "الألواح والبواقي اللي عندك، ومخزن الهاردوير")}${it("gosup", "🚚", "المورّدين والطلبيات", "أرقام المورّدين وقايمة الشرا لكل مورّد")}
       ${it("speak", "🗣", "اوصفلي المطبخ", "اكتب جملة والبرنامج يرسم الأوضة ويملاها وحدات")}
       ${it("scrap", "♻️", "أعمل إيه من الفضلات؟", "اختار البواقي والبرنامج يرشّحلك وحدات تطلع منها بالكامل")}
       ${it("fincmp", "🎨", "لو الضلف خامة تانية؟", "نفس التصميم بأكتر من خامة جنب بعض مع فرق السعر")}
@@ -4846,6 +4865,8 @@ $("#pop").addEventListener("click", async (e) => {
     if (m === "tour") { state.tourDone = false; startTour(); return; }
     if (m === "present") { presentOn(); return; }
     if (m === "worker") { workerOn(); return; }
+    if (m === "gostock") { goShop("shStock"); return; }
+    if (m === "gosup") { goShop("shSup"); return; }
     if (m === "lang") { await Lib.put(state.project).catch(() => {}); I18n.setLang(I18n.lang === "en" ? "ar" : "en"); return; }
     ui.pop = m; renderPop(); return;
   }
@@ -6987,6 +7008,25 @@ function prodBoard(pieces, prog) {
   }
   return h + `</div>`;
 }
+const SHOP_JUMP = () => `<div class="shopjump">${[["shPrice", "💰 الأسعار"], ["shStock", "📦 المخزن"], ["shBuy", "🛒 الطلبيات"], ["shSup", "🚚 المورّدين"], ["shLabels", "🏷 الملصقات"]].map(([id, t]) => `<button class="chip tog" data-jump="${id}">${t}</button>`).join("")}</div>`;
+/** v99: open the workshop screen at one of its sections — from the ☰ menu or the shortcut bar */
+function goShop(id) {
+  ui.jump = id; if (id === "shSup") ui.supOpen = true;
+  if (state.tab !== "shop") { state.tab = "shop"; ui.stepAt = "shop"; save(); render(true); } else { drawShop(); }
+}
+function shopJumpNow() {
+  // the screen is drawn twice (now, then again when the cut plan is ready): keep the target for a moment so the 2nd draw lands there too
+  if (ui.jump) { ui.jumpTo = ui.jump; ui.jumpUntil = Date.now() + 4000; ui.jump = null; }
+  if (!ui.jumpTo || Date.now() > ui.jumpUntil) { ui.jumpTo = null; return; }
+  const el = document.getElementById(ui.jumpTo);
+  if (!el) return; // not drawn yet (cut plan still computing)
+  if (el.tagName === "DETAILS") el.open = true;
+  const go = () => el.isConnected && el.scrollIntoView({ block: "start" });
+  setTimeout(go, 60); setTimeout(go, 400);
+}
+// a scroll by hand ends the jump, so a later redraw does not pull the screen back
+document.addEventListener("touchstart", () => { if (ui.jumpTo) ui.jumpTo = null; }, { passive: true, capture: true });
+document.addEventListener("wheel", () => { if (ui.jumpTo) ui.jumpTo = null; }, { passive: true, capture: true });
 function drawShop() {
   const el = $("#v-shop");
   const pid = state.project.id;
@@ -6995,7 +7035,7 @@ function drawShop() {
   const prog = progressAll();
   const doneN = pieces.filter((pc) => (prog[pc.key] || 0) >= 4).length;
   const appr = ui.ownerApproval;
-  let h = `<div class="cuthead"><div><h2>الورشة والعميل — ${esc(state.project.name)}</h2><p class="hint">ابعت التصميم للعميل يعتمده، واطبع الملصقات، وتابع كل قطعة في الورشة.</p></div></div>
+  let h = `${SHOP_JUMP()}<div class="cuthead"><div><h2>الورشة والعميل — ${esc(state.project.name)}</h2><p class="hint">ابعت التصميم للعميل يعتمده، واطبع الملصقات، وتابع كل قطعة في الورشة.</p></div></div>
   <div class="shopgrid">
     <section class="mgroup"><div class="mg-h"><h3>العميل</h3>${appr?.status === "approved" ? `<span class="pill">${ICON.check} اتعمد ${appr.at ? new Date(appr.at).toLocaleDateString("ar-EG") : ""}${appr.variantName ? ` — اختار «${esc(appr.variantName)}»` : ""}</span>` : `<span class="pill soft">لسه ما اتعمدش</span>`}</div>
       ${STORE_BUILD ? "" : `<p class="hint">بيتبعت نسخة من التصميم دلوقتي. لو عدّلت بعد كده دوس "حدّث النسخة المبعوتة".</p>
@@ -7019,7 +7059,7 @@ function drawShop() {
   ${quoteHtml()}
   ${stockHtml()}
   ${purchaseHtml()}
-  <section class="mgroup"><div class="mg-h"><h3>معاينة الملصقات</h3><span class="pill soft">${pieces.length} ملصق</span></div><div class="labprev">`;
+  <section class="mgroup" id="shLabels"><div class="mg-h"><h3>معاينة الملصقات</h3><span class="pill soft">${pieces.length} ملصق</span></div><div class="labprev">`;
   const sheets = sheetIndex();
   for (const pc of pieces.slice(0, 24)) {
     const st = prog[pc.key] || 0;
@@ -7029,6 +7069,7 @@ function drawShop() {
   }
   if (pieces.length > 24) h += `<p class="hint">… و${pieces.length - 24} ملصق تاني في الملف.</p>`;
   el.innerHTML = h + `</div></section>`;
+  shopJumpNow();
   sigPadInit(el.querySelector("#sigPad"));
 }
 const linkBox = (url) => `<div class="linkbox"><input readonly value="${esc(url)}" aria-label="اللينك"><button class="ghost2" data-copy="${esc(url)}">انسخ</button></div>`;
@@ -7071,6 +7112,7 @@ $("#v-shop").addEventListener("change", (e) => {
 $("#v-shop").addEventListener("click", async (e) => {
   const b = e.target.closest("button");
   if (!b) return;
+  if (b.dataset.jump) { goShop(b.dataset.jump); return; }
   if (b.hasAttribute("data-scan")) { scanOpen(); return; }
   if (b.hasAttribute("data-scrap")) { const S = scrap(); S.src = "stock"; S.keys = Object.entries(state.stock || {}).filter(([, v]) => (v.remnants || []).length).map(([k]) => k); ui.pop = "scrap"; renderPop(); return; }
   if (b.hasAttribute("data-sigok")) { signApprove(); return; }
@@ -8138,7 +8180,7 @@ function sheetSizeChange(t, after) {
   return true;
 }
 const pOpen = (k, dflt) => ((ui.pOpen?.[k] ?? dflt) ? "open" : "");
-document.addEventListener("toggle", (e) => { const d = e.target; if (d?.dataset?.pk) (ui.pOpen ??= {})[d.dataset.pk] = d.open; }, true);
+document.addEventListener("toggle", (e) => { const d = e.target; if (d?.dataset?.pk) (ui.pOpen ??= {})[d.dataset.pk] = d.open; if (d?.id === "shSup") ui.supOpen = d.open; }, true);
 function quoteHtml() {
   const P = priceDefaults(), Q = quoteCalc();
   if (Q) state.project.quoteTotal = Math.round(Q.total);
@@ -8149,7 +8191,7 @@ function quoteHtml() {
   const boards = Q.lines.filter((L) => L.k === "m2"), outs = Q.lines.filter((L) => L.k === "out" || L.k === "ctr"), hws = Q.lines.filter((L) => L.k === "hw"), bandL = Q.lines.find((L) => L.k === "band");
   const boardsT = boards.reduce((a, L) => a + L.total, 0), outsT = outs.reduce((a, L) => a + L.total, 0);
   const unpriced = boards.filter((L) => !L.price).length;
-  let h = `<section class="mgroup pricing"><div class="mg-h"><h3>💰 الأسعار وعرض السعر</h3><span class="pill">${money(Q.total)} ج.م</span></div>
+  let h = `<section class="mgroup pricing" id="shPrice"><div class="mg-h"><h3>💰 الأسعار وعرض السعر</h3><span class="pill">${money(Q.total)} ج.م</span></div>
     <div class="psum"><div><span>سعر البيع للعميل</span><b>${money(Q.total)}</b></div><div><span>التكلفة</span><b>${money(Q.cost)}</b></div><div class="good"><span>مكسبك</span><b>${money(profit)}</b><small>${Q.cost ? `${Math.round((profit / Q.cost) * 100)}% على التكلفة` : ""}</small></div></div>
     <p class="hint">السعر = (الخامات بمسطحها + الهالك) + الهاردوير + المصنعية والنقل، وعليهم نسبة ربحك. الأسعار بتتحفظ مرة واحدة وتنفع لكل المشاريع.</p>
     <details class="pstep" data-pk="boards" ${pOpen("boards", true)}><summary><b>① أسعار الألواح</b><span>${money(boardsT)} ج.م</span></summary>
@@ -9134,7 +9176,7 @@ function stockOf(key) { state.stock ??= {}; return (state.stock[key] ??= { sheet
 function stockHtml() {
   if (!cutData?.results) return "";
   const P = priceDefaults();
-  let h = `<section class="mgroup"><div class="mg-h"><h3>📦 المخزن والمشتريات</h3></div>
+  let h = `<section class="mgroup" id="shStock"><div class="mg-h"><h3>📦 المخزن والمشتريات</h3></div>
     <p class="hint">سجّل الألواح الكاملة والبواقي اللي عندك. خطة القص بتستخدم البواقي الأول${state.cutOpts.useStock === false ? " (مقفول دلوقتي)" : ""}، وبيطلعلك المحتاج تشتريه.</p>
     <div class="grid2">${stockModeSel("stockModeShop")}</div>
     <p class="hint">${stockMode() === "pick" ? "دوس على أي باقي يعلّم عليه ✓ عشان خطة القص تستخدمه — اللي مش متعلّم مش هيتلمس." : stockMode() === "first" ? "كل البواقي بتتستخدم الأول. دوس على باقي عشان تستبعده (بيبقى مشطوب)." : "خطة القص مش هتستخدم البواقي خالص — كله ألواح جديدة."}</p>
@@ -9541,11 +9583,11 @@ function purchaseData() {
 function purchaseHtml() {
   const D = purchaseData();
   const S = suppliers();
-  if (!D) return `<section class="mgroup"><div class="mg-h"><h3>🛒 قايمة الطلبيات</h3></div><p class="hint">بتتحسب بعد خطة القص (افتح تاب القص مرة).</p></section>`;
+  if (!D) return `<section class="mgroup" id="shBuy"><div class="mg-h"><h3>🛒 قايمة الطلبيات</h3></div><p class="hint">بتتحسب بعد خطة القص (افتح تاب القص مرة).</p></section>`;
   const supSel = (cat) => `<select data-supby="${cat}"><option value="">— المورّد —</option>${S.suppliers.map((s) => `<option value="${s.id}" ${S.supBy[cat] === s.id ? "selected" : ""}>${esc(s.name)}</option>`).join("")}</select>`;
-  let h = `<section class="mgroup purch"><div class="mg-h"><h3>🛒 قايمة الطلبيات</h3><span class="pill soft">${PUR_CATS.reduce((a, [k]) => a + D[k].length, 0)} صنف</span></div>
+  let h = `<section class="mgroup purch" id="shBuy"><div class="mg-h"><h3>🛒 قايمة الطلبيات</h3><span class="pill soft">${PUR_CATS.reduce((a, [k]) => a + D[k].length, 0)} صنف</span></div>
     <p class="hint">كل اللي المشروع محتاجه تشتريه، من خطة القص والهاردوير والأجهزة. حدّد المورّد لكل مجموعة وابعتله القايمة واتساب أو PDF.</p>
-    <details><summary>المورّدين (${S.suppliers.length})</summary><div class="suplist">${S.suppliers.map((s) => `<div class="suprow"><input data-supn="${s.id}" value="${esc(s.name)}" placeholder="الاسم"><input data-supp="${s.id}" inputmode="tel" value="${esc(s.phone || "")}" placeholder="واتساب 2010…"><button class="danger sm" data-supdel="${s.id}">${ICON.trash}</button></div>`).join("")}</div><button class="add" data-supadd>+ مورّد</button></details>`;
+    <details id="shSup" ${ui.supOpen ? "open" : ""}><summary>🚚 المورّدين (${S.suppliers.length})</summary><div class="suplist">${S.suppliers.map((s) => `<div class="suprow"><input data-supn="${s.id}" value="${esc(s.name)}" placeholder="الاسم"><input data-supp="${s.id}" inputmode="tel" value="${esc(s.phone || "")}" placeholder="واتساب 2010…"><button class="danger sm" data-supdel="${s.id}">${ICON.trash}</button></div>`).join("")}</div><button class="add" data-supadd>+ مورّد</button></details>`;
   for (const [cat, label] of PUR_CATS) {
     const L = D[cat]; if (!L.length) continue;
     const sup = S.suppliers.find((s) => s.id === S.supBy[cat]);

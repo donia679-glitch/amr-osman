@@ -45,7 +45,7 @@ function build() {
   pad.setAttribute("role", "group");
   pad.setAttribute("aria-label", "لوحة الأرقام");
   const K = (k, label, cls = "") => `<button type="button" data-k="${k}" class="${cls}">${label}</button>`;
-  pad.innerHTML = `<div class="kpbar"><span class="kplabel"></span><b class="kpval" dir="ltr"></b><button type="button" data-k="close" class="kpx" aria-label="قفل">⌄</button></div>
+  pad.innerHTML = `<div class="kpbar"><span class="kplabel"></span><b class="kpval" dir="ltr"></b><button type="button" data-k="ok" class="kpok">✓ تأكيد</button><button type="button" data-k="close" class="kpx" aria-label="قفل">⌄</button></div>
     <div class="kpkeys">
       ${K("7", "7")}${K("8", "8")}${K("9", "9")}${K("back", "⌫", "kfn")}
       ${K("4", "4")}${K("5", "5")}${K("6", "6")}${K("minus", "−", "kfn")}
@@ -64,7 +64,8 @@ function labelOf(t) {
 }
 function show(t) {
   if (!pad) build();
-  cur = t; fresh = true;
+  if (cur && cur !== t && dirty) commit(cur); // tapped straight into another field: the number typed so far still counts
+  cur = t; fresh = true; dirty = false;
   pad.querySelector(".kplabel").textContent = labelOf(t);
   // the drawing studio's size box: sizes like 60,40 · x5 · /4 · 24s · −2 (a cut), and the pad off to the side
   const ex = t.hasAttribute("data-kpextra");
@@ -87,21 +88,32 @@ function hide(fromKey = false) {
   document.addEventListener("click", eat, true);
   setTimeout(() => document.removeEventListener("click", eat, true), 650);
   }
-  if (cur) cur.dispatchEvent(new Event("change", { bubbles: true }));
+  if (cur) commit(cur);
   cur = null;
 }
 function sync() { if (pad && cur) pad.querySelector(".kpval").textContent = cur.value || "—"; }
+let dirty = false;
+/** live = tell the app on every key (the survey's live notes); elsewhere the number waits for ✓ */
+const live = (t) => !!t?.closest?.("#survey");
 function put(v) {
   cur.value = v;
-  cur.dispatchEvent(new Event("input", { bubbles: true }));
+  if (live(cur)) cur.dispatchEvent(new Event("input", { bubbles: true }));
+  else dirty = true;
   sync();
+}
+/** hand the typed number to the app (input + change), once */
+function commit(t = cur) {
+  if (!t) return;
+  if (dirty && !live(t)) t.dispatchEvent(new Event("input", { bubbles: true }));
+  dirty = false;
+  t.dispatchEvent(new Event("change", { bubbles: true }));
 }
 function step(dir) {
   const inc = +cur.dataset.inc || 1;
   const n = parseFloat(String(cur.value).replace(/[^\d.\-]/g, "")) || 0;
   const v = Math.round((n + dir * inc) * 100) / 100;
   put(String(Math.max(cur.dataset.neg !== undefined ? -1e9 : 0, v)));
-  cur.dispatchEvent(new Event("change", { bubbles: true }));
+  commit();
   fresh = false;
 }
 function fields() {
@@ -110,19 +122,22 @@ function fields() {
     .filter((x) => x.offsetParent !== null && !x.disabled && !x.closest("details:not([open])"));
 }
 const KEYS = ["data-num", "data-sv", "data-auto", "data-rw", "data-ro", "data-rp", "data-rc", "data-rf", "data-xnum", "id"];
+const NOT_KEY = new Set(["data-numf", "data-kpextra", "data-kpsolo", "data-inc", "data-neg", "data-keypad"]);
 function selOf(x) {
   for (const k of KEYS) { const v = x.getAttribute(k); if (v) return k === "id" ? `#${CSS.escape(v)}` : `input[${k}="${CSS.escape(v)}"]`; }
-  return null;
+  // any other data-* attribute with a value (data-price="sheets.X", data-co, data-def …), plus a second one when there is (data-gsz + data-gkey)
+  const ds = [...x.attributes].filter((a) => a.name.startsWith("data-") && a.value && !NOT_KEY.has(a.name)).slice(0, 2);
+  return ds.length ? "input" + ds.map((a) => `[${a.name}="${CSS.escape(a.value)}"]`).join("") : null;
 }
 function press(k, b) {
   if (!cur) return;
   b?.classList.add("hit"); setTimeout(() => b?.classList.remove("hit"), 120);
-  if (k === "close") { closedAt = Date.now(); cur.blur(); hide(true); return; }
+  if (k === "close" || k === "ok") { closedAt = Date.now(); const t = cur; hide(true); t.blur(); return; }
   if (k === "next") {
     const t = cur;
     const all = t.closest("#survey") ? [] : fields(), i = all.indexOf(t); // before the change re-draws the panel
     const nx = all[i + 1], sel = nx && selOf(nx);
-    t.dispatchEvent(new Event("change", { bubbles: true }));
+    commit(t);
     // the survey moves on itself on Enter; elsewhere: the next field, or close
     if (t.hasAttribute("data-kpsolo")) { t.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true })); hide(true); return; }
     if (t.closest("#survey")) { t.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true })); return; }

@@ -5348,5 +5348,12 @@
  "المقاس ده للخامة دي بس — باقي الخامات على مقاسها.": "This size is for this material only — the others keep their own size.",
  "طول اللوح الافتراضي": "Default sheet length",
  "عرض اللوح الافتراضي": "Default sheet width",
- "النقل للمشروع": "Transport per project"
+ "النقل للمشروع": "Transport per project",
+ "تأكيد": "Confirm",
+ "المخزن": "Stock",
+ "الطلبيات": "Orders",
+ "المخزن والبواقي": "Stock & offcuts",
+ "الألواح والبواقي اللي عندك، ومخزن الهاردوير": "The sheets and offcuts you have, and the hardware stock",
+ "المورّدين والطلبيات": "Suppliers & orders",
+ "أرقام المورّدين وقايمة الشرا لكل مورّد": "Supplier numbers and the shopping list for each supplier"
 }
