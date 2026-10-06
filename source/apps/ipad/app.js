@@ -6223,7 +6223,7 @@ const view = {
         // look at the wall carrying the most units, from the far side of the room (that wall gets cut away)
         const segs = Room.segments(project.room);
         const count = new Map();
-        for (const L of layout.values()) if (L.wall) count.set(L.wall, (count.get(L.wall) || 0) + 1);
+        for (const L of layout?.values() || []) if (L.wall) count.set(L.wall, (count.get(L.wall) || 0) + 1);
         const main = segs.slice().sort((a, b) => (count.get(b.id) || 0) - (count.get(a.id) || 0) || b.L - a.L)[0];
         const n = main ? main.n : [0, 1];
         const sideV = main ? main.d : [1, 0];
