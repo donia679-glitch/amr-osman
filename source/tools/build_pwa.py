@@ -7,14 +7,15 @@ from PIL import Image, ImageDraw, ImageFont
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 APP = os.path.join(ROOT, "apps/ipad")
 OUT = os.path.join(ROOT, "dist/pwa")
-SP = os.environ.get("VENDOR", "/tmp/claude-0/-home-claude/64b8a489-bbf5-5031-b6e2-a8f0120b3f86/scratchpad")
+# qrcode.js + the Arabic font live in tools/vendor_assets (a session scratchpad disappears between sessions)
+SP = os.environ.get("VENDOR", os.path.join(ROOT, "tools/vendor_assets"))
 THREE = os.path.join(SP, "three/repo")
 
 shutil.rmtree(OUT, ignore_errors=True)
 shutil.copytree(APP, OUT, ignore=shutil.ignore_patterns("APPSTORE.md", "*.map"))
 V = os.path.join(OUT, "vendor")  # three.js + path tracer are already in apps/ipad/vendor (tools/vendor.py)
 os.makedirs(V, exist_ok=True)
-shutil.copy(os.path.join(SP, "qrgen/js/dist/qrcode.js"), os.path.join(V, "qrcode.js"))
+shutil.copy(os.path.join(SP, "qrcode.js"), os.path.join(V, "qrcode.js"))
 os.makedirs(os.path.join(OUT, "fonts"))
 css = ""
 for w, n in [(400, "Regular"), (500, "Medium"), (600, "SemiBold"), (700, "Bold")]:

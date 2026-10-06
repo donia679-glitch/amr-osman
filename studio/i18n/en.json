@@ -5314,5 +5314,21 @@
  "🔩 الشريط والهاردوير والمشتريات": "🔩 Banding, hardware and purchases",
  "سعر اللوح لأي لوح مش متسعّر": "Sheet price for any unpriced board",
  "المستهلك": "Used",
- "طريقة التسعير: كل لوح بيتحسب باللي خطة القص بتستهلكه فعلاً (عدد الألواح × سعر اللوح)، وتمنه بيتوزّع على الوحدات حسب مسطح قطع كل وحدة على اللوح ده — فمجموع أسعار الوحدات = التكلفة الحقيقية بالظبط. وبعدين الشريط والهاردوير والمصنعية والربح. الأسعار ومقاسات الألواح بتتحفظ لكل المشاريع.": "Pricing: each board is charged by what the cut plan really uses (sheets × sheet price), shared between the units by the area of their pieces on that board — so the unit prices add up to the real cost exactly. Then banding, hardware, labour and margin. Prices and sheet sizes are saved for all projects."
+ "طريقة التسعير: كل لوح بيتحسب باللي خطة القص بتستهلكه فعلاً (عدد الألواح × سعر اللوح)، وتمنه بيتوزّع على الوحدات حسب مسطح قطع كل وحدة على اللوح ده — فمجموع أسعار الوحدات = التكلفة الحقيقية بالظبط. وبعدين الشريط والهاردوير والمصنعية والربح. الأسعار ومقاسات الألواح بتتحفظ لكل المشاريع.": "Pricing: each board is charged by what the cut plan really uses (sheets × sheet price), shared between the units by the area of their pieces on that board — so the unit prices add up to the real cost exactly. Then banding, hardware, labour and margin. Prices and sheet sizes are saved for all projects.",
+ "وحدات بمحرّك تصنيع حقيقي — كل قطعة بمقاسها وخامتها وشريطها وأخرامها.": "Units built by a real manufacturing engine — every part with its size, material, edge banding and holes.",
+ "وصور وموديل": "images and a",
+ "كل الحقوق محفوظة. تصميماتك محفوظة على جهازك بس.": "All rights reserved. Your designs are stored only on your device.",
+ "كل مقاسات التصنيع — سيبها زي ما هي لو مش متأكد.": "All manufacturing dimensions — leave them as they are if unsure.",
+ "لكل درج: اختار التقسيمة والفواصل بتتحسب على مقاس الدرج من جوه، وبتنزل في الكت ليست والملصقات.": "For each drawer: choose the layout and the dividers are calculated from the drawer's inner size, and appear in the cut list and the labels.",
+ "، عرض السعر، موديل": ", quotation,",
+ "كل خامة وسمك لوحدها، بقصات جيلوتين تتنفذ على المنشار.": "Each material and thickness separately, with guillotine cuts that can be done on the saw.",
+ "ابعت للعميل عرض السعر": "Send the client the quotation",
+ "أو صورة التصميم من «تصدير وطباعة»، أو اعرضهوله هنا في وضع العرض وخلّيه يوقّع على الجهاز.": "or a picture of the design from \"Export & print\", or show it here in presentation mode and let them sign on the device.",
+ "امسحه من هنا بكاميرا الجهاز، تفتحلك القطعة وتعلّم المرحلة اللي خلصت.": "Scan it here with the device camera: the part opens and you mark the stage that is done.",
+ "مش قادر أقرا الـ": "Can't read the",
+ "على الجهاز ده — اكتب رقم القطعة تحت.": "on this device — type the part number below.",
+ "للتصميم كله — كل وحدة جروب لوحدها بكودها — يتفتح في برامج التصميم ثلاثي الأبعاد.": "of the whole design — every unit is its own group with its code — opens in 3D design programs.",
+ "افتح الكاميرا": "Open the camera",
+ "الكاميرا بتفتح على الشاشة كلها، وأول ما تقرا الـ": "The camera opens full screen, and as soon as it reads the",
+ "بتقفل وتفتحلك القطعة هنا.": "it closes and opens the part here."
 }

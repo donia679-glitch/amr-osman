@@ -24,10 +24,8 @@ struct RootView: View {
             if !SubscriptionStore.required || store.isSubscribed {
                 NoveraWebView()
                     .ignoresSafeArea(.container, edges: .bottom)
-            } else if #available(iOS 17.0, *) {
-                PaywallView()
             } else {
-                Text(isArabic ? "حدّث الجهاز لـ iOS / iPadOS 17 عشان الاشتراك" : "Update to iOS / iPadOS 17 to subscribe").foregroundStyle(.white)
+                PaywallView()
             }
         }
         .preferredColorScheme(nil)

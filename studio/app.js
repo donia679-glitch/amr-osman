@@ -33,6 +33,8 @@ import * as DG from "./draw/geom.js";
 
 const APP_URL = "https://claude.ai/artifact/EP8c8LmBNS8d3EqLcDioXi";
 const APP_VERSION = "1.0";
+/** the App Store build (inside the iOS app): no links to the online version, no plugin / other-brand wording */
+const STORE_BUILD = !!window.noveraNative;
 /** shown on the "about" page — phone / links appear as soon as they're filled in */
 const DEVELOPER = { name: "م. عمرو عثمان", company: "NOVERA", phone: "", whatsapp: "", email: "", site: "" };
 
@@ -3246,7 +3248,7 @@ function advancedFields(p, shown) {
     if (!o || shown.includes(`data-sel="${k}"`) || getPath(p, k) === undefined) continue;
     (groups[k.split(".")[0]] ??= []).push(selF(k, label, o, getPath(p, k)));
   }
-  let h = `<details><summary>إعدادات متقدمة</summary><p class="hint">كل مقاسات التصنيع زي البلجن بالظبط — سيبها زي ما هي لو مش متأكد.</p>`;
+  let h = `<details><summary>إعدادات متقدمة</summary><p class="hint">${STORE_BUILD ? "كل مقاسات التصنيع" : "كل مقاسات التصنيع زي البلجن بالظبط"} — سيبها زي ما هي لو مش متأكد.</p>`;
   for (const [g, label] of Object.entries(ADV_GROUPS)) {
     const fl = groups[g];
     if (g === "assembly") {
@@ -3938,7 +3940,7 @@ function organizerField(u, r) {
   let h = `<details open class="appbox orgbox"><summary>🧩 التقسيمات الداخلية</summary>`;
   const drs = unitDrawers(u, r);
   if (drs.length && !ORGS[u.org]?.set?.drawer_count) {
-    h += `<p class="hint">لكل درج: اختار التقسيمة والفواصل بتتحسب على مقاس الدرج من جوه، وبتنزل في الكت ليست والملصقات وفي البلجن.</p>`;
+    h += `<p class="hint">لكل درج: اختار التقسيمة والفواصل بتتحسب على مقاس الدرج من جوه، وبتنزل في الكت ليست والملصقات${STORE_BUILD ? "" : " وفي البلجن"}.</p>`;
     for (const d of drs) {
       const cur = u.inserts?.[d.i] || (p[`drawer_insert_${d.i}`] && p[`drawer_insert_${d.i}`] !== "none" ? "eng" : "none");
       const lay = cur !== "none" && cur !== "eng" ? insertLayout(cur, d.W, d.D, u.insertOpts?.[d.i]) : { v: [], h: [] };
@@ -4565,18 +4567,18 @@ function renderPop() {
       <p>تطبيق لتصميم وتصنيع المطابخ والدريسنج وغرف النوم ووحدات الأثاث من الألواح — من أول رسم الأوضة لحد القص والتجميع في الورشة.</p>
       <div class="btnrow"><button class="primary" data-tour>▶ الجولة التعريفية (دقيقة)</button></div>
       <ul class="feat">
-        <li>وحدات بمحرّك البلجن نفسه (Kitchen Unit Designer) — نفس القطع والمقاسات اللي في سكتش أب بالظبط.</li>
+        <li>${STORE_BUILD ? "وحدات بمحرّك تصنيع حقيقي — كل قطعة بمقاسها وخامتها وشريطها وأخرامها." : "وحدات بمحرّك البلجن نفسه (Kitchen Unit Designer) — نفس القطع والمقاسات اللي في سكتش أب بالظبط."}</li>
         <li>رسم الحيطان بالمقاسات أو بالإيد أو من مسح الكاميرا، أبواب وشبابيك، ونقط كهربا وسباكة وغاز.</li>
         <li>عرض 3D وريندر، فتح وقفل الضلف، خامات من الصور.</li>
         <li>خطة قص للألواح، أرقام لكل قطعة وملصقات بباركود، ودليل تجميع خطوة بخطوة.</li>
-        <li>تصدير Excel وPDF وDXF وصور، وفتح التصميم في سكتش أب.</li>
+        <li>${STORE_BUILD ? "تصدير Excel وPDF وDXF وصور وموديل 3D." : "تصدير Excel وPDF وDXF وصور، وفتح التصميم في سكتش أب."}</li>
         <li>عرض سعر للعميل، ومتابعة الورشة بالـQR.</li>
       </ul>
       <h3>المطوّر</h3><p class="dev"><b>${esc(D.name)}</b> — ${esc(D.company)}</p>
       <p class="hint"><a href="https://donia679-glitch.github.io/amr-osman/studio/legal/privacy.html" target="_blank" rel="noopener">سياسة الخصوصية</a> · <a href="https://www.apple.com/legal/internet-services/itunes/dev/stdeula/" target="_blank" rel="noopener">شروط الاستخدام</a></p>
       <details><summary>مكتبات مفتوحة المصدر</summary><p class="hint" dir="ltr" style="text-align:left">three.js (MIT) · three-gpu-pathtracer (MIT) · three-mesh-bvh (MIT) · qrcode-generator by Kazuhiko Arase (MIT) · IBM Plex Sans Arabic (SIL Open Font License 1.1)</p></details>
       ${contact ? `<div class="btnrow">${contact}</div>` : ""}
-      <p class="hint">© ${new Date().getFullYear()} ${esc(D.company)}. كل الحقوق محفوظة. تصميماتك محفوظة على جهازك وعلى حسابك بس.</p></div>`;
+      <p class="hint">© ${new Date().getFullYear()} ${esc(D.company)}. كل الحقوق محفوظة. تصميماتك محفوظة ${STORE_BUILD ? "على جهازك بس" : "على جهازك وعلى حسابك بس"}.</p></div>`;
   }
   else if (ui.pop === "checks") {
     const list = designChecks();
@@ -4593,7 +4595,7 @@ function renderPop() {
   else if (ui.pop === "menu") {
     const it = (k, ic, t, d) => `<button class="mitem" data-menu="${k}"><span class="mic">${ic}</span><span><b>${t}</b><small>${d}</small></span></button>`;
     h = `<div class="popbox menubox" role="dialog" aria-label="القائمة"><div class="libhead"><h2>القائمة</h2><button class="x" data-close aria-label="قفل">×</button></div>
-      <h3>المشروع</h3>${it("projects", "📁", "مشاريعي", "افتح مشروع تاني أو ابدأ جديد")}${it("export", "⬆", "تصدير وطباعة", "الملصقات، خطة القص، CNC، عرض السعر، سكتش أب")}${it("survey", "📐", "رفع مقاسات", "شاشة الرفع في الموقع خطوة بخطوة")}${it("studio", "✏️", "ورشة الرسم", "صمّم أي قطعة أو وحدة من الصفر برسم 3D حر")}
+      <h3>المشروع</h3>${it("projects", "📁", "مشاريعي", "افتح مشروع تاني أو ابدأ جديد")}${it("export", "⬆", "تصدير وطباعة", STORE_BUILD ? "الملصقات، خطة القص، CNC، عرض السعر، موديل 3D" : "الملصقات، خطة القص، CNC، عرض السعر، سكتش أب")}${it("survey", "📐", "رفع مقاسات", "شاشة الرفع في الموقع خطوة بخطوة")}${it("studio", "✏️", "ورشة الرسم", "صمّم أي قطعة أو وحدة من الصفر برسم 3D حر")}
       ${it("speak", "🗣", "اوصفلي المطبخ", "اكتب جملة والبرنامج يرسم الأوضة ويملاها وحدات")}
       ${it("scrap", "♻️", "أعمل إيه من الفضلات؟", "اختار البواقي والبرنامج يرشّحلك وحدات تطلع منها بالكامل")}
       ${it("fincmp", "🎨", "لو الضلف خامة تانية؟", "نفس التصميم بأكتر من خامة جنب بعض مع فرق السعر")}
@@ -6687,7 +6689,7 @@ function sheetIndex() {
 function drawCut() {
   const el = $("#v-cut");
   const o = state.cutOpts;
-  let h = `<div class="cuthead"><div><h2>خطة القص — ${esc(state.project.name)}</h2><p class="hint">كل خامة وسمك لوحدها، بنفس محرك القص بتاع البلاجن (قصات جيلوتين تتنفذ على المنشار).</p></div>
+  let h = `<div class="cuthead"><div><h2>خطة القص — ${esc(state.project.name)}</h2><p class="hint">كل خامة وسمك لوحدها، ${STORE_BUILD ? "بقصات جيلوتين تتنفذ على المنشار" : "بنفس محرك القص بتاع البلاجن (قصات جيلوتين تتنفذ على المنشار)"}.</p></div>
     <div class="cutopts">${[["sheetW", "طول اللوح", 1], ["sheetH", "عرض اللوح", 1], ["kerf", "سلاح المنشار", 0.05], ["trim", "تشذيب الحرف", 0.5]].map(([k, l, s]) => `<label class="f"><span>${l}</span><input type="text" inputmode="decimal" data-numf step="${s}" data-co="${k}" value="${o[k]}"></label>`).join("")}${stockModeSel("stockModeCut")}</div></div>`;
   if (!cutData || cutData.busy) { el.innerHTML = h + `<div class="busy"><span class="spin" aria-hidden="true"></span>بيحسب أحسن توزيع للقطع…</div>`; return; }
   const { groups, outside, results } = cutData;
@@ -6922,7 +6924,8 @@ function qrSvg(text, px) {
   q.make();
   return q.createSvgTag({ cellSize: 2, margin: 0, scalable: true }).replace("<svg ", `<svg width="${px}" height="${px}" `);
 }
-const pieceUrl = (pid, key) => `${APP_URL}#w-${pid}.${key}`;
+// store build: the QR carries just the project + piece code (read by the in-app scanner), no link to the online version
+const pieceUrl = (pid, key) => STORE_BUILD ? `NOVERA#w-${pid}.${key}` : `${APP_URL}#w-${pid}.${key}`;
 /** Code 128-B barcode of `text` as SVG bars (readable by any workshop scanner) */
 const C128 = ["212222","222122","222221","121223","121322","131222","122213","122312","132212","221213","221312","231212","112232","122132","122231","113222","123122","123221","223211","221132","221231","213212","223112","312131","311222","321122","321221","312212","322112","322211","212123","212321","232121","111323","131123","131321","112313","132113","132311","211313","231113","231311","112133","112331","132131","113123","113321","133121","313121","211331","231131","213113","213311","213131","311123","311321","331121","312113","312311","332111","314111","221411","431111","111224","111422","121124","121421","141122","141221","112214","112412","122114","122411","142112","142211","241211","221114","413111","241112","134111","111242","121142","121241","114212","124112","124211","411212","421112","421211","212141","214121","412121","111143","111341","131141","114113","114311","411113","411311","113141","114131","311141","411131","211412","211214","211232","2331112"];
 function barcodeSvg(text, wmm = 40, hmm = 6) {
@@ -7018,15 +7021,15 @@ function drawShop() {
   let h = `<div class="cuthead"><div><h2>الورشة والعميل — ${esc(state.project.name)}</h2><p class="hint">ابعت التصميم للعميل يعتمده، واطبع الملصقات، وتابع كل قطعة في الورشة.</p></div></div>
   <div class="shopgrid">
     <section class="mgroup"><div class="mg-h"><h3>العميل</h3>${appr?.status === "approved" ? `<span class="pill">${ICON.check} اتعمد ${appr.at ? new Date(appr.at).toLocaleDateString("ar-EG") : ""}${appr.variantName ? ` — اختار «${esc(appr.variantName)}»` : ""}</span>` : `<span class="pill soft">لسه ما اتعمدش</span>`}</div>
-      <p class="hint">بيتبعت نسخة من التصميم دلوقتي. لو عدّلت بعد كده دوس "حدّث النسخة المبعوتة".</p>
-      ${clientOptsHtml(appr)}
+      ${STORE_BUILD ? "" : `<p class="hint">بيتبعت نسخة من التصميم دلوقتي. لو عدّلت بعد كده دوس "حدّث النسخة المبعوتة".</p>
+      ${clientOptsHtml(appr)}`}
       <details ${state.project.approval?.sig ? "open" : ""}><summary>✍️ اعتماد على الجهاز (توقيع العميل)${state.project.approval?.sig ? " · ✓" : ""}</summary>${sigPadHtml()}</details>
       <div class="btnrow"><button class="ghost2" data-present>🖥 وضع العرض للعميل</button></div>
       ${online ? `<div class="btnrow"><button class="primary" data-publish="client">${ICON.share}${ui.sharedAt ? "حدّث النسخة المبعوتة" : "جهّز لينك العميل"}</button></div>
-      ${ui.sharedAt ? linkBox(`${APP_URL}#c-${pid}`) : ""}` : `<p class="e">لينك العميل واختيار اللون بالسعر شغالين من نسخة NOVERA أونلاين بس (عشان العميل يفتح نفس التصميم من موبايله). افتحها من هنا وانت مسجّل دخول، وانقل المشروع بـ«تصدير ← نسخة من المشروع» لو مش موجود هناك.</p>${window.noveraNative ? "" : `<div class="btnrow"><a class="primary" style="text-decoration:none" href="${APP_URL}" target="_blank" rel="noopener">افتح NOVERA أونلاين</a></div>`}`}
+      ${ui.sharedAt ? linkBox(`${APP_URL}#c-${pid}`) : ""}` : STORE_BUILD ? `<p class="hint">ابعت للعميل عرض السعر PDF أو صورة التصميم من «تصدير وطباعة»، أو اعرضهوله هنا في وضع العرض وخلّيه يوقّع على الجهاز.</p>` : `<p class="e">لينك العميل واختيار اللون بالسعر شغالين من نسخة NOVERA أونلاين بس (عشان العميل يفتح نفس التصميم من موبايله). افتحها من هنا وانت مسجّل دخول، وانقل المشروع بـ«تصدير ← نسخة من المشروع» لو مش موجود هناك.</p>${window.noveraNative ? "" : `<div class="btnrow"><a class="primary" style="text-decoration:none" href="${APP_URL}" target="_blank" rel="noopener">افتح NOVERA أونلاين</a></div>`}`}
     </section>
     <section class="mgroup"><div class="mg-h"><h3>الورشة</h3><span class="pill soft">${doneN} / ${pieces.length} قطعة خلصت</span></div>
-      <p class="hint">كل ملصق عليه QR. العامل يصوّره بكاميرا الموبايل، تفتحله القطعة ويعلّم المرحلة اللي خلصها — أو امسحه من هنا بكاميرا الجهاز.</p>
+      <p class="hint">${STORE_BUILD ? "كل ملصق عليه QR. امسحه من هنا بكاميرا الجهاز، تفتحلك القطعة وتعلّم المرحلة اللي خلصت." : "كل ملصق عليه QR. العامل يصوّره بكاميرا الموبايل، تفتحله القطعة ويعلّم المرحلة اللي خلصها — أو امسحه من هنا بكاميرا الجهاز."}</p>
       <div class="btnrow"><button class="primary" data-scan>📷 امسح ملصق</button></div>
       ${prodBoard(pieces, prog)}
       <div class="btnrow"><label class="f"><span>مقاس الملصقات</span><select id="labelFmt"><option value="a4" ${state.labelFmt === "a4" ? "selected" : ""}>A4 — 21 ملصق في الورقة</option><option value="roll" ${state.labelFmt === "roll" ? "selected" : ""}>رول 60×40 مم</option></select></label>
@@ -8627,6 +8630,11 @@ function sceneNodes() {
   Object.assign(ui, { open: keep.open, planOn: keep.plan, asm: keep.asm });
   render(true);
   return nodes;
+}
+/** store build: just the 3D model */
+async function exportDae() {
+  if (!view.ready) throw new Error("العرض 3D مش جاهز");
+  return Exp.deliver(cloud.downloads, `${fileBase()}.dae`, Exp.dae(sceneNodes(), state.project.name));
 }
 async function exportSketchUp() {
   if (!view.ready) throw new Error("العرض 3D مش جاهز");
@@ -10252,19 +10260,26 @@ async function scanOpen() {
     <div id="scanPiece"></div></div>`;
   box.onclick = async (e) => {
     if (e.target === box || e.target.closest("[data-scx]")) { scanClose(); return; }
+    if (e.target.closest("[data-scnative]")) { window.webkit?.messageHandlers?.noveraQR?.postMessage({}); return; }
     const st = e.target.closest("[data-scstage]");
     if (st) { await scanSetStage(st.dataset.scpiece, +st.dataset.scstage); return; }
   };
   box.querySelector("[data-scanform]").onsubmit = (e) => { e.preventDefault(); const v = e.target.code.value.trim().toUpperCase(); if (v) scanShow(v); };
+  // inside the iOS app: Apple's own QR reader (the web view can't decode QR on iOS) — full screen, comes back with the text
+  if (nativeQR()) {
+    box.querySelector(".scanstage").outerHTML = `<div class="btnrow"><button class="primary big" data-scnative>📷 افتح الكاميرا</button></div><p class="hint scanmsg2">الكاميرا بتفتح على الشاشة كلها، وأول ما تقرا الـQR بتقفل وتفتحلك القطعة هنا.</p>`;
+    window.webkit.messageHandlers.noveraQR.postMessage({});
+    return;
+  }
   const vid = box.querySelector("#scanVid"), msg = box.querySelector(".scanmsg");
   try {
     scan.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 } }, audio: false });
     vid.srcObject = scan.stream; await vid.play();
   } catch { msg.textContent = "الكاميرا مش متاحة — اكتب رقم القطعة تحت."; return; }
-  // decoder: the browser's own, else jsQR from the CDN (needs internet), else typing the code
+  // decoder: the browser's own, else jsQR from the CDN (web version only — the store build never loads remote code), else typing the code
   if ("BarcodeDetector" in window) { try { scan.det = new window.BarcodeDetector({ formats: ["qr_code"] }); } catch { scan.det = null; } }
-  if (!scan.det && !window.jsQR) { try { await new Promise((res, rej) => { const sc = document.createElement("script"); sc.src = "https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js"; sc.onload = res; sc.onerror = rej; document.head.appendChild(sc); }); } catch { /* offline */ } }
-  if (!scan.det && !window.jsQR) { msg.textContent = "المتصفح ده مش بيقرا QR من غير نت — اكتب رقم القطعة تحت."; return; }
+  if (!scan.det && !window.jsQR && !STORE_BUILD) { try { await new Promise((res, rej) => { const sc = document.createElement("script"); sc.src = "https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js"; sc.onload = res; sc.onerror = rej; document.head.appendChild(sc); }); } catch { /* offline */ } }
+  if (!scan.det && !window.jsQR) { msg.textContent = "مش قادر أقرا الـQR على الجهاز ده — اكتب رقم القطعة تحت."; return; }
   const cv = document.createElement("canvas"), g = cv.getContext("2d", { willReadFrequently: true });
   const tick = async () => {
     if (!scan.on) return;
@@ -10280,6 +10295,9 @@ async function scanOpen() {
   };
   tick();
 }
+const nativeQR = () => !!(window.noveraNative?.qr && window.webkit?.messageHandlers?.noveraQR);
+window.noveraQRResult = (text) => { if (scan.on && $("#scanPiece")) scanShow(String(text || "")); };
+window.noveraQRError = (text) => { const m = $("#scanBox .scanmsg2"); if (m) { m.textContent = String(text || ""); m.classList.add("e"); } else alertBar(String(text || "")); };
 function scanClose() {
   scan.on = false; cancelAnimationFrame(scan.raf);
   if (scan.stream) { for (const t of scan.stream.getTracks()) t.stop(); scan.stream = null; }
@@ -10912,6 +10930,7 @@ const EXPORTS = [
   ["cnc", "ملفات CNC بالتخريم (DXF لكل قطعة)", "كل قطعة في ملف بالمليمتر: الحدود، والأخرام والكبب والمفاحير على طبقات باسم القطر والعمق — بتتفتح في برامج المكن (woodWOP · bSolid · Alphacam · الراوتر الصيني) + جدول العمليات.", exportCnc],
   ["dxf", "ملفات DXF (CNC / أوتوكاد)", "كل لوح بقطعه وأرقامها كرسمة DXF، والمسقط — في ملف ZIP.", exportDxf],
   ["machines", "ملفات المكن الصناعي (MPR · BPP · Cutrite · Ardis · ماكينة الشريط)", "ZIP فيه برنامج woodWOP (MPR) وBiesse (BPP) لكل قطعة بالأخرام والمفاحير، وقايمة قطع لـCutrite وArdis، وقايمة الحواف لماكينة الشريط. أول مرة: جرّب ملف واحد على المكنة.", exportMachines],
+  STORE_BUILD ? ["skp", "موديل 3D (DAE)", "موديل 3D للتصميم كله — كل وحدة جروب لوحدها بكودها — يتفتح في برامج التصميم ثلاثي الأبعاد.", exportDae] :
   ["skp", "سكتش أب (موديل + ملف البلجن)", "ملف ZIP فيه موديل .dae يتفتح في أي سكتش أب، وملف للبلجن (187) يبني الوحدات الحقيقية بإعداداتها والحيطان ونقط الكهربا — عشان تكمّل شغل عليه.", exportSketchUp],
   ["png", "صورة التصميم", "صورة 1920×1080 من العرض 3D الحالي.", exportImage],
   ["quote", "عرض سعر للعميل PDF", "بالأسعار اللي كاتبها في تاب الورشة والعميل: صورة التصميم، سعر كل وحدة، الإجمالي، والشروط.", exportQuotePdf],
