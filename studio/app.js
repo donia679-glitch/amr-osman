@@ -610,6 +610,23 @@ function facesGeometry(THREE, faces) {
   geo.computeVertexNormals();
   return geo;
 }
+/** v98: the unit's banding split into carcass / fronts (doors, drawer fronts, flaps) / drawer boxes — so the total can be checked */
+const isFrontPart = (pt) => pt.role === "door" || pt.role === "drawer_front" || pt.layer === "front" || pt.material === "front" || /ضلف|باب|قلاب|^درج \d+$|وش درج|درج وزرة|بول أوت$/.test(pt.name || "");
+function bandSplit(r) {
+  const o = { body: 0, front: 0, box: 0 };
+  for (const pt of r.parts || []) {
+    if (!pt.cut_piece || !pt.label) continue;
+    const m = bandM([pt]);
+    if (!m) continue;
+    const box = pt.role === "drawer_box" || /صندوق|^درج \d+ - |صينية|جنب البول أوت/.test(pt.name || "");
+    o[box ? "box" : isFrontPart(pt) ? "front" : "body"] += m;
+  }
+  return o;
+}
+function bandSplitHtml(r) {
+  const o = bandSplit(r), parts = [["هيكل", o.body], ["ضلف ووشوش", o.front], ["أدراج", o.box]].filter(([, v]) => v > 0.005);
+  return parts.length > 1 ? `<small class="bsplit">${parts.map(([k, v]) => `${k} ${n1(v)}`).join(" + ")}</small>` : "";
+}
 function bandM(parts) {
   let t = 0;
   for (const pt of parts) {
@@ -2834,7 +2851,7 @@ function renderProps0() {
   let h = (multiN > 1 ? `<div class="multinote">☑ أي تعديل هنا بيتطبّق على <b>${multiN} وحدة</b> مختارة مع بعض · <button class="linkbtn" data-mmoff>اختار وحدة واحدة بس</button></div>` : "") + `<div class="ph"><input id="unitName" class="uname" value="${esc(trv(u.name))}" aria-label="اسم الوحدة">
     <div class="pa"><button data-mysave title="احفظها في مكتبتي" aria-label="احفظها في مكتبتي">⭐</button><button data-dup title="نسخة" aria-label="نسخة">${ICON.copy}</button><button data-del class="danger" title="حذف" aria-label="حذف">${ICON.trash}</button></div></div>
     <div class="tplname"><span class="ucode">${esc(unitCode(u))}</span>${esc(r.label || (u.kind === "dressing" ? "دريسنج" : u.kind === "kitchen" ? "وحدة مطبخ" : ""))}</div>`;
-  if (r.ok) h += `<div class="stats"><div><b>${r.pieces}</b><span>قطعة</span></div><div><b>${r.banding}</b><span>م شريط</span></div><div><b>${r.doors}</b><span>ضلفة</span></div><div><b>${r.drawers}</b><span>درج</span></div></div>`;
+  if (r.ok) h += `<div class="stats"><div><b>${r.pieces}</b><span>قطعة</span></div><div><b>${r.banding}</b><span>م شريط</span>${bandSplitHtml(r)}</div><div><b>${r.doors}</b><span>ضلفة</span></div><div><b>${r.drawers}</b><span>درج</span></div></div>`;
   if (ui.asm?.id === u.id) { el.innerHTML = asmProps(u); return; }
   if (r.ok && wholeView()) h += `<div class="grid2"><label class="f"><span>↕ رفع الوحدة من الأرض (سم)</span><input type="text" inputmode="decimal" data-numf step="1" min="0" data-ulift value="${+u.lift || 0}"></label></div>
     <p class="hint">زيادة على ارتفاعها العادي — مثلاً وحدة على قاعدة أو رف معلّق. الوحدات العلوية للمطبخ ارتفاعها من "التعليق من الأرض".</p>`;

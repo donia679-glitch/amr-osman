@@ -329,7 +329,8 @@ export class FridgeHousingBuilder extends CarcassBuilder {
     recordFridgeSideLabel(name) {
         const b = this.edgeBandingEnabled();
         this.ctx.labels.add(this.unitId, this.unitGroupName(), name, this.depth(), this.height(), this.panelT(), {
-            banded: { top: b, bottom: b, left: b, right: b }, material: materialLabelName(this.fridgeSideMaterial()),
+            // v98: visible edges only — the front edge, and the top when the panel is lower than 2 m (else it meets the ceiling / bridge)
+            banded: { left: b, top: b && this.height() < cm(200.0), bottom: false, right: false }, material: materialLabelName(this.fridgeSideMaterial()),
         });
     }
     fridgeSideMaterial() {
@@ -448,7 +449,7 @@ export class CookerGapBuilder extends WasherGapBuilder {
         assignLayer(this.ctx, top, TAGS.carcass);
         if (b) bandAllSideEdges(this.ctx, top, this.edgeBandingMaterial());
         const slotNote = `تهوية: شقوق 2×12 سم كل 8 سم على عرض القعدة في النص (من ${rround((d / cm(1.0)) * 0.3, 0)} لـ ${rround((d / cm(1.0)) * 0.7, 0)} سم من قدام) — تتقص بالراوتر`;
-        this.ctx.labels.add(this.unitId, this.unitGroupName(), "قعدة البوتجاز", x1 - x0, d, pt, { banded: banded({ top: b, bottom: b, left: b, right: b }), material: this.carcassMaterialName(), note: `${slotNote} · البوتجاز بيقف عليها وبتتثبت في الوحدات اللي جنبها` });
+        this.ctx.labels.add(this.unitId, this.unitGroupName(), "قعدة البوتجاز", x1 - x0, d, pt, { banded: banded({ bottom: b }), material: this.carcassMaterialName(), note: `${slotNote} · البوتجاز بيقف عليها وبتتثبت في الوحدات اللي جنبها` });
         // vent slots drawn on the deck (markers only)
         const sw = cm(2.0), sl = cm(12.0), gap = cm(8.0), y0 = d * 0.3, y1 = d * 0.7;
         for (let x = x0 + gap; x + sw <= x1 - gap / 2; x += gap)
@@ -461,8 +462,8 @@ export class CookerGapBuilder extends WasherGapBuilder {
         for (const [name, a0, b0, a1, b1, vent] of rails) {
             const r = createBox(this.ctx, e, name, a0, b0, 0, a1, b1, bh - pt, mat);
             assignLayer(this.ctx, r, TAGS.carcass);
-            if (b && vent) bandAllSideEdges(this.ctx, r, this.edgeBandingMaterial());
-            this.ctx.labels.add(this.unitId, this.unitGroupName(), name, a1 - a0, bh - pt, pt, { banded: banded(vent ? { top: b, bottom: b, left: b, right: b } : {}), material: this.carcassMaterialName(), note: vent ? `فتحات تهوية Ø3 سم كل 6 سم في النص (${rround((bh - pt) / cm(1.0) / 2, 1)} سم من تحت)` : "من ورا — ممكن من الفضلات" });
+            // v98: the front rail's edges are all hidden (deck on top, floor below, side rails / neighbours at the ends) — no banding
+            this.ctx.labels.add(this.unitId, this.unitGroupName(), name, a1 - a0, bh - pt, pt, { banded: banded({}), material: this.carcassMaterialName(), note: vent ? `فتحات تهوية Ø3 سم كل 6 سم في النص (${rround((bh - pt) / cm(1.0) / 2, 1)} سم من تحت)` : "من ورا — ممكن من الفضلات" });
             if (vent) {
                 const hr = cm(1.5), cz = (bh - pt) / 2.0;
                 for (let x = a0 + cm(6.0); x <= a1 - cm(4.0); x += cm(6.0)) {
@@ -513,7 +514,7 @@ export class PulloutBuilder extends CarcassBuilder {
         assignLayer(this.ctx, sp, TAGS.front);
         if (eb) bandAllSideEdges(this.ctx, sp, this.edgeBandingMaterial());
         this.ctx.labels.add(this.unitId, this.unitGroupName(), "جنب البول أوت (الضهر الرأسي)", y1 - y0, bz1 - bz0, t, {
-            banded: { top: eb, bottom: eb, left: eb, right: eb }, material: matName,
+            banded: { top: eb, bottom: false, left: false, right: false }, material: matName, // v98: like a drawer box wall — the top edge
             note: "لوح رأسي واحد بارتفاع البول أوت: بيتثبت في ضهر الوش بدوبل ومسامير، والصواني بتتعلق فيه من جنب واحد، والمجرى بيتركب على وشه الخارجي",
         });
         // the trays: shallow open boxes hung off the spine (bottom + front, back and outer walls); the spine is the inner wall
