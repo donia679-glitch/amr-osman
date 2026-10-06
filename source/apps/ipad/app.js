@@ -245,10 +245,60 @@ function R(u) {
     if (ob) out = { ...out, parts: ob.parts, partMover: out.partMover ? ob.partMover : undefined, warnings: [...(out.warnings || []), ...ob.warnings], obstacles: true,
       pieces: (out.pieces || 0) + ob.parts.length - out.parts.length, banding: bandM(ob.parts) };
   }
+  if (out.ok && u.kind !== "kitchen" && u.kind !== "pieces" && u.bandAll !== true) out = hideBands(u, out);
   if (u.extra?.length && out.ok) out = withExtra(u, out);
   if (u.matOv && out.ok) out = withMatOv(u, out);
   if (!R.noCache) cache.set(key, out);
   return out;
+}
+// ---- v94: edge banding only where an edge shows. An edge is hidden when another fixed board touches it (a shelf end against a side,
+// a back edge against the back panel, a board end under a top…), when it faces the wall at the back of a cabinet, sits on the floor,
+// or tops a unit taller than 2 m. Doors, drawer fronts and drawer boxes keep the engine's own banding; fronts never hide a carcass edge.
+const BAND_KEEP = new Set(["door", "drawer_front", "drawer_box", "drawer_bottom", "back"]);
+const BAND_SKIP_MAT = new Set(["glass", "mirror", "led", "__led", "__hole", "rail", "frame"]);
+function hideBands(u, out) {
+  const parts = out.parts || [];
+  const cover = parts.filter((p) => p.box && !BAND_KEEP.has(p.role) && p.layer !== "front" && p.layer !== "drawer" && !BAND_SKIP_MAT.has(p.material) && p.role !== "hole" && p.role !== "led");
+  if (!cover.length) return out;
+  const tpl = out.params?.template || u.params?.template || "";
+  const prm = out.params || u.params || {};
+  const free = u.kind === "panel" && !prm.against_wall && (tpl === "blocks" || TableSpec.isTable(tpl) || !!u.params?.model);
+  let maxY = -1e9; for (const p of cover) maxY = Math.max(maxY, p.box.y1);
+  const E = 0.02, OFF = 0.15;
+  const inside = (q, self) => cover.some((c) => c !== self && q[0] > c.box.x0 - E && q[0] < c.box.x1 + E && q[1] > c.box.y0 - E && q[1] < c.box.y1 + E && q[2] > c.box.z0 - E && q[2] < c.box.z1 + E);
+  const AX = { x: 0, y: 1, z: 2 };
+  let changed = false;
+  const res = parts.map((pt) => {
+    const lb = pt.label;
+    if (!pt.cut_piece || !lb?.banded || !pt.box || !pt.axes || pt.band_all_sides || BAND_KEEP.has(pt.role) || pt.layer === "front" || pt.layer === "drawer") return pt;
+    const [wa, ha] = pt.axes, ta = ["x", "y", "z"].find((a) => a !== wa && a !== ha), b = pt.box;
+    const lo = (a) => b[a + "0"], hi = (a) => b[a + "1"];
+    const nb = { ...lb.banded };
+    for (const [edge, ax, end] of [["left", wa, 0], ["right", wa, 1], ["bottom", ha, 0], ["top", ha, 1]]) {
+      if (!nb[edge]) continue;
+      const plane = end ? hi(ax) : lo(ax), dir = end ? 1 : -1;
+      const others = ["x", "y", "z"].filter((a) => a !== ax);
+      // the wall behind a cabinet, the floor, the top of a tall unit
+      if (!free && ax === "y" && dir > 0 && plane >= maxY - 3) { nb[edge] = false; continue; }
+      if (ax === "z" && dir < 0 && plane <= 0.3) { nb[edge] = false; continue; }
+      if (!free && ax === "z" && dir > 0 && plane >= 200) { nb[edge] = false; continue; }
+      let n = 0, hit = 0;
+      for (let i = 0; i < 7; i++) for (let j = 0; j < 3; j++) {
+        const q = [0, 0, 0];
+        q[AX[ax]] = plane + dir * OFF;
+        const a0 = others[0], a1 = others[1];
+        q[AX[a0]] = lo(a0) + (hi(a0) - lo(a0)) * ((a0 === ta ? j : i) + 0.5) / (a0 === ta ? 3 : 7);
+        q[AX[a1]] = lo(a1) + (hi(a1) - lo(a1)) * ((a1 === ta ? j : i) + 0.5) / (a1 === ta ? 3 : 7);
+        n++; if (inside(q, pt)) hit++;
+      }
+      if (hit / n >= 0.7) nb[edge] = false;
+    }
+    if (["left", "right", "top", "bottom"].every((k) => nb[k] === lb.banded[k])) return pt;
+    changed = true;
+    return { ...pt, label: { ...lb, banded: nb } };
+  });
+  if (!changed) return out;
+  return { ...out, parts: res, banding: bandM(res) };
 }
 // ---- v80: a material of its own for one piece (a door in another colour, a drawer front in glass-look…): u.matOv = { [pieceName]: libId }
 const libDisplay = (lib) => (Catalog.LIB[lib] ? Catalog.libName(lib) : Mat.get(lib)?.name || lib);

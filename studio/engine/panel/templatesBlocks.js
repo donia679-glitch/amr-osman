@@ -43,7 +43,7 @@ export function buildBlocks(tb) {
       const role = kind === "glass" ? "other" : thin === h ? "horizontal" : "side";
       const name = label || nm(kind === "glass" ? "زجاج" : thin === h ? "سطح" : thin === w ? "جنب" : "لوح واقف");
       d.addPart(name, role, mat, bx(x, y, z, x + w, y + dp, z + h), {
-        band: kind === "glass" ? [] : ["left", "right", "top", "bottom", "front", "back"], band_all_sides: kind !== "glass", layer: role === "horizontal" ? "shelf" : "carcass",
+        band: kind === "glass" ? [] : ["left", "right", "top", "bottom", "front", "back"], band_all_sides: false, layer: role === "horizontal" ? "shelf" : "carcass",
         grain: b.grain || null, note: kind === "glass" ? `زجاج ${fmt(t * 10)} مم مصنفر الحواف — بيتثبت بلزق شفاف أو مساند سيليكون` : null,
       });
       if (kind === "glass") inc(d.hardware, "مساند زجاج سيليكون شفاف", 4);
