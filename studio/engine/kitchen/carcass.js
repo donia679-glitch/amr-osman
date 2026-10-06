@@ -474,9 +474,9 @@ export class CarcassBuilder {
                 ledRatio = rmin((y0 + y1) / 2.0 / rmax(this.depth(), 0.001), 1.0);
         }
         this.ctx.labels.add(this.unitId, this.unitGroupName(), name, this.depth(), this.height() - this.z0Carcass(), this.panelT(), {
-            // NOVERA v94/v100: banding on the edges that show — the front edge, the back edge against the wall (Amr: the wall edge counts as visible),
-            // the bottom end of a wall unit's side (seen from below); the top end (counter / ceiling) and a base side's bottom end (plinth) stay plain
-            banded: { left: bandedAll, right: bandedAll, top: false, bottom: bandedAll && toS(this.p["unit_type"]) === "wall" }, groove: grooveRatio !== null, groove_axis: "vertical", groove_ratio: grooveRatio,
+            // NOVERA v101 (Amr): every edge is banded except where it joins another board. The sides stand outside (bottom, top / rails between
+            // them), so a side has no joint on its edges: all four are banded (the top end under the counter, the bottom end over the legs too)
+            banded: { left: bandedAll, right: bandedAll, top: bandedAll, bottom: bandedAll }, groove: grooveRatio !== null, groove_axis: "vertical", groove_ratio: grooveRatio,
             led: ledRatio !== null, led_ratio: ledRatio, material: this.carcassMaterialName(),
         });
     }
@@ -686,9 +686,8 @@ export class CarcassBuilder {
         const span = rmax(y1 - y0, 0.001);
         const grooveRatio = hasGroove ? rmin(((gy0 + gy1) / 2.0 - y0) / span, 1.0) : null;
         this.ctx.labels.add(this.unitId, this.unitGroupName(), name, x1 - x0, y1 - y0, this.panelT(), {
-            // v100: the front edge when the board reaches the front (not the back rail's inner edge under the counter),
-            // and the back edge when it reaches the wall (Amr: the wall edge counts as visible)
-            banded: { top: bandedAll && y1 >= this.depth() - cm(0.5), bottom: bandedAll && name !== "شريط علوي خلفي", left: false, right: false },
+            // v101: a board between the sides — its ends join the sides, its front and back edges are banded (the back rail's inner edge too)
+            banded: { top: bandedAll, bottom: bandedAll, left: false, right: false },
             groove: hasGroove, groove_axis: "horizontal", groove_ratio: grooveRatio, material: this.carcassMaterialName(),
         });
     }

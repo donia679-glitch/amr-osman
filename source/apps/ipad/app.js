@@ -268,6 +268,8 @@ function hideBands(u, out) {
   const free = u.kind === "panel" && !prm.against_wall && (tpl === "blocks" || TableSpec.isTable(tpl) || !!u.params?.model);
   // v99: the rule both ways — a visible edge the engine left bare gets banded too (a low unit's side top under a top set between the sides,
   // a floating unit's side bottom…), unless banding is switched off for the unit
+  // a unit hung on the wall (mount: "wall") or raised (lift) has no edge on the floor — its z = 0 is its own bottom
+  const onFloor = prm.mount !== "wall" && u.params?.mount !== "wall" && !(+u.lift > 0);
   const canAdd = prm.edge_banding !== false && prm.include_edge_banding !== false && u.params?.edge_banding !== false;
   let maxY = -1e9; for (const p of cover) maxY = Math.max(maxY, p.box.y1);
   const E = 0.02, OFF = 0.15;
@@ -279,11 +281,9 @@ function hideBands(u, out) {
     if (c === self) return false;
     const b = c.box;
     for (const a of ["x", "y", "z"]) if (a !== ax && !(q[AX[a]] > b[a + "0"] - E && q[AX[a]] < b[a + "1"] + E)) return false;
-    return dir > 0 ? b[ax + "1"] > plane + OFF && b[ax + "0"] >= plane - E : b[ax + "0"] < plane - OFF && b[ax + "1"] <= plane + E;
+    return dir > 0 ? b[ax + "1"] > plane + OFF && b[ax + "0"] >= plane - E && b[ax + "0"] <= plane + 1 : b[ax + "0"] < plane - OFF && b[ax + "1"] <= plane + E && b[ax + "1"] >= plane - 1;
   });
   let changed = false;
-  // like the kitchen base units: a unit standing on a plinth hides the bottom edges that sit on it, and the plinth itself takes no banding
-  let plinthTop = -1; for (const p of parts) if (p.role === "plinth" && p.box) plinthTop = Math.max(plinthTop, p.box.z1);
   const res = parts.map((pt) => {
     const lb = pt.label;
     if (!pt.cut_piece || !lb || !pt.box || !pt.axes || pt.band_all_sides || BAND_KEEP.has(pt.role) || pt.layer === "front" || pt.layer === "drawer" || BAND_SKIP_MAT.has(pt.material)) return pt;
@@ -297,12 +297,8 @@ function hideBands(u, out) {
       const plane = end ? hi(ax) : lo(ax), dir = end ? 1 : -1;
       const others = ["x", "y", "z"].filter((a) => a !== ax);
       const had = !!(lb.banded || {})[edge];
-      // the wall behind a cabinet, the floor, the top of a tall unit
-      // v100 (Amr): the edge against the wall counts as VISIBLE and is banded — unless a board (the back panel) covers it first
-      const atWall = !free && ax === "y" && dir > 0 && plane >= maxY - 3;
-      if (ax === "z" && dir < 0 && plane <= 0.3) { nb[edge] = false; continue; }
-      if (!had && ax === "z" && dir < 0 && plinthTop > 0 && plane <= plinthTop + 1) { nb[edge] = false; continue; }
-      if (!free && ax === "z" && dir > 0 && plane >= 200) { nb[edge] = false; continue; }
+      // v101 (Amr): every edge is banded except where it joins another board (or stands on the floor) — the wall and the ceiling are not joints
+      if (onFloor && ax === "z" && dir < 0 && plane <= 0.3) { nb[edge] = false; continue; }
       let n = 0, hit = 0, seen = 0;
       for (let i = 0; i < 7; i++) for (let j = 0; j < 3; j++) {
         const q = [0, 0, 0];
@@ -310,10 +306,11 @@ function hideBands(u, out) {
         const a0 = others[0], a1 = others[1];
         q[AX[a0]] = lo(a0) + (hi(a0) - lo(a0)) * ((a0 === ta ? j : i) + 0.5) / (a0 === ta ? 3 : 7);
         q[AX[a1]] = lo(a1) + (hi(a1) - lo(a1)) * ((a1 === ta ? j : i) + 0.5) / (a1 === ta ? 3 : 7);
-        n++; if (inside(q, pt)) hit++; else if ((!had || atWall) && !blocked(q, ax, plane, dir, pt)) seen++;
+        n++; if (inside(q, pt)) hit++; else if (!had && !blocked(q, ax, plane, dir, pt)) seen++;
       }
-      // at the wall: banded only when nothing stands between the edge and the wall (a shelf stopping short of the back panel is not at the wall)
-      nb[edge] = atWall ? (had || canAdd) && seen / n >= 0.7 : had ? hit / n < 0.7 : seen / n >= 0.7;
+      // a joint (≥ 70 % of the edge touching a board) → bare; otherwise banded. An edge the engine left bare is added only when nothing stands
+      // right in front of it (a shelf stopping just short of the back panel, ribs inside a bed box are joints in practice)
+      nb[edge] = had ? hit / n < 0.7 : seen / n >= 0.7;
     }
     if (["left", "right", "top", "bottom"].every((k) => !!nb[k] === !!(lb.banded || {})[k])) return pt;
     changed = true;

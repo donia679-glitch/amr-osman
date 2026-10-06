@@ -330,7 +330,7 @@ export class FridgeHousingBuilder extends CarcassBuilder {
         const b = this.edgeBandingEnabled();
         this.ctx.labels.add(this.unitId, this.unitGroupName(), name, this.depth(), this.height(), this.panelT(), {
             // v98: visible edges only — the front edge, and the top when the panel is lower than 2 m (else it meets the ceiling / bridge)
-            banded: { left: b, right: b, top: b && this.height() < cm(200.0), bottom: false }, material: materialLabelName(this.fridgeSideMaterial()), // v100: + the wall edge
+            banded: { left: b, right: b, top: b, bottom: false }, material: materialLabelName(this.fridgeSideMaterial()), // v101: every edge but the one standing on the floor
         });
     }
     fridgeSideMaterial() {
