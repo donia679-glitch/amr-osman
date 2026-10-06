@@ -40,7 +40,6 @@ var isArabic: Bool {
     return (Locale.preferredLanguages.first ?? "ar").hasPrefix("ar")
 }
 
-@available(iOS 17.0, *)
 struct PaywallView: View {
     @EnvironmentObject var store: SubscriptionStore
 

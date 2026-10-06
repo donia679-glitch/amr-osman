@@ -7,7 +7,7 @@ import AppleProductTypes
 let package = Package(
     name: "NOVERA Studio",
     platforms: [
-        .iOS("16.0")
+        .iOS("17.0") // the subscription screen (SubscriptionStoreView) needs iOS 17
     ],
     products: [
         .iOSApplication(
