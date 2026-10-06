@@ -727,7 +727,7 @@ function adaptPieces(u) {
       if (x + L > rowMax && x > 0) { x = 0; y += rowD + 6; rowD = 0; }
       parts.push({ name: (r.name || `قطعة ${ri + 1}`) + (q > 1 ? ` (${i + 1}/${q})` : ""), material: key, cut_piece: true, role: "panel", row: ri,
         // same convention as every other part: h = the length (along the grain), w = the width across it
-        label: { w: W, h: L, t: T, banded: { left: !!r.band?.l1, right: !!r.band?.l2, bottom: !!r.band?.w1, top: !!r.band?.w2 }, grain: !!r.grain },
+        label: { w: W, h: L, t: T, banded: { left: !!r.band?.l1, right: !!r.band?.l2, bottom: !!r.band?.w1, top: !!r.band?.w2 }, grain: !!r.grain }, note: r.note || null,
         box: { x0: x, x1: x + L, y0: y, y1: y + W, z0: 0, z1: T } });
       x += L + 6; rowD = Math.max(rowD, W);
     }
@@ -1169,6 +1169,7 @@ app.innerHTML = `
     <button id="sheetBtn" class="sheetbtn" aria-label="الخصائص"><i></i><span>الخصائص</span></button>
   </section>
   <section id="v-cut" class="cut" hidden></section>
+  <section id="v-qcut" class="parts qcut" hidden></section>
   <section id="v-parts" class="parts" hidden></section>
   <section id="v-shop" class="parts" hidden></section>
   <section id="v-client" class="client" hidden></section>
@@ -1217,6 +1218,7 @@ document.addEventListener("click", (e) => { if (e.target.closest("[data-tour]"))
 // ---- the job, step by step: ① room ② design ③ materials ④ price ⑤ client ⑥ workshop
 const STEPS = [["room", "📐 الأوضة"], ["design", "🎨 التصميم"], ["mats", "🪵 الخامات"], ["cut", "✂ القص"], ["parts", "📋 القطع"], ["price", "💰 السعر"], ["client", "🤝 العميل"], ["shop", "🏭 الورشة"]];
 function stepNow() {
+  if (state.tab === "qcut") return "qcut";
   if (state.tab === "cut") return "cut";
   if (state.tab === "parts") return "parts";
   if (state.tab === "shop") return ui.stepAt === "client" ? "client" : ui.stepAt === "shop" ? "shop" : "price";
@@ -1225,6 +1227,7 @@ function stepNow() {
 }
 function stepDone(k) {
   const p = state.project;
+  if (k === "qcut") return (qcutUnit(false)?.params.pieces || []).length > 0;
   if (k === "room") return !!p.room?.pts?.length;
   if (k === "design") return p.units.length > 0;
   if (k === "mats") return p.units.some((u) => Object.keys(u.libs || {}).length);
@@ -1236,6 +1239,7 @@ function stepDone(k) {
 /** one short line under each step: what is there already */
 function stepStatus(k) {
   const p = state.project;
+  if (k === "qcut") { const t = qcutTotals(qcutUnit(false)?.params.pieces || []); return t.n ? `${t.n} قطعة` : "لسه"; }
   if (k === "room") return p.room?.pts?.length ? `${Room.segments(p.room).length} حيطان · ${(p.room.openings || []).length} فتحات` : "لسه";
   if (k === "design") return p.units.length ? `${p.units.length} وحدة${p.units.some((u) => !R(u).ok) ? " · فيها أخطاء" : ""}` : "لسه";
   if (k === "mats") { const n = p.units.filter((u) => Object.keys(u.libs || {}).length).length; return n ? `${n} من ${p.units.length} بخامات` : "افتراضي"; }
@@ -1251,7 +1255,7 @@ function renderSteps() {
   if (!el) return;
   el.hidden = ui.mode !== "owner";
   const now = stepNow();
-  el.innerHTML = STEPS.map(([k, l], i) => `<button data-step0="${k}" class="${k === now ? "on" : ""} ${stepDone(k) ? "done" : ""}"><b>${stepDone(k) && k !== now ? "✓" : i + 1}</b><span>${l}<small>${esc(stepStatus(k))}</small></span></button>`).join('<i aria-hidden="true"></i>');
+  el.innerHTML = (state.project.qcut ? QSTEPS : STEPS).map(([k, l], i) => `<button data-step0="${k}" class="${k === now ? "on" : ""} ${stepDone(k) ? "done" : ""}"><b>${stepDone(k) && k !== now ? "✓" : i + 1}</b><span>${l}<small>${esc(stepStatus(k))}</small></span></button>`).join('<i aria-hidden="true"></i>');
   const on = el.querySelector(".on");
   if (on && el.scrollWidth > el.clientWidth) { const r = on.getBoundingClientRect(), b = el.getBoundingClientRect(); if (r.left < b.left || r.right > b.right) on.scrollIntoView({ inline: "center", block: "nearest" }); }
 }
@@ -1268,7 +1272,8 @@ $("#steps").addEventListener("click", (e) => {
     if (box?.tagName === "DETAILS") box.open = true;
     box?.scrollIntoView({ block: "start", behavior: "smooth" });
   }, 120);
-  if (k === "room") { state.tab = "design"; ui.planOn = true; ui.planView = "plan"; state.libOpen = false; }
+  if (k === "qcut") { state.tab = "qcut"; }
+  else if (k === "room") { state.tab = "design"; ui.planOn = true; ui.planView = "plan"; state.libOpen = false; }
   else if (k === "design") { state.tab = "design"; ui.planOn = false; state.whole = true; }
   else if (k === "mats") {
     state.tab = "design"; ui.planOn = false;
@@ -1949,8 +1954,9 @@ $("#home").addEventListener("click", async (e) => {
   if (b.hasAttribute("data-hstudio")) { closeHome(); render(true); openStudio(null); return; }
   if (b.hasAttribute("data-hcut")) {
     await newProject(($("#homeName").value || "").trim() || "كت ليست");
+    state.project.qcut = true;
     const u = { id: uid(), kind: "pieces", name: "قطع حرة", params: { pieces: [{ ...PIECE_DEF(), name: "قطعة 1" }] } };
-    state.project.units.push(u); state.sel = u.id; state.libOpen = false; save(); render(true);
+    state.project.units = [u]; state.sel = u.id; state.libOpen = false; state.tab = "qcut"; save(); render(true);
     return;
   }
   if (b.hasAttribute("data-hsurvey")) { svFrom = "home"; SurveyUI.open("list"); return; }
@@ -10998,13 +11004,119 @@ const EXPORTS = [
 ];
 
 // ------------------------------------------------------------------ render
+// ================================================================== v102: the quick cut list — a table of its own, no room / no 3D
+// A cut-list project (`project.qcut`) is one «pieces» unit edited as a table; the cut plan, labels, Excel and prices work as usual.
+const QSTEPS = [["qcut", "📋 الجدول"], ["cut", "✂ القص"], ["parts", "📋 القطع"], ["price", "💰 السعر"], ["shop", "🏭 الورشة"]];
+function qcutUnit(make = true) {
+  let u = state.project.units.find((x) => x.kind === "pieces");
+  if (!u && make) { u = { id: uid(), kind: "pieces", name: "قطع حرة", params: { pieces: [] } }; state.project.units.push(u); }
+  if (u) u.params.pieces ||= [];
+  return u;
+}
+function qcutTotals(rows) {
+  let n = 0, a = 0, b = 0;
+  for (const r of rows) {
+    const q = Math.max(0, Math.round(+r.qty || 0)), L = +r.l || 0, W = +r.w || 0, B = r.band || {};
+    n += q; a += (q * L * W) / 10000; b += (q * ((B.l1 ? L : 0) + (B.l2 ? L : 0) + (B.w1 ? W : 0) + (B.w2 ? W : 0))) / 100;
+  }
+  return { n, a, b };
+}
+function drawQcut() {
+  const el = $("#v-qcut");
+  const u = qcutUnit(), rows = u.params.pieces;
+  if (!rows.length) rows.push({ ...PIECE_DEF(), name: "قطعة 1" });
+  const T = qcutTotals(rows);
+  const libOpts = (v) => LIB_GROUPS.map(([g, test]) => `<optgroup label="${esc(g)}">${Object.keys(Catalog.LIB).filter(test).map((k) => `<option value="${k}" ${k === v ? "selected" : ""}>${esc(Catalog.LIB[k][0])}</option>`).join("")}</optgroup>`).join("");
+  const num = (i, f, v, step = 0.1) => `<input type="text" inputmode="decimal" data-numf step="${step}" data-qf="${i}.${f}" value="${v ?? ""}">`;
+  const band = (i, r, k, l) => `<button class="qband ${r.band?.[k] ? "on" : ""}" data-qb="${i}.${k}" aria-pressed="${!!r.band?.[k]}">${l}</button>`;
+  el.innerHTML = `<div class="cuthead"><div><h2>📋 كت ليست — ${esc(state.project.name)}</h2>
+      <p class="hint">جدول مستقل: كل صف قطعة بمقاسها وعددها وخامتها وشريطها. الطول = اتجاه العروق. ط١ ط٢ = حرفين الطول، ع١ ع٢ = حرفين العرض.</p></div>
+    <div class="kpis qkpis"><div><b>${rows.length}</b><span>صنف</span></div><div><b>${T.n}</b><span>قطعة</span></div><div><b>${n1(T.a)}</b><span>م² ألواح</span></div><div><b>${n1(T.b)}</b><span>م شريط</span></div></div></div>
+    <div class="tblwrap qwrap"><table class="tbl qtab"><thead><tr><th>#</th><th>الاسم</th><th>الطول</th><th>العرض</th><th>العدد</th><th>السمك</th><th>الخامة</th><th>الشريط</th><th>عروق</th><th>ملاحظة</th><th></th></tr></thead><tbody>
+    ${rows.map((r, i) => `<tr>
+      <td class="num">${i + 1}</td>
+      <td><input data-qf="${i}.name" value="${esc(trv(r.name || ""))}" placeholder="جنب، رف، باب…"></td>
+      <td>${num(i, "l", r.l)}</td><td>${num(i, "w", r.w)}</td><td>${num(i, "qty", r.qty, 1)}</td><td>${num(i, "t", r.t)}</td>
+      <td><select data-qf="${i}.lib">${libOpts(r.lib)}</select></td>
+      <td class="qbands">${band(i, r, "l1", "ط١")}${band(i, r, "l2", "ط٢")}${band(i, r, "w1", "ع١")}${band(i, r, "w2", "ع٢")}</td>
+      <td><button class="qband ${r.grain ? "on" : ""}" data-qg="${i}" aria-pressed="${!!r.grain}" aria-label="عروق">≋</button></td>
+      <td><input data-qf="${i}.note" value="${esc(r.note || "")}" placeholder="—"></td>
+      <td class="nw"><button class="sm" data-qdup="${i}" aria-label="نسخ الصف">⧉</button><button class="danger sm" data-qdel="${i}" aria-label="شيل الصف">${ICON.trash}</button></td>
+    </tr>`).join("")}</tbody></table></div>
+    <div class="btnrow"><button class="add" data-qadd>${ICON.plus}صف جديد</button></div>
+    <details class="pstep"><summary><b>لزق من Excel</b><span>الاسم، الطول، العرض، العدد، السمك</span></summary>
+      <p class="hint">كل سطر قطعة. من Excel انسخ الأعمدة وألزقها هنا — الفاصل تاب أو فاصلة.</p>
+      <textarea id="qPaste" rows="5" placeholder="جنب, 72, 58, 2&#10;رف, 56.4, 54, 3, 1.8"></textarea>
+      <div class="btnrow"><button class="ghost2" data-qpaste>ضيف الصفوف دي</button></div></details>
+    <details class="pstep"><summary><b>طبّق على كل الصفوف</b><span>خامة · سمك · شريط</span></summary>
+      <div class="grid2"><label class="f"><span>الخامة</span><select data-qall="lib"><option value="">—</option>${libOpts("")}</select></label><label class="f"><span>السمك</span><input type="text" inputmode="decimal" data-numf data-qall="t" value=""></label></div>
+      <div class="btnrow"><button class="ghost2" data-qallband="all">شريط على الأربع حروف</button><button class="ghost2" data-qallband="l">حرفين الطول بس</button><button class="ghost2" data-qallband="none">من غير شريط</button></div></details>
+    <div class="btnrow qgo"><button class="primary" data-qgo="cut">✂ خطة القص</button><button class="ghost2" data-qgo="labels">🏷 الملصقات PDF</button><button class="ghost2" data-qgo="xlsx">📊 Excel</button><button class="ghost2" data-qgo="price">💰 السعر</button></div>`;
+  renderSteps();
+  runCut(() => { if (state.tab === "qcut") renderSteps(); }); // the steps bar shows the sheets of THIS list, not an old plan
+}
+function qcutPaste() {
+  const u = qcutUnit(), list = u.params.pieces, txt = $("#qPaste")?.value || "";
+  let n = 0;
+  for (const line of txt.split(/\r?\n/)) {
+    const c = line.split(/\t|,|،|;/).map((x) => x.trim());
+    if (c.length < 3) continue;
+    const L = toNum(c[1]), W = toNum(c[2]), q = toNum(c[3]), T = toNum(c[4]);
+    if (!(L > 0 && W > 0)) continue;
+    const last = list[list.length - 1];
+    list.push({ ...PIECE_DEF(), name: c[0] || `قطعة ${list.length + 1}`, l: L, w: W, qty: q > 0 ? Math.round(q) : 1, t: T > 0 ? T : last?.t || 1.8, lib: last?.lib || "hpl_white" });
+    n++;
+  }
+  // a first empty default row is replaced by the pasted ones
+  if (n && list.length > n && list[0].name === "قطعة 1" && list.length - n === 1 && +list[0].l === 60 && +list[0].w === 40) list.shift();
+  save(); drawQcut(); alertBar(n ? `اتضاف ${n} صف` : "مفيش سطور فيها مقاسات (الاسم، الطول، العرض…)");
+}
+$("#v-qcut")?.addEventListener("change", (e) => {
+  const t = e.target, u = qcutUnit(), rows = u.params.pieces;
+  if (t.dataset.qf) {
+    const [i, f] = t.dataset.qf.split("."), r = rows[+i];
+    if (!r) return;
+    if (["l", "w", "t", "qty"].includes(f)) { const v = toNum(t.value); if (!(v > 0)) { alertBar("لازم رقم أكبر من صفر"); drawQcut(); return; } r[f] = f === "qty" ? Math.max(1, Math.round(v)) : v; }
+    else r[f] = t.value;
+    save(); drawQcut(); return;
+  }
+  if (t.dataset.qall) {
+    const v = t.dataset.qall === "t" ? toNum(t.value) : t.value;
+    if (!v || (t.dataset.qall === "t" && !(v > 0))) return;
+    for (const r of rows) r[t.dataset.qall] = v;
+    save(); drawQcut(); alertBar("اتطبّق على كل الصفوف");
+  }
+});
+$("#v-qcut")?.addEventListener("click", async (e) => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  const u = qcutUnit(), rows = u.params.pieces;
+  if (b.dataset.qb) { const [i, k] = b.dataset.qb.split("."); const r = rows[+i]; if (r) { r.band = { ...(r.band || {}), [k]: !r.band?.[k] }; save(); drawQcut(); } return; }
+  if (b.dataset.qg !== undefined) { const r = rows[+b.dataset.qg]; if (r) { r.grain = !r.grain; save(); drawQcut(); } return; }
+  if (b.hasAttribute("data-qadd")) { const last = rows[rows.length - 1]; rows.push({ ...PIECE_DEF(), name: `قطعة ${rows.length + 1}`, lib: last?.lib || "hpl_white", t: last?.t || 1.8, band: { ...(last?.band || PIECE_DEF().band) } }); save(); drawQcut(); $(`#v-qcut [data-qf="${rows.length - 1}.name"]`)?.focus(); return; }
+  if (b.dataset.qdup !== undefined) { const r = rows[+b.dataset.qdup]; if (r) { rows.splice(+b.dataset.qdup + 1, 0, clone(r)); save(); drawQcut(); } return; }
+  if (b.dataset.qdel !== undefined) { rows.splice(+b.dataset.qdel, 1); save(); drawQcut(); return; }
+  if (b.hasAttribute("data-qpaste")) { qcutPaste(); return; }
+  if (b.dataset.qallband) { const m = b.dataset.qallband; for (const r of rows) r.band = m === "all" ? { l1: true, l2: true, w1: true, w2: true } : m === "l" ? { l1: true, l2: true, w1: false, w2: false } : { l1: false, l2: false, w1: false, w2: false }; save(); drawQcut(); return; }
+  if (b.dataset.qgo) {
+    const g = b.dataset.qgo;
+    if (g === "cut") { state.tab = "cut"; save(); render(true); return; }
+    if (g === "price") { state.tab = "shop"; ui.stepAt = "price"; ui.jump = "shPrice"; save(); render(true); return; }
+    b.disabled = true;
+    try { await cutReady(); if (g === "labels") await exportLabelsPdf(); else await exportXlsx(); } catch (err) { alertBar(err.message || "ما كملش"); }
+    b.disabled = false;
+  }
+});
+
 function render(refit = false) {
   ensureCodes(state.project);
   if (hist.pid !== state.project?.id) histTrack();
   renderSteps();
   $("#projName").textContent = state.project.name;
   document.querySelectorAll(".tabs [data-tab]").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === state.tab)));
-  for (const t of ["design", "cut", "parts", "shop"]) $(`#v-${t}`).hidden = ui.mode !== "owner" || state.tab !== t;
+  if (state.project.qcut && state.tab === "design") state.tab = "qcut"; // a cut-list project has no room / 3D design
+  if (!state.project.qcut && state.tab === "qcut") state.tab = "design";
+  for (const t of ["design", "cut", "parts", "shop", "qcut"]) $(`#v-${t}`).hidden = ui.mode !== "owner" || state.tab !== t;
   $("#v-design").classList.toggle("lib-open", !!state.libOpen);
   if (state.libOpen) zwLibPaint();
   if (ui.mode !== "owner") return;
@@ -11016,6 +11128,7 @@ function render(refit = false) {
   }
   else if (state.tab === "cut") runCut();
   else if (state.tab === "parts") drawParts();
+  else if (state.tab === "qcut") drawQcut();
   else { drawShop(); runCut(drawShop); }
 }
 

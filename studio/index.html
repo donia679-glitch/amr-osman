@@ -7,7 +7,7 @@
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <style>html,body{margin:0;padding:0}body{min-height:100vh;min-height:100dvh}</style>
-<script>window.NOVERA_BUILD = "2026-10-06 20:17";</script>
+<script>window.NOVERA_BUILD = "2026-10-06 20:21";</script>
 </head>
 <body>
 <meta charset="utf-8">
@@ -574,6 +574,21 @@ details.pstep h4 { margin: 12px 0 6px; font-size: 13px; color: var(--muted); }
 .mg-h .gsize { margin-inline-start: auto; }
 .tbl tr.ptot td { font-weight: 800; border-top: 2px solid var(--line); }
 @media (max-width: 640px) { .psum b { font-size: 18px; } .psum { gap: 6px; } }
+/* v102: the quick cut list as a table */
+.qcut { overflow: auto; padding: 18px 16px 40px; }
+.qkpis { grid-template-columns: repeat(4, minmax(70px, 1fr)); margin: 0; min-width: 300px; }
+.qwrap { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+.qtab { min-width: 940px; }
+.qtab th { position: sticky; top: 0; background: var(--panel2); z-index: 1; }
+.qtab td { padding: 4px; vertical-align: middle; }
+.qtab input, .qtab select { width: 100%; min-width: 0; box-sizing: border-box; height: 38px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel2); color: var(--ink); padding: 0 6px; font: inherit; font-size: 14px; }
+.qtab td:nth-child(2) { min-width: 130px; } .qtab td:nth-child(3), .qtab td:nth-child(4) { width: 76px; } .qtab td:nth-child(5), .qtab td:nth-child(6) { width: 60px; }
+.qtab td:nth-child(7) { min-width: 150px; } .qtab td:nth-child(10) { min-width: 110px; }
+.qtab tr:nth-child(even) td { background: color-mix(in srgb, var(--panel2) 50%, transparent); }
+.qbands { white-space: nowrap; }
+.qband { min-width: 34px; height: 34px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--muted); font: inherit; font-size: 13px; font-weight: 700; margin: 0 1px; }
+.qband.on { background: var(--brand); color: var(--brand-ink); border-color: var(--brand); }
+.qgo { position: sticky; bottom: 0; background: var(--bg); padding: 8px 0; margin-top: 10px; }
 /* v99: shortcuts at the top of the workshop screen */
 .shopjump { position: sticky; top: 0; z-index: 4; display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding: 8px 0; margin: -8px 0 6px; background: var(--bg); }
 .shopjump::-webkit-scrollbar { display: none; }
