@@ -2846,9 +2846,9 @@ function panelProps(p, r) {
     if (!hide.includes("depth")) h += numF("depth", "العمق", p.depth);
   } else h += `<p class="hint full">المقاسات بتتحسب من الإعدادات: ${n1(p.width)} × ${n1(p.height)} × ${n1(p.depth)} سم</p>`;
   h += `</div><div class="grid2">` + selF("environment", "البيئة", Catalog.ENVIRONMENTS, p.environment);
-  if (!TableSpec.isTable(tpl)) h += selF("mount", "التركيب", Schema.MOUNTS, p.mount) + selF("handle", "المقبض", Schema.HANDLES, p.handle);
+  if (!TableSpec.isTable(tpl) && tpl !== "blocks") h += selF("mount", "التركيب", Schema.MOUNTS, p.mount) + selF("handle", "المقبض", Schema.HANDLES, p.handle);
   h += numF("thickness", "سمك الخشب", p.thickness) + `</div></details>`;
-  if (spec) {
+  if (spec?.fields?.length) {
     h += `<details open><summary>إعدادات ${esc(Schema.TEMPLATES[tpl].label)}</summary><div class="grid2">`;
     for (const [path, label, type, choices] of spec.fields) {
       const v = getPath(p, path);
@@ -2871,7 +2871,25 @@ function panelProps(p, r) {
     });
     h += `<button class="add" data-fpadd>${ICON.plus}ضيف لوح</button></details>`;
   }
-  if (!hide.includes("fronts") && tpl !== "free") {
+  if (tpl === "blocks") {
+    const KINDS = { slab: "لوح", box: "صندوق", drawer: "صندوق بدرج", glass: "زجاج" };
+    const mats = { carcass: "الهيكل", accent: "الخامة المميزة", front: "الضلف", shelf: "الأرفف", back: "الظهر" };
+    const FACES_AR = { left: "جنب شمال", right: "جنب يمين", top: "رأس", bottom: "قاعدة", back: "ظهر", front: "وش مقفول" };
+    h += `<details open><summary>🧱 الكتل (${(p.blocks || []).length})</summary><p class="hint">كل كتلة: مكانها (س عرض، ص عمق، ع ارتفاع من الأرض) ومقاسها. ينفع تكتب معادلة بالحروف W D H T (عرض/عمق/ارتفاع الوحدة وسمك اللوح) — مثلاً <b dir="ltr">W-40</b> أو <b dir="ltr">H-T</b> — فالتصميم يتمدد لما تغيّر مقاس الوحدة.</p>`;
+    (p.blocks || []).forEach((q, i) => {
+      const isBox = q.k === "box" || q.k === "drawer";
+      const faces = Array.isArray(q.faces) && q.faces.length ? q.faces : ["left", "right", "top", "bottom", "back"];
+      h += `<div class="zone-ed"><div class="zh">${textF(`blocks.${i}.name`, `كتلة ${i + 1}`, q.name)}<button data-bkdup="${i}" class="sm" aria-label="نسخة">${ICON.copy}</button><button data-bkdel="${i}" class="danger sm" aria-label="شيل الكتلة">${ICON.trash}</button></div>
+        <div class="grid2">${selF(`blocks.${i}.k`, "نوعها", KINDS, q.k || "slab")}${selF(`blocks.${i}.mat`, "الخامة", mats, q.mat || "carcass")}</div>
+        <div class="grid3">${textF(`blocks.${i}.w`, "العرض", q.w)}${textF(`blocks.${i}.d`, "العمق", q.d)}${textF(`blocks.${i}.h`, "الارتفاع", q.h)}
+        ${textF(`blocks.${i}.x`, "س", q.x)}${textF(`blocks.${i}.y`, "ص", q.y)}${textF(`blocks.${i}.z`, "ع", q.z)}</div>
+        ${isBox ? `<div class="chips-in">${Object.entries(FACES_AR).map(([f, l]) => `<label class="chip tog ${faces.includes(f) ? "on" : ""}"><input type="checkbox" data-bkface="${i}:${f}" ${faces.includes(f) ? "checked" : ""} hidden>${l}</label>`).join("")}</div>
+        <div class="grid3">${numF(`blocks.${i}.shelves`, "أرفف جوه", q.shelves || 0, 1)}${numF(`blocks.${i}.dividers`, "قواطيع جوه", q.dividers || 0, 1)}${selF(`blocks.${i}.joint`, "الرأس والقاعدة", { wrap: "فوق الأجناب (بتغطيهم)", sides: "بين الأجناب" }, q.joint || "wrap")}</div>` : `<div class="grid2">${numF(`blocks.${i}.t`, "السمك (فاضي = سمك اللوح)", q.t ?? "", 0.2)}</div>`}
+        ${q.k === "drawer" ? `<div class="grid3">${textF(`blocks.${i}.drawer_h`, "ارتفاع الدرج (فاضي = الفتحة كلها)", q.drawer_h)}${selF(`blocks.${i}.front_cover`, "الوش", { overlay: "بيغطي حروف الصندوق", inset: "جوه الفتحة" }, q.front_cover || "overlay")}${selF(`blocks.${i}.handle`, "المقبض", { bar: "مقبض", none: "من غير (سحب من الحرف)" }, q.handle || "bar")}</div>` : ""}</div>`;
+    });
+    h += `<div class="btnrow"><button class="add" data-bkadd="slab">${ICON.plus}لوح</button><button class="add" data-bkadd="box">${ICON.plus}صندوق</button><button class="add" data-bkadd="drawer">${ICON.plus}صندوق بدرج</button><button class="add" data-bkadd="glass">${ICON.plus}زجاج</button></div></details>`;
+  }
+  if (!hide.includes("fronts") && tpl !== "free" && tpl !== "blocks") {
     h += `<details open><summary>الواجهة (من تحت لفوق)</summary>`;
     (p.fronts || []).forEach((z, i) => {
       h += `<div class="zone-ed"><div class="zh"><b>جزء ${i + 1}</b><button data-zdel="${i}" class="danger sm" aria-label="شيل الجزء">${ICON.trash}</button></div><div class="grid2">
@@ -3356,6 +3374,7 @@ props.addEventListener("change", (e) => {
   else if (d.sel) setParams(u, (p) => setPath(p, d.sel, d.sel === "doors.layout" ? t.value : t.value));
   else if (d.bool) setParams(u, (p) => setPath(p, d.bool, t.checked));
   else if (d.text) setParams(u, (p) => setPath(p, d.text, t.value));
+  else if (d.bkface) { const [i, f] = d.bkface.split(":"); setParams(u, (p) => { const q = p.blocks[+i]; const cur = new Set(Array.isArray(q.faces) && q.faces.length ? q.faces : ["left", "right", "top", "bottom", "back"]); if (t.checked) cur.add(f); else cur.delete(f); q.faces = [...cur]; }); }
 });
 props.addEventListener("input", (e) => { if (e.target.id === "propQ") { ui.propQ = e.target.value; filterProps(); } }, true);
 props.addEventListener("click", (e) => {
@@ -3575,6 +3594,9 @@ props.addEventListener("click", (e) => {
     render(true);
   } else if (d.zdel != null) setParams(u, (p) => p.fronts.splice(+d.zdel, 1));
   else if (d.fpdel != null) setParams(u, (p) => p.panels.splice(+d.fpdel, 1));
+  else if (d.bkdel != null) setParams(u, (p) => p.blocks.splice(+d.bkdel, 1));
+  else if (d.bkdup != null) setParams(u, (p) => { const q = clone(p.blocks[+d.bkdup]); q.name = (q.name || "كتلة") + " (نسخة)"; q.x = typeof q.x === "number" ? q.x + 10 : `${q.x}+10`; p.blocks.splice(+d.bkdup + 1, 0, q); });
+  else if (d.bkadd) setParams(u, (p) => { (p.blocks ??= []).push(d.bkadd === "glass" ? { k: "glass", name: "زجاج", x: 0, y: 0, z: "H-1", w: "W", d: "D", h: 1, t: 1 } : d.bkadd === "slab" ? { k: "slab", name: "لوح", x: 0, y: 0, z: "H-T", w: "W", d: "D", h: "T", mat: "accent" } : { k: d.bkadd, name: d.bkadd === "drawer" ? "صندوق بدرج" : "صندوق", x: 0, y: 0, z: 0, w: 60, d: "D", h: "H-T", faces: ["left", "right", "top", "bottom", "back"], mat: "carcass" }); });
   else if (d.fpdup != null) setParams(u, (p) => { const q = clone(p.panels[+d.fpdup]); q.name += " (نسخة)"; q.x += q.w + 2; p.panels.splice(+d.fpdup + 1, 0, q); });
   else if (d.xdraw !== undefined) { ui.xdraw = d.xdraw || null; if (ui.xdraw) ui.xmove = false; renderProps(); if (ui.xdraw && ui.xdraw !== "board") { ui.open = true; view.setOpen(true); renderChips(); } if (ui.xdraw) alertBar(`دوس في الـ3D على المكان اللي عايز فيه ${XKIND[ui.xdraw].replace(/^\S+\s/, "")}`); }
   else if (d.xauto) {
@@ -10241,6 +10263,9 @@ const SCRAP_CANDIDATES = [
   { ds: { preset: "app_bath_over_wc" }, widths: [50, 60, 70], tag: "حمام" }, { ds: { preset: "app_vanity60" }, widths: [50, 60], tag: "حمام" }, { ds: { preset: "app_mirror90" }, widths: [60, 75, 90], tag: "حمام" },
   { ds: { preset: "app_night_open" }, widths: [40, 45, 50], tag: "نوم" }, { ds: { preset: "app_night_3drawers" }, widths: [45, 50], tag: "نوم" },
   { ds: { preset: "app_lowshelf" }, widths: [60, 90, 120], tag: "ريسبشن" }, { ds: { preset: "app_shoe_bench" }, widths: [60, 90], tag: "ريسبشن" }, { ds: { preset: "app_wall_flap" }, widths: [60, 90, 120], tag: "عام" },
+  { ds: { preset: "blk_side_c_interlock" }, widths: [40, 45, 50], tag: "ترابيزات" }, { ds: { preset: "blk_side_cube" }, widths: [40, 45], tag: "ترابيزات" }, { ds: { preset: "blk_night_drawer_frame" }, widths: [45, 50], tag: "ترابيزات" },
+  { ds: { preset: "blk_night_float_open" }, widths: [45, 50, 60], tag: "ترابيزات" }, { ds: { preset: "blk_coffee_two_L" }, widths: [90, 100, 120], tag: "ترابيزات" }, { ds: { preset: "blk_coffee_float_dark" }, widths: [100, 120], tag: "ترابيزات" },
+  { ds: { preset: "blk_coffee_nested" }, widths: [100, 120], tag: "ترابيزات" }, { ds: { preset: "blk_console_offset" }, widths: [100, 120], tag: "ترابيزات" },
   { ds: { preset: "app_dresser_corner80" }, widths: [70, 80], tag: "نوم" }, { ds: { preset: "app_chest_double" }, widths: [60, 70], tag: "نوم" }, { ds: { preset: "app_shoe_tall" }, widths: [50, 60], tag: "ريسبشن" },
 ];
 function scrap() { return (ui.scrap ??= { src: "stock", keys: [], manual: [], res: null, busy: false }); }

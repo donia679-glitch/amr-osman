@@ -780,6 +780,733 @@ export const LIST = {
             }
         }
     },
+        "blk_side_c_interlock": {
+            "label": "ترابيزة جانبية C ألواح متداخلة",
+            "group": "ترابيزات كتل",
+            "desc": "قاعدة وسطح جوز، وفي النص 3 ألواح واقفة متزحزحة عن بعض (جوز / رمادي / أبيض) — 45×35×55.",
+            "params": {
+                "template": "blocks",
+                "width": 45,
+                "depth": 35,
+                "height": 55,
+                "thickness": 1.8,
+                "blocks": [
+                    {
+                        "k": "slab",
+                        "name": "قاعدة",
+                        "x": 0,
+                        "y": 0,
+                        "z": 0,
+                        "w": "W",
+                        "d": "D",
+                        "h": "T",
+                        "mat": "accent"
+                    },
+                    {
+                        "k": "slab",
+                        "name": "لوح واقف جوز",
+                        "x": "W-14-T",
+                        "y": 0,
+                        "z": "T",
+                        "w": "T",
+                        "d": "D",
+                        "h": "H-2*T",
+                        "mat": "accent"
+                    },
+                    {
+                        "k": "slab",
+                        "name": "لوح واقف رمادي",
+                        "x": "W-14",
+                        "y": 4,
+                        "z": "T",
+                        "w": "T",
+                        "d": "D-4",
+                        "h": "H-2*T",
+                        "mat": "carcass"
+                    },
+                    {
+                        "k": "slab",
+                        "name": "لوح واقف أبيض",
+                        "x": "W-14+T",
+                        "y": 8,
+                        "z": "T",
+                        "w": "T",
+                        "d": "D-8",
+                        "h": "H-2*T",
+                        "mat": "shelf"
+                    },
+                    {
+                        "k": "slab",
+                        "name": "سطح",
+                        "x": 0,
+                        "y": 0,
+                        "z": "H-T",
+                        "w": "W",
+                        "d": "D",
+                        "h": "T",
+                        "mat": "accent"
+                    }
+                ],
+                "materials": {
+                    "accent": {
+                        "lib": "wood_oak_light_v"
+                    },
+                    "carcass": {
+                        "lib": "hpl_grey"
+                    },
+                    "shelf": {
+                        "lib": "hpl_white"
+                    }
+                }
+            }
+        },
+        "blk_coffee_glass_walnut": {
+            "label": "انتريه زجاج على صندوق رمادي بجوانب جوز",
+            "group": "ترابيزات كتل",
+            "desc": "صندوق رمادي مفتوح من قدام برف، لوحين جوز واقفين من الناحيتين، وسطح زجاج 10 مم — 120×60×42.",
+            "params": {
+                "template": "blocks",
+                "width": 120,
+                "depth": 60,
+                "height": 42,
+                "thickness": 1.8,
+                "blocks": [
+                    {
+                        "k": "box",
+                        "name": "الصندوق",
+                        "x": 14,
+                        "y": 4,
+                        "z": 0,
+                        "w": "W-28",
+                        "d": "D-8",
+                        "h": "H-12",
+                        "faces": [
+                            "top",
+                            "bottom",
+                            "back"
+                        ],
+                        "shelves": 1,
+                        "mat": "carcass"
+                    },
+                    {
+                        "k": "slab",
+                        "name": "جنب جوز شمال",
+                        "x": 6,
+                        "y": 0,
+                        "z": 0,
+                        "w": 3.6,
+                        "d": "D",
+                        "h": "H-1",
+                        "mat": "accent",
+                        "t": 3.6
+                    },
+                    {
+                        "k": "slab",
+                        "name": "جنب جوز يمين",
+                        "x": "W-6-3.6",
+                        "y": 0,
+                        "z": 0,
+                        "w": 3.6,
+                        "d": "D",
+                        "h": "H-1",
+                        "mat": "accent",
+                        "t": 3.6
+                    },
+                    {
+                        "k": "glass",
+                        "name": "سطح زجاج",
+                        "x": 0,
+                        "y": 0,
+                        "z": "H-1",
+                        "w": "W",
+                        "d": "D",
+                        "h": 1,
+                        "t": 1
+                    }
+                ],
+                "materials": {
+                    "carcass": {
+                        "lib": "hpl_grey"
+                    },
+                    "accent": {
+                        "lib": "wood_walnut_v"
+                    }
+                }
+            }
+        },
+        "blk_coffee_nested": {
+            "label": "انتريه صندوق جوه صندوق",
+            "group": "ترابيزات كتل",
+            "desc": "صندوق بلوط مفتوح من قدام واليمين، وجواه صندوق أبيض بدرج طالع من الجنب — 120×60×38.",
+            "params": {
+                "template": "blocks",
+                "width": 120,
+                "depth": 60,
+                "height": 38,
+                "thickness": 1.8,
+                "blocks": [
+                    {
+                        "k": "box",
+                        "name": "الصندوق الخارجي",
+                        "x": 0,
+                        "y": 0,
+                        "z": 0,
+                        "w": "W-22",
+                        "d": "D",
+                        "h": "H",
+                        "faces": [
+                            "top",
+                            "bottom",
+                            "back",
+                            "left"
+                        ],
+                        "mat": "accent"
+                    },
+                    {
+                        "k": "drawer",
+                        "name": "الصندوق الداخلي",
+                        "x": 52,
+                        "y": 3,
+                        "z": "T+2",
+                        "w": "W-52",
+                        "d": "D-6",
+                        "h": "H-2*T-4",
+                        "mat": "carcass",
+                        "front_cover": "inset",
+                        "handle": "none",
+                        "front_mat": "front"
+                    }
+                ],
+                "materials": {
+                    "accent": {
+                        "lib": "wood_oak_light"
+                    },
+                    "carcass": {
+                        "lib": "hpl_white"
+                    },
+                    "front": {
+                        "lib": "hpl_white"
+                    }
+                }
+            }
+        },
+        "blk_night_drawer_frame": {
+            "label": "كومودينو كتلة بدرج وسطح جوز",
+            "group": "ترابيزات كتل",
+            "desc": "صندوق أبيض: درج تحت وفتحة مفتوحة فوقه، وسطح جوز 3.6 سم بارز — 50×40×45.",
+            "params": {
+                "template": "blocks",
+                "width": 50,
+                "depth": 40,
+                "height": 45,
+                "thickness": 1.8,
+                "blocks": [
+                    {
+                        "k": "drawer",
+                        "name": "الجسم",
+                        "x": 0,
+                        "y": 0,
+                        "z": 0,
+                        "w": "W",
+                        "d": "D",
+                        "h": "H-3.6",
+                        "faces": [
+                            "left",
+                            "right",
+                            "bottom",
+                            "back",
+                            "top"
+                        ],
+                        "drawer_h": 18,
+                        "mat": "carcass",
+                        "front_mat": "front",
+                        "handle": "none"
+                    },
+                    {
+                        "k": "slab",
+                        "name": "سطح جوز",
+                        "x": -1,
+                        "y": -1,
+                        "z": "H-3.6",
+                        "w": "W+2",
+                        "d": "D+1",
+                        "h": 3.6,
+                        "mat": "accent",
+                        "t": 3.6
+                    }
+                ],
+                "materials": {
+                    "carcass": {
+                        "lib": "hpl_white"
+                    },
+                    "front": {
+                        "lib": "hpl_white"
+                    },
+                    "accent": {
+                        "lib": "wood_walnut"
+                    }
+                }
+            }
+        },
+        "blk_coffee_float_dark": {
+            "label": "انتريه سطح جوز طافي على صندوق غامق",
+            "group": "ترابيزات كتل",
+            "desc": "صندوق أنثراسايت مفتوح من اليمين وقدام برف، سطح جوز 3.6 سم مزحزح لليمين ومحمول على كتلة صغيرة — 120×60×40.",
+            "params": {
+                "template": "blocks",
+                "width": 120,
+                "depth": 60,
+                "height": 40,
+                "thickness": 1.8,
+                "blocks": [
+                    {
+                        "k": "box",
+                        "name": "الصندوق",
+                        "x": 0,
+                        "y": 6,
+                        "z": 0,
+                        "w": "W-30",
+                        "d": "D-6",
+                        "h": "H-3.6",
+                        "faces": [
+                            "top",
+                            "bottom",
+                            "back",
+                            "left"
+                        ],
+                        "shelves": 1,
+                        "mat": "carcass"
+                    },
+                    {
+                        "k": "box",
+                        "name": "كتلة الحمل",
+                        "x": "W-14",
+                        "y": 12,
+                        "z": 0,
+                        "w": 14,
+                        "d": "D-24",
+                        "h": "H-3.6",
+                        "faces": [
+                            "left",
+                            "right",
+                            "top",
+                            "bottom"
+                        ],
+                        "mat": "carcass"
+                    },
+                    {
+                        "k": "slab",
+                        "name": "سطح جوز",
+                        "x": 22,
+                        "y": 0,
+                        "z": "H-3.6",
+                        "w": "W-22",
+                        "d": "D-4",
+                        "h": 3.6,
+                        "mat": "accent",
+                        "t": 3.6
+                    }
+                ],
+                "materials": {
+                    "carcass": {
+                        "lib": "hpl_anthracite"
+                    },
+                    "accent": {
+                        "lib": "wood_walnut"
+                    }
+                }
+            }
+        },
+        "blk_coffee_plinth_slab": {
+            "label": "انتريه سطح جوز مرفوع على قاعدة",
+            "group": "ترابيزات كتل",
+            "desc": "كتلة مقفولة رمادي فاتح، وفوقها سطح جوز 3.6 سم مرفوع 3.6 سم على كعبين مخفيين — 130×60×32.",
+            "params": {
+                "template": "blocks",
+                "width": 130,
+                "depth": 60,
+                "height": 32,
+                "thickness": 1.8,
+                "blocks": [
+                    {
+                        "k": "box",
+                        "name": "القاعدة",
+                        "x": 12,
+                        "y": 6,
+                        "z": 0,
+                        "w": "W-24",
+                        "d": "D-12",
+                        "h": "H-7.2",
+                        "faces": [
+                            "left",
+                            "right",
+                            "top",
+                            "bottom",
+                            "back",
+                            "front"
+                        ],
+                        "mat": "carcass"
+                    },
+                    {"k": "slab", "name": "كعب شمال", "x": 24, "y": 16, "z": "H-7.2", "w": 12, "d": "D-32", "h": 3.6, "t": 3.6, "mat": "carcass"},
+                    {"k": "slab", "name": "كعب يمين", "x": "W-36", "y": 16, "z": "H-7.2", "w": 12, "d": "D-32", "h": 3.6, "t": 3.6, "mat": "carcass"},
+                    {
+                        "k": "slab",
+                        "name": "سطح جوز",
+                        "x": 0,
+                        "y": 0,
+                        "z": "H-3.6",
+                        "w": "W",
+                        "d": "D",
+                        "h": 3.6,
+                        "mat": "accent",
+                        "t": 3.6
+                    }
+                ],
+                "materials": {
+                    "carcass": {
+                        "lib": "hpl_light_grey"
+                    },
+                    "accent": {
+                        "lib": "wood_walnut"
+                    }
+                }
+            }
+        },
+        "blk_tv_stepped": {
+            "label": "وحدة شاشة كتل متدرجة",
+            "group": "ترابيزات كتل",
+            "desc": "صندوق بلوط طويل مفتوح بقاطوع، وجنبه صندوق أبيض بدرج أعلى منه، ورف بلوط طافي بيربطهم — 180×40×45.",
+            "params": {
+                "template": "blocks",
+                "width": 180,
+                "depth": 40,
+                "height": 45,
+                "thickness": 1.8,
+                "blocks": [
+                    {
+                        "k": "box",
+                        "name": "صندوق بلوط",
+                        "x": 0,
+                        "y": 0,
+                        "z": 0,
+                        "w": 110,
+                        "d": "D",
+                        "h": 30,
+                        "faces": [
+                            "top",
+                            "bottom",
+                            "back",
+                            "left",
+                            "right"
+                        ],
+                        "dividers": 1,
+                        "mat": "accent"
+                    },
+                    {
+                        "k": "drawer",
+                        "name": "صندوق أبيض",
+                        "x": 110,
+                        "y": 2,
+                        "z": 8,
+                        "w": "W-110",
+                        "d": "D-4",
+                        "h": "H-8-T-2",
+                        "mat": "carcass",
+                        "front_mat": "front",
+                        "handle": "none"
+                    },
+                    {
+                        "k": "slab",
+                        "name": "رف بلوط طافي",
+                        "x": 70,
+                        "y": 0,
+                        "z": "H-T",
+                        "w": "W-70",
+                        "d": "D",
+                        "h": "T",
+                        "mat": "accent"
+                    }
+                ],
+                "materials": {
+                    "accent": {
+                        "lib": "wood_oak_light"
+                    },
+                    "carcass": {
+                        "lib": "hpl_white"
+                    },
+                    "front": {
+                        "lib": "hpl_white"
+                    }
+                }
+            }
+        },
+        "blk_tv_long_nested": {
+            "label": "وحدة شاشة ممتدة صندوق جوه صندوق",
+            "group": "ترابيزات كتل",
+            "desc": "صندوق بلوط 200 سم مفتوح من قدام بقاطوع، وجواه من اليمين صندوق أبيض بدرج — 200×40×40.",
+            "params": {
+                "template": "blocks",
+                "width": 200,
+                "depth": 40,
+                "height": 40,
+                "thickness": 1.8,
+                "blocks": [
+                    {
+                        "k": "box",
+                        "name": "صندوق بلوط",
+                        "x": 0,
+                        "y": 0,
+                        "z": 0,
+                        "w": "W",
+                        "d": "D",
+                        "h": "H",
+                        "faces": [
+                            "top",
+                            "bottom",
+                            "back",
+                            "left",
+                            "right"
+                        ],
+                        "dividers": 1,
+                        "mat": "accent"
+                    },
+                    {
+                        "k": "drawer",
+                        "name": "صندوق أبيض",
+                        "x": "W/2+T+3",
+                        "y": 2,
+                        "z": "T+5",
+                        "w": "W/2-2*T-6",
+                        "d": "D-5",
+                        "h": "H-2*T-10",
+                        "mat": "carcass",
+                        "front_mat": "front",
+                        "handle": "none"
+                    }
+                ],
+                "materials": {
+                    "accent": {
+                        "lib": "wood_oak_light"
+                    },
+                    "carcass": {
+                        "lib": "hpl_white"
+                    },
+                    "front": {
+                        "lib": "hpl_white"
+                    }
+                }
+            }
+        },
+        "blk_side_cube": {
+            "label": "ترابيزة جانبية مكعب مفتوح",
+            "group": "ترابيزات كتل",
+            "desc": "مكعب 45 سم مفتوح من قدام واليمين — فتحة مجلات، سطح بلوط — 45×45×50.",
+            "params": {
+                "template": "blocks",
+                "width": 45,
+                "depth": 45,
+                "height": 50,
+                "thickness": 1.8,
+                "blocks": [
+                    {
+                        "k": "box",
+                        "name": "المكعب",
+                        "x": 0,
+                        "y": 0,
+                        "z": 0,
+                        "w": "W",
+                        "d": "D",
+                        "h": "H",
+                        "faces": [
+                            "top",
+                            "bottom",
+                            "back",
+                            "left"
+                        ],
+                        "joint": "sides",
+                        "mat": "carcass"
+                    },
+                    {
+                        "k": "slab",
+                        "name": "رف داخلي",
+                        "x": "T",
+                        "y": 4,
+                        "z": "H/2",
+                        "w": "W-T-6",
+                        "d": "D-4-T",
+                        "h": "T",
+                        "mat": "accent"
+                    }
+                ],
+                "materials": {
+                    "carcass": {
+                        "lib": "wood_oak_light"
+                    },
+                    "accent": {
+                        "lib": "hpl_white"
+                    }
+                }
+            }
+        },
+        "blk_night_float_open": {
+            "label": "كومودينو معلّق بدرج وفتحة",
+            "group": "ترابيزات كتل",
+            "desc": "كومودينو يتعلّق على الحيطة: درج تحت وفتحة مفتوحة فوقه — 50×35×32 (ارفعه من «من الأرض»).",
+            "params": {
+                "template": "blocks",
+                "width": 50,
+                "depth": 35,
+                "height": 32,
+                "thickness": 1.8,
+                "blocks": [
+                    {
+                        "k": "drawer",
+                        "name": "الجسم",
+                        "x": 0,
+                        "y": 0,
+                        "z": 0,
+                        "w": "W",
+                        "d": "D",
+                        "h": "H",
+                        "faces": [
+                            "left",
+                            "right",
+                            "bottom",
+                            "back",
+                            "top"
+                        ],
+                        "drawer_h": 15,
+                        "mat": "carcass",
+                        "front_mat": "front",
+                        "handle": "none"
+                    }
+                ],
+                "materials": {
+                    "carcass": {
+                        "lib": "wood_walnut"
+                    },
+                    "front": {
+                        "lib": "hpl_white"
+                    }
+                }
+            }
+        },
+        "blk_coffee_two_L": {
+            "label": "انتريه حرفين L متعاكسين",
+            "group": "ترابيزات كتل",
+            "desc": "حرف L أبيض (جنب + قاعدة) وحرف L جوز (سطح + جنب) داخلين في بعض — 120×60×40.",
+            "params": {
+                "template": "blocks",
+                "width": 120,
+                "depth": 60,
+                "height": 40,
+                "thickness": 1.8,
+                "blocks": [
+                    {
+                        "k": "box",
+                        "name": "L أبيض",
+                        "x": 0,
+                        "y": 0,
+                        "z": 0,
+                        "w": "W",
+                        "d": "D",
+                        "h": "H-T",
+                        "faces": [
+                            "left",
+                            "bottom"
+                        ],
+                        "mat": "carcass"
+                    },
+                    {
+                        "k": "box",
+                        "name": "L جوز",
+                        "x": 0,
+                        "y": 0,
+                        "z": "T",
+                        "w": "W",
+                        "d": "D",
+                        "h": "H-T",
+                        "faces": [
+                            "right",
+                            "top"
+                        ],
+                        "mat": "accent"
+                    }
+                ],
+                "materials": {
+                    "carcass": {
+                        "lib": "hpl_white"
+                    },
+                    "accent": {
+                        "lib": "wood_walnut"
+                    }
+                }
+            }
+        },
+        "blk_console_offset": {
+            "label": "كونسول كتل متدرجة",
+            "group": "ترابيزات كتل",
+            "desc": "صندوق بلوط واقف بأرفف، وسطح أبيض طويل محمول عليه وعلى لوح واقف في الطرف — 120×35×80.",
+            "params": {
+                "template": "blocks",
+                "width": 120,
+                "depth": 35,
+                "height": 80,
+                "thickness": 1.8,
+                "blocks": [
+                    {
+                        "k": "box",
+                        "name": "الصندوق",
+                        "x": 0,
+                        "y": 0,
+                        "z": 0,
+                        "w": 40,
+                        "d": "D",
+                        "h": "H-T",
+                        "faces": [
+                            "left",
+                            "right",
+                            "top",
+                            "bottom",
+                            "back"
+                        ],
+                        "shelves": 2,
+                        "mat": "accent"
+                    },
+                    {
+                        "k": "slab",
+                        "name": "السطح",
+                        "x": 20,
+                        "y": 0,
+                        "z": "H-T",
+                        "w": "W-20",
+                        "d": "D",
+                        "h": "T",
+                        "mat": "carcass"
+                    },
+                    {
+                        "k": "slab",
+                        "name": "لوح واقف",
+                        "x": "W-T",
+                        "y": 4,
+                        "z": 0,
+                        "w": "T",
+                        "d": "D-4",
+                        "h": "H-T",
+                        "mat": "carcass"
+                    }
+                ],
+                "materials": {
+                    "accent": {
+                        "lib": "wood_oak_light_v"
+                    },
+                    "carcass": {
+                        "lib": "hpl_white"
+                    }
+                }
+            }
+        },
+
     "coffee_waterfall_walnut": {
         "label": "انتريه حرف نازل جوز",
         "group": "الترابيزات",

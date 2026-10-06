@@ -19,6 +19,7 @@ export const TEMPLATES = {
     open_shelf: { label: "مكتبة / أرفف مفتوحة", group: "الريسبشن" },
     cabinet: { label: "وحدة عامة (أي علبة بضلف/أدراج)", group: "عام" },
     free: { label: "ألواح حرة (أي تصميم من ألواح)", group: "عام" },
+    blocks: { label: "ترابيزة كتل (ألواح وصناديق متداخلة)", group: "الترابيزات" },
     ...TableSpec.TEMPLATES,
 };
 export const FRONT_TYPES = { doors: "ضلف", drawers: "أدراج", flap: "ضلفة قلاب (بتفتح لفوق)", open: "مفتوح (من غير ضلف)" };
@@ -129,6 +130,10 @@ export const TEMPLATE_DEFAULTS = {
             floating: false, float_height: 12.0, float_setback: 15.0, led: false,
         },
     },
+    blocks: {
+        environment: "dry", width: 120.0, height: 40.0, depth: 60.0, mount: "floor", fronts: [], blocks: [],
+        back: { enabled: false, thickness: 0.6, groove_depth: 0.8, inset: 1.8 }, plinth: { height: 0.0, setback: 0.0, style: "apron" },
+    },
     free: {
         environment: "dry", width: 0.0, height: 0.0, depth: 0.0,
         fronts: [],
@@ -188,6 +193,7 @@ export const SPECIAL = {
             ["desk.wall_shelves", "أرفف حيطة فوق المكتب", "int", U, 0, 4], ["desk.led", "ليد تحت أول رف", "bool"],
         ] },
     ...TableSpec.SPECIAL,
+    blocks: { hide: ["fronts", "plinth", "back", "top", "mount"], fields: [] },
 };
 export const LIVE_SPECIAL = {
     bed: ["bed.storage", "bed.headboard_style", "bed.headboard_shelf", "bed.side_tables", "bed.floating", "bed.led"],
@@ -266,6 +272,7 @@ export function normalize(rawIn) {
     p.schema_version = SCHEMA_VERSION;
     p.fronts = has(raw, "fronts") ? rArray(raw.fronts) : defaultsFor(tpl).fronts;
     p.panels = has(raw, "panels") ? rArray(raw.panels) : defaultsFor(tpl).panels;
+    if (tpl === "blocks") p.blocks = has(raw, "blocks") ? rArray(raw.blocks) : [];
     if (!has(Catalog.ENVIRONMENTS, p.environment))
         p.environment = "dry";
     choice(p, "mount", MOUNTS, errors, "طريقة التركيب");
