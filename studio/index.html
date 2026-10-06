@@ -7,7 +7,7 @@
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <style>html,body{margin:0;padding:0}body{min-height:100vh;min-height:100dvh}</style>
-<script>window.NOVERA_BUILD = "2026-10-06 19:19";</script>
+<script>window.NOVERA_BUILD = "2026-10-06 19:31";</script>
 </head>
 <body>
 <meta charset="utf-8">
@@ -552,6 +552,27 @@ body.indraw .toast { top: calc(64px + env(safe-area-inset-top)); }
 .comps { margin-top: 8px; }
 .add.sm2 { height: 36px; font-size: 13px; }
 
+/* v97 pricing: summary, 4 steps, one card per board type */
+.psum { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 4px 0 8px; }
+.psum > div { background: var(--panel2); border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; }
+.psum span { font-size: 12px; color: var(--muted); } .psum b { font-size: 22px; font-variant-numeric: tabular-nums; } .psum small { font-size: 11.5px; color: var(--muted); }
+.psum > div:first-child b { color: var(--brand); } .psum .good b { color: #1f8f4e; }
+details.pstep { border: 1px solid var(--line); border-radius: 12px; padding: 4px 12px 10px; margin: 8px 0; }
+details.pstep > summary { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 0; list-style: none; }
+details.pstep > summary::-webkit-details-marker { display: none; }
+details.pstep > summary b { font-size: 15px; } details.pstep > summary span { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+details.pstep h4 { margin: 12px 0 6px; font-size: 13px; color: var(--muted); }
+.pboards { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 8px; }
+.pboard { border: 1px solid var(--line); border-radius: 12px; padding: 10px; background: var(--panel2); display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.pbh { display: flex; align-items: center; gap: 8px; } .pbh i { width: 20px; height: 20px; border-radius: 6px; border: 1px solid rgba(0,0,0,.15); flex: none; }
+.pbh b { flex: 1; min-width: 0; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pbrow { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; } .pbrow .pin, .pstep .tbl .pin { width: 100%; box-sizing: border-box; }
+.gsize { display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap; font-size: 13px; }
+.gsize input { width: 64px; height: 34px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--ink); text-align: center; font: inherit; }
+.gsize select { height: 34px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--ink); font: inherit; font-size: 12.5px; padding: 0 6px; }
+.mg-h .gsize { margin-inline-start: auto; }
+.tbl tr.ptot td { font-weight: 800; border-top: 2px solid var(--line); }
+@media (max-width: 640px) { .psum b { font-size: 18px; } .psum { gap: 6px; } }
 /* shop tab */
 .shopgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .btnrow { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; margin: 8px 0; }

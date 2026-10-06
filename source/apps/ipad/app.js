@@ -3053,8 +3053,8 @@ function defaultsPop() {
       <div class="bools"><label class="f b"><input type="checkbox" data-defb="rules.drawerBoxLikeCarcass" ${D0.rules.drawerBoxLikeCarcass ? "checked" : ""}><span>صندوق الدرج بسمك الهيكل، وقاعدته بسمك الظهر</span></label></div>
       <div class="btnrow"><button class="ghost2" data-defapply>طبّق كل الإعدادات دي على وحدات المطبخ في المشروع ده</button></div></details>
     <details><summary>🧱 الأوضة والحيطان</summary><div class="grid2">${nf("room.t", "سمك الحيطة", D0.room.t, Room.WALL_T)}${nf("room.h", "ارتفاع السقف", D0.room.h, Room.WALL_H)}</div></details>
-    <details><summary>💰 التسعير</summary><div class="grid2"><label class="f"><span>حساب الخامة</span><select data-def="price.mode"><option value="area" ${P.mode === "area" ? "selected" : ""}>بمسطح القطع (م²) لكل وحدة</option><option value="sheets" ${P.mode !== "area" ? "selected" : ""}>بعدد الألواح من خطة القص</option></select></label>${nf("price.waste", "نسبة الهالك % (بالمسطح)", P.waste)}${nf("price.defaultSheet", "سعر اللوح (أي خامة ملهاش سعر)", P.defaultSheet)}${nf("price.band", "سعر متر الشريط", P.band)}
-      ${nf("price.laborUnit", "مصنعية الوحدة", P.laborUnit)}${nf("price.laborM2", "مصنعية المتر المربع", P.laborM2)}${nf("price.install", "التركيب للمشروع", P.install)}${nf("price.margin", "نسبة الربح على التكلفة %", P.margin)}
+    <details><summary>💰 التسعير</summary><div class="grid2">${nf("price.waste", "نسبة الهالك % (بالمسطح)", P.waste)}${nf("price.defaultSheet", "سعر اللوح (أي خامة ملهاش سعر)", P.defaultSheet)}${nf("price.band", "سعر متر الشريط", P.band)}
+      ${nf("price.laborUnit", "مصنعية الوحدة", P.laborUnit)}${nf("price.laborM2", "مصنعية المتر المربع", P.laborM2)}${nf("price.install", "التركيب للمشروع", P.install)}${nf("price.transport", "النقل للمشروع", P.transport)}${nf("price.margin", "نسبة الربح على التكلفة %", P.margin)}
       ${nf("price.validity", "صلاحية عرض السعر (يوم)", P.validity)}<label class="f"><span>مدة التنفيذ</span><input data-deft="price.delivery" value="${esc(trv(P.delivery || ""))}"></label>
       <label class="f full"><span>الضمان</span><input data-deft="price.warranty" value="${esc(trv(P.warranty || ""))}"></label><label class="f full"><span>شروط ثابتة في كل عرض سعر</span><input data-deft="price.notes" value="${esc(P.notes || "")}"></label></div>
       <p class="hint">أسعار كل خامة وكل بند هاردوير بتتظبط من «الورشة والعميل» وبتفضل محفوظة لكل المشاريع.</p></details>
@@ -6649,7 +6649,7 @@ function drawCut() {
   const el = $("#v-cut");
   const o = state.cutOpts;
   let h = `<div class="cuthead"><div><h2>خطة القص — ${esc(state.project.name)}</h2><p class="hint">كل خامة وسمك لوحدها، ${STORE_BUILD ? "بقصات جيلوتين تتنفذ على المنشار" : "بنفس محرك القص بتاع البلاجن (قصات جيلوتين تتنفذ على المنشار)"}.</p></div>
-    <div class="cutopts">${[["sheetW", "طول اللوح", 1], ["sheetH", "عرض اللوح", 1], ["kerf", "سلاح المنشار", 0.05], ["trim", "تشذيب الحرف", 0.5]].map(([k, l, s]) => `<label class="f"><span>${l}</span><input type="text" inputmode="decimal" data-numf step="${s}" data-co="${k}" value="${o[k]}"></label>`).join("")}${stockModeSel("stockModeCut")}</div></div>`;
+    <div class="cutopts">${[["sheetW", "طول اللوح الافتراضي", 1], ["sheetH", "عرض اللوح الافتراضي", 1], ["kerf", "سلاح المنشار", 0.05], ["trim", "تشذيب الحرف", 0.5]].map(([k, l, s]) => `<label class="f"><span>${l}</span><input type="text" inputmode="decimal" data-numf step="${s}" data-co="${k}" value="${o[k]}"></label>`).join("")}${stockModeSel("stockModeCut")}</div></div>`;
   if (!cutData || cutData.busy) { el.innerHTML = h + `<div class="busy"><span class="spin" aria-hidden="true"></span>بيحسب أحسن توزيع للقطع…</div>`; return; }
   const { groups, outside, results } = cutData;
   let sheets = 0, lb = 0;
@@ -6662,8 +6662,9 @@ function drawCut() {
     const sh = g.sheet || { w: o.sheetW, h: o.sheetH };
     const pick = o.sheetFor?.[g.key];
     h += `<section class="mgroup"><div class="mg-h"><i style="background:${g.color}"></i><h3>${esc(g.key)}</h3><span class="pill">${st.sheets} لوح ${sh.w}×${sh.h}</span><span class="pill">استغلال ${Math.round(st.utilization * 100)}%</span><span class="pill soft">${st.parts} قطعة</span>
-      <label class="sheetpick"><span>مقاس اللوح</span><select data-gsheet="${esc(g.key)}"><option value="">تلقائي${!pick ? ` (${sh.w}×${sh.h})` : ""}</option>${SHEETS.map(([w, hh]) => `<option value="${w}x${hh}" ${pick && pick[0] === w && pick[1] === hh ? "selected" : ""}>${w}×${hh}</option>`).join("")}</select></label></div>`;
+      ${sheetSizeHtml(g.key, sh)}</div>`;
     if (sh.auto) h += `<p class="hint">اللوح اتظبط ${sh.w}×${sh.h} لوحده عشان فيه قطع أطول من ${o.sheetW}×${o.sheetH} — غيّره لو الخامة دي بتيجي بمقاس تاني.</p>`;
+    else if (pick) h += `<p class="hint">المقاس ده للخامة دي بس — باقي الخامات على مقاسها.</p>`;
     if (res.oversized.length) h += `<p class="e">⚠ قطع أكبر من أي لوح متاح — لازم تتقسم أو الوحدة تتقسم لوحدتين: ${res.oversized.map((x) => `${esc(x.name)} (${n1(x.w)}×${n1(x.h)})`).join("، ")}</p>`;
     h += `<div class="sheets">${res.sheets.map((s, si) => sheetSvg(s, si, g)).join("")}</div></section>`;
   }
@@ -6765,13 +6766,7 @@ $("#v-cut").addEventListener("click", async (e) => {
 $("#v-cut").addEventListener("change", (e) => {
   if (e.target.hasAttribute?.("data-stockmode")) { state.cutOpts.stockMode = e.target.value; delete state.cutOpts.useStock; save(); runCut(); return; }
   if (e.target.id === "leftMin") { state.cutOpts ??= {}; state.cutOpts.leftMin = Math.max(5, toNum(e.target.value) || 30); save(); runCut(); return; }
-  if (e.target.dataset.gsheet !== undefined) {
-    const o = state.cutOpts; o.sheetFor ??= {};
-    const v = e.target.value;
-    if (v) o.sheetFor[e.target.dataset.gsheet] = v.split("x").map(Number); else delete o.sheetFor[e.target.dataset.gsheet];
-    save(); runCut();
-    return;
-  }
+  if (sheetSizeChange(e.target)) return;
   const k = e.target.dataset.co;
   if (!k) return;
   const raw = String(e.target.value).trim(), v = toNum(raw), lim = CUT_OK[k];
@@ -7047,11 +7042,12 @@ $("#v-shop").addEventListener("change", (e) => {
     save(); syncShared(); drawShop(); return;
   }
   if (t.hasAttribute?.("data-cofshow")) { clientOpts().show = t.checked; save(); syncShared(); return; }
+  if (sheetSizeChange(t, () => drawShop())) return;
   if (t.dataset.price || t.dataset.pricet) {
     const P = priceDefaults();
     if (t.dataset.pricet) P[t.dataset.pricet] = t.value;
     else { const [a, b] = t.dataset.price.split(/\.(.+)/), val = Math.max(0, moneyNum(t.value)); if (b) { P[a] ??= {}; P[a][b] = val; } else P[a] = val; }
-    save();
+    save(); settingsPush();
     drawShop();
   }
 });
@@ -7990,7 +7986,8 @@ async function exportAssemblyPdf(units = state.project.units) {
 const money = (v) => Math.round(v).toLocaleString("ar-EG");
 function priceDefaults() {
   state.prices ??= { sheets: {}, band: 0, hw: {}, laborUnit: 0, laborM2: 0, install: 0, margin: 35, client: "", validity: 15, delivery: "4 أسابيع", warranty: "سنتين على الهيكل والهاردوير", notes: "" };
-  state.prices.mode ??= "area"; state.prices.waste ??= 10; state.prices.m2 ??= {};
+  // v97: one way of pricing — every piece by its own area × its board's price per m² (+ waste); the old "by sheets" mode is gone
+  state.prices.mode = "area"; state.prices.waste ??= 10; state.prices.m2 ??= {}; state.prices.transport ??= 0;
   return state.prices;
 }
 /** costs of the current project from the cut plan, hardware and labour; null until the cut plan is ready */
@@ -8003,7 +8000,8 @@ function m2Price(g, P = priceDefaults()) {
 function quoteCalc() {
   if (!cutData?.results) return null;
   const P = priceDefaults();
-  const byArea = P.mode === "area", wf = 1 + (+P.waste || 0) / 100;
+  const byArea = true, wf = 1 + (+P.waste || 0) / 100;
+  const roleOf = (kind) => (kind === "front" ? "front" : kind === "back" ? "back" : kind === "box" ? "box" : "body");
   const lines = [];
   let mat = 0;
   // material per unit (area mode): every piece's own surface × its material's m² price (+ waste)
@@ -8014,14 +8012,16 @@ function quoteCalc() {
     if (byArea) {
       const pm = m2Price(g, P);
       let a = 0;
+      const roles = {};
       for (const p of g.parts) {
         const pa = (p.w * p.h) / 10000;
         a += pa;
+        const rk = roleOf(p.kind); roles[rk] = (roles[rk] || 0) + pa;
         const uid0 = codeOf.get(String(p.key).split("-")[0]);
         if (uid0) unitMat.set(uid0, (unitMat.get(uid0) || 0) + pa * wf * pm);
       }
       const q = Math.round(a * wf * 100) / 100;
-      lines.push({ k: "m2", key: g.key, label: `${g.key} (${n1(a)} م² + ${+P.waste || 0}% هالك)`, qty: q, unit: "م²", price: Math.round(pm), total: a * wf * pm });
+      lines.push({ k: "m2", key: g.key, color: g.color, roles, area: a, sheet: g.sheet || groupSheet(g), label: `${g.key} (${n1(a)} م² + ${+P.waste || 0}% هالك)`, qty: q, unit: "م²", price: Math.round(pm), total: a * wf * pm });
       mat += a * wf * pm; // unrounded: the units' rows add up to exactly this
     } else {
       const n = cutData.results[g.key].sheets.filter((s) => s.stock !== "remnant").length, pr = +P.sheets[g.key] || +P.defaultSheet || 0;
@@ -8067,7 +8067,8 @@ function quoteCalc() {
   let hwT = 0;
   for (const [k, q] of Object.entries(hw)) { const pr = +P.hw[k] || 0; lines.push({ k: "hw", key: k, label: k, qty: q, unit: "", price: pr, total: q * pr }); hwT += q * pr; }
   const units = state.project.units.filter((u) => R(u).ok).length;
-  const labor = units * (+P.laborUnit || 0) + area * (+P.laborM2 || 0) + (+P.install || 0);
+  const fixed = (+P.install || 0) + (+P.transport || 0);
+  const labor = units * (+P.laborUnit || 0) + area * (+P.laborM2 || 0) + fixed;
   const cost = mat + band + hwT + labor;
   const total = cost * (1 + (+P.margin || 0) / 100);
   let usedA = 0, sheetA = 0;
@@ -8082,7 +8083,7 @@ function quoteCalc() {
       let hwU = 0;
       for (const [k, q] of Object.entries(r.hardware || {})) hwU += q * (+P.hw[k] || 0);
       const a = unitArea.get(u.id) || 0;
-      const c = (unitMat.get(u.id) || 0) + (unitOut.get(u.id) || 0) + r.banding * (+P.band || 0) + hwU + (+P.laborUnit || 0) + a * (+P.laborM2 || 0) + (area ? ((+P.install || 0) * a) / area : 0);
+      const c = (unitMat.get(u.id) || 0) + (unitOut.get(u.id) || 0) + r.banding * (+P.band || 0) + hwU + (+P.laborUnit || 0) + a * (+P.laborM2 || 0) + (area ? (fixed * a) / area : 0);
       return { u, price: c * (1 + (+P.margin || 0) / 100), cost: c, area: a };
     });
   } else {
@@ -8092,35 +8093,84 @@ function quoteCalc() {
       const r = R(u), a = unitArea.get(u.id) || 0;
       let hwU = 0;
       for (const [k, q] of Object.entries(r.hardware || {})) hwU += q * (+P.hw[k] || 0);
-      const c = (area ? (sheetMat * a) / area : sheetMat / Math.max(1, units)) + (unitOut.get(u.id) || 0) + r.banding * (+P.band || 0) + hwU + (+P.laborUnit || 0) + a * (+P.laborM2 || 0) + (area ? ((+P.install || 0) * a) / area : 0);
+      const c = (area ? (sheetMat * a) / area : sheetMat / Math.max(1, units)) + (unitOut.get(u.id) || 0) + r.banding * (+P.band || 0) + hwU + (+P.laborUnit || 0) + a * (+P.laborM2 || 0) + (area ? (fixed * a) / area : 0);
       return { u, price: c * (1 + (+P.margin || 0) / 100), cost: c, area: a };
     });
   }
-  return { lines, mat, band, hwT, labor, cost, total, perUnit, area, waste, byArea };
+  return { lines, mat, band, hwT, labor, fixed, cost, total, perUnit, area, waste, byArea };
 }
+/** v97: a board's own sheet size — typed W × H, or a standard size from the list (each material keeps its own) */
+const PRICE_ROLE = { body: "هيكل", front: "ضلف ووشوش", back: "ظهر", box: "أدراج" };
+function sheetSizeHtml(key, sh) {
+  const pick = state.cutOpts?.sheetFor?.[key];
+  return `<span class="gsize"><span class="hint">مقاس اللوح</span><input type="text" inputmode="decimal" data-numf data-gsz="w" data-gkey="${esc(key)}" value="${sh.w}" aria-label="طول اللوح">×<input type="text" inputmode="decimal" data-numf data-gsz="h" data-gkey="${esc(key)}" value="${sh.h}" aria-label="عرض اللوح">
+    <select data-gsheet="${esc(key)}" aria-label="مقاسات جاهزة"><option value="">${pick ? "↺ الافتراضي" : "مقاسات جاهزة"}</option>${SHEETS.map(([w, hh]) => `<option value="${w}x${hh}" ${pick && pick[0] === w && pick[1] === hh ? "selected" : ""}>${w}×${hh}</option>`).join("")}</select></span>`;
+}
+/** a typed sheet size or a pick from the list → that material only; true when handled */
+function sheetSizeChange(t, after) {
+  const o = (state.cutOpts ??= {}); o.sheetFor ??= {};
+  if (t.dataset.gsheet !== undefined) {
+    if (t.value) o.sheetFor[t.dataset.gsheet] = t.value.split("x").map(Number); else delete o.sheetFor[t.dataset.gsheet];
+  } else if (t.dataset.gsz) {
+    const key = t.dataset.gkey, v = toNum(t.value), lim = t.dataset.gsz === "w" ? CUT_OK.sheetW : CUT_OK.sheetH;
+    if (!Number.isFinite(v) || v < lim[0] || v > lim[1]) { alertBar(`مقاس اللوح لازم يبقى بين ${lim[0]} و ${lim[1]} سم`); after ? after() : drawCut(); return true; }
+    const cur = o.sheetFor[key] || (() => { const g = cutData?.groups?.find((x) => x.key === key); const sh = g ? g.sheet || groupSheet(g) : { w: +o.sheetW, h: +o.sheetH }; return [sh.w, sh.h]; })();
+    o.sheetFor[key] = t.dataset.gsz === "w" ? [v, cur[1]] : [cur[0], v];
+  } else return false;
+  save(); settingsPush(); runCut(after);
+  return true;
+}
+const pOpen = (k, dflt) => ((ui.pOpen?.[k] ?? dflt) ? "open" : "");
+document.addEventListener("toggle", (e) => { const d = e.target; if (d?.dataset?.pk) (ui.pOpen ??= {})[d.dataset.pk] = d.open; }, true);
 function quoteHtml() {
   const P = priceDefaults(), Q = quoteCalc();
   if (Q) state.project.quoteTotal = Math.round(Q.total);
-  if (!Q) return `<section class="mgroup"><div class="mg-h"><h3>الأسعار وعرض السعر</h3></div><div class="busy"><span class="spin" aria-hidden="true"></span>بيحسب الألواح…</div></section>`;
-  const pin = (k, v, label, step = 1) => `<label class="f"><span>${esc(label)}</span><input type="text" inputmode="decimal" data-numf step="${step}" data-price="${esc(k)}" value="${v ?? ""}"></label>`;
-  let h = `<section class="mgroup"><div class="mg-h"><h3>الأسعار وعرض السعر</h3><span class="pill">${money(Q.total)} ج.م</span></div>
-    <div class="seg pmode"><button data-pmode="area" class="${Q.byArea ? "on" : ""}">📐 بمسطح القطع (م²)</button><button data-pmode="sheets" class="${Q.byArea ? "" : "on"}">🪵 بعدد الألواح</button></div>
-    <p class="hint">${Q.byArea ? "كل وحدة بتتسعّر من مسطح قطعها هي: طول × عرض كل قطعة × سعر المتر من خامتها + نسبة الهالك، وشريطها وهاردويرها ومصنعيتها. سعر المتر = سعر اللوح ÷ مساحته، أو اكتبه بنفسك." : "الخامة بعدد الألواح الكاملة من خطة القص، والإجمالي بيتوزّع على الوحدات حسب مسطح كل وحدة."} الأسعار بتتحفظ لكل المشاريع.</p>
-    ${Q.byArea ? `<div class="grid3">${pin("waste", P.waste, "نسبة الهالك %")}</div>` : ""}
-    <div class="tblwrap"><table class="tbl"><thead><tr><th>البند</th><th>الكمية</th><th>سعر الوحدة</th><th>الإجمالي</th></tr></thead><tbody>`;
-  for (const L of Q.lines) {
-    const k = L.k === "sheet" ? `sheets.${L.key}` : L.k === "m2" ? `m2.${L.key}` : L.k === "hw" ? `hw.${L.key}` : L.k === "out" ? `out.${L.key}` : L.k === "ctr" ? "ctr" : "band";
-    const typed = L.k === "m2" ? +P.m2?.[L.key] > 0 : true;
-    h += `<tr><td>${esc(L.label)}${L.k === "m2" ? `<br><small class="hint">سعر اللوح <input class="pin sm" type="text" inputmode="decimal" data-numf data-price="sheets.${esc(L.key)}" value="${P.sheets[L.key] || ""}" placeholder="${P.defaultSheet || 0}"></small>` : ""}</td><td class="num">${L.qty} ${L.unit}</td><td><input class="pin" type="text" inputmode="decimal" data-numf data-price="${esc(k)}" value="${typed ? L.price || "" : ""}" placeholder="${L.k === "m2" ? L.price || 0 : 0}"></td><td class="num">${money(L.total)}</td></tr>`;
-  }
-  h += `</tbody></table></div><div class="grid3">${pin("laborUnit", P.laborUnit, "مصنعية لكل وحدة")}${pin("laborM2", P.laborM2, "مصنعية لكل م² خشب")}${pin("install", P.install, "تركيب ونقل (مقطوعية)")}</div>
-    <div class="kv"><span>خامات</span><b>${money(Q.mat + Q.band)}</b><span>هاردوير</span><b>${money(Q.hwT)}</b><span>مصنعية وتركيب</span><b>${money(Q.labor)}</b><span>التكلفة</span><b>${money(Q.cost)}</b><span>سعر البيع</span><b>${money(Q.total)}</b><span>مكسبك</span><b class="profit">${money(Q.total - Q.cost)}${Q.total && Q.cost ? ` (${Math.round(((Q.total - Q.cost) / Q.cost) * 100)}% على التكلفة · ${Math.round(((Q.total - Q.cost) / Q.total) * 100)}% من سعر البيع)` : ""}</b>${Q.waste != null ? `<span>هالك الألواح</span><b>${Q.waste}%</b>` : ""}</div>
-    <details ${Q.byArea ? "open" : ""}><summary>سعر كل وحدة${Q.byArea ? " (من مسطح قطعها)" : ""}</summary><div class="tblwrap"><table class="tbl"><thead><tr><th>الوحدة</th><th>المسطح</th>${Q.byArea ? "<th>التكلفة</th>" : ""}<th>السعر</th><th>سعر المتر</th></tr></thead><tbody>
-      ${Q.perUnit.map(({ u, price, cost, area }) => `<tr><td><b>${esc(u.code || "")}</b> ${esc(u.name)}</td><td class="num">${n1(area || 0)} م²</td>${Q.byArea ? `<td class="num">${money(cost)}</td>` : ""}<td class="num"><b>${money(price)}</b></td><td class="num">${area ? money(price / area) : "—"}</td></tr>`).join("")}</tbody></table></div></details>
-    <div class="grid3">${pin("defaultSheet", P.defaultSheet, "سعر اللوح لأي خامة مش متسعّرة")}<label class="f"><span>اسم المصنع (في العروض والفيديو والضمان)</span><input data-pricet="factory" value="${esc(P.factory || "")}" placeholder="NOVERA"></label><label class="f"><span>رقم التليفون / واتساب</span><input data-pricet="phone" inputmode="tel" value="${esc(P.phone || "")}" placeholder="010xxxxxxxx"></label></div>
-    <div class="grid3">${pin("margin", P.margin, "نسبة الربح على التكلفة %")}<label class="f"><span>اسم العميل</span><input data-pricet="client" value="${esc(P.client)}"></label>${pin("validity", P.validity, "العرض ساري (يوم)")}</div>
-    <div class="grid2"><label class="f"><span>مدة التنفيذ</span><input data-pricet="delivery" value="${esc(trv(P.delivery))}"></label><label class="f"><span>الضمان</span><input data-pricet="warranty" value="${esc(trv(P.warranty))}"></label></div>
-    <label class="f"><span>ملاحظات تظهر في العرض</span><input data-pricet="notes" value="${esc(P.notes)}"></label>
+  if (!Q) return `<section class="mgroup"><div class="mg-h"><h3>💰 الأسعار وعرض السعر</h3></div><div class="busy"><span class="spin" aria-hidden="true"></span>بيحسب الألواح…</div></section>`;
+  const num = (k, v, ph = 0) => `<input class="pin" type="text" inputmode="decimal" data-numf data-price="${esc(k)}" value="${v || ""}" placeholder="${ph}">`;
+  const pin = (k, v, label) => `<label class="f"><span>${esc(label)}</span>${num(k, v)}</label>`;
+  const profit = Q.total - Q.cost;
+  const boards = Q.lines.filter((L) => L.k === "m2"), outs = Q.lines.filter((L) => L.k === "out" || L.k === "ctr"), hws = Q.lines.filter((L) => L.k === "hw"), bandL = Q.lines.find((L) => L.k === "band");
+  const boardsT = boards.reduce((a, L) => a + L.total, 0), outsT = outs.reduce((a, L) => a + L.total, 0);
+  const unpriced = boards.filter((L) => !L.price).length;
+  let h = `<section class="mgroup pricing"><div class="mg-h"><h3>💰 الأسعار وعرض السعر</h3><span class="pill">${money(Q.total)} ج.م</span></div>
+    <div class="psum"><div><span>سعر البيع للعميل</span><b>${money(Q.total)}</b></div><div><span>التكلفة</span><b>${money(Q.cost)}</b></div><div class="good"><span>مكسبك</span><b>${money(profit)}</b><small>${Q.cost ? `${Math.round((profit / Q.cost) * 100)}% على التكلفة` : ""}</small></div></div>
+    <p class="hint">السعر = (الخامات بمسطحها + الهالك) + الهاردوير + المصنعية والنقل، وعليهم نسبة ربحك. الأسعار بتتحفظ مرة واحدة وتنفع لكل المشاريع.</p>
+    <details class="pstep" data-pk="boards" ${pOpen("boards", true)}><summary><b>① أسعار الألواح</b><span>${money(boardsT)} ج.م</span></summary>
+      <p class="hint">لكل نوع لوح: سعر اللوح ومقاسه — سعر المتر بيتحسب لوحده (أو اكتبه بنفسك). كل قطعة بتتحسب بمسطحها × سعر متر خامتها.</p>
+      ${unpriced ? `<p class="w">⚠ ${unpriced} ${unpriced === 1 ? "خامة" : "خامات"} لسه من غير سعر — اكتب سعر اللوح بتاعها.</p>` : ""}
+      <div class="pboards">${boards.map((L) => {
+        const sh = L.sheet || { w: 244, h: 122 }, m2typed = +P.m2?.[L.key] > 0;
+        const roles = Object.entries(L.roles || {}).filter(([, a]) => a > 0.005).map(([r, a]) => `${PRICE_ROLE[r]} ${n1(a)} م²`).join(" · ");
+        return `<div class="pboard"><div class="pbh"><i style="background:${L.color || "#ccc"}"></i><b>${esc(L.key)}</b><span class="pill soft">${money(L.total)} ج.م</span></div>
+          <small class="hint">${roles}${roles ? " · " : ""}+ ${+P.waste || 0}% هالك = ${n1(L.qty)} م²</small>
+          <div class="pbrow"><label class="f"><span>سعر اللوح</span>${num(`sheets.${L.key}`, P.sheets[L.key], P.defaultSheet || 0)}</label>
+            <label class="f"><span>سعر المتر${m2typed ? "" : " (محسوب)"}</span><input class="pin" type="text" inputmode="decimal" data-numf data-price="m2.${esc(L.key)}" value="${m2typed ? P.m2[L.key] : ""}" placeholder="${L.price || 0}"></label></div>
+          ${sheetSizeHtml(L.key, sh)}</div>`;
+      }).join("")}</div>
+      ${outs.length ? `<h4>خامات من المورّد</h4><div class="tblwrap"><table class="tbl"><thead><tr><th>البند</th><th>الكمية</th><th>السعر</th><th>الإجمالي</th></tr></thead><tbody>${outs.map((L) => `<tr><td>${esc(L.label)}</td><td class="num">${L.qty} ${L.unit}</td><td>${num(L.k === "ctr" ? "ctr" : `out.${L.key}`, L.price)}</td><td class="num">${money(L.total)}</td></tr>`).join("")}</tbody></table></div>` : ""}
+      <div class="grid3">${pin("defaultSheet", P.defaultSheet, "سعر لأي لوح ملوش سعر")}</div>
+    </details>
+    <details class="pstep" data-pk="hw" ${pOpen("hw", true)}><summary><b>② الهاردوير والشريط</b><span>${money(Q.hwT + Q.band)} ج.م</span></summary>
+      <div class="tblwrap"><table class="tbl"><thead><tr><th>البند</th><th>العدد</th><th>سعر الواحدة</th><th>الإجمالي</th></tr></thead><tbody>
+      ${bandL ? `<tr><td>شريط حواف (بالمتر)</td><td class="num">${bandL.qty} م</td><td>${num("band", P.band)}</td><td class="num">${money(bandL.total)}</td></tr>` : ""}
+      ${hws.map((L) => `<tr><td>${esc(L.label)}</td><td class="num">${L.qty}</td><td>${num(`hw.${L.key}`, L.price)}</td><td class="num">${money(L.total)}</td></tr>`).join("")}</tbody></table></div>
+    </details>
+    <details class="pstep" data-pk="labor" ${pOpen("labor", true)}><summary><b>③ المصنعية والنقل</b><span>${money(Q.labor)} ج.م</span></summary>
+      <div class="grid2">${pin("laborUnit", P.laborUnit, "مصنعية لكل وحدة")}${pin("laborM2", P.laborM2, "مصنعية لكل متر مربع خشب")}${pin("transport", P.transport, "النقل (مبلغ للمشروع)")}${pin("install", P.install, "التركيب (مبلغ للمشروع)")}</div>
+    </details>
+    <details class="pstep" data-pk="margin" ${pOpen("margin", true)}><summary><b>④ الهالك والربح</b><span>${+P.waste || 0}% · ${+P.margin || 0}%</span></summary>
+      <div class="grid2">${pin("waste", P.waste, "نسبة الهالك على الخامات %")}${pin("margin", P.margin, "نسبة الربح على التكلفة %")}</div>
+      <p class="hint">الهالك بيتزوّد على مسطح الألواح. الربح بيتحسب على التكلفة كلها.${Q.waste != null ? ` هالك خطة القص الفعلي ${Q.waste}%.` : ""}</p>
+    </details>
+    <details class="pstep" data-pk="units" ${pOpen("units", false)}><summary><b>سعر كل وحدة</b><span>${Q.perUnit.length} وحدة</span></summary><div class="tblwrap"><table class="tbl"><thead><tr><th>الوحدة</th><th>المسطح</th><th>التكلفة</th><th>سعر البيع</th></tr></thead><tbody>
+      ${Q.perUnit.map(({ u, price, cost, area }) => `<tr><td><b>${esc(u.code || "")}</b> ${esc(u.name)}</td><td class="num">${n1(area || 0)} م²</td><td class="num">${money(cost)}</td><td class="num"><b>${money(price)}</b></td></tr>`).join("")}
+      <tr class="ptot"><td>الإجمالي</td><td class="num">${n1(Q.area)} م²</td><td class="num">${money(Q.cost)}</td><td class="num"><b>${money(Q.total)}</b></td></tr></tbody></table></div>
+      <p class="hint">العميل بيشوف في عرض السعر سعر كل وحدة والإجمالي بس — التكلفة والمكسب ليك انت.</p></details>
+    <details class="pstep" data-pk="quote" ${pOpen("quote", false)}><summary><b>🧾 بيانات عرض السعر</b><span>${esc(P.client || "")}</span></summary>
+      <div class="grid2"><label class="f"><span>اسم العميل</span><input data-pricet="client" value="${esc(P.client)}"></label>${pin("validity", P.validity, "العرض ساري (يوم)")}
+        <label class="f"><span>مدة التنفيذ</span><input data-pricet="delivery" value="${esc(trv(P.delivery))}"></label><label class="f"><span>الضمان</span><input data-pricet="warranty" value="${esc(trv(P.warranty))}"></label>
+        <label class="f"><span>اسم المصنع</span><input data-pricet="factory" value="${esc(P.factory || "")}" placeholder="NOVERA"></label><label class="f"><span>رقم التليفون / واتساب</span><input data-pricet="phone" inputmode="tel" value="${esc(P.phone || "")}" placeholder="010xxxxxxxx"></label></div>
+      <label class="f"><span>ملاحظات تظهر في العرض</span><input data-pricet="notes" value="${esc(P.notes)}"></label></details>
     <div class="btnrow"><button class="primary" data-quote>عرض سعر PDF للعميل</button><span class="hint" id="quoteMsg"></span></div></section>`;
   return h;
 }
@@ -8704,9 +8754,9 @@ function quickEstimate(units) {
     const gs = groupSheet(g);
     const n = Math.max(1, Math.ceil(a / ((gs.w * gs.h || sheetA) * 0.8)));
     sheets += n;
-    const pr = +P.sheets[g.key] || +P.defaultSheet || 0;
-    if (!pr) missing++;
-    mat += n * pr;
+    const pm = m2Price({ ...g, sheet: gs }, P);
+    if (!pm) missing++;
+    mat += (a / 10000) * (1 + (+P.waste || 0) / 100) * pm;
   }
   let band = 0, area = 0, ok = 0, pieces = 0;
   const hw = {};
@@ -8718,7 +8768,7 @@ function quickEstimate(units) {
     for (const [k, q] of Object.entries(r.hardware || {})) hw[k] = (hw[k] || 0) + (+q || 0);
   }
   const hwT = Object.entries(hw).reduce((s, [k, q]) => s + q * (+P.hw[k] || 0), 0);
-  const labor = ok * (+P.laborUnit || 0) + area * (+P.laborM2 || 0) + (ok ? +P.install || 0 : 0);
+  const labor = ok * (+P.laborUnit || 0) + area * (+P.laborM2 || 0) + (ok ? (+P.install || 0) + (+P.transport || 0) : 0);
   const cost = mat + band * (+P.band || 0) + hwT + labor;
   const total = cost * (1 + (+P.margin || 0) / 100);
   return { total, cost, profit: total - cost, sheets, pieces, units: ok, area, priced: missing === 0 && total > 0 };
