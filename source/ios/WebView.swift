@@ -1,6 +1,7 @@
 import SwiftUI
 import WebKit
 import ARKit
+import QuickLook
 
 /// Shows the app from the bundled Web folder through a private "novera://" address, so it works with no internet
 /// and keeps its projects (IndexedDB / localStorage) like a normal app.
@@ -171,14 +172,35 @@ struct NoveraWebView: UIViewRepresentable {
         }
 
         // MARK: AR — the design standing in the room at its real size
+        // the page waits for window.noveraARDone(ok, how, message): how = "ar" (Quick Look opened) | "share" (no AR here →
+        // the file went to the share sheet, open it later from Files) | "" (failed, message says why)
+        func arDone(_ ok: Bool, _ how: String, _ msg: String = "") {
+            let m = msg.replacingOccurrences(of: "\\", with: "").replacingOccurrences(of: "'", with: "’")
+            DispatchQueue.main.async { self.webView?.evaluateJavaScript("window.noveraARDone && window.noveraARDone(\(ok), '\(how)', '\(m)')") }
+        }
         func showAR(_ body: Any) {
-            guard let b = body as? [String: Any], let b64 = b["b64"] as? String, let data = Data(base64Encoded: b64) else { return }
-            let name = ((b["name"] as? String) ?? "NOVERA.usdz").replacingOccurrences(of: "/", with: "-")
-            let url = FileManager.default.temporaryDirectory.appendingPathComponent(name)
-            do { try data.write(to: url, options: .atomic) } catch { return }
+            guard let b = body as? [String: Any], let b64 = b["b64"] as? String, let data = Data(base64Encoded: b64), !data.isEmpty else {
+                arDone(false, "", "ملف الـAR وصل ناقص — جرّب تاني."); return
+            }
+            // a plain ASCII name in its own folder (Quick Look is picky about odd file names)
+            let dir = FileManager.default.temporaryDirectory.appendingPathComponent("NOVERA-AR", isDirectory: true)
+            try? FileManager.default.removeItem(at: dir)
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            let url = dir.appendingPathComponent("NOVERA-\(Int(Date().timeIntervalSince1970)).usdz")
+            do { try data.write(to: url, options: .atomic) } catch { arDone(false, "", "مقدرتش أحفظ ملف الـAR على الجهاز."); return }
             DispatchQueue.main.async {
-                guard let top = Coordinator.topController() else { return }
-                ARPreview.shared.show(fileURL: url, from: top)
+                guard let top = Coordinator.topController(), let web = self.webView else { self.arDone(false, "", "الشاشة مش جاهزة — جرّب تاني."); return }
+                if ARWorldTrackingConfiguration.isSupported && QLPreviewController.canPreview(url as NSURL) {
+                    ARPreview.shared.show(fileURL: url, from: top)
+                    self.arDone(true, "ar")
+                } else {
+                    // no AR on this device (or Quick Look refuses) → save the file; it opens in AR from the Files app on an iPhone / iPad
+                    let sheet = UIActivityViewController(activityItems: [url], applicationActivities: nil)
+                    sheet.popoverPresentationController?.sourceView = web
+                    sheet.popoverPresentationController?.sourceRect = CGRect(x: web.bounds.midX, y: 70, width: 1, height: 1)
+                    top.present(sheet, animated: true)
+                    self.arDone(true, "share")
+                }
             }
         }
 

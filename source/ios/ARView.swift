@@ -11,6 +11,8 @@ final class ARPreview: NSObject, QLPreviewControllerDataSource {
         file = fileURL
         let ql = QLPreviewController()
         ql.dataSource = self
+        ql.currentPreviewItemIndex = 0
+        ql.modalPresentationStyle = .fullScreen
         top.present(ql, animated: true)
     }
 

@@ -4651,7 +4651,8 @@ function renderPop() {
     const direct = f.ar && !f.standalone && !f.framed;
     h = `<div class="popbox" role="dialog" aria-label="شوفها في الأوضة"><div class="libhead"><h2>شوفها في الأوضة (AR)</h2><button class="x" data-close aria-label="قفل">×</button></div>
       ${direct ? `<a class="arlink" rel="ar" href="${f.url}#allowsContentScaling=0">${f.img ? `<img src="${f.img}" alt="التصميم">` : `<img alt="">`}<span>👆 دوس هنا — والكاميرا تفتح والتصميم يقف على الأرض بمقاسه</span></a>` : f.img ? `<img class="arprev" src="${f.img}" alt="التصميم">` : ""}
-      <p class="hint">${direct ? "وجّه الكاميرا على الأرض وحرّك الجهاز شوية لحد ما يلاقيها، والتصميم هيتحط بمقاسه الحقيقي. تقدر تلف حواليه وتحرّكه بصباعك." : f.ar ? "الـAR مش بيفتح من جوه التطبيق المثبّت على الشاشة أو من صفحة جوه صفحة. احفظ الملف، وبعدين افتحه من تطبيق «الملفات»، وهيفتح على طول بالكاميرا." : "الـAR بيشتغل على الآيباد والآيفون. احفظ الملف وابعته للجهاز، وافتحه من «الملفات»."}</p>
+      ${f.err ? `<p class="erow"><i class="warn">⚠</i> ${esc(f.err)} احفظ الملف من الزرار ده وافتحه من تطبيق «الملفات» — هيفتح بالكاميرا على طول.</p>` : ""}
+      <p class="hint">${f.native ? "" : direct ? "وجّه الكاميرا على الأرض وحرّك الجهاز شوية لحد ما يلاقيها، والتصميم هيتحط بمقاسه الحقيقي. تقدر تلف حواليه وتحرّكه بصباعك." : f.ar ? "الـAR مش بيفتح من جوه التطبيق المثبّت على الشاشة أو من صفحة جوه صفحة. احفظ الملف، وبعدين افتحه من تطبيق «الملفات»، وهيفتح على طول بالكاميرا." : "الـAR بيشتغل على الآيباد والآيفون. احفظ الملف وابعته للجهاز، وافتحه من «الملفات»."}</p>
       <div class="btnrow"><button class="${direct ? "ghost2" : "primary"}" data-arsave>💾 احفظ ملف AR (USDZ)</button></div><p class="hint" id="arMsg"></p></div>`;
   }
   else if (ui.pop === "export") {
@@ -6419,22 +6420,37 @@ const view = {
     if (!D.spot) return;
     const h = D.h, grp = new THREE.Group();
     const skin = new THREE.MeshStandardMaterial({ color: 0x3b6fb6, roughness: 0.8, transparent: true, opacity: 0.85 });
-    const legs = new THREE.Mesh(new THREE.CylinderGeometry(9, 10, h * 0.47, 14), skin); legs.position.y = h * 0.235;
-    const body = new THREE.Mesh(new THREE.CylinderGeometry(14, 11, h * 0.36, 14), skin); body.position.y = h * 0.47 + h * 0.18;
-    const head = new THREE.Mesh(new THREE.SphereGeometry(h * 0.065, 16, 12), new THREE.MeshStandardMaterial({ color: 0xe8c3a0, roughness: 0.7 })); head.position.y = h - h * 0.065;
-    const arm = new THREE.Mesh(new THREE.CylinderGeometry(4, 4, h * 0.42, 10), skin); arm.position.set(16, h * 0.53 + h * 0.21, 0);
-    grp.add(legs, body, head, arm);
+    // local frame: +z = the way the person faces (towards the counter), +x = their left
+    const sk = new THREE.MeshStandardMaterial({ color: 0xe8c3a0, roughness: 0.7 });
+    const legH = h * 0.47, torso = h * 0.3, hr = h * 0.065;
+    for (const sx of [-1, 1]) {
+      const leg = new THREE.Mesh(new THREE.CylinderGeometry(5.5, 6, legH, 12), skin); leg.position.set(sx * 8, legH / 2, 0); grp.add(leg);
+      const foot = new THREE.Mesh(new THREE.BoxGeometry(9, 6, 24), skin); foot.position.set(sx * 8, 3, 6); grp.add(foot);
+      // arms reach forward to the counter
+      const arm = new THREE.Mesh(new THREE.CylinderGeometry(3.6, 3.6, h * 0.36, 10), skin);
+      const sh = legH + torso - 4;
+      arm.position.set(sx * 19, sh - Math.cos(0.75) * h * 0.18, Math.sin(0.75) * h * 0.18); arm.rotation.x = -0.75; grp.add(arm);
+    }
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(15, 12, torso, 16), skin); body.position.y = legH + torso / 2; body.scale.z = 0.65;
+    const neck = new THREE.Mesh(new THREE.CylinderGeometry(4.5, 4.5, h - legH - torso - 2 * hr, 10), sk); neck.position.y = legH + torso + (h - legH - torso - 2 * hr) / 2;
+    const head = new THREE.Mesh(new THREE.SphereGeometry(hr, 18, 14), sk); head.position.y = h - hr;
+    const nose = new THREE.Mesh(new THREE.ConeGeometry(1.8, 4, 8), sk); nose.rotation.x = Math.PI / 2; nose.position.set(0, h - hr, hr + 1.5);
+    grp.add(body, neck, head, nose);
     grp.position.set(D.spot.x, 0, D.spot.z); grp.rotation.y = D.spot.face;
     g.add(grp);
     const ring = new THREE.Mesh(new THREE.RingGeometry(55, 57, 48), new THREE.MeshBasicMaterial({ color: 0x1fa44a, transparent: true, opacity: 0.7, side: THREE.DoubleSide }));
     ring.rotation.x = -Math.PI / 2; ring.position.set(D.spot.x, D.reach, D.spot.z); g.add(ring);
     if (D.tri) {
-      const y = D.counterH || 90;
+      // drawn just above the counter, 12 cm in front of each door face (inside the cabinets the lines were hidden)
+      const y = (D.counterH || 90) + 3;
       for (const t of D.tri) {
-        const a = D.ctr(t.a), b = D.ctr(t.b), good = t.d >= 120 && t.d <= 270;
-        const geo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(a[0], y + 2, a[1]), new THREE.Vector3(b[0], y + 2, b[1])]);
-        const ln = new THREE.Line(geo, new THREE.LineDashedMaterial({ color: good ? 0x1fa44a : 0xd23228, dashSize: 8, gapSize: 5 })); ln.computeLineDistances(); g.add(ln);
-        const dot = new THREE.Mesh(new THREE.SphereGeometry(4, 12, 8), new THREE.MeshBasicMaterial({ color: 0xd9a63a })); dot.position.set(a[0], y + 2, a[1]); g.add(dot);
+        const a = D.tp(t.a), b = D.tp(t.b), good = t.d >= 120 && t.d <= 270;
+        const A = new THREE.Vector3(a[0], y, a[1]), B = new THREE.Vector3(b[0], y, b[1]), len = A.distanceTo(B);
+        const bar = new THREE.Mesh(new THREE.CylinderGeometry(1.3, 1.3, len, 8), new THREE.MeshBasicMaterial({ color: good ? 0x1fa44a : 0xd23228 }));
+        bar.position.copy(A).add(B).multiplyScalar(0.5);
+        bar.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), B.clone().sub(A).normalize());
+        g.add(bar);
+        const dot = new THREE.Mesh(new THREE.SphereGeometry(5, 14, 10), new THREE.MeshBasicMaterial({ color: 0xd9a63a })); dot.position.copy(A); g.add(dot);
       }
     }
   },
@@ -7590,10 +7606,9 @@ function designChecks(project = state.project) {
     // ---- kitchen ergonomics: the work triangle, the hob's neighbours, hood height, corners, walkways
     const kit = items.filter((it) => it.u.kind === "kitchen");
     const prm = (it) => R(it.u).params || {};
-    const isHob = (it) => /بوتجاز|مسطح|hob/i.test(`${prm(it).unit_label || ""} ${it.u.name}`);
-    const ctr = (it) => Room.centerOf(it.pose, it.box);
+    const ctr = (it) => frontCenter(it);
     const dist = (a, b) => Math.hypot(ctr(a)[0] - ctr(b)[0], ctr(a)[1] - ctr(b)[1]);
-    const sinkIt = kit.find((it) => prm(it).include_sink_cutout), hobIt = kit.find(isHob), frIt = kit.find((it) => prm(it).unit_category === "fridge");
+    const { sink: sinkIt, hob: hobIt, fridge: frIt } = workSpots(kit);
     if (sinkIt && hobIt && frIt) {
       const sum = dist(sinkIt, hobIt) + dist(hobIt, frIt) + dist(frIt, sinkIt);
       if (sum > 790) add("w", `مثلث الشغل (حوض ↔ بوتجاز ↔ تلاجة) ${n1(sum / 100)} م — طويل، الأحسن بين 4 و7.9 م.`);
@@ -8762,12 +8777,6 @@ async function exportAR() {
     const bytes = await new USDZExporter().parse(wrap, { quickLookCompatible: true, ar: { anchoring: { type: "plane" }, planeAnchoring: { alignment: "horizontal" } } });
     const name = `${fileBase()} — AR.usdz`;
     const nat = window.webkit?.messageHandlers?.noveraAR;
-    if (nat) {
-      let bin = "";
-      for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
-      nat.postMessage({ name, b64: btoa(bin) });
-      return "shared";
-    }
     // Quick Look opens only from a real tap on an <a rel="ar"> (an automatic click after the export is
     // ignored, and inside a Home-Screen app or an embedded page it never opens) → a page with that button
     const blob = new Blob([bytes], { type: "model/vnd.usdz+zip" });
@@ -8775,6 +8784,23 @@ async function exportAR() {
     let img = "";
     try { img = view.snapshot(640, 420, true); } catch { img = ""; }
     ui.arFile = { blob, name, url: URL.createObjectURL(blob), img, ar: !!document.createElement("a").relList?.supports?.("ar"), standalone: !!(navigator.standalone || matchMedia("(display-mode: standalone)").matches), framed: window.top !== window };
+    if (nat) {
+      // the iOS app opens it with Apple's AR Quick Look and answers through window.noveraARDone; no answer in 10 s
+      // (an older app build, or the viewer failed silently) → the save pop, so there is always a way forward
+      let bin = "";
+      for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+      const answer = new Promise((res) => {
+        const t = setTimeout(() => { window.noveraARDone = null; res({ ok: false, how: "", msg: "" }); }, 10000);
+        window.noveraARDone = (ok, how, msg) => { clearTimeout(t); window.noveraARDone = null; res({ ok, how, msg }); };
+      });
+      nat.postMessage({ name, b64: btoa(bin) });
+      bin = "";
+      const a = await answer;
+      if (a.ok && a.how === "ar") return "shared";
+      if (a.ok && a.how === "share") { alertBar("الجهاز ده مفيهوش AR — احفظ الملف وافتحه من «الملفات» على آيفون أو آيباد."); return "shared"; }
+      ui.arFile.err = a.msg || "الـAR ما فتحش من جوه التطبيق.";
+      ui.arFile.ar = false; ui.arFile.native = true;
+    }
     ui.pop = "ar"; renderPop();
     return "shared";
   } finally {
@@ -10171,6 +10197,23 @@ function speakRun() {
 
 // ================================================================== v47 — ergonomics: a person in the kitchen, reach and the work triangle
 function ergo() { return (ui.ergo ??= { on: false, h: 165 }); }
+/** the middle of a unit's door face (the work triangle is measured between the fronts, where the cook stands) */
+function frontCenter(it, out = 0) {
+  const f = Room.footprint(it.pose, it.box), c = Room.centerOf(it.pose, it.box);
+  const p = [(f[2][0] + f[3][0]) / 2, (f[2][1] + f[3][1]) / 2];
+  if (!out) return p;
+  const dx = p[0] - c[0], dz = p[1] - c[1], L = Math.hypot(dx, dz) || 1;
+  return [p[0] + (dx / L) * out, p[1] + (dz / L) * out];
+}
+/** sink / hob / fridge of a kitchen — shared by the design checks and the person panel */
+function workSpots(items) {
+  const prm = (it) => R(it.u).params || {};
+  const yes = (v) => v === true || v === "true";
+  const sink = items.find((it) => it.u.kind === "kitchen" && yes(prm(it).include_sink_cutout));
+  const hob = items.find((it) => it.u.kind === "kitchen" && it.row !== "upper" && (prm(it).unit_category === "cooker_gap" || /بوتجاز|مسطح|hob|cooker/i.test(`${prm(it).unit_label || ""} ${it.u.name || ""}`)));
+  const fridge = items.find((it) => it.u.kind === "kitchen" && prm(it).unit_category === "fridge");
+  return { sink, hob, fridge };
+}
 /** the kitchen's key spots and how they relate to a person of height h — the numbers the panel and the 3D figure use */
 function ergoData() {
   const E = ergo(), h = +E.h || 165;
@@ -10178,19 +10221,24 @@ function ergoData() {
   const project = state.project, poses = projectPoses(project);
   const items = projectItems(project).map((it) => ({ ...it, u: project.units.find((x) => x.id === it.id), pose: poses.get(it.id) })).filter((x) => x.pose && x.u.kind === "kitchen");
   const prm = (it) => R(it.u).params || {};
-  const ctr = (it) => Room.centerOf(it.pose, it.box);
-  const isHob = (it) => /بوتجاز|مسطح|hob/i.test(`${prm(it).unit_label || ""} ${it.u.name}`);
-  const sink = items.find((it) => prm(it).include_sink_cutout === true || prm(it).include_sink_cutout === "true"), hob = items.find(isHob), fridge = items.find((it) => prm(it).unit_category === "fridge");
+  const { sink, hob, fridge } = workSpots(items);
+  const ctr = (it) => frontCenter(it);
   const base = items.filter((it) => it.row === "lower");
   const counterH = base.length ? Math.max(...base.map((it) => { const p = prm(it); return (+p.height || 72) + ((p.include_toe_kick === true || p.include_toe_kick === "true") ? +p.toe_kick_height || 10 : 0) + (+p.countertop_thickness || 3.8); })) : null;
   const uppers = items.filter((it) => it.row === "upper").map((it) => { const p = prm(it); const top = (+p.wall_mount_height || 140) + (+p.height || 70); return { it, bottom: +p.wall_mount_height || 140, top, shelf: top - 4 }; });
   const far = uppers.filter((x) => x.shelf > reach);
   const tri = sink && hob && fridge ? [[sink, hob], [hob, fridge], [fridge, sink]].map(([a, b]) => ({ a, b, d: Math.hypot(ctr(a)[0] - ctr(b)[0], ctr(a)[1] - ctr(b)[1]) })) : null;
-  // where the figure stands: in front of the sink (or the hob, or the first base unit), 55 cm out from the front
+  // where the figure stands: on the ROOM side of the sink (or the hob, or the first base unit) — the front edge of the footprint
+  // is the y0 side (corners 2,3; corners 0,1 are the back against the wall), body centre 30 cm out from the door face
   const at = sink || hob || base[0] || items[0] || null;
   let spot = null;
-  if (at) { const f = Room.footprint(at.pose, at.box); const c = ctr(at); const fx = (f[0][0] + f[1][0]) / 2, fz = (f[0][1] + f[1][1]) / 2; const dx = fx - c[0], dz = fz - c[1], L = Math.hypot(dx, dz) || 1; spot = { x: fx + (dx / L) * 45, z: fz + (dz / L) * 45, face: Math.atan2(-dx, -dz) }; }
-  return { h, reach, eye, counterRec, bend, counterH, uppers, far, tri, sink, hob, fridge, spot, ctr };
+  if (at) {
+    const f = Room.footprint(at.pose, at.box), c = Room.centerOf(at.pose, at.box);
+    const fx = (f[2][0] + f[3][0]) / 2, fz = (f[2][1] + f[3][1]) / 2;
+    const dx = fx - c[0], dz = fz - c[1], L = Math.hypot(dx, dz) || 1, out = 30;
+    spot = { x: fx + (dx / L) * out, z: fz + (dz / L) * out, face: Math.atan2(-dx, -dz), fx, fz };
+  }
+  return { h, reach, eye, counterRec, bend, counterH, uppers, far, tri, sink, hob, fridge, spot, ctr, tp: (it) => frontCenter(it, 12) };
 }
 function renderErgo() {
   const el = $("#ergop");
@@ -11467,4 +11515,4 @@ function cmdOpen() {
 function cmdClose() { const b = $("#cmdBox"); if (b) { b.hidden = true; b.innerHTML = ""; } }
 addEventListener("keydown", (e) => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); if ($("#cmdBox") && !$("#cmdBox").hidden) cmdClose(); else cmdOpen(); } });
 
-if (DEV) window.__dbg = { alitaJoints, stepJointsHtml, exportAsmBooklet, view, plan, R, render: (x) => render(x), ak: (t) => kitchenProposals(t), applyK: (u) => applyKitchen(u, null), checks: () => designChecks(), merge: (a, b) => mergeInto(a, b), get ui() { return ui; }, layout: asmLayout, libUnit, libSet, thumbs, openStudio: (u, x) => openStudio(u, x), exportUnitDrawings, exportPurchasePdf, exportPurchaseXlsx, renderPop, libAdd, exportQuotePdf, exportAsmBooklet, presentOn, presentOff, renderPresent, exportMachines, speakRun, applyLighting, setParams, cmdOpen, elev: (u) => unitElevSvg(u), cutReady, get cutData() { return cutData; }, projectPieces: () => projectPieces(state.project), workerOn, workerOff, renderWorker, zwLibPump, zwSolve, zwLibStore, zwLibPaint, ZW_LIB, get state() { return state; } };
+if (DEV) window.__dbg = { ergoData, exportAR, alitaJoints, stepJointsHtml, exportAsmBooklet, view, plan, R, render: (x) => render(x), ak: (t) => kitchenProposals(t), applyK: (u) => applyKitchen(u, null), checks: () => designChecks(), merge: (a, b) => mergeInto(a, b), get ui() { return ui; }, layout: asmLayout, libUnit, libSet, thumbs, openStudio: (u, x) => openStudio(u, x), exportUnitDrawings, exportPurchasePdf, exportPurchaseXlsx, renderPop, libAdd, exportQuotePdf, exportAsmBooklet, presentOn, presentOff, renderPresent, exportMachines, speakRun, applyLighting, setParams, cmdOpen, elev: (u) => unitElevSvg(u), cutReady, get cutData() { return cutData; }, projectPieces: () => projectPieces(state.project), workerOn, workerOff, renderWorker, zwLibPump, zwSolve, zwLibStore, zwLibPaint, ZW_LIB, get state() { return state; } };
