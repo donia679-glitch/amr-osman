@@ -1050,12 +1050,15 @@ app.innerHTML = `
       <div id="scenep" class="scenep" hidden></div>
       <div id="inspp" class="scenep" hidden></div>
       <div id="ergop" class="scenep ergop" hidden></div>
+      <div id="matp" class="scenep matp" hidden></div>
       <div id="multibar" class="movebar multibar" hidden></div>
       <div id="movebar" class="movebar" hidden><span>وضع التحريك — اسحب الوحدة اللي عليها الإطار الدهبي، أو امسكها من نقطة دهبي في ركنها عشان تلزق ركنها في ركن وحدة تانية أو ركن الحيطة بالظبط.</span><button data-moveoff>✕ خروج</button></div>
       <div id="view3d" class="view3d"><div id="fallback" class="fallback" hidden></div><div id="ptbar" class="ptbar" hidden></div>
         <div class="vctl" role="toolbar" aria-label="التحكم في العرض">
           <span class="vmode" role="group" aria-label="اللمس بيحرّك إيه"><button data-vmode="scene" title="السحب بيلف المشهد كله">🌍 المشهد</button><button data-vmode="units" title="السحب بيحرّك الوحدة المختارة">✋ الوحدات</button></span>
           <button data-vmulti class="vmulti" title="اختار أكتر من وحدة (أو دوس على وحدة ضغطة طويلة)">☑</button>
+          <button data-vmat class="vmat" title="خامات الوحدة بسرعة" aria-label="خامات الوحدة بسرعة">🎨</button>
+          <button data-vnudge class="vnudge" title="حرّك الوحدة بمقاس محدد" aria-label="حرّك الوحدة بمقاس محدد">↔</button>
           <button data-vz="0.8" aria-label="قرّب">+</button><button data-vz="1.25" aria-label="بعّد">−</button>
           <button data-vr="-25" aria-label="لف الكاميرا شمال">⟲</button><button data-vr="25" aria-label="لف الكاميرا يمين">⟳</button>
           <button data-vp="fit" aria-label="شوف الكل">⤢</button>
@@ -1502,6 +1505,8 @@ document.querySelector("#view3d .vcube").addEventListener("click", (e) => { cons
 document.querySelector("#view3d .vctl").addEventListener("click", (e) => {
   const b = e.target.closest("button");
   if (b?.hasAttribute("data-vmulti")) { toggleMulti(); return; }
+  if (b?.hasAttribute("data-vmat")) { if (!selUnit()) { alertBar("اختار وحدة الأول"); return; } ui.matpOpen = !ui.matpOpen; ui.nudgeOpen = false; renderMatp(); return; }
+  if (b?.hasAttribute("data-vnudge")) { if (!selUnit()) { alertBar("اختار وحدة الأول"); return; } ui.nudgeOpen = !ui.nudgeOpen; ui.matpOpen = false; if (ui.nudgeOpen && !state.whole && (state.project.units.length > 1 || state.project.room)) { state.whole = true; save(); render(true); } renderMatp(); return; }
   if (b?.dataset.vmode) { if (b.dataset.vmode === "scene") sceneMode(); else { ui.moveMode = true; renderMoveBar(); renderChips(); if (view.ready) view.update(); if (!state.sel) alertBar("اختار وحدة الأول (دوس عليها) وبعدين اسحبها."); } return; }
   if (!b || !view.ready) return;
   if (b.dataset.vz) view.zoom(+b.dataset.vz);
@@ -1549,6 +1554,84 @@ $("#inspp").addEventListener("click", (e) => {
   if (b.hasAttribute("data-ireset")) { ui.explode = 0; ui.cut = null; ui.cutT = 0.5; ui.hideCls = new Set(); ui.hidePart = new Set(); ui.tapHide = false; view.ren.localClippingEnabled = false; renderInsp(); renderChips(); view.update(); }
 });
 // ---- scene & lighting panel, saved camera views, final (path-traced) render
+// ---- quick materials: every slot of the selected unit in one small panel beside the view controls (🎨 button)
+function unitMatKeys(u) {
+  return u.kind === "kitchen" ? Object.entries(KU.K_MATS).map(([k, v]) => [k, v[0]]) : u.kind === "dressing" ? Object.entries(D.MATERIAL_KEYS).map(([k, v]) => [k, v.label]) : Object.entries(PANEL_MATS);
+}
+function unitLibOf(u, key, r) {
+  if (u.kind === "panel") { const m = (r?.params || {}).materials?.[key]; return m?.lib || r?.libOf?.(key) || ""; }
+  return u.libs?.[key] || r?.libOf?.(key) || "";
+}
+/** the units a quick change goes to: the selection, or every unit of the same kind in the project */
+function matTargets(u) { return ui.matAll ? state.project.units.filter((x) => x.kind === u.kind) : targetUnits().filter((x) => x.kind === u.kind); }
+function renderMatp() {
+  const el = $("#matp"), u = selUnit();
+  const on = !!((ui.matpOpen || ui.nudgeOpen) && u && state.tab === "design" && !ui.planOn);
+  el.hidden = !on;
+  for (const b of document.querySelectorAll("#view3d .vctl [data-vmat], #view3d .vctl [data-vnudge]")) b.classList.toggle("on", on && (b.hasAttribute("data-vmat") ? !!ui.matpOpen : !!ui.nudgeOpen));
+  if (!on) return;
+  if (ui.nudgeOpen) { el.innerHTML = nudgeHtml(u); return; }
+  const r = R(u), keys = unitMatKeys(u).filter(([k]) => !(r.parts || []).length || (r.parts || []).some((pt) => pt.material === k) || u.libs?.[k]);
+  const O = matOvOptions(u, r);
+  const opt = (k, cur) => `<option value="${esc(k)}" ${cur === k ? "selected" : ""}>${esc(libDisplay(k))}</option>`;
+  const n = matTargets(u).length;
+  el.innerHTML = `<div class="sph"><b>🎨 خامات «${esc(u.name)}»</b><button class="x" data-mclose aria-label="قفل">×</button></div>
+    <label class="chk"><input type="checkbox" data-matall ${ui.matAll ? "checked" : ""}> طبّق على كل وحدات ${u.kind === "kitchen" ? "المطبخ" : u.kind === "dressing" ? "الدريسنج" : "النوع ده"} في المشروع${ui.matAll ? ` (${n})` : ""}</label>
+    <div class="mqlist">${keys.map(([k, l]) => { const cur = unitLibOf(u, k, r); return `<div class="mqrow"><i style="background:${esc(cur ? libColorOf(cur) : r.colors?.[k] || "#ccc")}"></i><div><b>${esc(l)}</b><select data-qmat="${k}" aria-label="${esc(l)}"><option value="">— الافتراضي</option><optgroup label="خامات المشروع">${O.own.map((x) => opt(x, cur)).join("")}</optgroup>${O.mine.length ? `<optgroup label="خاماتي">${O.mine.map((x) => opt(x, cur)).join("")}</optgroup>` : ""}<optgroup label="الكتالوج">${O.cat.map((x) => opt(x, cur)).join("")}</optgroup></select></div><button class="sm" data-qfin="${k}" title="الكتالوج بالصور واللمعة">✦</button></div>`; }).join("")}</div>
+    <p class="hint">✦ بيفتح الكتالوج بالصور واللمعة. لقطعة واحدة بعينها (ضلفة بلون تاني): من إعدادات الوحدة ← «🎨 خامة لكل قطعة».</p>`;
+}
+$("#matp").addEventListener("pointerdown", (e) => e.stopPropagation());
+$("#matp").addEventListener("change", (e) => {
+  const t = e.target, u = selUnit(); if (!u) return;
+  if (t.hasAttribute("data-matall")) { ui.matAll = t.checked; renderMatp(); return; }
+  if (t.dataset.qmat) {
+    const lib = t.value;
+    if (lib && Mat.isCustom(lib)) { const m = Mat.get(lib); if (m) state.project.mats = [...(state.project.mats || []).filter((x) => x.id !== lib), m]; }
+    for (const x of matTargets(u)) applyLibTo(x, t.dataset.qmat, lib);
+    renderMatp();
+    return;
+  }
+  if (t.id === "nudgeD") { ui.nudge = Math.max(0.1, toNum(t.value) || 5); }
+});
+$("#matp").addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  const u = selUnit();
+  if (b.hasAttribute("data-mclose")) { ui.matpOpen = false; ui.nudgeOpen = false; renderMatp(); return; }
+  if (b.dataset.qfin && u) { ui.matPick = b.dataset.qfin; ui.pop = "mat"; renderPop(); return; }
+  if (b.dataset.nd && u) { ui.nudge = Math.max(0.1, toNum($("#nudgeD")?.value) || ui.nudge || 5); nudgeUnit(u, b.dataset.nd, ui.nudge); return; }
+});
+// ---- move the selected unit by an exact distance (↔ button): along its wall, away from / towards it, sideways when free, up / down
+function nudgeHtml(u) {
+  const L = projectPoses(state.project).get(u.id), onWall = !!L?.wall;
+  const d = ui.nudge || 5;
+  const btn = (k, l, t) => `<button class="ndb" data-nd="${k}" title="${t}">${l}</button>`;
+  return `<div class="sph"><b>↔ حرّك «${esc(u.name)}» بمقاس</b><button class="x" data-mclose aria-label="قفل">×</button></div>
+    <label class="f"><span>المسافة (سم)</span><input id="nudgeD" type="text" inputmode="decimal" data-numf value="${n1(d)}"></label>
+    ${onWall ? `<small class="hint">الوحدة على الحيطة ${roomSegs(state.project).findIndex((g) => g.id === L.wall) + 1} · من أولها ${n1(L.s)} سم</small>
+    <div class="ndgrid"><span></span>${btn("up", "⬆ فوق", "ارفعها من الأرض")}<span></span>${btn("-s", "⇦ لورا على الحيطة", "ناحية أول الحيطة")}${btn("out", "⇩ بعيد عن الحيطة", "تبعد عن الحيطة وتقف حرة")}${btn("+s", "⇨ لقدام على الحيطة", "ناحية آخر الحيطة")}<span></span>${btn("down", "⬇ تحت", "نزّلها")}<span></span></div>`
+    : `<small class="hint">الوحدة واقفة حرة (مش على حيطة) — الاتجاهات بالنسبة لوشها.</small>
+    <div class="ndgrid"><span></span>${btn("fwd", "⬆ لقدام", "في اتجاه وشها")}<span></span>${btn("left", "⇦ شمال", "")}${btn("back", "⬇ لورا", "عكس وشها")}${btn("right", "⇨ يمين", "")}${btn("up", "⬆ فوق", "ارفعها من الأرض")}${btn("snap", "🧲 الزق في أقرب حيطة", "ترجع تقعد على الحيطة")}${btn("down", "⬇ تحت", "نزّلها")}</div>`}
+    <p class="hint">كل ضغطة = المسافة اللي فوق. «من الأرض» دلوقتي: ${n1(+u.lift || 0)} سم.</p>`;
+}
+function nudgeUnit(u, dir, dist) {
+  if (dir === "up" || dir === "down") { u.lift = Math.max(0, Math.round(((+u.lift || 0) + (dir === "up" ? dist : -dist)) * 10) / 10); save(); renderChips(); renderProps(); renderMatp(); view.update(); if (ui.planOn) plan.render(); return; }
+  const poses = projectPoses(state.project), L = poses.get(u.id); if (!L) return;
+  const box = localBox(R(u)), w = box.x1 - box.x0;
+  pinOthers(u.id);
+  if (dir === "snap") {
+    const c = Room.centerOf(L, box), pose = Room.snapPose(roomSegs(state.project), box, c, L.rot || 0, [], rowOf(u, R(u)));
+    if (pose?.wall) u.pos = { wall: pose.wall, s: pose.s }; else { alertBar("مفيش حيطة قريبة — قرّبها الأول"); return; }
+  } else if (L.wall && (dir === "+s" || dir === "-s")) {
+    const seg = roomSegs(state.project).find((g) => g.id === L.wall);
+    u.pos = { wall: L.wall, s: Math.max(0, Math.min((seg?.L ?? 1e9) - w, Math.round((L.s + (dir === "+s" ? dist : -dist)) * 10) / 10)) };
+  } else {
+    // free move in the unit's own frame: x along its width, forward = the way its front faces (away from its wall)
+    const rot = L.rot || 0, ex = Room.axisX(rot), ez = Room.axisZ(rot);
+    const k = dir === "right" ? [ex, dist] : dir === "left" ? [ex, -dist] : dir === "out" || dir === "fwd" ? [ez, dist] : [ez, -dist];
+    u.pos = { x: Math.round((L.x + k[0][0] * k[1]) * 10) / 10, z: Math.round((L.z + k[0][1] * k[1]) * 10) / 10, rot };
+  }
+  save(); renderChips(); renderMatp(); view.update(); if (ui.planOn) plan.render();
+}
 function renderScene() {
   const el = $("#scenep");
   const on = !!(ui.sceneOpen && state.render && state.tab === "design" && !ui.planOn);
@@ -10725,7 +10808,7 @@ function render(refit = false) {
   if (ui.mode !== "owner") return;
   if (state.tab === "design") {
     $("#view3d").hidden = !!ui.planOn;
-    renderStrip(); renderChips(); renderProps(); renderErrs(); renderMoveBar(); renderScene(); renderMulti(); renderInsp(); renderErgo();
+    renderStrip(); renderChips(); renderProps(); renderErrs(); renderMoveBar(); renderScene(); renderMulti(); renderInsp(); renderErgo(); renderMatp();
     plan.render();
     if (!ui.planOn) view.update(refit);
   }
