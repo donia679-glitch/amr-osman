@@ -163,6 +163,16 @@ cd /home/claude/novera-app && python3 tools/build_pwa.py && python3 tools/build_
   drawing on a wall face in the studio goes onto the wall (vertical plane); the open project can be deleted (switches to the last other one).
 - v44 offcut stock modes · v43 ceiling unit with LED board, trim tool, stand-up board · v42 intersection snaps · v41 big audit (~45 fixes) · v34–v40 walls in the studio, views, multi-select, corner plinths, tape.
 
+## Test kit
+`testkit/` = the Playwright / node scripts used across sessions (p19…p56, probe*.py, blk*.mjs, render3.py, cmp.py, zwpre.py…). They expect the app served from `/home/claude/novera-app/dist/pwa` and write PNGs next to themselves — copy the folder to the scratchpad first (`cp -r testkit <scratchpad>/lib`) and fix paths if needed.
+Rendering tips: run long renders in the background (`nohup python3 x.py &` then poll), screenshot timeout 90 s, never `pkill -f chromium`.
+For photo-matching furniture: grid-zoom the photo (PIL), measure edges relative to each other, render from the photo's own camera (three +z = unit front, +x = unit right) and show photo | render side by side before shipping.
+
+## Open questions for Amr (from the last session)
+- `blk_shelf_black_rings`: the right cubbies have a closed front on their outer half (as read from his photo) — confirm or remove.
+- Free-standing tables / blocks keep banding on their back edges; bookshelves (`against_wall`) don't — confirm.
+- Older block tables (v86–v91 collage presets) were never re-checked with the photo-matching method; offer to redo them one by one.
+
 ## Still waiting on Amr
 Support email/phone for privacy.html · Apple Developer account · subscription Group ID (then `required = true`) · real iPad test · English spelling of his name (Osman).
 Known, not fixed: side banding on the rabbet edge, hinge cups off by default, laminated-layer labels, Arabic folder names in CNC/DXF zips,

@@ -1,0 +1,36 @@
+import asyncio, subprocess, time
+from playwright.async_api import async_playwright
+srv = subprocess.Popen(["python3","-m","http.server","8791"],cwd="/home/claude/novera-app/dist/pwa",stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+time.sleep(1)
+async def main():
+    async with async_playwright() as p:
+        b = await p.chromium.launch(args=["--use-gl=swiftshader","--enable-webgl","--ignore-gpu-blocklist"])
+        pg = await b.new_page(viewport={"width":1180,"height":820})
+        errs=[]
+        pg.on("pageerror", lambda e: errs.append(str(e)))
+        pg.on("console", lambda m: errs.append("C:"+m.text) if m.type in("error","warning") else None)
+        await pg.goto("http://localhost:8791/index.html")
+        await pg.evaluate("localStorage.clear()"); await pg.reload(); await pg.wait_for_timeout(6000)
+        await pg.evaluate("window.__dbg.state.tourDone=true; document.querySelector('[data-hlast]')?.click()")
+        await pg.wait_for_timeout(1500)
+        await pg.click("#libBtn"); await pg.wait_for_timeout(5000)
+        n = await pg.evaluate("[...document.querySelectorAll('#lib .th')].length")
+        on = await pg.evaluate("[...document.querySelectorAll('#lib .th.on')].length")
+        print("thumbs", n, on)
+        await pg.screenshot(path="lib.png")
+        await pg.click("[data-smart=s_line300]"); await pg.wait_for_timeout(2500)
+        await pg.screenshot(path="prev.png")
+        await pg.click("[data-lpopen]"); await pg.wait_for_timeout(1500)
+        await pg.screenshot(path="prev_open.png")
+        n0 = await pg.evaluate("window.__dbg.state.project.units.length")
+        await pg.click("[data-lpadd]"); await pg.wait_for_timeout(2500)
+        print("units", n0, await pg.evaluate("window.__dbg.state.project.units.length"))
+        print(await pg.evaluate("JSON.stringify(window.__dbg.state.project.units.slice(-10).map(u=>[u.name,u.pos]))"))
+        await pg.wait_for_timeout(2000); await pg.screenshot(path="added.png"); print((await pg.evaluate("JSON.stringify(window.__dbg.checks?.()||null)"))[:600])
+        # quick add
+        await pg.click("#libBtn"); await pg.wait_for_timeout(800)
+        await pg.click("[data-kitchen=k_hob90] [data-quick]"); await pg.wait_for_timeout(1500)
+        print("units2", await pg.evaluate("window.__dbg.state.project.units.length"), await pg.evaluate("document.querySelector('#libPrev')?.hidden"))
+        print(errs[:10])
+        await b.close()
+asyncio.run(main()); srv.kill()
