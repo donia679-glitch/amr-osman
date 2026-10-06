@@ -1788,6 +1788,8 @@ $("#home").addEventListener("click", async (e) => {
   if (d.hsv) { svFrom = "home"; await openProject(d.hsv, true); SurveyUI.open("steps"); return; }
   if (b.hasAttribute("data-hdefs")) { ui.pop = "defaults"; renderPop(); return; }
   if (b.hasAttribute("data-hbrand")) { ui.pop = "brand"; renderPop(); return; }
+  if (b.hasAttribute("data-hrecover")) { await recoverOpen(); return; }
+  if (b.hasAttribute("data-hlostok")) { try { const m2 = JSON.parse(localStorage.getItem("novera-projects-idx") || "{}"); for (const x of ui.lost || []) if (m2[x.id]) m2[x.id].deleted = new Date().toISOString(); localStorage.setItem("novera-projects-idx", JSON.stringify(m2)); } catch { /* */ } ui.lost = []; showHome(); return; }
   if (b.hasAttribute("data-hspeak")) { closeHome(); ui.pop = "speak"; renderPop(); setTimeout(() => $("#speakText")?.focus(), 100); return; }
   if (d.hf) { ui.homeF = d.hf; showHome(); return; }
   if (b.hasAttribute("data-hlook")) { ui.pop = "look"; renderPop(); return; }
@@ -4432,6 +4434,7 @@ function renderPop() {
   else if (ui.pop === "fincmp") h = fincmpPop();
   else if (ui.pop === "scrap") h = scrapPop();
   else if (ui.pop === "zero") h = zwPop();
+  else if (ui.pop === "recover") h = recoverPop();
   else if (ui.pop === "menu") {
     const it = (k, ic, t, d) => `<button class="mitem" data-menu="${k}"><span class="mic">${ic}</span><span><b>${t}</b><small>${d}</small></span></button>`;
     h = `<div class="popbox menubox" role="dialog" aria-label="القائمة"><div class="libhead"><h2>القائمة</h2><button class="x" data-close aria-label="قفل">×</button></div>
@@ -4940,6 +4943,7 @@ async function showHome() {
     </div>
     <button class="hcont" data-hlast><span>↩</span><span><b>كمّل «${esc(state.project.name)}»</b><small>${state.project.units.length} وحدة · آخر حاجة كنت شغال عليها</small></span></button>
     ${homeDash(list)}
+    ${ui.lost?.length ? `<div class="hlost"><b>⚠️ في ${ui.lost.length} مشروع كان على الجهاز ومش لاقيه دلوقتي:</b> ${ui.lost.map((x) => esc(x.name)).join(" · ")}<br><small>غالباً النظام مسح تخزين التطبيق (مساحة قليلة، أو التطبيق اتنزّل من جديد). جرّب الاسترجاع — ومن النسخة دي كل مشروع بيتحفظ كمان كملف في «الملفات».</small><div><button class="sm" data-hrecover>🛟 استرجاع</button><button class="sm" data-hlostok>تمام، فاهم</button></div></div>` : ""}
     <div class="hprojhead"><h3 class="hsec">مشاريعي</h3><input id="homeQ" class="libq" placeholder="🔍 دوّر باسم المشروع" value="${esc(ui.homeQ || "")}">
       <div class="seg hfilt">${[["all", "الكل"], ["wait", `📐 مستني تصميم${waiting ? ` (${waiting})` : ""}`], ["srv", "بيترفع"]].map(([k, l]) => `<button data-hf="${k}" class="${f === k ? "on" : ""}">${l}</button>`).join("")}</div></div>
     <div class="homelist">${shown.map((x) => `<div class="hcard ${x.id === state.project.id ? "cur" : ""}"><button class="hopen" data-hopen="${x.id}"><b>${esc(x.name)}</b>
@@ -4948,7 +4952,7 @@ async function showHome() {
       <small>${x.units != null ? `${x.units} وحدة · ` : ""}${x.variants > 1 ? `${x.variants} نسخ · ` : ""}${x.total ? `${money(x.total)} ج · ` : ""}${when(x.updatedAt)}${x.where === "cloud" ? " · أونلاين" : x.where === "both" ? " · على الجهاز وأونلاين" : ""}</small></button>
       ${x.srv ? `<button class="hdel sm" data-hsv="${x.id}" title="شاشة الرفع" aria-label="شاشة الرفع">📐</button>` : ""}<button class="hdel sm" data-hdup="${x.id}" title="اعمل نسخة من المشروع" aria-label="نسخة من ${esc(x.name)}">⧉</button><button class="hdel danger sm" data-hdel="${x.id}" aria-label="امسح ${esc(x.name)}">${ICON.trash}</button></div>`).join("") || `<p class="hint">${q || f !== "all" ? "مفيش مشاريع بالبحث ده." : "مفيش مشاريع لسه — ابدأ مشروع جديد."}</p>`}</div>
     <h3 class="hsec">أدوات</h3>
-    <div class="homeacts"><label class="ghost2 filebtn">📂 افتح ملف مشروع<input type="file" id="homeImp" accept=".json,application/json" hidden></label><button class="ghost2" data-hdefs>⚙ الإعدادات الافتراضية</button><button class="ghost2" data-hbrand>🏷 هوية المصنع</button><button class="ghost2" data-hlook>🎨 المظهر والكيبورد</button><button class="ghost2" data-habout>ⓘ عن التطبيق</button><button class="ghost2" data-hlang data-noi18n>🌐 ${I18n.lang === "en" ? "عربي" : "English"}</button></div>
+    <div class="homeacts"><label class="ghost2 filebtn">📂 افتح ملف مشروع<input type="file" id="homeImp" accept=".json,application/json" hidden></label><button class="ghost2" data-hrecover>🛟 استرجاع مشروع</button><button class="ghost2" data-hdefs>⚙ الإعدادات الافتراضية</button><button class="ghost2" data-hbrand>🏷 هوية المصنع</button><button class="ghost2" data-hlook>🎨 المظهر والكيبورد</button><button class="ghost2" data-habout>ⓘ عن التطبيق</button><button class="ghost2" data-hlang data-noi18n>🌐 ${I18n.lang === "en" ? "عربي" : "English"}</button></div>
     <p class="hint">المشاريع بتتحفظ لوحدها وانت شغال. خد نسخة احتياطي من ☰ ← تصدير ← نسخة من المشروع.</p></div>`;
 }
 async function refreshProjects() {
@@ -10731,6 +10735,66 @@ function render(refit = false) {
 }
 
 // ------------------------------------------------------------------ boot
+// ------------------------------------------------------------------ project recovery (snapshots on the device + the app's files vault)
+const whenAr = (t) => (t ? new Date(t).toLocaleString("ar-EG", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }) : "");
+async function recoverOpen() {
+  ui.pop = "recover"; ui.rec = { loading: true, bk: [], vault: [], have: new Set() };
+  renderPop();
+  const [bk, vault, list] = await Promise.all([Lib.backups().catch(() => []), Lib.vaultList().catch(() => []), Lib.list().catch(() => [])]);
+  ui.rec = { loading: false, bk, vault, have: new Set(list.map((x) => x.id)) };
+  renderPop();
+}
+function recoverPop() {
+  const R = ui.rec || {};
+  let h = `<div class="popbox" role="dialog" aria-label="استرجاع مشروع"><div class="libhead"><h2>🛟 استرجاع مشروع</h2><button class="x" data-close aria-label="قفل">×</button></div>
+    <p class="hint">التطبيق بياخد لقطة من كل مشروع كل شوية وانت شغال (12 لقطة لكل مشروع، وبتفضل حتى لو المشروع اتمسح)${Lib.hasVault() ? "، وكمان بيحفظ كل مشروع كملف في «الملفات ← على الآيباد ← NOVERA Studio ← Projects»" : ""}. اختار اللقطة اللي عايز ترجعها.</p>`;
+  if (R.loading) return h + `<p class="hint">بيدوّر…</p></div>`;
+  const groups = new Map();
+  for (const b of R.bk) { if (!groups.has(b.id)) groups.set(b.id, []); groups.get(b.id).push(b); }
+  if (Lib.hasVault()) {
+    h += `<h3>📁 ملفات المشاريع على الجهاز (${R.vault.length})</h3>`;
+    h += R.vault.length ? `<div class="reclist">${R.vault.map((v) => `<div class="recrow ${R.have.has(v.id) ? "" : "gone"}"><div><b>${esc(v.name || "—")}</b><small>${whenAr(v.updatedAt)} · ${Math.round(v.size / 1024)} ك.ب${R.have.has(v.id) ? "" : " · <em>مش موجود في المشاريع</em>"}</small></div><button class="sm primary" data-recv="${v.id}">${R.have.has(v.id) ? "استرجع نسخة" : "رجّعه"}</button></div>`).join("")}</div>` : `<p class="hint">لسه مفيش ملفات — بتتحفظ من أول ما تشتغل على مشروع.</p>`;
+  }
+  h += `<h3>🕘 لقطات المشاريع (${R.bk.length})</h3>`;
+  if (!groups.size) h += `<p class="hint">لسه مفيش لقطات — بتتاخد من أول ما تشتغل على مشروع في النسخة دي.</p>`;
+  for (const [id, list] of [...groups].sort((a, b) => (R.have.has(a[0]) ? 1 : 0) - (R.have.has(b[0]) ? 1 : 0))) {
+    const gone = !R.have.has(id);
+    h += `<details class="recgrp" ${gone ? "open" : ""}><summary><b>${esc(list[0].name)}</b> <small>${list.length} لقطة${gone ? " · <em>المشروع مش موجود دلوقتي</em>" : ""}</small></summary><div class="reclist">${list.map((b) => `<div class="recrow"><div><small>${whenAr(b.updatedAt)} · ${b.units} وحدة</small></div><button class="sm ${gone ? "primary" : ""}" data-recb="${esc(b.k)}">${gone ? "رجّعه" : "استرجع نسخة"}</button></div>`).join("")}</div></details>`;
+  }
+  return h + `</div>`;
+}
+async function recoverDo(project, updatedAt) {
+  if (!project?.id) { alertBar("الملف ده فاضي أو بايظ"); return; }
+  const exists = (await Lib.get(project.id).catch(() => null))?.project;
+  const p = clone(project);
+  if (exists) { p.id = uid(); p.name = `${p.name} (مسترجع ${whenAr(updatedAt)})`; }
+  await Lib.put(p, exists ? undefined : updatedAt);
+  try { const m = JSON.parse(localStorage.getItem("novera-projects-idx") || "{}"); if (m[p.id]) delete m[p.id].deleted; localStorage.setItem("novera-projects-idx", JSON.stringify(m)); } catch { /* */ }
+  ui.lost = (ui.lost || []).filter((x) => x.id !== p.id);
+  ui.pop = null; renderPop();
+  alertBar(exists ? `اتعملت نسخة: «${p.name}»` : `رجع «${p.name}» ✓`);
+  showHome();
+}
+$("#pop").addEventListener("click", async (e) => {
+  if (ui.pop !== "recover") return;
+  const b = e.target.closest("button"); if (!b) return;
+  if (b.dataset.recv) { b.disabled = true; const rec = await Lib.vaultGet(b.dataset.recv); if (!rec) { alertBar("مقدرتش أقرا الملف ده"); b.disabled = false; return; } await recoverDo(rec.project || rec, rec.updatedAt); return; }
+  if (b.dataset.recb) { b.disabled = true; const rec = await Lib.backupGet(b.dataset.recb); if (!rec) { alertBar("اللقطة دي مش موجودة"); b.disabled = false; return; } await recoverDo(rec.project, rec.updatedAt); }
+});
+/** at start-up: anything the device knew and lost? first try the files vault quietly, then tell the user */
+async function recoverCheck() {
+  try { navigator.storage?.persist?.().catch(() => {}); } catch { /* */ }
+  let lost = await Lib.missing().catch(() => []);
+  if (!lost.length) return;
+  const back = [];
+  if (Lib.hasVault()) {
+    for (const x of lost) { const rec = await Lib.vaultGet(x.id).catch(() => null); if (rec?.project) { await Lib.put(rec.project, rec.updatedAt).catch(() => {}); back.push(rec.name || x.name); } }
+    lost = await Lib.missing().catch(() => []);
+  }
+  if (back.length) alertBar(`رجّعت من ملفات الجهاز: ${back.join("، ")} ✓`);
+  ui.lost = lost;
+  if (lost.length && !$("#home").hidden) showHome();
+}
 async function boot() {
   const hash = location.hash.slice(1);
   const m = hash.match(/^([cw])-([a-z0-9]+)(?:\.([0-9]+-[0-9]+))?$/);
@@ -10749,6 +10813,7 @@ async function boot() {
     render(true);
     view.init("#view3d");
     showHome();
+    setTimeout(recoverCheck, 1500);
   }
   // the splash stays at least a moment so the logo is seen, then fades into the start screen
   const sp = document.getElementById("splash");

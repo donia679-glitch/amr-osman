@@ -18,6 +18,8 @@ let package = Package(
             bundleVersion: "1",
             appIcon: .asset("AppIcon"),
             accentColor: .presetColor(.green),
+            // the Projects vault (Documents/Projects) shows in the Files app → On My iPad → NOVERA Studio
+            additionalInfoPlistContentFilePath: "Info.plist",
             supportedDeviceFamilies: [
                 .pad,
                 .phone

@@ -996,6 +996,9 @@ body.indraw { overflow: hidden; }
 .dsb.ax0 { color: #e0413a; } .dsb.ax1 { color: #2f9e44; } .dsb.ax2 { color: #2f6fdf; }
 .dsb.ax0.on { background: #e0413a; color: #fff; } .dsb.ax1.on { background: #2f9e44; color: #fff; } .dsb.ax2.on { background: #2f6fdf; color: #fff; }
 .dsgrp { display: inline-flex; gap: 3px; flex: none; }
+.hlost { background: color-mix(in srgb, #e0413a 12%, var(--panel, #fff)); border: 1px solid #e0413a; border-radius: 12px; padding: 10px 14px; margin: 8px 0 12px; line-height: 1.7; } .hlost div { display: flex; gap: 8px; margin-top: 6px; } .hlost div button, .recrow button { white-space: nowrap; flex: none; width: auto; min-width: 90px; }
+.reclist { display: flex; flex-direction: column; gap: 6px; margin: 6px 0 12px; } .recrow { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 10px; } .recrow small { display: block; color: var(--muted); } .recrow.gone { border-color: #e0413a; } .recrow em { color: #e0413a; font-style: normal; }
+.recgrp { border: 1px solid var(--line); border-radius: 10px; padding: 6px 12px; margin: 6px 0; } .recgrp summary { cursor: pointer; }
 .dsplanes .dsb { flex: 1 1 46%; font-size: 12px; } .dsmvbtns { display: grid !important; grid-template-columns: 1fr 1fr; gap: 4px; margin: 4px 0; } .dsmvbtns .dsb { font-weight: 700; } .dsdraw .dsgrp, .dsmv .dsgrp { flex-wrap: wrap; } .dsdraw .dsrow .dsb.on { background: var(--brand, #123f23); color: #fff; }
 .dsname { flex: 1; min-width: 120px; max-width: 280px; height: 38px; border: 1px solid var(--line); border-radius: 10px; padding: 0 10px; font: inherit; font-weight: 700; background: var(--panel2); color: var(--ink); }
 .dsmain { display: grid; grid-template-columns: auto minmax(0, 1fr) 290px; min-height: 0; }

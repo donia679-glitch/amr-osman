@@ -14,6 +14,7 @@ struct NoveraWebView: UIViewRepresentable {
         config.userContentController.add(context.coordinator, name: "noveraScan")
         config.userContentController.add(context.coordinator, name: "noveraAR")
         config.userContentController.add(context.coordinator, name: "noveraLang")
+        config.userContentController.add(context.coordinator, name: "noveraVault")
         // tell the page what this device can do (the room scan needs a LiDAR iPad / iPhone Pro)
         config.userContentController.addUserScript(WKUserScript(source: "window.noveraNative = { scan: \(RoomScanController.isSupported ? "true" : "false"), ar: \(ARWorldTrackingConfiguration.isSupported ? "true" : "false") };", injectionTime: .atDocumentStart, forMainFrameOnly: true))
         config.allowsInlineMediaPlayback = true
@@ -109,6 +110,7 @@ struct NoveraWebView: UIViewRepresentable {
             if message.name == "noveraScan" { startScan(); return }
             if message.name == "noveraAR" { showAR(message.body); return }
             if message.name == "noveraLang", let l = message.body as? String { UserDefaults.standard.set(l, forKey: "novera-lang"); return }
+            if message.name == "noveraVault" { vault(message.body); return }
             guard message.name == "noveraSave",
                   let body = message.body as? [String: Any],
                   let name = body["name"] as? String,
@@ -123,6 +125,46 @@ struct NoveraWebView: UIViewRepresentable {
                 sheet.popoverPresentationController?.sourceView = web
                 sheet.popoverPresentationController?.sourceRect = CGRect(x: web.bounds.midX, y: 70, width: 1, height: 1)
                 top.present(sheet, animated: true)
+            }
+        }
+
+        // MARK: the projects vault — every project is also kept as a file in Documents/Projects
+        // (Files app → On My iPad → NOVERA Studio → Projects), so nothing is lost when WebKit clears its storage.
+        static var vaultDir: URL? {
+            guard let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return nil }
+            let dir = docs.appendingPathComponent("Projects", isDirectory: true)
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            return dir
+        }
+        func vault(_ body: Any) {
+            guard let b = body as? [String: Any], let op = b["op"] as? String, let dir = Coordinator.vaultDir else { return }
+            let token = b["token"] as? String
+            func reply(_ json: String) {
+                guard let token = token else { return }
+                let t = token.replacingOccurrences(of: "'", with: "")
+                DispatchQueue.main.async { self.webView?.evaluateJavaScript("window.noveraVaultResult && window.noveraVaultResult('\(t)', \(json))") }
+            }
+            let safeId: (String) -> String = { $0.filter { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" } }
+            switch op {
+            case "put":
+                guard let id = b["id"] as? String, let json = b["json"] as? String else { return }
+                let url = dir.appendingPathComponent("\(safeId(id)).novera.json")
+                try? json.data(using: .utf8)?.write(to: url, options: .atomic)
+            case "list":
+                var items: [[String: Any]] = []
+                let files = (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.fileSizeKey], options: [])) ?? []
+                for f in files where f.lastPathComponent.hasSuffix(".novera.json") {
+                    guard let data = try? Data(contentsOf: f),
+                          let rec = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                          let id = rec["id"] as? String else { continue }
+                    items.append(["id": id, "name": rec["name"] as? String ?? "", "updatedAt": rec["updatedAt"] as? String ?? "", "size": data.count])
+                }
+                if let d = try? JSONSerialization.data(withJSONObject: items), let s = String(data: d, encoding: .utf8) { reply(s) } else { reply("[]") }
+            case "get":
+                guard let id = b["id"] as? String else { reply("null"); return }
+                let url = dir.appendingPathComponent("\(safeId(id)).novera.json")
+                if let s = try? String(contentsOf: url, encoding: .utf8), let d = try? JSONSerialization.data(withJSONObject: s, options: [.fragmentsAllowed]), let q = String(data: d, encoding: .utf8) { reply(q) } else { reply("null") }
+            default: break
             }
         }
 
