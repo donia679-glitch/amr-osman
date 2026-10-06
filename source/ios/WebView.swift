@@ -15,8 +15,9 @@ struct NoveraWebView: UIViewRepresentable {
         config.userContentController.add(context.coordinator, name: "noveraAR")
         config.userContentController.add(context.coordinator, name: "noveraLang")
         config.userContentController.add(context.coordinator, name: "noveraVault")
+        config.userContentController.add(context.coordinator, name: "noveraQR")
         // tell the page what this device can do (the room scan needs a LiDAR iPad / iPhone Pro)
-        config.userContentController.addUserScript(WKUserScript(source: "window.noveraNative = { scan: \(RoomScanController.isSupported ? "true" : "false"), ar: \(ARWorldTrackingConfiguration.isSupported ? "true" : "false") };", injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        config.userContentController.addUserScript(WKUserScript(source: "window.noveraNative = { scan: \(RoomScanController.isSupported ? "true" : "false"), ar: \(ARWorldTrackingConfiguration.isSupported ? "true" : "false"), qr: true };", injectionTime: .atDocumentStart, forMainFrameOnly: true))
         config.allowsInlineMediaPlayback = true
         config.websiteDataStore = .default()
 
@@ -111,6 +112,7 @@ struct NoveraWebView: UIViewRepresentable {
             if message.name == "noveraAR" { showAR(message.body); return }
             if message.name == "noveraLang", let l = message.body as? String { UserDefaults.standard.set(l, forKey: "novera-lang"); return }
             if message.name == "noveraVault" { vault(message.body); return }
+            if message.name == "noveraQR" { startQR(); return }
             guard message.name == "noveraSave",
                   let body = message.body as? [String: Any],
                   let name = body["name"] as? String,
@@ -177,6 +179,22 @@ struct NoveraWebView: UIViewRepresentable {
             DispatchQueue.main.async {
                 guard let top = Coordinator.topController() else { return }
                 ARPreview.shared.show(fileURL: url, from: top)
+            }
+        }
+
+        // MARK: part-label QR (Apple's reader) → the page opens that part
+        func startQR() {
+            DispatchQueue.main.async {
+                guard let top = Coordinator.topController() else { return }
+                let qr = QRScanController()
+                qr.modalPresentationStyle = .fullScreen
+                func js(_ fn: String, _ text: String) {
+                    guard let d = try? JSONSerialization.data(withJSONObject: text, options: [.fragmentsAllowed]), let q = String(data: d, encoding: .utf8) else { return }
+                    self.webView?.evaluateJavaScript("window.\(fn) && window.\(fn)(\(q))")
+                }
+                qr.onCode = { js("noveraQRResult", $0) }
+                qr.onError = { js("noveraQRError", $0) }
+                top.present(qr, animated: true)
             }
         }
 

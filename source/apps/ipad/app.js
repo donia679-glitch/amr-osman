@@ -10212,10 +10212,17 @@ async function scanOpen() {
     <div id="scanPiece"></div></div>`;
   box.onclick = async (e) => {
     if (e.target === box || e.target.closest("[data-scx]")) { scanClose(); return; }
+    if (e.target.closest("[data-scnative]")) { window.webkit?.messageHandlers?.noveraQR?.postMessage({}); return; }
     const st = e.target.closest("[data-scstage]");
     if (st) { await scanSetStage(st.dataset.scpiece, +st.dataset.scstage); return; }
   };
   box.querySelector("[data-scanform]").onsubmit = (e) => { e.preventDefault(); const v = e.target.code.value.trim().toUpperCase(); if (v) scanShow(v); };
+  // inside the iOS app: Apple's own QR reader (the web view can't decode QR on iOS) — full screen, comes back with the text
+  if (nativeQR()) {
+    box.querySelector(".scanstage").outerHTML = `<div class="btnrow"><button class="primary big" data-scnative>📷 افتح الكاميرا</button></div><p class="hint scanmsg2">الكاميرا بتفتح على الشاشة كلها، وأول ما تقرا الـQR بتقفل وتفتحلك القطعة هنا.</p>`;
+    window.webkit.messageHandlers.noveraQR.postMessage({});
+    return;
+  }
   const vid = box.querySelector("#scanVid"), msg = box.querySelector(".scanmsg");
   try {
     scan.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 } }, audio: false });
@@ -10240,6 +10247,9 @@ async function scanOpen() {
   };
   tick();
 }
+const nativeQR = () => !!(window.noveraNative?.qr && window.webkit?.messageHandlers?.noveraQR);
+window.noveraQRResult = (text) => { if (scan.on && $("#scanPiece")) scanShow(String(text || "")); };
+window.noveraQRError = (text) => { const m = $("#scanBox .scanmsg2"); if (m) { m.textContent = String(text || ""); m.classList.add("e"); } else alertBar(String(text || "")); };
 function scanClose() {
   scan.on = false; cancelAnimationFrame(scan.raf);
   if (scan.stream) { for (const t of scan.stream.getTracks()) t.stop(); scan.stream = null; }

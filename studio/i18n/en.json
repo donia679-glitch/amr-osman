@@ -5316,5 +5316,8 @@
  "امسحه من هنا بكاميرا الجهاز، تفتحلك القطعة وتعلّم المرحلة اللي خلصت.": "Scan it here with the device camera: the part opens and you mark the stage that is done.",
  "مش قادر أقرا الـ": "Can't read the",
  "على الجهاز ده — اكتب رقم القطعة تحت.": "on this device — type the part number below.",
- "للتصميم كله — كل وحدة جروب لوحدها بكودها — يتفتح في برامج التصميم ثلاثي الأبعاد.": "of the whole design — every unit is its own group with its code — opens in 3D design programs."
+ "للتصميم كله — كل وحدة جروب لوحدها بكودها — يتفتح في برامج التصميم ثلاثي الأبعاد.": "of the whole design — every unit is its own group with its code — opens in 3D design programs.",
+ "افتح الكاميرا": "Open the camera",
+ "الكاميرا بتفتح على الشاشة كلها، وأول ما تقرا الـ": "The camera opens full screen, and as soon as it reads the",
+ "بتقفل وتفتحلك القطعة هنا.": "it closes and opens the part here."
 }

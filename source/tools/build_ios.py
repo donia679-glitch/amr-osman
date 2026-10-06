@@ -5,7 +5,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(ROOT, "dist", "NOVERA Studio.swiftpm")
 shutil.rmtree(OUT, ignore_errors=True)
 os.makedirs(OUT)
-for f in ["Package.swift", "MyApp.swift", "WebView.swift", "Store.swift", "RoomScan.swift", "ARView.swift", "PrivacyInfo.xcprivacy"]:
+for f in ["Package.swift", "MyApp.swift", "WebView.swift", "Store.swift", "RoomScan.swift", "ARView.swift", "QRScan.swift", "PrivacyInfo.xcprivacy"]:
     shutil.copy(os.path.join(ROOT, "ios", f), OUT)
 # the App Store icon: 1024 × 1024, opaque, full bleed (iOS rounds the corners)
 import json
