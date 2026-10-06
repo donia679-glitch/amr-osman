@@ -2848,7 +2848,7 @@ function renderProps() {
 /** a freshly opened unit: every section closed except the unit's size section, so all the headings are in view at once */
 const DIMS_SEC = /^(المقاسات|المقاسات والنظام|الوحدة|🍳 مقاسات)/;
 function collapseProps(el) {
-  for (const d of el.children) if (d.tagName === "DETAILS") d.open = DIMS_SEC.test(d.querySelector(":scope > summary")?.textContent.trim() || "");
+  for (const d of el.children) if (d.tagName === "DETAILS" && !d.classList.contains("keepopen")) d.open = DIMS_SEC.test(d.querySelector(":scope > summary")?.textContent.trim() || "");
 }
 // remember the last field touched in the panel (the change re-draws it after the field lost focus)
 document.addEventListener("pointerdown", (e) => { const p = $("#props"); if (p && p.contains(e.target)) { const t = e.target.closest("input, select, textarea, button, label"); const q = t && (fieldSel(t) || fieldSel(t.querySelector?.("input, select"))); if (q) ui.lastField = q; } }, true);
@@ -4360,6 +4360,7 @@ function propsMode(el) {
   const top = [...el.children].filter((x) => x.tagName === "DETAILS");
   let hidden = 0;
   for (const d of top) {
+    if (ui.asm || d.classList.contains("keepopen")) continue; // the assembly guide shows all its sections (they were hidden in «أساسي»)
     const t = d.querySelector(":scope > summary")?.textContent.trim() || "";
     const basic = BASIC_SECTIONS.some((k) => t === k || t.startsWith(k + " ") || t.startsWith("إعدادات "));
     const forShop = SHOP_SECTIONS.test(t);
@@ -7708,7 +7709,7 @@ function asmStep(name, role) {
   if (/سكلو|وزرة|كونتر|مقبض|شماعة|ليد|تقفيلة|أورزة|كليت|رجل بلاستيك|برواز ألومنيوم/.test(n) || role === "led" || role === "handle" || role === "plinth") return ASM.finish;
   if (role === "door" || role === "mirror" || /ضلفة|باب|مراية/.test(n)) return ASM.doors;
   if (role === "back" || /ظهر|ضهر/.test(tail)) return ASM.back;
-  if (/رأس|راس|شريط علوي/.test(tail)) return ASM.top;
+  if (/^(رأس|راس)( |$)|شريط علوي/.test(tail)) return ASM.top; // «رأسي» (a vertical divider) is not the top
   if (role === "divider" || role === "fixed_shelf" || /قاطوع|ضلع|رف ثابت|عارضة|فيلر|لوح أعمى|بانوه|جلسة|فاصل/.test(n)) return ASM.dividers;
   if (role === "shelf" || /رف/.test(tail)) return ASM.shelves;
   if ((role === "side" || /^جنب/.test(tail)) && !/السلة|سرير/.test(tail)) return lastSide(tail) ? ASM.side2 : ASM.side1;
@@ -7771,7 +7772,7 @@ function asmProps(u) {
     <div class="asmnav"><button class="ghost2" data-asmgo="-1" ${k <= 0 ? "disabled" : ""}>السابق</button><b>خطوة ${k + 1} من ${steps.length}</b><button class="primary" data-asmgo="1" ${k >= steps.length - 1 ? "disabled" : ""}>التالي</button></div>
     <div class="asmdots">${steps.map((x, i) => `<button class="${i === k ? "on" : i < k ? "done" : ""}" data-asmto="${i}" aria-label="${esc(x.t)}">${i + 1}</button>`).join("")}</div>
     <h3 class="asmt">${esc(s.t)}</h3><p class="hint">${esc(s.d)}</p>
-    ${s.i === ASM.side1 || s.i === ASM.top || s.i === ASM.side2 ? `<details class="elevbox"><summary>🔩 إزاي أخرم الأليتا؟ (شرح مصور بمقاسات الوحدة)</summary>${alitaGuideHtml(u)}</details>` : ""}
+    ${stepJointsHtml(u, s.i) || (s.i === ASM.side1 || s.i === ASM.top || s.i === ASM.side2 ? `<details class="elevbox"><summary>🔩 إزاي أخرم الأليتا؟ (شرح مصور بمقاسات الوحدة)</summary>${alitaGuideHtml(u)}</details>` : "")}
     ${layoutTables(L, s.i)}
     <details class="elevbox" ${[ASM.dividers, ASM.shelves, ASM.drawers, ASM.doors, ASM.finish].includes(s.i) ? "open" : ""}><summary>📐 الواجهة بالمقاسات</summary>${unitElevSvg(u, L)}</details>
     ${s.pieces.length ? `<table class="tbl"><thead><tr><th>الرقم</th><th>القطعة</th><th>المقاس</th></tr></thead><tbody>${s.pieces.map((p) => `<tr><td class="num"><b>${esc(p.code)}</b></td><td>${esc(p.name)}</td><td class="num">${n1(p.lb.h)}×${n1(p.lb.w)}</td></tr>`).join("")}</tbody></table>` : ""}
@@ -9740,6 +9741,17 @@ async function exportAsmBooklet(only = null) {
           for (const [k, v] of s.hardware.slice(0, 10)) { g += `<text x="1374" y="${y}" font-size="12.5" text-anchor="end">${esc(k)}: <tspan font-weight="700">${n1(v)}</tspan></text>`; y += 19; }
         }
         pages.push({ title: `كتيب التجميع — ${u.code}`, svg: g });
+        const js = alitaJoints(u).filter((J) => J.step === s.i);
+        for (let k = 0; k < js.length; k += 2) {
+          let jg = `<text x="1384" y="104" font-size="22" font-weight="800" text-anchor="end"><tspan fill="#1f6d3d">خطوة ${i + 1}</tspan> — الأليتا: فين نخرم وإزاي نوصّل</text>
+            <text x="1384" y="128" font-size="13" fill="#555" text-anchor="end">${esc(u.code)} ${esc(u.name)} · الأرقام بالمليمتر</text>`;
+          js.slice(k, k + 2).forEach((J, m) => {
+            const x0 = m === 0 ? 744 : 40, w = 640;
+            jg += `<text x="${x0 + w}" y="168" font-size="17" font-weight="800" text-anchor="end">🔩 ${esc(J.Ep.name)} ⟷ ${esc(J.F.name)}</text>` + jointSvg(J, { W: 460, at: [x0, 180, w] });
+            jg += `<foreignObject x="${x0}" y="560" width="${w}" height="420"><div xmlns="http://www.w3.org/1999/xhtml" style="font: 14px/1.6 'IBM Plex Sans Arabic', Arial, sans-serif; direction: rtl; color: #222">${jointRows(J).map(([ic, t, d], q) => `<p style="margin:0 0 8px"><b>${q + 1}. ${ic} ${esc(t)}:</b> ${esc(d)}</p>`).join("")}</div></foreignObject>`;
+          });
+          pages.push({ title: `كتيب التجميع — ${u.code}`, svg: jg });
+        }
       }
     }
   } finally {
@@ -9980,7 +9992,7 @@ function renderWorker() {
     const k = W.step ?? -1;
     side += `<div class="wsteps">${steps.map((st, i) => `<button class="wstep ${k === i ? "on" : ""}" data-wstep="${i}"><span class="wstepn">${i + 1}</span><span class="wstepi">${STEP_ICON[st.i] || "🔧"}</span><small>${esc(st.t)}</small><em>${st.pieces.length}</em></button>`).join("")}</div>
       <button class="add" data-walita>${W.alita ? "🔩 اقفل شرح خرم الأليتا" : "🔩 إزاي أخرم الأليتا؟ (شرح مصور)"}</button>${W.alita ? alitaGuideHtml(u, { compact: true }) : ""}
-      ${k >= 0 && steps[k] ? `<div class="wstepd"><p>${esc(steps[k].d)}</p><div class="wcodes">${steps[k].pieces.map((p) => `<button class="wcodeb" data-wpiece="${esc(p.code || "")}">${esc(p.code || "?")}</button>`).join("")}</div>${steps[k].hardware.length ? `<div class="whw small">${steps[k].hardware.map(([a, v]) => `<div class="whwrow"><span class="whwic">${hwIcon(a)}</span><b class="wnum" dir="ltr">${v}</b><small>${esc(a)}</small></div>`).join("")}</div>` : ""}<button class="wb-big" data-wsaytext="${esc(`خطوة ${k + 1}: ${steps[k].t}. ${steps[k].d}`)}">🔊 اسمع</button></div>` : `<p class="hint">دوس على خطوة — الـ3D بيوريك اللي اتركب لحد دلوقتي</p>`}`;
+      ${k >= 0 && steps[k] ? `<div class="wstepd"><p>${esc(steps[k].d)}</p>${stepJointsHtml(u, steps[k].i)}<div class="wcodes">${steps[k].pieces.map((p) => `<button class="wcodeb" data-wpiece="${esc(p.code || "")}">${esc(p.code || "?")}</button>`).join("")}</div>${steps[k].hardware.length ? `<div class="whw small">${steps[k].hardware.map(([a, v]) => `<div class="whwrow"><span class="whwic">${hwIcon(a)}</span><b class="wnum" dir="ltr">${v}</b><small>${esc(a)}</small></div>`).join("")}</div>` : ""}<button class="wb-big" data-wsaytext="${esc(`خطوة ${k + 1}: ${steps[k].t}. ${steps[k].d}`)}">🔊 اسمع</button></div>` : `<p class="hint">دوس على خطوة — الـ3D بيوريك اللي اتركب لحد دلوقتي</p>`}`;
   } else if (W.tab === "install") {
     const p = r.params || {}, poses = projectPoses(state.project), L = poses.get(u.id), segs = state.project.room ? Room.segments(state.project.room) : [];
     const sg = L?.wall != null ? segs.find((x) => x.id === L.wall) : null;
@@ -10640,6 +10652,115 @@ function alitaGuideHtml(u, { compact = false } = {}) {
   return `<div class="alita ${compact ? "compact" : ""}">${alitaSvg(N, { W: compact ? 360 : 440 })}${warn}
     <div class="alsteps">${steps.map(([ic, t, d], i) => `<div class="alstep" data-wsaytext="${esc(t + ". " + d)}"><span class="aln">${i + 1}</span><span class="alic">${ic}</span><div><b>${esc(t)}</b><p>${esc(d)}</p></div></div>`).join("")}</div>
     <p class="hint">القاعدة التي بتدخل: الطقم = دوبلين + مسمار كام في النص · في كل طرف طقم، وفي النص طقم زيادة لو الوصلة أطول من 60 سم. لو خرمت الحرف بعمق أقل من ${mm(N.ed)} الكام مش هيمسك المسمار.</p></div>`;
+}
+
+// ================================================================== v103: the real minifix joints of a unit, for the assembly guide
+// Every hole marker (any engine) is matched to the board it sits in; the name carries the pair «A × B». Face holes → the board drilled on its
+// face, edge holes + cam → the board drilled on its edge. Positions are read from the model, so the guide shows exactly what the CNC / jig does.
+function alitaJoints(u) {
+  const r = R(u);
+  if (!r.ok) return [];
+  const solids = (r.meshes && r.meshes.length ? r.meshes : r.parts).filter((m) => m.box);
+  const holes = solids.filter((m) => /أليتا|قفل كام/.test(m.name || ""));
+  if (!holes.length) return [];
+  const boards = (r.parts || []).filter((p) => p.cut_piece && p.label).map((p) => ({ p, box: p.box || solids.find((m) => m.name === p.name && !/أليتا|كام/.test(m.name))?.box })).filter((b) => b.box);
+  const cen = (b) => [(b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2, (b.z0 + b.z1) / 2];
+  const inBox = (c, b, e = 0.02) => c[0] > b.x0 - e && c[0] < b.x1 + e && c[1] > b.y0 - e && c[1] < b.y1 + e && c[2] > b.z0 - e && c[2] < b.z1 + e;
+  const owner = (h) => { const c = cen(h.box); const own = boards.filter((b) => inBox(c, b.box)); return own.sort((a, b) => vol(a.box) - vol(b.box))[0] || null; };
+  const vol = (b) => (b.x1 - b.x0) * (b.y1 - b.y0) * (b.z1 - b.z0);
+  const groups = new Map();
+  for (const h of holes) {
+    const seg = String(h.name).split(" - ").find((s) => s.includes(" × "));
+    if (!seg) continue;
+    const kind = /كام/.test(h.name) ? "cam" : /\(وش\)|- وش \d/.test(h.name) ? "face" : /\(حرف\)|- حرف \d/.test(h.name) ? "edge" : null;
+    if (!kind) continue;
+    const g = groups.get(seg) || { key: seg, face: [], edge: [], cam: [] };
+    g[kind].push(h); groups.set(seg, g);
+  }
+  const N = alitaNums(u), AXN = ["x", "y", "z"];
+  const out = [];
+  for (const g of groups.values()) {
+    if (!g.face.length || !g.edge.length) continue;
+    const F = owner(g.face[0]), Ep = owner(g.edge[0]);
+    if (!F || !Ep || F === Ep) continue;
+    // the line the sets run along: the axis where the holes spread most
+    const cs = [...g.face, ...g.edge].map((h) => cen(h.box));
+    const spread = AXN.map((a, i) => Math.max(...cs.map((c) => c[i])) - Math.min(...cs.map((c) => c[i])));
+    const li = spread.indexOf(Math.max(...spread)), la = AXN[li];
+    // the axis the edge holes are drilled along (into Ep's edge) = the face board's thickness axis
+    const eb = g.edge[0].box, edims = AXN.map((a) => eb[a + "1"] - eb[a + "0"]);
+    const di = AXN.findIndex((a, i) => i !== li && edims[i] === Math.max(...edims.filter((_, j) => j !== li))), da = AXN[di];
+    const oi = [0, 1, 2].find((i) => i !== li && i !== di), oa = AXN[oi];
+    const pos = (h) => cen(h.box)[li];
+    const from = Ep.box[la + "0"]; // positions measured from Ep's low end along the line (front for y, bottom for z, left for x)
+    const edgeAt = Math.abs(Ep.box[da + "0"] - (F.box[da + "0"] + F.box[da + "1"]) / 2) < Math.abs(Ep.box[da + "1"] - (F.box[da + "0"] + F.box[da + "1"]) / 2) ? 0 : 1;
+    const facePos = g.face.map(pos).sort((a, b) => a - b), camPos = g.cam.map(pos).sort((a, b) => a - b);
+    // where the face holes sit across the face board: from its nearest end along the other in-plane axis
+    const fc = cen(g.face[0].box)[oi], fLo = F.box[oa + "0"], fHi = F.box[oa + "1"];
+    const fromLo = fc - fLo <= fHi - fc;
+    // which face of Ep the cams are drilled from
+    const cc = g.cam.length ? cen(g.cam[0].box)[oi] : null, eMid = (Ep.box[oa + "0"] + Ep.box[oa + "1"]) / 2;
+    const camSide = cc == null ? "" : oa === "z" ? (cc > eMid ? "الوش اللي لفوق" : "الوش اللي لتحت") : oa === "y" ? (cc < eMid ? "الوش اللي لقدام" : "الوش اللي لورا") : (cc < eMid ? "الوش اللي ناحية الشمال" : "الوش اللي ناحية اليمين");
+    const st = Math.max(asmStep(F.p.name, F.p.role), asmStep(Ep.p.name, Ep.p.role));
+    out.push({ key: g.key, F: F.p, Ep: Ep.p, Fb: F.box, Eb: Ep.box, la, da, oa, edgeAt, from, step: st, N,
+      sets: Math.max(1, g.cam.length), face: facePos.map((v) => v - from), cams: camPos.map((v) => v - from), len: Ep.box[la + "1"] - Ep.box[la + "0"],
+      faceAcross: fromLo ? fc - fLo : fHi - fc, faceEnd: oa === "z" ? (fromLo ? "التحتاني" : "اللي فوق") : oa === "y" ? (fromLo ? "اللي قدام" : "اللي ورا") : (fromLo ? "الشمال" : "اليمين"),
+      lineFrom: la === "y" ? "من قدام" : la === "z" ? "من تحت" : "من الشمال", camSide, faceHoles: g.face, edgeHoles: g.edge, camHoles: g.cam });
+  }
+  return out.sort((a, b) => a.step - b.step);
+}
+/** one joint drawn: the face board strip with its holes (and where the other board lands), the edge board strip with its edge holes and cams */
+function jointSvg(J, { W = 460, at = null } = {}) {
+  const ink = "#1b1b1b", wood = "#e8d9bd", wood2 = "#d9c39a", red = "#c0392b", blue = "#1f6fb2", f = "IBM Plex Arabic, system-ui";
+  const L = J.len, pad = 26, sc = (W - 2 * pad) / Math.max(L, 1); // px per cm along the joint line
+  const X = (v) => W - pad - v * sc; // front / bottom / left (0) on the right, like reading
+  const N = J.N, t = Math.max(6, Math.abs(J.Eb[J.oa + "1"] - J.Eb[J.oa + "0"]) * sc);
+  const stripF = 50, stripE = Math.max(44, (N.ed + 2) * sc);
+  const y1 = 40, y2 = y1 + stripF + 66, VH = y2 + stripE + 40;
+  const fs = 13;
+  let s = at ? `<svg x="${at[0]}" y="${at[1]}" width="${at[2]}" height="${(at[2] * VH) / W}" viewBox="0 0 ${W} ${VH}" font-family="${f}" font-size="${fs}" direction="rtl">`
+    : `<svg viewBox="0 0 ${W} ${VH}" width="100%" style="max-width:${W}px;display:block" font-family="${f}" font-size="${fs}" direction="rtl">`;
+  s += `<text x="${W - 2}" y="16" font-size="11" fill="#666" text-anchor="start">الأرقام بالمليمتر ${J.lineFrom} (الطرف اليمين في الرسمة)</text>`;
+  // ① the face board: its holes + where the other board lands (dashed band)
+  s += `<text x="${W - 2}" y="${y1 - 7}" font-weight="700" fill="${ink}" text-anchor="start">① ${esc(J.F.name)} — خرم في الوش</text>
+    <rect x="${pad}" y="${y1}" width="${W - 2 * pad}" height="${stripF}" fill="${wood}" stroke="${ink}"/>
+    <rect x="${pad}" y="${y1 + stripF / 2 - t / 2}" width="${W - 2 * pad}" height="${t}" fill="#fff8" stroke="${ink}" stroke-dasharray="4 3"/>
+    <text x="${W / 2}" y="${y1 + stripF - 4}" text-anchor="middle" font-size="10" fill="#555">مكان ${esc(J.Ep.name)}</text>`;
+  for (const v of J.face) s += `<circle cx="${X(v)}" cy="${y1 + stripF / 2}" r="${Math.max(3.5, (N.d * sc) / 2)}" fill="#fff" stroke="${red}" stroke-width="1.8"/>`;
+  // numbers: the first hole of every set (all the positions are in the text under the drawing)
+  const firsts = J.face.filter((v, k) => k % 3 === 0);
+  firsts.forEach((v) => { const x = X(v); s += `<line x1="${x}" x2="${x}" y1="${y1 + stripF}" y2="${y1 + stripF + 10}" stroke="${ink}" stroke-width="0.8"/><text x="${x}" y="${y1 + stripF + 24}" text-anchor="middle" font-weight="700" fill="${ink}">${Math.round(v * 10)}</text>`; });
+  s += `<text x="${pad}" y="${y1 - 7}" text-anchor="end" font-size="11" fill="#555">بين الخرم والتاني ${Math.round(N.s * 10)}</text>`;
+  // ② the edge board: the joint edge on top, edge holes going in, cams on its face
+  s += `<text x="${W - 2}" y="${y2 - 7}" font-weight="700" fill="${ink}" text-anchor="start">② ${esc(J.Ep.name)} — خرم في الحرف + كام</text>
+    <rect x="${pad}" y="${y2}" width="${W - 2 * pad}" height="${stripE}" fill="${wood2}" stroke="${ink}"/>
+    <line x1="${pad}" x2="${W - pad}" y1="${y2}" y2="${y2}" stroke="${ink}" stroke-width="3"/>`;
+  for (const v of J.face) s += `<rect x="${X(v) - Math.max(2.5, (N.d * sc) / 2)}" y="${y2}" width="${Math.max(5, N.d * sc)}" height="${N.ed * sc}" fill="#fff" stroke="${red}" stroke-width="1.4"/>`;
+  for (const v of J.cams) s += `<circle cx="${X(v)}" cy="${y2 + N.ed * sc}" r="${Math.max(6, (N.cd * sc) / 2)}" fill="#fff" stroke="${blue}" stroke-width="2"/><circle cx="${X(v)}" cy="${y2 + N.ed * sc}" r="1.8" fill="${blue}"/>`;
+  s += `<text x="${W - pad}" y="${y2 + stripE + 18}" text-anchor="start" font-size="11" fill="${blue}">◯ كام من ${esc(J.camSide)}</text><text x="${pad}" y="${y2 + stripE + 18}" text-anchor="end" font-size="11" fill="${red}">▭ دوبل / مسمار في الحرف</text>`;
+  return s + `</svg>`;
+}
+/** a joint as a card: the drawing + every number + how it goes together */
+function jointRows(J) {
+  const N = J.N, mmv = (v) => Math.round(v * 10);
+  const sets = J.cams.length || Math.round(J.face.length / 3) || 1;
+  return [
+    ["🪵", `${J.F.name} — الوش`, `${J.face.length} خرم Ø${mm(N.d)} عمق ${mm(N.fd)} بس (من جوه)، مركزها ${mm(J.faceAcross)} من الحرف ${J.faceEnd}، على مسافات ${J.face.map(mmv).join(" · ")} مم ${J.lineFrom}.`],
+    ["🔩", `${J.Ep.name} — الحرف`, `${J.face.length} خرم Ø${mm(N.d)} عمق ${mm(N.ed)} في الحرف اللي بيقابل ${J.F.name} — نفس المسافات بالظبط.`],
+    ["⭕", `${J.Ep.name} — الكام`, `${sets} خرم فورستنر Ø${mm(N.cd)} عمق ${mm(N.cdep)} من ${J.camSide}، مركزه ${mm(N.ed)} من الحرف، قدام الخرم الأوسط في كل طقم (${J.cams.map(mmv).join(" · ")} مم ${J.lineFrom}).`],
+    ["🔧", "التجميع", `لف مسمار المينيفكس في الخرم الأوسط في وش ${J.F.name}، وحط دوبلين بغراء في الخرمين اللي جنبه — ${sets} ${sets === 1 ? "طقم" : "أطقم"}. دخّل ${J.Ep.name} عليهم لحد ما يلزق، ولف الكام نص لفة لليمين لحد ما يشد.`],
+  ];
+}
+function jointHtml(J) {
+  const rows = jointRows(J), sets = J.cams.length || Math.round(J.face.length / 3) || 1;
+  return `<div class="jcard"><div class="jhead"><b>🔩 ${esc(J.Ep.name)} ⟷ ${esc(J.F.name)}</b><span class="pill soft">${sets} ${sets === 1 ? "طقم" : "أطقم"}</span></div>${jointSvg(J)}
+    <div class="alsteps">${rows.map(([ic, t, d], i) => `<div class="alstep" data-wsaytext="${esc(t + ". " + d)}"><span class="aln">${i + 1}</span><span class="alic">${ic}</span><div><b>${esc(t)}</b><p>${esc(d)}</p></div></div>`).join("")}</div></div>`;
+}
+/** the joints made in one assembly step (all of them when step is null) */
+function stepJointsHtml(u, step) {
+  const js = alitaJoints(u).filter((J) => step == null || J.step === step);
+  if (!js.length) return "";
+  return `<details class="elevbox keepopen" open><summary>🔩 الأليتا في الخطوة دي — ${js.length} ${js.length === 1 ? "وصلة" : "وصلات"} (فين نخرم وإزاي نوصّل)</summary>${js.map(jointHtml).join("")}</details>`;
 }
 
 // ================================================================== v70 — "zero waste": kitchens that eat exactly the sheets you have
@@ -11346,4 +11467,4 @@ function cmdOpen() {
 function cmdClose() { const b = $("#cmdBox"); if (b) { b.hidden = true; b.innerHTML = ""; } }
 addEventListener("keydown", (e) => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); if ($("#cmdBox") && !$("#cmdBox").hidden) cmdClose(); else cmdOpen(); } });
 
-if (DEV) window.__dbg = { view, plan, R, render: (x) => render(x), ak: (t) => kitchenProposals(t), applyK: (u) => applyKitchen(u, null), checks: () => designChecks(), merge: (a, b) => mergeInto(a, b), get ui() { return ui; }, layout: asmLayout, libUnit, libSet, thumbs, openStudio: (u, x) => openStudio(u, x), exportUnitDrawings, exportPurchasePdf, exportPurchaseXlsx, renderPop, libAdd, exportQuotePdf, exportAsmBooklet, presentOn, presentOff, renderPresent, exportMachines, speakRun, applyLighting, setParams, cmdOpen, elev: (u) => unitElevSvg(u), cutReady, get cutData() { return cutData; }, projectPieces: () => projectPieces(state.project), workerOn, workerOff, renderWorker, zwLibPump, zwSolve, zwLibStore, zwLibPaint, ZW_LIB, get state() { return state; } };
+if (DEV) window.__dbg = { alitaJoints, stepJointsHtml, exportAsmBooklet, view, plan, R, render: (x) => render(x), ak: (t) => kitchenProposals(t), applyK: (u) => applyKitchen(u, null), checks: () => designChecks(), merge: (a, b) => mergeInto(a, b), get ui() { return ui; }, layout: asmLayout, libUnit, libSet, thumbs, openStudio: (u, x) => openStudio(u, x), exportUnitDrawings, exportPurchasePdf, exportPurchaseXlsx, renderPop, libAdd, exportQuotePdf, exportAsmBooklet, presentOn, presentOff, renderPresent, exportMachines, speakRun, applyLighting, setParams, cmdOpen, elev: (u) => unitElevSvg(u), cutReady, get cutData() { return cutData; }, projectPieces: () => projectPieces(state.project), workerOn, workerOff, renderWorker, zwLibPump, zwSolve, zwLibStore, zwLibPaint, ZW_LIB, get state() { return state; } };
