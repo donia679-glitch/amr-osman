@@ -10265,7 +10265,7 @@ const SCRAP_CANDIDATES = [
   { ds: { preset: "app_lowshelf" }, widths: [60, 90, 120], tag: "ريسبشن" }, { ds: { preset: "app_shoe_bench" }, widths: [60, 90], tag: "ريسبشن" }, { ds: { preset: "app_wall_flap" }, widths: [60, 90, 120], tag: "عام" },
   { ds: { preset: "blk_side_c_interlock" }, widths: [40, 45, 50], tag: "ترابيزات" }, { ds: { preset: "blk_side_cube" }, widths: [40, 45], tag: "ترابيزات" }, { ds: { preset: "blk_night_drawer_frame" }, widths: [45, 50], tag: "ترابيزات" },
   { ds: { preset: "blk_night_float_open" }, widths: [45, 50, 60], tag: "ترابيزات" }, { ds: { preset: "blk_coffee_two_L" }, widths: [90, 100, 120], tag: "ترابيزات" }, { ds: { preset: "blk_coffee_float_dark" }, widths: [100, 120], tag: "ترابيزات" },
-  { ds: { preset: "blk_coffee_nested" }, widths: [100, 120], tag: "ترابيزات" }, { ds: { preset: "blk_console_offset" }, widths: [100, 120], tag: "ترابيزات" },
+  { ds: { preset: "blk_coffee_nested" }, widths: [100, 120], tag: "ترابيزات" }, { ds: { preset: "blk_coffee_z_frame" }, widths: [90, 110], tag: "ترابيزات" }, { ds: { preset: "blk_coffee_glass_walnut" }, widths: [100, 120], tag: "ترابيزات" }, { ds: { preset: "blk_console_offset" }, widths: [100, 120], tag: "ترابيزات" },
   { ds: { preset: "app_dresser_corner80" }, widths: [70, 80], tag: "نوم" }, { ds: { preset: "app_chest_double" }, widths: [60, 70], tag: "نوم" }, { ds: { preset: "app_shoe_tall" }, widths: [50, 60], tag: "ريسبشن" },
 ];
 function scrap() { return (ui.scrap ??= { src: "stock", keys: [], manual: [], res: null, busy: false }); }
