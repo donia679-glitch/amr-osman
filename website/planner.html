@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title data-en="Kitchen Planner — NOVERA">مخطط المطبخ — NOVERA</title>
+<meta name="description" content="اكتب أطوال حيطان مطبخك واختار الشكل والتشطيب: المخطط بيوزّع الوحدات بمعايير NOVERA، يرسم المسقط والواجهات، ويراجع مثلث الشغل.">
+<meta name="theme-color" content="#0f2e1c">
+<link rel="canonical" href="https://novera.example/planner.html">
+<meta property="og:title" content="مخطط المطبخ — NOVERA">
+<meta property="og:description" content="مسقط وواجهات ومثلث شغل لمطبخك في دقيقة.">
+<meta property="og:image" content="https://novera.example/assets/img/kitchen-u.webp">
+<link rel="icon" href="assets/mark.svg" type="image/svg+xml">
+<link rel="manifest" href="site.webmanifest">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=Reem+Kufi:wght@500;600;700&display=swap">
+<link rel="stylesheet" href="assets/site.css">
+<script src="assets/site.js" defer></script>
+<script src="assets/planner.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main" data-en="Skip to content">انتقل للمحتوى</a>
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="index.html" aria-label="NOVERA">
+      <svg class="mark" viewBox="0 0 40 40" aria-hidden="true"><rect width="40" height="40" rx="3" fill="#0f2e1c"/><rect x="9" y="9" width="7" height="22" fill="#e9d9b0"/><rect x="24" y="9" width="7" height="22" fill="#e9d9b0"/><path d="M16 9h3l5 22h-3z" fill="#b98d34"/><rect x="6" y="33" width="28" height="2" fill="#b98d34"/></svg>
+      <span><b>NOVERA</b><small data-en="Kitchens & furniture">مطابخ وأثاث</small></span>
+    </a>
+    <nav class="nav" id="nav" aria-label="القائمة" data-en-label="Menu">
+      <a href="index.html#services" data-en="What we make">بنعمل إيه</a>
+      <a href="index.html#how" data-en="How we work">إزاي بنشتغل</a>
+      <a href="planner.html" aria-current="page" data-en="Kitchen planner">مخطط المطبخ</a>
+      <a href="index.html#work" data-en="Designs">تصميمات</a>
+      <a href="app.html" data-en="The app">التطبيق</a>
+      <a href="support.html" data-en="Support">الدعم</a>
+    </nav>
+    <div class="tools">
+      <button class="iconbtn" type="button" data-lang aria-label="English / عربي">EN</button>
+      <button class="iconbtn" type="button" data-theme-toggle aria-label="الوضع الليلي" data-en-label="Dark mode"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"/></svg></button>
+      <button class="iconbtn menu-btn" type="button" aria-controls="nav" aria-expanded="false" aria-label="القائمة" data-en-label="Menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+      <a class="btn brass" href="index.html#book" data-en="Book a site visit">احجز معاينة</a>
+    </div>
+  </div>
+</header>
+
+<main id="main">
+  <section class="page-head">
+    <div class="wrap">
+      <p class="crumbs"><a href="index.html">NOVERA</a> / <span data-en="Kitchen planner">مخطط المطبخ</span></p>
+      <h1 data-en="Kitchen planner">مخطط المطبخ</h1>
+      <p data-en="Type your wall lengths in centimetres. The planner places the sink, hob, fridge and every unit by NOVERA's standards, draws the plan and each wall, and checks the layout as you change it.">اكتب أطوال الحيطان بالسنتي. المخطط بيحط الحوض والمسطح والتلاجة وكل الوحدات بمعايير NOVERA، ويرسم المسقط وكل حيطة، ويراجع التصميم مع كل تغيير.</p>
+    </div>
+  </section>
+
+  <section class="section" style="padding-block:36px 80px">
+    <div class="wrap planner">
+      <form class="panel" id="plannerForm" novalidate aria-label="إعدادات المطبخ" data-en-label="Kitchen settings">
+        <fieldset>
+          <legend data-en="Shape">الشكل</legend>
+          <div class="chips">
+            <button type="button" class="chip" data-shape="I" data-en="Single wall">حيطة واحدة</button>
+            <button type="button" class="chip" data-shape="L" data-en="L-shape">حرف L</button>
+            <button type="button" class="chip" data-shape="U" data-en="U-shape">حرف U</button>
+            <button type="button" class="chip" data-shape="G" data-en="Galley">صفين</button>
+          </div>
+        </fieldset>
+        <fieldset>
+          <legend data-en="Walls (cm)">الحيطان (سم)</legend>
+          <div class="walls">
+            <div class="field"><label for="pA" data-en="Main wall">الحيطة الأساسية</label><input id="pA" inputmode="decimal" dir="ltr"></div>
+            <div class="field" id="fB"><label for="pB" id="fBl">الحيطة التانية</label><input id="pB" inputmode="decimal" dir="ltr"></div>
+            <div class="field" id="fC"><label for="pC" data-en="Right wall">الحيطة اليمين</label><input id="pC" inputmode="decimal" dir="ltr"></div>
+            <div class="field" id="fW"><label for="pW" data-en="Between walls">المسافة بينهم</label><input id="pW" inputmode="decimal" dir="ltr"></div>
+            <div class="field"><label for="pceil" data-en="Ceiling">السقف</label><input id="pceil" inputmode="decimal" dir="ltr"></div>
+          </div>
+          <small class="muted" data-en="Measure at counter height. We leave 3 cm on every wall for the site.">قيس على ارتفاع الكونتر. بنسيب 3 سم في كل حيطة خلوص للموقع.</small>
+        </fieldset>
+        <fieldset>
+          <legend data-en="What goes in">فيه إيه؟</legend>
+          <div class="toggles">
+            <label class="toggle"><input type="checkbox" id="ofridge"> <span data-en="Fridge cavity, 90 cm">تجويف تلاجة 90 سم</span></label>
+            <label class="toggle"><input type="checkbox" id="otower"> <span data-en="Oven tower at eye level">عمود فرن على مستوى العين</span></label>
+            <label class="toggle"><input type="checkbox" id="odw"> <span data-en="Dishwasher next to the sink">غسالة أطباق جنب الحوض</span></label>
+            <label class="toggle"><input type="checkbox" id="odrw"> <span data-en="3-drawer unit by the hob">وحدة 3 أدراج جنب المسطح</span></label>
+            <label class="toggle"><input type="checkbox" id="otoCeil"> <span data-en="Wall units up to the ceiling">العلوي لحد السقف (دورين)</span></label>
+          </div>
+        </fieldset>
+        <fieldset>
+          <legend data-en="Finish">التشطيب</legend>
+          <div class="swatches">
+            <button type="button" class="swatch" data-finish="novera"><i></i><span data-en="NOVERA classic<br><small>Cream acrylic, oak</small>">NOVERA الأصلي<br><small>أكريليك كريمي وأوك</small></span></button>
+            <button type="button" class="swatch" data-finish="white"><i></i><span data-en="All white<br><small>Gloss acrylic</small>">أبيض كامل<br><small>أكريليك لامع</small></span></button>
+            <button type="button" class="swatch" data-finish="oak"><i></i><span data-en="All oak<br><small>Natural oak HPL</small>">خشب كامل<br><small>HPL أوك طبيعي</small></span></button>
+            <button type="button" class="swatch" data-finish="dark"><i></i><span data-en="Graphite and oak<br><small>Anthracite HPL</small>">رصاصي وأوك<br><small>HPL أنثراسايت</small></span></button>
+          </div>
+          <div class="chips" style="margin-top:6px">
+            <button type="button" class="chip" data-counter="white" data-en="White porcelain">بورسلين أبيض</button>
+            <button type="button" class="chip" data-counter="dark" data-en="Dark porcelain">بورسلين غامق</button>
+          </div>
+        </fieldset>
+        <button type="button" class="btn ghost" id="resetPlan" data-en="Start again">ابدأ من الأول</button>
+      </form>
+
+      <div class="board">
+        <div class="viewtabs" id="viewTabs" role="group" aria-label="العرض" data-en-label="View"></div>
+        <div class="canvas" id="canvas"></div>
+        <div class="kpis" id="kpis"></div>
+        <div>
+          <h2 style="font-size:var(--step-1);margin-bottom:12px" data-en="Checks">المراجعة</h2>
+          <div class="checks" id="checks" aria-live="polite"></div>
+        </div>
+        <div>
+          <h2 style="font-size:var(--step-1);margin-bottom:12px" data-en="Units">الوحدات</h2>
+          <div class="tablewrap"><table class="ulist" id="ulist"><thead><tr><th data-en="No.">رقم</th><th data-en="Unit">الوحدة</th><th data-en="Width (cm)">العرض (سم)</th><th data-en="Row">الصف</th></tr></thead><tbody></tbody></table></div>
+          <p class="note" id="sheets"></p>
+          <p class="note" id="priceOut"></p>
+        </div>
+        <div class="callout" style="display:grid;gap:14px">
+          <p><strong data-en="Like this layout?">عجبك التصميم؟</strong> <span data-en="Send it to us. We start from it at the site visit and measure everything precisely.">ابعتهولنا، وهنبدأ منه في المعاينة ونقيس كل حاجة بالظبط.</span></p>
+          <div class="hero-actions">
+            <button type="button" class="btn" id="sendPlan" data-en="Send this layout">ابعت التصميم</button>
+            <a class="btn ghost" id="bookPlan2" href="index.html#book" data-en="Book a site visit with it">احجز معاينة بيه</a>
+          </div>
+          <div class="form-out" id="planOut" hidden aria-live="polite"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="foot">
+  <div class="wrap">
+    <div class="legal" style="margin-top:0;border-top:0;padding-top:0">
+      <span>© <span data-year>2026</span> NOVERA — <span data-en="The planner gives a first layout; the final design follows the site visit.">المخطط بيدّي تصميم مبدئي، والتصميم النهائي بعد المعاينة.</span></span>
+      <span><a href="index.html" data-en="Home">الرئيسية</a> · <a href="privacy.html" data-en="Privacy">الخصوصية</a> · <a href="support.html" data-en="Support">الدعم</a></span>
+    </div>
+  </div>
+</footer>
+</body>
+</html>

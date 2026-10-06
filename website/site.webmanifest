@@ -1,0 +1,11 @@
+{
+  "name": "NOVERA — مطابخ ودريسنج",
+  "short_name": "NOVERA",
+  "lang": "ar",
+  "dir": "rtl",
+  "start_url": "index.html",
+  "display": "standalone",
+  "background_color": "#f2f3ee",
+  "theme_color": "#0f2e1c",
+  "icons": [{ "src": "assets/mark.svg", "sizes": "any", "type": "image/svg+xml" }]
+}
