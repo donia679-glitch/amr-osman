@@ -39,6 +39,7 @@ qrcode.js + the IBM Plex Arabic font come from `tools/vendor_assets` (v95; befor
 - Kitchen units: base depth 58 includes the door (inset, face at y=0); corner units get their depth from `cornerFit()` in app.js unless set by hand.
 
 ## History (latest first)
+- v109: `blk_shelf_black_rings` rebuilt from Amr's photo (he said the old one had extras and wasn't balanced; the right «half front» was a misread — it is the right END panel seen at an angle). Now symmetric: two black rings 12 wide (front + back + top + bottom, open sides, t 3.6 laminated) at x 6 and W−18 standing full height; 3 oak bands (z 8 / 68 / 132, 30 high, oak 1.8): bottom + top shelf through both rings (y 3.6 → D−3.6) running 6 cm past each ring and closed by an oak end panel, no fronts. 88×32×180. Render vs photo: scratchpad/h108/cmp.png (rr.py).
 - v108: one logo everywhere (Amr: the splash logo must be the website's). The website mark (deep green square, two cream panels, brass profile between them, brass base line — website/assets/mark.svg) replaces the gold «N» in the splash (`.sp-mark` svg, wordmark letter-spaced like the site), the top bar, home header and About (`MARK_SVG` in app.js, `.mark.svgm`), the PWA icons (build_pwa.py `novera_mark`) and the App Store icon (build_ios.py).
 - v107: built-in handle fixes after Amr's report («حاجات مقلوبة… مش متظبط مع الضلف… الـ4 سم اتحسبت مرتين… تداخل الأدراج مع المقبض… أدراج جوه الجنب»).
   (1) double recess: handles.js no longer guesses the existing gap from "top front"; for every front in the door plane it finds what is really above it — the next front (→ C) or a board / the counter (→ L, `leafSolids` scan of the unit's boards within 2.5 cm behind the front plane) — and the gap the carcass left there is the existing recess (no second cut; k_drawer_doors was 8.6 cm). Inner drawer fronts («وش داخلي», behind the plane) get no handle.
@@ -205,7 +206,6 @@ Rendering tips: run long renders in the background (`nohup python3 x.py &` then 
 For photo-matching furniture: grid-zoom the photo (PIL), measure edges relative to each other, render from the photo's own camera (three +z = unit front, +x = unit right) and show photo | render side by side before shipping.
 
 ## Open questions for Amr (from the last session)
-- `blk_shelf_black_rings`: the right cubbies have a closed front on their outer half (as read from his photo) — confirm or remove.
 - Free-standing tables / blocks keep banding on their back edges; bookshelves (`against_wall`) don't — confirm.
 - Older block tables (v86–v91 collage presets) were never re-checked with the photo-matching method; offer to redo them one by one.
 
