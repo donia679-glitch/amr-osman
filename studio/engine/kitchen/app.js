@@ -38,6 +38,7 @@ export function materialNames(p) {
         [rgb(COLORS.groove), "groove"],
         [rgb(COLORS.assembly), "hole"],
         ["KUD_70_72_76", "handle"],
+        ["KUD_34_36_35", "gola"],
         ["KUD_188_192_198", "handle"],
         ["KUD_92_64_40", "handle"],
         ["KUD_196_160_112", "handle"],

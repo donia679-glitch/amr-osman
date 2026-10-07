@@ -161,7 +161,7 @@ export class Plan {
             this.out.warnings.push("مقاس الوش غلط — المقبض اتلغى.");
             return this.out;
         }
-        if (this.f.framed && !["knob", "bar", "push"].includes(type)) {
+        if (this.f.framed && !["knob", "bar", "push"].includes(type) && !(type === "gola" && Number(this.f.existing_recess ?? 0) > 0)) {
             this.out.warnings.push(`${label(type)} مش بيتركب على ضلف الفريم/الزجاج — الضلفة دي اتسابت من غير مقبض.`);
             return this.out;
         }
@@ -266,6 +266,15 @@ export class Plan {
         this.out.reduce = { edge: e, amount };
         return true;
     }
+    /** a profiled visual running along edge e from s0 to s1; pts = [[y, n]] with n measured inward from the edge (negative = beyond it) */
+    edgeSection(e, s0, s1, pts, mat, name) {
+        const across = (n) => (e === "top" ? this.h - n : e === "bottom" ? n : e === "left" ? n : this.w - n);
+        const run = e === "top" || e === "bottom" ? "x" : "z";
+        const sec = pts.map(([y, n]) => [rround(y, 3), rround(across(n), 3)]);
+        const ys = sec.map((q) => q[0]), cs = sec.map((q) => q[1]);
+        const r = run === "x" ? { x0: s0, x1: s1, z0: Math.min(...cs), z1: Math.max(...cs) } : { x0: Math.min(...cs), x1: Math.max(...cs), z0: s0, z1: s1 };
+        this.out.visuals.push({ ...r, y0: Math.min(...ys), y1: Math.max(...ys), mat, attach: "front", run, section: sec, name });
+    }
     visual(rect, y0, y1, mat, attach = "front") {
         this.out.visuals.push({ ...rect, y0, y1, mat, attach });
     }
@@ -342,7 +351,8 @@ export class Plan {
         const rect = vertical
             ? { x0: cx - th / 2.0, x1: cx + th / 2.0, z0: cz - len / 2.0, z1: cz + len / 2.0 }
             : { x0: cx - len / 2.0, x1: cx + len / 2.0, z0: cz - th / 2.0, z1: cz + th / 2.0 };
-        this.visual(rect, -c.projection, 0.0, "handle");
+        this.out.visuals.push({ ...rect, y0: -c.projection, y1: 0.0, mat: "handle", attach: "front", kind: bar ? "bar" : "knob",
+            pts: pts.map(([px, pz]) => [rround(px, 3), rround(pz, 3)]), vertical, len, cx, cz, proj: c.projection });
         const name = bar
             ? `مقبض ${fmt(sp * 10)} مم${c.length > sp + 2.0 ? ` (طول ${fmt(c.length)} سم)` : ""}`
             : "زرار مقبض";
@@ -361,7 +371,8 @@ export class Plan {
             const r = this.band(e, s, s, 1.5, 1.5);
             this.hole(r.x0, r.z0, 0.35, "back", Math.max(this.t - 0.4, 0.5));
         }
-        this.visual(this.band(e, s0, s1, -0.2, 2.0), -0.4, this.t + 0.2, "handle");
+        const t = this.t;
+        this.edgeSection(e, s0, s1, [[t + 0.2, 2.0], [t + 0.2, -0.2], [-0.4, -0.2], [-0.4, 1.0], [-0.2, 1.0], [-0.2, 0.0], [t, 0.0], [t, 2.0]], "handle", "مقبض حرف");
         inc(this.out.hardware, `مقبض حرف (تاب) ${fmt(len)} سم`, 1);
         this.out.notes.push(`مقبض حرف على ${EDGE_NAMES[e]} — 2 مسمار من الضهر`);
         this.out.edge = e;
@@ -374,11 +385,12 @@ export class Plan {
         if (this.c.reduce_front) {
             if (!this.reduce(e, ph))
                 return;
-            this.visual(this.band(e, s0, s1, 0.0, ph), -0.8, this.t, "profile");
+            const t = this.t, m = t / 2.0;
+            this.edgeSection(e, s0, s1, [[0, ph], [0, 0], [t, 0], [t, 1.4], [t - 0.2, 1.4], [t - 0.2, 0.2], [0.2, 0.2], [0.2, ph - 0.2], [m + 0.1, ph - 0.2], [m + 0.1, ph + 0.8], [m - 0.1, ph + 0.8], [m - 0.1, ph]], "profile", "بروفايل مقبض");
             this.out.notes.push(`بروفايل ألومنيوم على ${EDGE_NAMES[e]} بطول ${fmt(len)} سم — الوش اتخصم ${fmt(ph)} سم`);
         }
         else {
-            this.visual(this.band(e, s0, s1, 0.0, ph), -1.2, 0.0, "profile");
+            this.edgeSection(e, s0, s1, [[0, 0.2], [-1.2, 0.2], [-1.2, ph], [-1.0, ph], [-1.0, 0.4], [-0.2, 0.4], [-0.2, ph * 0.6], [0, ph * 0.6]], "profile", "بروفايل مقبض");
             const n = Math.max(Math.ceil(len / 30.0) + 1, 2);
             const step = (len - 10.0) / (n - 1);
             for (let i = 0; i < n; i++) {
@@ -422,26 +434,50 @@ export class Plan {
         this.out.notes.push(`شريحة خشب ${this.c.strip_material} على ${EDGE_NAMES[e]} — الوش اتخصم ${fmt(ph)} سم`);
         this.out.edge = e;
     }
+    /** v106: the built-in aluminium handle with its real section — L under the counter (top of the box), C between two fronts,
+     *  an upside-down L under a wall unit. Section points are [y, z] in cm: y from the front face (+ = into the carcass),
+     *  z in the front's own frame; the carcass front plane is at y = t for overlay fronts (0 for inset), the rail sits D behind it. */
     gola() {
         let e = this.c.edge === "auto" ? (this.door() && (this.unitType() === "wall" || this.flip()) ? "bottom" : "top") : this.edge();
         if (e === "left" || e === "right")
             e = "top";
+        // NOVERA wall units: the door hangs 2 cm under the box — that IS the handle, no profile
+        if (e === "bottom" && this.unitType() === "wall" && Number(this.f.drop ?? 0) >= 1.0) {
+            this.out.notes.push(`مقبض: الضلفة نازلة ${fmt(this.f.drop)} سم تحت العلبة (من غير بروفايل)`);
+            return;
+        }
         const gh = this.c.gola_height;
         const existing = Number(this.f.existing_recess ?? 0);
+        const top = e === "top" && (existing > 0 || this.f.is_top);
         if (existing >= gh - 0.01) {
-            this.out.notes.push(`جولا في الفتحة الموجودة (${fmt(existing)} سم)`);
+            this.out.notes.push(`مقبض بلت إن في الفتحة الموجودة (${fmt(existing)} سم)`);
         }
         else {
             if (!this.reduce(e, gh - existing))
                 return;
-            this.out.notes.push(`جولا على ${EDGE_NAMES[e]} — الوش اتخصم ${fmt(gh - existing)} سم`);
+            this.out.notes.push(`مقبض بلت إن على ${EDGE_NAMES[e]} — الوش اتخصم ${fmt(gh - existing)} سم`);
         }
         const fr = this.out.front;
-        const r = e === "top"
-            ? { x0: 0.0, x1: this.w, z0: fr.z1, z1: fr.z1 + gh }
-            : { x0: 0.0, x1: this.w, z0: fr.z0 - gh, z1: fr.z0 };
-        this.visual(r, 0.0, Math.max(this.t, 1.0) + 2.5, "profile", "carcass");
-        inc(this.out.hardware, "بروفايل جولا (متر طولي)", rround(this.w / 100.0, 3));
+        const g = Math.max(gh, existing);
+        // under the counter the L reaches the box top (the front's own 3 mm reveal sits above the recess)
+        const zb = e === "top" ? fr.z1 : fr.z0 - g, zt = e === "top" ? fr.z1 + g + (top && existing > 0 ? 0.3 : 0) : fr.z0;
+        const yc = this.f.overlay === false ? 0.0 : this.t, D = Number(this.f.rail_d ?? 2.5) || 2.5, a = 0.2, lip = 0.6, ov = 0.6;
+        let kind, pts;
+        if (e === "bottom") {
+            kind = "L";   // upside-down L: plate under the wall unit's bottom + wall up behind the door
+            pts = [[yc, zb], [yc + D, zb], [yc + D, zt + 1.0], [yc + D - a, zt + 1.0], [yc + D - a, zb + a], [yc + a, zb + a], [yc + a, zb + lip], [yc, zb + lip]];
+        }
+        else if (top) {
+            kind = "L";   // L under the counter: plate on the box top + wall going down behind the front
+            pts = [[yc, zt], [yc + D, zt], [yc + D, zb - 1.0], [yc + D - a, zb - 1.0], [yc + D - a, zt - a], [yc + a, zt - a], [yc + a, zt - lip], [yc, zt - lip]];
+        }
+        else {
+            kind = "C";   // C between two fronts: plates behind both fronts + the back wall, open to the front
+            pts = [[yc, zt + ov], [yc + D, zt + ov], [yc + D, zb - ov], [yc, zb - ov], [yc, zb - ov + a], [yc + D - a, zb - ov + a], [yc + D - a, zt + ov - a], [yc, zt + ov - a]];
+        }
+        const r = { x0: -0.15, x1: this.w + 0.15, z0: zb, z1: zt };
+        this.out.visuals.push({ ...r, z0: Math.min(...pts.map((q) => q[1])), z1: Math.max(...pts.map((q) => q[1])), y0: yc, y1: yc + D, mat: "gola", attach: "carcass", run: "x", section: pts.map(([y, z]) => [rround(y, 3), rround(z, 3)]), name: kind === "L" ? "بروفايل مقبض L" : "بروفايل مقبض C" });
+        inc(this.out.hardware, `بروفايل مقبض بلت إن ${kind === "L" ? "L (فوق)" : "C (بين وشين)"} (متر طولي)`, rround((this.w + 0.3) / 100.0, 3));
         this.out.edge = e;
     }
 }

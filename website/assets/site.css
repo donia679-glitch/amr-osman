@@ -350,3 +350,6 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--brass); out
 .hero-figure:has(.device)::before { display: none; }
 @media (max-width: 900px) { .hero-figure:has(.device) { aspect-ratio: auto; } }
 .section:not(.dark) .contact .todo { color: var(--brass); }
+
+.promo { width: 100%; aspect-ratio: 16 / 9; height: auto; background: #000; border-radius: 10px; box-shadow: 0 40px 80px -40px rgba(0,0,0,.8); }
+section[id] { scroll-margin-top: calc(76px + env(safe-area-inset-top, 0px)); }

@@ -19,6 +19,7 @@ export const MATERIAL_KEYS = {
     table_top: { label: "سطح الترابيزة", fallback: "front" },
     table_base: { label: "قاعدة / رجول الترابيزة", fallback: "accent" },
     led: { label: "إضاءة الليد", fallback: null },
+    handle: { label: "بروفايل المقابض", fallback: null },
     banding: { label: "شريط الحواف", fallback: null },
 };
 export const DEFAULT_MATERIALS = {
@@ -29,6 +30,7 @@ export const DEFAULT_MATERIALS = {
         mirror: ["مرايا", [214, 226, 232]],
         glass: ["زجاج شفاف 4 مم", [205, 228, 238]],
         led: ["إضاءة LED", [255, 210, 122]],
+        handle: ["بروفايل ألومنيوم أسود", [34, 36, 35]],
         banding: ["شريط حواف", [224, 64, 42]],
     },
     wet: {
@@ -38,6 +40,7 @@ export const DEFAULT_MATERIALS = {
         mirror: ["مرايا", [214, 226, 232]],
         glass: ["زجاج شفاف 4 مم", [205, 228, 238]],
         led: ["إضاءة LED", [255, 210, 122]],
+        handle: ["بروفايل ألومنيوم أسود", [34, 36, 35]],
         banding: ["شريط PVC", [210, 60, 40]],
     },
 };

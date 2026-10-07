@@ -106,8 +106,8 @@ const minus = (all, rem) => all.filter((a) => !rem.includes(a));
 const XYZ = ["x", "y", "z"];
 export const THROUGH_NOTE = "رف متصل للزاوية العمياء — بيعدّي ورا قايم المفصلات لحد جنب الوحدة (متسند على الجنبين)";
 export const THROUGH_CLEARANCE = 0.3;
-const HANDLE_VISUAL_MATERIAL = { handle: "handle", profile: "handle_profile", routed: "__hole" };
-const HANDLE_VISUAL_NAME = { handle: "مقبض", profile: "بروفايل مقبض", routed: "حفر مقبض" };
+const HANDLE_VISUAL_MATERIAL = { handle: "handle", profile: "handle_profile", gola: "handle_profile", routed: "__hole" };
+const HANDLE_VISUAL_NAME = { handle: "مقبض", profile: "بروفايل مقبض", gola: "بروفايل مقبض بلت إن", routed: "حفر مقبض" };
 const AXIS_ENDS = { x: ["left", "right"], y: ["front", "back"], z: ["bottom", "top"] };
 const LED_TOL = 0.05;
 const JOINT_ROLES = ["side", "horizontal", "divider", "fixed_shelf"];
@@ -1030,6 +1030,32 @@ export class Engine {
         for (const v of plan.visuals) {
             if (v.mat === "wood_strip")
                 continue;
+            // v106: the handle's real section (profiles), or posts + a round bar / a round knob
+            const opt = { label_axes: null, band: [], layer: "front", group: v.attach === "carcass" ? null : key, cut_piece: false };
+            const nm = `${name} - ${v.name || HANDLE_VISUAL_NAME[v.mat]}`, mk = HANDLE_VISUAL_MATERIAL[v.mat];
+            const bx = this.box(ox + v.x0, fy0 + v.y0, oz + v.z0, ox + v.x1, fy0 + v.y1, oz + v.z1);
+            if (v.section) {
+                const shape = v.run === "x"
+                    ? { type: "profile_x", points: v.section.map(([y, z]) => [rround(fy0 + y, 4), rround(oz + z, 4)]), x0: ox + v.x0, x1: ox + v.x1 }
+                    : { type: "profile_z", points: v.section.map(([y, x]) => [rround(ox + x, 4), rround(fy0 + y, 4)]), z0: oz + v.z0, z1: oz + v.z1 };
+                this.addPart(nm, "handle", mk, bx, { ...opt, shape });
+                continue;
+            }
+            if (v.kind === "bar" || v.kind === "knob") {
+                const pr = v.proj;
+                if (v.kind === "knob") {
+                    const [px, pz] = v.pts[0], head = Math.min(1.6, pr * 0.6);
+                    this.addPart(nm, "handle", mk, bx, { ...opt, shape: { type: "cylinder_y", cx: ox + px, cy: fy0 - pr + head / 2.0, cz: oz + pz, r: 1.3, length: head } });
+                    this.addPart(`${nm} - رجل`, "handle", mk, bx, { ...opt, shape: { type: "cylinder_y", cx: ox + px, cy: fy0 - (pr - head) / 2.0, cz: oz + pz, r: 0.5, length: pr - head } });
+                    continue;
+                }
+                for (const [px, pz] of v.pts)
+                    this.addPart(`${nm} - رجل`, "handle", mk, bx, { ...opt, shape: { type: "cylinder_y", cx: ox + px, cy: fy0 - pr / 2.0, cz: oz + pz, r: 0.45, length: pr } });
+                this.addPart(nm, "handle", mk, bx, { ...opt, shape: v.vertical
+                    ? { type: "cylinder_z", cx: ox + v.cx, cy: fy0 - pr + 0.6, cz: oz + v.cz, r: 0.6, length: v.len }
+                    : { type: "cylinder_x", cx: ox + v.cx, cy: fy0 - pr + 0.6, cz: oz + v.cz, r: 0.6, length: v.len } });
+                continue;
+            }
             this.addPart(`${name} - ${HANDLE_VISUAL_NAME[v.mat]}`, "handle", HANDLE_VISUAL_MATERIAL[v.mat], this.box(ox + v.x0, fy0 + v.y0, oz + v.z0, ox + v.x1, fy0 + v.y1, oz + v.z1), {
                 label_axes: null, band: [], layer: "front", group: v.attach === "carcass" ? null : key, cut_piece: false,
             });

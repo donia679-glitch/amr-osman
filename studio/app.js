@@ -5949,7 +5949,7 @@ const view = {
         const led = key === "led", glass = key === "glass";
         const lib = r.libOf?.(key), tx = Mat.textureFor(THREE, lib, !!state.render, grain), sf = Mat.surface(lib);
         const m = finMaterial(THREE, led || glass ? null : finOf(u, key), { color: tx ? new THREE.Color(1, 1, 1).multiplyScalar(sf.bright) : r.colors[key] || "#cccccc", map: tx?.tex || null,
-          roughness: state.render || lib ? sf.rough : 0.7, metalness: ["frame", "rail", "handle"].includes(key) ? 0.5 : sf.metal,
+          roughness: state.render || lib ? sf.rough : 0.7, metalness: ["frame", "rail", "handle", "gola"].includes(key) ? 0.5 : sf.metal,
           transparent: see || glass, opacity: see ? 0.16 : glass ? 0.4 : 1, side: THREE.DoubleSide,
           emissive: new THREE.Color(led ? "#ffcf6a" : "#000000"), emissiveIntensity: led ? 0.9 : 0 });
         m.userData.tile = tx?.tile || 0;

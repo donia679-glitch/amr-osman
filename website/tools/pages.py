@@ -134,6 +134,15 @@ APP = head("NOVERA Kitchen Studio — تطبيق تصميم وتصنيع الم�
     </div></div>
   </section>
 
+  <section class="section dark" id="video" aria-labelledby="h-video" style="padding-block:clamp(40px,6vw,80px)">
+    <div class="wrap" style="display:grid;gap:22px">
+      <div class="head" style="margin-block-end:0"><h2 id="h-video" data-en="The app in 80 seconds">التطبيق في 80 ثانية</h2><p data-en="Six workshop problems, and how each one is solved in the app — with real screens.">ست مشاكل بتقابل أي ورشة، وإزاي كل واحدة بتتحل في التطبيق — بشاشات حقيقية.</p></div>
+      <video class="promo" controls playsinline preload="none" poster="assets/video/poster.jpg" aria-label="فيديو NOVERA Kitchen Studio" data-en-label="NOVERA Kitchen Studio video">
+        <source src="assets/video/novera-kitchen-studio.mp4" type="video/mp4">
+      </video>
+    </div>
+  </section>
+
   <section class="section" aria-labelledby="h-feat">
     <div class="wrap">
       <div class="head">

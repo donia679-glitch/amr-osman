@@ -44,7 +44,7 @@ export const K_MATS = {
 };
 export const K_DEFAULT_COLORS = {
   carcass: "#ded8cc", front: "#e2ded6", back: "#ebe5d8", countertop: "#5a5a5f", glass: "#d8eef0", frame: "#9a9da0",
-  rail: "#bebec3", handle: "#46484c", led: "#ffd27a", groove: "#4682af", hole: "#e0402a", banding: "#d0c8b8",
+  rail: "#bebec3", handle: "#46484c", gola: "#1e201f", led: "#ffd27a", groove: "#4682af", hole: "#e0402a", banding: "#d0c8b8",
 };
 export const K_DEFAULT_NAMES = {
   carcass: "خامة الهيكل", front: "خامة الضلف", back: "خامة الظهر", countertop: "الكونتر", glass: "زجاج", frame: "برواز ألومنيوم",

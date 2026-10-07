@@ -63,6 +63,20 @@ export class TemplateBuilder {
     get gola() { return this.p.handle === "gola"; }
     box(x0, y0, z0, x1, y1, z1) { return this.d.box(x0, y0, z0, x1, y1, z1); }
     add(name, role, mat, bx, o = {}) { return this.d.addPart(name, role, mat, bx, o); }
+    /** v106: the built-in aluminium handle with its real section, in the gap [zb, zt] behind the fronts (carcass front plane y = 0):
+     *  "L" under the top of the unit, "C" between two fronts. x0..x1 = the run between the sides. */
+    golaProfile(kind, x0, x1, zb, zt) {
+        const D = 2.5, a = 0.2, lip = 0.6, ov = 0.6;
+        const pts = kind === "L"
+            ? [[0, zt], [D, zt], [D, zb - 1.0], [D - a, zb - 1.0], [D - a, zt - a], [a, zt - a], [a, zt - lip], [0, zt - lip]]
+            : [[0, zt + ov], [D, zt + ov], [D, zb - ov], [0, zb - ov], [0, zb - ov + a], [D - a, zb - ov + a], [D - a, zt + ov - a], [0, zt + ov - a]];
+        const zs = pts.map((q) => q[1]);
+        this.add(this.d.seqName(kind === "L" ? "بروفايل مقبض L" : "بروفايل مقبض C"), "handle", "handle", this.box(x0, 0.0, Math.min(...zs), x1, D, Math.max(...zs)), {
+            cut_piece: false, layer: "front", shape: { type: "profile_x", points: pts.map(([y, z]) => [rround(y, 4), rround(z, 4)]), x0, x1 },
+        });
+        const k = `بروفايل مقبض بلت إن ${kind === "L" ? "L (فوق)" : "C (بين وشين)"} (متر طولي)`;
+        this.d.hardware[k] = rround((this.d.hardware[k] ?? 0) + (x1 - x0) / 100.0, 3);
+    }
     get backOn() { return !!this.p.back.enabled; }
     backFrontY() {
         if (!this.backOn)
@@ -277,7 +291,7 @@ export class TemplateBuilder {
                     this.buildFlap(frZ0, frZ1);
                     break;
                 case "drawers":
-                    this.buildDrawers(zn, cell, frZ0, zb, i);
+                    this.buildDrawers(zn, cell, frZ0, zb, i, i === zones.length - 1);
                     break;
             }
             if (["doors", "flap", "open"].includes(zn.type))
@@ -285,10 +299,8 @@ export class TemplateBuilder {
             if (zn.led && zn.type !== "drawers") {
                 this.d.addLed(this.d.seqName("ليد خانة"), this.box(cell.x0 + 1.5, 2.0, cell.z1 - 0.5, cell.x1 - 1.5, 3.6, cell.z1));
             }
-            if (this.gola && zn.type !== "open") {
-                const k = "بروفايل جولا (متر)";
-                this.d.hardware[k] = rround((this.d.hardware[k] ?? 0) + w / 100.0, 2);
-            }
+            if (this.gola && zn.type !== "open" && zn.type !== "drawers")
+                this.golaProfile(i === zones.length - 1 ? "L" : "C", cell.x0, cell.x1, frZ1, zb);
         });
     }
     frontMat() {
@@ -405,7 +417,7 @@ export class TemplateBuilder {
             inc(this.d.hardware, "بنز رف", 4);
         }
     }
-    buildDrawers(zn, cell, zoneZ0, zoneZ1, idx) {
+    buildDrawers(zn, cell, zoneZ0, zoneZ1, idx, topZone = true) {
         const { w, g, ft } = this;
         const n = zn.count;
         const dr = this.p.drawer;
@@ -435,6 +447,8 @@ export class TemplateBuilder {
         for (let i = 0; i < n; i++) {
             const f0 = zoneZ0 + i * (fh + between);
             const f1 = f0 + fh;
+            if (this.gola)
+                this.golaProfile(i < n - 1 || !topZone ? "C" : "L", cell.x0, cell.x1, f1, i < n - 1 ? f1 + between : zoneZ1);
             const name = this.d.seqName("درج");
             const key = `drawer${this.d.groups.length + 1}`;
             const z0 = Math.max(f0 + 1.0, cell.z0 + 1.0);

@@ -3,18 +3,27 @@
 import { rround } from "../core/rubyMath.js";
 import * as Catalog from "../handles/catalog.js";
 import { COLORS as KCOLORS } from "./config.js";
-import { assignLayer, createBox, createHoleMarkerY, NO_BAND } from "./helpers.js";
+import { assignLayer, createBox, createFlatSlab, createHoleMarkerY, createSlabAlongX, NO_BAND } from "./helpers.js";
 import { TAGS } from "./carcass.js";
 import { fs, toF, toS } from "./rb.js";
 import { BoundingBox, cm, Point3d, Transformation, Vector3d } from "./su/geom.js";
 import { ComponentInstance, Entities, Face, Group } from "./su/model.js";
 export const PARAM_KEY = "kud_handles";
 export const LAYER = "Kitchen - Handles";
-const COLORS = { handle: [70, 72, 76], profile: [188, 192, 198], routed: [92, 64, 40], wood_strip: [196, 160, 112] };
+const COLORS = { handle: [70, 72, 76], profile: [188, 192, 198], gola: [34, 36, 35], routed: [92, 64, 40], wood_strip: [196, 160, 112] };
 const SKIP_CATEGORIES = ["bed"];
 const isHash = (v) => !!v && typeof v === "object" && !Array.isArray(v);
 /** Handles.effective_cfg — the unit's own settings (params.kud_handles), else the app default */
 export function effectiveCfg(params, appDefault = null) {
+    const r = effectiveCfg0(params, appDefault);
+    // v106 (NOVERA): a base unit that leaves a handle gap at the top of its fronts and has no other handle gets the real
+    // built-in aluminium profile — L under the counter, C between drawers (the drawer fronts get the same gap)
+    const recess = isHash(params) ? toF(params["door_handle_recess"]) : 0;
+    if ((!r[0] || r[0].type === "none") && recess > 0 && toS(params["unit_type"]) === "base")
+        return Catalog.normalize({ type: "gola", gola_height: recess });
+    return r;
+}
+function effectiveCfg0(params, appDefault = null) {
     const own = isHash(params) ? params[PARAM_KEY] : null;
     if (isHash(own))
         return Catalog.normalize(own);
@@ -144,8 +153,13 @@ export function applyHandles(ctx, group, params, appDefault = null) {
     const ub = localBounds(group);
     const unitZ0 = toCm(ub.min().z);
     const fronts = collectFronts(group.entities, new Transformation(), []);
-    for (const f of fronts)
+    // the built-in profile is cut to fit between the two sides (corner units keep the fronts' own run)
+    const W = toF(params["width"]), T = toF(params["panel_thickness"]) || 1.8;
+    const clipX = W > 2 * T && !/corner/.test(toS(params["unit_category"])) ? [T, W - T] : null;
+    for (const f of fronts) {
         f.box = boxIn(f.piece, f.piece_tr);
+        f.clipX = clipX;
+    }
     const topZ = Math.max(...fronts.map((f) => f.box.z1));
     const recess = unitType === "base" ? toF(params["door_handle_recess"]) : 0.0;
     const pieces = ctx.labels.pieces.filter((p) => p.unit_id === unitId);
@@ -161,6 +175,8 @@ export function applyHandles(ctx, group, params, appDefault = null) {
         const front = {
             w: b.x1 - b.x0, h: b.z1 - b.z0, t: b.y1 - b.y0, kind: f.kind, hinge: f.hinge, unit_type: unitType,
             z_base: b.z0 - unitZ0, framed: f.framed, existing_recess: recess > 0 && Math.abs(b.z1 - topZ) < 1.0 ? recess : 0.0,
+            is_top: Math.abs(b.z1 - topZ) < 1.0, drop: unitType === "wall" ? toF(params["door_bottom_extension"]) : 0.0,
+            overlay: toS(params["door_position"]) !== "inset", rail_d: toF(params["top_rail_front_inset"]) > 0 ? toF(params["top_rail_front_inset"]) : 2.5,
         };
         const plan = Catalog.compute(front, isKick && kcfg ? kcfg : cfg);
         for (const w of plan.warnings)
@@ -226,7 +242,7 @@ function moveHingeMarkers(f, r, db) {
         c.transformBang(Transformation.translation(new Vector3d(0, 0, d)));
     }
 }
-const NAMES = { handle: "مقبض", profile: "بروفايل مقبض", routed: "حفر مقبض", wood_strip: "مقبض خشب" };
+const NAMES = { handle: "مقبض", profile: "بروفايل مقبض", gola: "بروفايل مقبض بلت إن", routed: "حفر مقبض", wood_strip: "مقبض خشب" };
 function local(tr, x, y, z) {
     return tr.inverse().applyPoint(new Point3d(cm(x), cm(y), cm(z)));
 }
@@ -237,6 +253,59 @@ function draw(ctx, group, f, plan) {
         const t = b.y1 - b.y0;
         for (const v of plan.visuals) {
             const [holder, htr] = v.attach === "carcass" ? [group, new Transformation()] : [f.holder, f.holder_tr];
+            if (v.section || v.kind) {
+                // v106: the real section of the handle, extruded along its run (or posts + a round bar / a round knob)
+                const nm = `${f.name} - ${v.name || NAMES[v.mat]}`;
+                const ents = holder.definition.entities;
+                const color = COLORS[v.mat] ?? COLORS.handle;
+                const made = [];
+                const L = (x, y, z) => local(htr, b.x0 + x, fy + y, b.z0 + z);
+                const circ = (n, r) => Array.from({ length: n }, (_, i) => [r * Math.cos((2 * Math.PI * i) / n), r * Math.sin((2 * Math.PI * i) / n)]);
+                if (v.section && v.run === "x") {
+                    let vx0 = v.x0, vx1 = v.x1;
+                    if (v.attach === "carcass" && f.clipX) { vx0 = Math.max(vx0, f.clipX[0] - b.x0); vx1 = Math.min(vx1, f.clipX[1] - b.x0); }
+                    if (vx1 - vx0 < 0.5)
+                        continue;
+                    const a = L(vx0, 0, 0), c = L(vx1, 0, 0);
+                    const yz = v.section.map(([y, z]) => { const q = L(v.x0, y, z); return [q.y, q.z]; });
+                    made.push(createSlabAlongX(ctx, ents, nm, Math.min(a.x, c.x), Math.max(a.x, c.x), yz, color));
+                }
+                else if (v.section) {
+                    const a = L(0, 0, v.z0), c = L(0, 0, v.z1);
+                    const xy = v.section.map(([y, x]) => { const q = L(x, y, 0); return { x: q.x, y: q.y }; });
+                    made.push(createFlatSlab(ctx, ents, nm, xy, Math.min(a.z, c.z), Math.max(a.z, c.z), color));
+                }
+                else if (v.kind === "bar") {
+                    const pr = v.proj, r = 0.6;
+                    for (const [px, pz] of v.pts) {
+                        const q = L(px, -pr / 2.0, pz);
+                        made.push(createHoleMarkerY(ctx, ents, `${nm} - رجل`, q.x, q.y, q.z, cm(0.45), cm(pr), color));
+                    }
+                    if (v.vertical) {
+                        const a = L(0, 0, v.cz - v.len / 2.0), c = L(0, 0, v.cz + v.len / 2.0);
+                        const xy = circ(12, r).map(([dx, dy]) => { const q = L(v.cx + dx, -pr + r + dy, 0); return { x: q.x, y: q.y }; });
+                        made.push(createFlatSlab(ctx, ents, nm, xy, Math.min(a.z, c.z), Math.max(a.z, c.z), color));
+                    }
+                    else {
+                        const a = L(v.cx - v.len / 2.0, 0, 0), c = L(v.cx + v.len / 2.0, 0, 0);
+                        const yz = circ(12, r).map(([dy, dz]) => { const q = L(v.cx, -pr + r + dy, v.cz + dz); return [q.y, q.z]; });
+                        made.push(createSlabAlongX(ctx, ents, nm, Math.min(a.x, c.x), Math.max(a.x, c.x), yz, color));
+                    }
+                }
+                else if (v.kind === "knob") {
+                    const pr = v.proj, head = Math.min(1.6, pr * 0.6);
+                    const [px, pz] = v.pts[0];
+                    const h = L(px, -pr + head / 2.0, pz), st = L(px, -(pr - head) / 2.0, pz);
+                    made.push(createHoleMarkerY(ctx, ents, nm, h.x, h.y, h.z, cm(1.3), cm(head), color));
+                    made.push(createHoleMarkerY(ctx, ents, `${nm} - رجل`, st.x, st.y, st.z, cm(0.5), cm(pr - head), color));
+                }
+                for (const inst of made) {
+                    inst.setAttribute("KUD", "is_cut_piece", false);
+                    inst.setAttribute("KUD", "handle_part", true);
+                    inst.layer = ctx.model.layers.get(LAYER) ?? ctx.model.layers.add(LAYER);
+                }
+                continue;
+            }
             const p0 = local(htr, b.x0 + v.x0, fy + v.y0, b.z0 + v.z0);
             const p1 = local(htr, b.x0 + v.x1, fy + v.y1, b.z0 + v.z1);
             const nm = `${f.name} - ${NAMES[v.mat]}`;
