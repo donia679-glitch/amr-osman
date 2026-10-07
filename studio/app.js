@@ -33,6 +33,8 @@ import * as DG from "./draw/geom.js";
 
 const APP_URL = "https://claude.ai/artifact/EP8c8LmBNS8d3EqLcDioXi";
 const APP_VERSION = "1.0";
+// the NOVERA mark — the same one as the website (two cream panels, the brass profile between them, the brass base line)
+const MARK_SVG = '<svg viewBox="0 0 40 40" aria-hidden="true"><rect width="40" height="40" rx="3" fill="#0f2e1c"/><rect x="9" y="9" width="7" height="22" fill="#e9d9b0"/><rect x="24" y="9" width="7" height="22" fill="#e9d9b0"/><path d="M16 9h3l5 22h-3z" fill="#b98d34"/><rect x="6" y="33" width="28" height="2" fill="#b98d34"/></svg>';
 /** the App Store build (inside the iOS app): no links to the online version, no plugin / other-brand wording */
 const STORE_BUILD = !!window.noveraNative;
 /** shown on the "about" page — phone / links appear as soon as they're filled in */
@@ -1109,7 +1111,7 @@ function setPath(p, path, v) { const ks = path.split("."); let o = p; for (const
 const app = $("#app");
 app.innerHTML = `
 <header class="bar">
-  <div class="brand"><span class="mark" aria-hidden="true">N</span><b>NOVERA</b><span class="studio">Studio</span></div>
+  <div class="brand"><span class="mark svgm" aria-hidden="true">${MARK_SVG}</span><b>NOVERA</b><span class="studio">Studio</span></div>
   <button id="homeBtn" class="projbtn" aria-label="الشاشة الرئيسية" title="المشاريع">🏠</button>
   <button id="projBtn" class="projbtn">${ICON.folder}<span id="projName"></span></button>
   <span class="undogrp"><button id="undoBtn" class="projbtn" aria-label="تراجع" title="تراجع (⌘Z)" disabled>↶</button><button id="redoBtn" class="projbtn" aria-label="إعادة" title="إعادة (⇧⌘Z)" disabled>↷</button></span>
@@ -4604,7 +4606,7 @@ function renderPop() {
       D.site && `<a class="ghost2" href="${esc(D.site)}" target="_blank" rel="noopener">${esc(D.site)}</a>`,
     ].filter(Boolean).join("");
     h = `<div class="popbox about" role="dialog" aria-label="عن التطبيق"><div class="libhead"><h2>عن التطبيق</h2><button class="x" data-close aria-label="قفل">×</button></div>
-      <div class="abhead"><span class="mark big">N</span><div><b>NOVERA Studio</b><small>الإصدار ${APP_VERSION}${window.NOVERA_BUILD ? ` · تحديث ${window.NOVERA_BUILD}` : ""}</small></div></div>
+      <div class="abhead"><span class="mark big svgm">${MARK_SVG}</span><div><b>NOVERA Studio</b><small>الإصدار ${APP_VERSION}${window.NOVERA_BUILD ? ` · تحديث ${window.NOVERA_BUILD}` : ""}</small></div></div>
       <p>تطبيق لتصميم وتصنيع المطابخ والدريسنج وغرف النوم ووحدات الأثاث من الألواح — من أول رسم الأوضة لحد القص والتجميع في الورشة.</p>
       <div class="btnrow"><button class="primary" data-tour>▶ الجولة التعريفية (دقيقة)</button></div>
       <ul class="feat">
@@ -5125,7 +5127,7 @@ async function showHome() {
   const el = $("#home");
   el.hidden = false;
   document.body.classList.add("athome");
-  el.innerHTML = `<div class="homein"><div class="homehead"><span class="mark big">N</span><div><b>NOVERA Studio</b><small>تصميم وتصنيع المطابخ والأثاث</small></div></div><p class="hint">بيحمّل المشاريع…</p></div>`;
+  el.innerHTML = `<div class="homein"><div class="homehead"><span class="mark big svgm">${MARK_SVG}</span><div><b>NOVERA Studio</b><small>تصميم وتصنيع المطابخ والأثاث</small></div></div><p class="hint">بيحمّل المشاريع…</p></div>`;
   await Lib.put(state.project).catch(() => {});
   const list = await allProjects();
   const when = (t) => (t ? new Date(t).toLocaleString("ar-EG", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }) : "");
@@ -5134,7 +5136,7 @@ async function showHome() {
   const pf = (x) => { const p = projectPulse(x); return f === "work" ? p.inShop : f === "ok" ? p.waitOk && !p.done : f === "late" ? p.late.length && !p.done : f === "inst" ? p.install && p.install <= dayStr(addDays(new Date(), 7)) : true; };
   const shown = list.filter((x) => (f === "all" || (f === "wait" ? x.srv === "measured" && !x.stages?.design?.done : f === "srv" ? x.srv === "measuring" : pf(x))) && (!q || String(x.name).includes(q)));
   el.innerHTML = `<div class="homein">
-    <div class="homehead"><span class="mark big">N</span><div><b>NOVERA Studio</b><small>تصميم وتصنيع المطابخ والأثاث</small></div></div>
+    <div class="homehead"><span class="mark big svgm">${MARK_SVG}</span><div><b>NOVERA Studio</b><small>تصميم وتصنيع المطابخ والأثاث</small></div></div>
     <h3 class="hsec">ابدأ</h3>
     <div class="htiles">
       <div class="htile main"><b>🎨 مشروع تصميم جديد</b><small>أوضة ← تصميم ← سعر ← قص ← ورشة</small><div class="homenew"><input id="homeName" placeholder="اسم المشروع (مثلاً: مطبخ أ. محمد — التجمع)" aria-label="اسم المشروع الجديد"><button class="primary" data-hnew>ابدأ ←</button></div></div>

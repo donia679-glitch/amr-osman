@@ -49,16 +49,21 @@ for dp, _, fs in os.walk(V):
 for dp, _, _ in sorted(os.walk(V), reverse=True):
     if not os.listdir(dp): os.rmdir(dp)
 
-# icons: the NOVERA "N" mark
-def icon(size, path, pad=0.0):
-    im = Image.new("RGB", (size, size), "#123f23")
+# icons: the NOVERA mark (same as the website)
+def novera_mark(size, pad=0.0):
+    """the NOVERA mark, same as the website: deep green square, two cream panels, the brass profile between them, the brass base line"""
+    from PIL import Image, ImageDraw
+    im = Image.new("RGB", (size, size), "#0f2e1c")
     d = ImageDraw.Draw(im)
-    m = int(size * (0.16 + pad)); r = int(size * 0.14)
-    d.rounded_rectangle([m, m, size - m, size - m], radius=r, fill="#d9a63a")
-    try: f = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", int(size * (0.5 - pad)))
-    except Exception: f = ImageFont.load_default()
-    d.text((size / 2, size / 2 + size * 0.02), "N", fill="#123f23", font=f, anchor="mm")
-    im.save(path)
+    s = size * (1 - 2 * pad) / 40.0; o = size * pad
+    P = lambda x, y: (o + x * s, o + y * s)
+    d.rectangle([P(9, 9), P(16, 31)], fill="#e9d9b0")
+    d.rectangle([P(24, 9), P(31, 31)], fill="#e9d9b0")
+    d.polygon([P(16, 9), P(19, 9), P(24, 31), P(21, 31)], fill="#b98d34")
+    d.rectangle([P(6, 33), P(34, 35)], fill="#b98d34")
+    return im
+def icon(size, path, pad=0.0):
+    novera_mark(size, pad).save(path)
 os.makedirs(os.path.join(OUT, "icons"))
 icon(180, os.path.join(OUT, "icons/apple-touch-icon.png"))
 icon(192, os.path.join(OUT, "icons/icon-192.png"))
