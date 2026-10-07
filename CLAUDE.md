@@ -26,7 +26,7 @@ qrcode.js + the IBM Plex Arabic font come from `tools/vendor_assets` (v95; befor
    boot: `localStorage.clear(); reload; wait 6s; window.__dbg.state.tourDone=true; document.querySelector('[data-hlast]').click()`.
    Dev hooks on localhost: `window.__dbg` (state, ui, R, view, plan, render, checks, libUnit, libSet, thumbs, openStudio) and `window.__ds` in the studio (M(), ui, scr(P), setTool, G, pick).
 3. New Arabic UI strings need English in `apps/ipad/i18n/en.json` (keys are Arabic text runs).
-3b. Windows: bump `desktop/version.txt`, `python3 tools/build_win.py` (~3 min, run in the background) → `dist/NOVERA-Studio-Setup.exe` → outputs as `NOVERA-Studio-Windows-Setup-vNN.exe` (only when Amr wants a new Windows build).
+3b. Windows: bump `desktop/version.txt`, `python3 tools/build_win.py` (~3 min, run in the background) → `dist/NOVERA-Studio-Setup.exe` → outputs as `NOVERA-Studio-Windows-Setup-vNN.exe` (only when Amr wants a new Windows build). It is >30 MB so SendUserFile refuses it and releases can't be created from a session → force-push an orphan branch `windows` holding only NOVERA-Studio-Setup.exe + README (git init in a temp dir, `git push -f origin windows`); Amr downloads from https://github.com/donia679-glitch/amr-osman/raw/windows/NOVERA-Studio-Setup.exe.
 4. Zip: `dist/NOVERA-Studio-iPad-app.zip` → `/mnt/user-data/outputs/NOVERA-Studio-iPad-app-vNN.zip` (remove the old one), send with SendUserFile.
 5. Git: `rm -rf studio source && cp -r /home/claude/novera-app/dist/pwa studio` + copy source (tar, excluding node_modules, dist, parity/fixtures),
    commit "vNN: …" and `git push origin main`.
