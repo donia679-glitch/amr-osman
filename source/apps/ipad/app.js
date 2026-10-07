@@ -11479,7 +11479,7 @@ async function recoverOpen() {
 function recoverPop() {
   const R = ui.rec || {};
   let h = `<div class="popbox" role="dialog" aria-label="استرجاع مشروع"><div class="libhead"><h2>🛟 استرجاع مشروع</h2><button class="x" data-close aria-label="قفل">×</button></div>
-    <p class="hint">التطبيق بياخد لقطة من كل مشروع كل شوية وانت شغال (12 لقطة لكل مشروع، وبتفضل حتى لو المشروع اتمسح)${Lib.hasVault() ? "، وكمان بيحفظ كل مشروع كملف في «الملفات ← على الآيباد ← NOVERA Studio ← Projects»" : ""}. اختار اللقطة اللي عايز ترجعها.</p>`;
+    <p class="hint">التطبيق بياخد لقطة من كل مشروع كل شوية وانت شغال (12 لقطة لكل مشروع، وبتفضل حتى لو المشروع اتمسح)${Lib.hasVault() ? (window.noveraDesktop ? "، وكمان بيحفظ كل مشروع كملف في «المستندات (Documents) ← NOVERA Studio ← Projects» على الكمبيوتر" : "، وكمان بيحفظ كل مشروع كملف في «الملفات ← على الآيباد ← NOVERA Studio ← Projects»") : ""}. اختار اللقطة اللي عايز ترجعها.</p>`;
   if (R.loading) return h + `<p class="hint">بيدوّر…</p></div>`;
   const groups = new Map();
   for (const b of R.bk) { if (!groups.has(b.id)) groups.set(b.id, []); groups.get(b.id).push(b); }
