@@ -31,3 +31,15 @@
 
 ## الصور
 كل الصور في `assets/img/` رندر حقيقي من تطبيق NOVERA Studio (نفس الخامات والمقاسات). صور الشغل المنفّذ تتحط مكانها أو جنبها في قسم «تصميمات».
+
+## The shop (store.html) and its control panel (admin.html)
+- The catalogue is one file: `assets/store-data.json` (products, prices, categories, finishes, notes). Photos live in `assets/store/`.
+- `admin.html` is the control panel (not linked from the site, `noindex`, blocked in robots.txt). First visit asks for a PIN that locks it on that device.
+  Edit prices (empty = «السعر عند الطلب»), old price (shows the discount), badge, shown / featured, order, bulk % change, full product editor with photo upload,
+  categories, finishes (+% on the price), deposit %, notes. Edits stay as a draft on the device; «معاينة المتجر» = `store.html?preview`.
+- «انشر على الموقع» writes the file (and any new photos) to the site's GitHub repo through the GitHub API. One-time setup in the panel:
+  repository `owner/repo`, branch, the site folder inside the repo (empty if the site is the repo root), and a fine-grained token with
+  **Contents: Read and write** on that repository only. GitHub Pages republishes in about a minute.
+  Without GitHub: «نزّل نسخة» downloads store-data.json — upload it over `assets/store-data.json` on any host.
+- Orders: the cart builds a WhatsApp message (order number NV-YYMMDD-xxxx) to `CONFIG.whatsapp` in assets/site.js — no online payment.
+- `tools/store_seed.py` wrote the first catalogue (product renders from the app: scratchpad scripts shots.py → crop.py); don't re-run it (`--force` overwrites the panel's work).

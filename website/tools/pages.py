@@ -11,7 +11,7 @@ WA = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M
 APPLE = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M16.4 12.6c0-2.6 2.1-3.8 2.2-3.9a4.8 4.8 0 0 0-3.8-2c-1.6-.2-3.1.9-3.9.9s-2-.9-3.4-.9a5 5 0 0 0-4.2 2.6c-1.8 3.1-.5 7.7 1.3 10.2.8 1.2 1.8 2.6 3.1 2.6s1.7-.8 3.3-.8 2 .8 3.4.8 2.2-1.3 3-2.5a10.6 10.6 0 0 0 1.4-2.8 4.4 4.4 0 0 1-2.4-4.2ZM13.9 5a4.3 4.3 0 0 0 1-3.2 4.5 4.5 0 0 0-2.9 1.5 4.2 4.2 0 0 0-1 3.1 3.7 3.7 0 0 0 2.9-1.4Z"/></svg>'
 
 
-def head(title_ar, title_en, desc, path, image="assets/img/hero-kitchen.webp", noindex=False):
+def head(title_ar, title_en, desc, path, image="assets/img/hero-kitchen.webp", noindex=False, scripts=()):
     return f"""<!doctype html>
 <html lang="ar" dir="rtl">
 <head>
@@ -33,14 +33,14 @@ def head(title_ar, title_en, desc, path, image="assets/img/hero-kitchen.webp", n
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=Reem+Kufi:wght@500;600;700&display=swap">
 <link rel="stylesheet" href="assets/site.css">
 <script src="assets/site.js" defer></script>
-</head>
+{"".join(f'<script src="{x}" defer></script>\n' for x in scripts)}</head>
 <body>
 <a class="skip" href="#main" data-en="Skip to content">انتقل للمحتوى</a>
 """
 
 
 NAV = [("index.html#services", "بنعمل إيه", "What we make"), ("index.html#how", "إزاي بنشتغل", "How we work"), ("planner.html", "مخطط المطبخ", "Kitchen planner"),
-       ("index.html#work", "تصميمات", "Designs"), ("app.html", "التطبيق", "The app"), ("support.html", "الدعم", "Support")]
+       ("index.html#work", "تصميمات", "Designs"), ("store.html", "المتجر", "Shop"), ("app.html", "التطبيق", "The app"), ("support.html", "الدعم", "Support")]
 
 
 def header(current):
@@ -86,7 +86,7 @@ FOOTER = f"""<footer class="foot">
         </a>
         <p style="margin-top:14px;max-width:36ch" data-en="Kitchens, wardrobes and furniture, designed in 3D and made in our workshop in Minya.">مطابخ ودريسنج وأثاث، بتتصمم 3D وتتصنع في ورشتنا في المنيا.</p>
       </div>
-      <div><h4 data-en="Factory">المصنع</h4><ul><li><a href="index.html#services" data-en="What we make">بنعمل إيه</a></li><li><a href="index.html#how" data-en="How we work">إزاي بنشتغل</a></li><li><a href="index.html#work" data-en="Designs">تصميمات</a></li><li><a href="index.html#book" data-en="Book a site visit">احجز معاينة</a></li></ul></div>
+      <div><h4 data-en="Factory">المصنع</h4><ul><li><a href="index.html#services" data-en="What we make">بنعمل إيه</a></li><li><a href="index.html#how" data-en="How we work">إزاي بنشتغل</a></li><li><a href="index.html#work" data-en="Designs">تصميمات</a></li><li><a href="store.html" data-en="Shop">المتجر</a></li><li><a href="index.html#book" data-en="Book a site visit">احجز معاينة</a></li></ul></div>
       <div><h4 data-en="Tools">أدوات</h4><ul><li><a href="planner.html" data-en="Kitchen planner">مخطط المطبخ</a></li><li><a href="app.html">NOVERA Kitchen Studio</a></li><li><a href="support.html" data-en="App support">دعم التطبيق</a></li></ul></div>
       <div><h4 data-en="Follow">تابعنا</h4><ul><li><a data-social="facebook" hidden>Facebook</a></li><li><a data-social="instagram" hidden>Instagram</a></li><li><a data-social="tiktok" hidden>TikTok</a></li><li><a data-social="youtube" hidden>YouTube</a></li><li><a href="#" data-wa="أهلاً NOVERA، عندي سؤال" data-wa-en="Hello NOVERA, I have a question" target="_blank" rel="noopener">WhatsApp</a></li></ul></div>
     </div>
@@ -349,6 +349,102 @@ TERMS = head("الشروط — NOVERA", "Terms — NOVERA", "شروط استخد
 </main>
 """ + FOOTER
 write("terms.html", TERMS)
+
+# ------------------------------------------------------------------ store.html  (the shop — catalogue + prices from assets/store-data.json, edited in admin.html)
+CART_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 4h2.2l2.1 11.2a1.6 1.6 0 0 0 1.6 1.3h8.6a1.6 1.6 0 0 0 1.6-1.2L21 8H6"/><circle cx="9.5" cy="20" r="1.3"/><circle cx="17" cy="20" r="1.3"/></svg>'
+STORE = head("المتجر — تصميمات NOVERA وأسعارها", "Shop — NOVERA designs and prices",
+             "متجر NOVERA: مطابخ ودريسنج ووحدات شاشة وترابيزات ومكتبات وغرف نوم، بأسعارها، وبتتصنع على مقاس مكانك في ورشتنا.", "store.html",
+             "assets/store/rings-0.webp", scripts=("assets/store.js",)) + header("store.html") + f"""
+<main id="main">
+  <div class="preview-bar" id="previewBar" hidden><span data-en="Preview of your unpublished edits — visitors still see the published shop.">معاينة لتعديلاتك اللي لسه ما اتنشرتش — الزوار لسه شايفين المتجر المنشور.</span> <a href="admin.html" data-en="Back to the control panel">ارجع للوحة التحكم</a></div>
+  <section class="page-head shop-head">
+    <div class="wrap">
+      <p class="crumbs"><a href="index.html">NOVERA</a> / <span data-en="Shop">المتجر</span></p>
+      <h1 data-en="Our designs, with prices">تصميماتنا، بأسعارها</h1>
+      <p data-en="Every design here is made in our workshop and adjusted to your space. Pick what you like, add it to the cart and send us the order — we confirm the final price after the site visit.">كل تصميم هنا بيتصنع في ورشتنا وبيتظبط على مقاس مكانك. اختار اللي عجبك، ضيفه للسلة وابعتلنا الطلب — والسعر النهائي بيتأكد بعد المعاينة.</p>
+      <ul class="shop-trust">
+        <li><b data-en="Made to fit">على المقاس</b><span data-en="sized to your wall">بيتظبط على حيطتك</span></li>
+        <li><b data-en="3D first">3D الأول</b><span data-en="you see it before we cut">بتشوفه قبل القص</span></li>
+        <li><b data-en="Installed">بالتركيب</b><span data-en="by our own team">بفريق الورشة</span></li>
+        <li><b data-en="Clear price">سعر واضح</b><span data-en="written per item">مكتوب لكل قطعة</span></li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="section shop" aria-labelledby="h-shop">
+    <div class="wrap">
+      <h2 id="h-shop" class="sr-only" data-en="Designs">التصميمات</h2>
+      <div class="shop-bar">
+        <div class="field shop-q"><label for="shopQ" class="sr-only" data-en="Search">ابحث</label><input id="shopQ" type="search" placeholder="ابحث: مكتبة، بلوط، ليد…" data-en-ph="Search: bookshelf, oak, LED…"></div>
+        <div class="field shop-sort"><label for="shopSort" class="sr-only" data-en="Sort">الترتيب</label>
+          <select id="shopSort"><option value="featured" data-en="Featured first">المميز الأول</option><option value="low" data-en="Price: low to high">السعر: من الأقل</option><option value="high" data-en="Price: high to low">السعر: من الأعلى</option><option value="new" data-en="Newest">الأحدث</option></select></div>
+        <p class="shop-count num" id="shopCount" aria-live="polite"></p>
+      </div>
+      <div class="chips shop-cats" id="shopCats" role="group" aria-label="الأقسام" data-en-label="Categories"></div>
+      <div class="shop-grid" id="shopGrid"><p class="shop-empty" data-en="Loading the shop…">بيحمّل المتجر…</p></div>
+      <p class="note" data-shop-note="note"></p>
+      <p class="note" data-shop-note="delivery"></p>
+    </div>
+  </section>
+
+  <section class="section alt" aria-labelledby="h-custom">
+    <div class="wrap split">
+      <div>
+        <h2 id="h-custom" data-en="Want something that isn't here?">عايز حاجة مش موجودة هنا؟</h2>
+        <p class="muted" style="margin-top:14px" data-en="Send us a photo or a sketch with the sizes. We draw it in 3D, price it from the real boards and show it to you before anything is cut.">ابعتلنا صورة أو رسمة بالمقاسات. بنرسمها 3D، وبنسعّرها من الألواح الحقيقية، وبنوريهالك قبل ما أي لوح يتقص.</p>
+        <div class="hero-actions" style="margin-top:24px"><a class="btn" href="#" data-wa="أهلاً NOVERA، عايز تصميم مخصوص وهبعتلكم صورة" data-wa-en="Hello NOVERA, I'd like a custom design — I'll send a photo" target="_blank" rel="noopener">{WA}<span data-en="Send a photo on WhatsApp">ابعت صورة على واتساب</span></a><a class="btn ghost" href="planner.html" data-en="Plan a kitchen">خطّط مطبخ</a></div>
+      </div>
+      <figure class="device" style="margin:0"><img src="assets/img/app-design.webp" width="1366" height="1024" loading="lazy" alt="التصميم 3D في تطبيق NOVERA قبل التصنيع"></figure>
+    </div>
+  </section>
+</main>
+
+<button type="button" class="cart-fab" id="cartBtn" aria-controls="cart" aria-label="السلة" data-en-label="Cart">{CART_ICON}<span class="cnt num" data-cart-count hidden>0</span></button>
+<div class="cart-scrim" id="cartScrim" hidden></div>
+<aside class="cart" id="cart" aria-hidden="true" aria-labelledby="cartTitle">
+  <div class="cart-head"><h2 id="cartTitle" data-en="Your cart">السلة</h2><button type="button" class="iconbtn" id="cartClose" aria-label="اقفل" data-en-label="Close">✕</button></div>
+  <div class="cart-list" id="cartList"></div>
+  <div class="cart-foot" id="cartFoot" hidden>
+    <div class="cart-sum"><span data-en="Estimated total">الإجمالي التقريبي</span><b class="num" id="cartSum"></b></div>
+    <p class="note" id="cartUnknown" hidden></p>
+    <p class="note num" id="cartDeposit"></p>
+    <form class="form" id="coForm" novalidate>
+      <div class="field"><label for="coName" data-en="Name">الاسم</label><input id="coName" autocomplete="name" required></div>
+      <div class="field"><label for="coPhone" data-en="Mobile">الموبايل</label><input id="coPhone" type="tel" inputmode="tel" autocomplete="tel" required></div>
+      <div class="field full"><label for="coCity" data-en="Area / city">المنطقة / المدينة</label><input id="coCity" autocomplete="address-level2"></div>
+      <label class="toggle full"><input type="checkbox" id="coInstall" checked> <span data-en="Delivery and installation">توصيل وتركيب</span></label>
+      <div class="field full"><label for="coNotes" data-en="Notes (sizes, colours…)">ملاحظات (مقاسات، ألوان…)</label><textarea id="coNotes" rows="3"></textarea></div>
+      <p class="form-err full" hidden></p>
+      <button class="btn brass full" type="submit">{WA}<span data-en="Send the order">ابعت الطلب</span></button>
+      <div class="form-out" hidden></div>
+    </form>
+  </div>
+</aside>
+
+<dialog class="pd" id="pd" aria-labelledby="pdTitle">
+  <button type="button" class="iconbtn pd-x" data-pdclose aria-label="اقفل" data-en-label="Close">✕</button>
+  <div class="pd-body" id="pdBody"></div>
+</dialog>
+""" + FOOTER
+write("store.html", STORE)
+
+# ------------------------------------------------------------------ admin.html  (the shop control panel — not linked from the site, not indexed)
+ADMIN = head("لوحة تحكم المتجر — NOVERA", "Shop control panel — NOVERA", "لوحة تحكم متجر NOVERA.", "admin.html", noindex=True, scripts=("assets/admin.js",)) + f"""<header class="top">
+  <div class="wrap">
+    <a class="brand" href="index.html" aria-label="NOVERA">{MARK}<span><b>NOVERA</b><small data-en="Shop control panel">لوحة تحكم المتجر</small></span></a>
+    <div class="tools" style="margin-inline-start:auto">
+      <a class="iconbtn" href="store.html" aria-label="المتجر" data-en-label="Shop" title="المتجر">🛍</a>
+      <button class="iconbtn" type="button" data-lang aria-label="English / عربي">EN</button>
+      <button class="iconbtn" type="button" data-theme-toggle aria-label="الوضع الليلي" data-en-label="Dark mode"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"/></svg></button>
+    </div>
+  </div>
+</header>
+<main id="main" class="adm-main"><div class="wrap" id="adm"></div></main>
+<dialog class="pd ped" id="ped" aria-label="المنتج"><button type="button" class="iconbtn pd-x" onclick="this.closest('dialog').close()" aria-label="اقفل">✕</button><div class="ped-body" id="pedBody"></div></dialog>
+</body>
+</html>
+"""
+write("admin.html", ADMIN)
 
 # ------------------------------------------------------------------ 404.html
 NF = head("الصفحة مش موجودة — NOVERA", "Page not found — NOVERA", "الصفحة دي مش موجودة.", "404.html", noindex=True) + header("") + """

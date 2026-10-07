@@ -1,0 +1,929 @@
+{
+ "version": 1,
+ "updated": null,
+ "currency": {
+  "ar": "ج.م",
+  "en": "EGP"
+ },
+ "settings": {
+  "deposit_pct": 50,
+  "note": {
+   "ar": "الأسعار للمقاسات المعروضة وبالخامة الأساسية. كل قطعة بتتصنع على مقاس مكانك، والسعر النهائي بيتأكد بعد المعاينة.",
+   "en": "Prices are for the sizes shown in the base finish. Every piece is made to fit your space; the final price is confirmed after the site visit."
+  },
+  "delivery": {
+   "ar": "التوصيل والتركيب في المنيا، وباقي المحافظات بالاتفاق.",
+   "en": "Delivery and installation in Minya; other governorates by arrangement."
+  }
+ },
+ "categories": [
+  {
+   "id": "kitchens",
+   "ar": "مطابخ",
+   "en": "Kitchens"
+  },
+  {
+   "id": "wardrobes",
+   "ar": "دريسنج",
+   "en": "Wardrobes"
+  },
+  {
+   "id": "living",
+   "ar": "ريسبشن وشاشات",
+   "en": "Living & TV"
+  },
+  {
+   "id": "tables",
+   "ar": "ترابيزات",
+   "en": "Tables"
+  },
+  {
+   "id": "shelves",
+   "ar": "مكتبات",
+   "en": "Bookshelves"
+  },
+  {
+   "id": "bedroom",
+   "ar": "غرف نوم",
+   "en": "Bedroom"
+  },
+  {
+   "id": "office",
+   "ar": "مكاتب",
+   "en": "Office"
+  }
+ ],
+ "finishes": [
+  {
+   "id": "hpl",
+   "ar": "HPL",
+   "en": "HPL",
+   "pct": 0,
+   "note_ar": "خامة شغل يومي، سهلة التنضيف",
+   "note_en": "Everyday finish, easy to clean"
+  },
+  {
+   "id": "acrylic",
+   "ar": "أكريليك لامع",
+   "en": "Gloss acrylic",
+   "pct": 15,
+   "note_ar": "لمعة مراية ولون ثابت",
+   "note_en": "Mirror gloss, stable colour"
+  },
+  {
+   "id": "veneer",
+   "ar": "قشرة خشب طبيعي",
+   "en": "Natural wood veneer",
+   "pct": 30,
+   "note_ar": "خشب حقيقي بعروقه",
+   "note_en": "Real wood grain"
+  }
+ ],
+ "products": [
+  {
+   "id": "kitchen-line",
+   "cat": "kitchens",
+   "name": {
+    "ar": "مطبخ مستقيم أكريليك وبلوط",
+    "en": "Straight kitchen, acrylic & oak"
+   },
+   "desc": {
+    "ar": "مطبخ على حيطة واحدة بمقبض ألومنيوم بلت إن، دواليب علوي بضلفة نازلة 2 سم، وكل وحداته بتتصمم على مقاس الحيطة.",
+    "en": "One-wall kitchen with a built-in aluminium handle and wall units whose doors drop 2 cm; every unit is sized to your wall."
+   },
+   "materials": {
+    "ar": "هيكل كونتر 18 مم، ضلف أكريليك، علوي بلوط، مفصلات ومجاري سوفت كلوز",
+    "en": "18 mm board carcass, acrylic fronts, oak uppers, soft-close hinges and runners"
+   },
+   "dims": {
+    "w": null,
+    "d": null,
+    "h": null
+   },
+   "images": [
+    "assets/img/kitchen-line.webp"
+   ],
+   "unit": "meter",
+   "price": null,
+   "old_price": null,
+   "badge": "",
+   "visible": true,
+   "featured": true,
+   "finishes": true,
+   "lead_days": 21
+  },
+  {
+   "id": "kitchen-l",
+   "cat": "kitchens",
+   "name": {
+    "ar": "مطبخ L بعمود فرن",
+    "en": "L-shaped kitchen with an oven tower"
+   },
+   "desc": {
+    "ar": "مطبخ زاوية L بعمود فرن وتلاجة، الكونتر والوزرة لحد وش الضلف، ومقبض بلت إن على طول السفلي.",
+    "en": "L-shaped kitchen with an oven and fridge tower; counter and plinth to the door face and a built-in handle along the base run."
+   },
+   "materials": {
+    "ar": "هيكل كونتر 18 مم، ضلف أكريليك كريمي، علوي بلوط طبيعي، كونتر بورسلين",
+    "en": "18 mm carcass, cream acrylic fronts, natural oak uppers, porcelain counter"
+   },
+   "dims": {
+    "w": null,
+    "d": null,
+    "h": null
+   },
+   "images": [
+    "assets/img/hero-kitchen.webp",
+    "assets/img/kitchen-corner.webp"
+   ],
+   "unit": "meter",
+   "price": null,
+   "old_price": null,
+   "badge": "best",
+   "visible": true,
+   "featured": true,
+   "finishes": true,
+   "lead_days": 21
+  },
+  {
+   "id": "kitchen-u",
+   "cat": "kitchens",
+   "name": {
+    "ar": "مطبخ U",
+    "en": "U-shaped kitchen"
+   },
+   "desc": {
+    "ar": "مطبخ على 3 حيطان بمثلث شغل مظبوط بين الحوض والبوتجاز والتلاجة، وأماكن تخزين كتير.",
+    "en": "Three-wall kitchen with a balanced sink–hob–fridge triangle and plenty of storage."
+   },
+   "materials": {
+    "ar": "هيكل كونتر 18 مم، ضلف HPL، علوي بلوط",
+    "en": "18 mm carcass, HPL fronts, oak uppers"
+   },
+   "dims": {
+    "w": null,
+    "d": null,
+    "h": null
+   },
+   "images": [
+    "assets/img/kitchen-u.webp"
+   ],
+   "unit": "meter",
+   "price": null,
+   "old_price": null,
+   "badge": "",
+   "visible": true,
+   "featured": false,
+   "finishes": true,
+   "lead_days": 21
+  },
+  {
+   "id": "walkin-glass",
+   "cat": "wardrobes",
+   "name": {
+    "ar": "دريسنج مفتوح بأدراج زجاج 240",
+    "en": "Open walk-in with glass drawers, 240"
+   },
+   "desc": {
+    "ar": "شماعتين على الجنبين وعمود أدراج بوش زجاج في النص، وليد تحت كل رف.",
+    "en": "Two hanging sections either side of a glass-front drawer tower, with LED under every shelf."
+   },
+   "materials": {
+    "ar": "بلوط طبيعي، زجاج شفاف 4 مم بفريم خشب، ليد",
+    "en": "Natural oak, 4 mm clear glass in wood frames, LED"
+   },
+   "dims": {
+    "w": 240,
+    "d": 60,
+    "h": 250
+   },
+   "images": [
+    "assets/store/walkin-glass-0.webp",
+    "assets/store/walkin-glass-1.webp",
+    "assets/store/walkin-glass-2.webp"
+   ],
+   "unit": "piece",
+   "price": null,
+   "old_price": null,
+   "badge": "new",
+   "visible": true,
+   "featured": true,
+   "finishes": true,
+   "lead_days": 21
+  },
+  {
+   "id": "mirror-wardrobe",
+   "cat": "wardrobes",
+   "name": {
+    "ar": "دريسنج بضلف مراية 200",
+    "en": "Mirror-door wardrobe, 200"
+   },
+   "desc": {
+    "ar": "4 ضلف مراية بفريم ألومنيوم، وجوه شماعات وأرفف وأدراج.",
+    "en": "Four mirror doors in aluminium frames, with rails, shelves and drawers inside."
+   },
+   "materials": {
+    "ar": "هيكل كونتر 18 مم، مراية فضي بفريم ألومنيوم",
+    "en": "18 mm carcass, silver mirror in aluminium frames"
+   },
+   "dims": {
+    "w": 200,
+    "d": 62,
+    "h": 250
+   },
+   "images": [
+    "assets/store/mirror-wardrobe-0.webp",
+    "assets/store/mirror-wardrobe-1.webp",
+    "assets/store/mirror-wardrobe-2.webp"
+   ],
+   "unit": "piece",
+   "price": null,
+   "old_price": null,
+   "badge": "",
+   "visible": true,
+   "featured": false,
+   "finishes": true,
+   "lead_days": 21
+  },
+  {
+   "id": "open-wardrobe",
+   "cat": "wardrobes",
+   "name": {
+    "ar": "دريسنج مفتوح بليد 240",
+    "en": "Open wardrobe with LED, 240"
+   },
+   "desc": {
+    "ar": "من غير ضلف: شماعات وأرفف وأدراج، وليد في كل فراغ.",
+    "en": "No doors: rails, shelves and drawers with LED in every bay."
+   },
+   "materials": {
+    "ar": "هيكل كونتر 18 مم، ليد",
+    "en": "18 mm board, LED"
+   },
+   "dims": {
+    "w": 240,
+    "d": 60,
+    "h": 250
+   },
+   "images": [
+    "assets/store/open-wardrobe-0.webp",
+    "assets/store/open-wardrobe-1.webp",
+    "assets/store/open-wardrobe-2.webp"
+   ],
+   "unit": "piece",
+   "price": null,
+   "old_price": null,
+   "badge": "",
+   "visible": true,
+   "featured": false,
+   "finishes": true,
+   "lead_days": 21
+  },
+  {
+   "id": "tv-slats",
+   "cat": "living",
+   "name": {
+    "ar": "وحدة شاشة معلّقة بشرايح أوك",
+    "en": "Floating TV wall with oak slats"
+   },
+   "desc": {
+    "ar": "أرضي معلّق بليد تحت، وبانوه شرايح رأسية بليد من ورا.",
+    "en": "A floating low unit with LED underneath and a vertical-slat panel backlit with LED."
+   },
+   "materials": {
+    "ar": "أوك، أنثراسيت، ليد",
+    "en": "Oak, anthracite, LED"
+   },
+   "dims": {
+    "w": 240,
+    "d": 43,
+    "h": 190
+   },
+   "images": [
+    "assets/store/tv-slats-0.webp",
+    "assets/store/tv-slats-1.webp",
+    "assets/store/tv-slats-2.webp"
+   ],
+   "unit": "piece",
+   "price": null,
+   "old_price": null,
+   "badge": "",
+   "visible": true,
+   "featured": true,
+   "finishes": true,
+   "lead_days": 14
+  },
+  {
+   "id": "tv-black-oak",
+   "cat": "living",
+   "name": {
+    "ar": "وحدة شاشة أسود وأوك",
+    "en": "Black & oak TV wall"
+   },
+   "desc": {
+    "ar": "شرايح أوك على أنثراسيت، وعمود أرفف مفتوح بليد على اليمين.",
+    "en": "Oak slats on anthracite with an open, lit shelf column on the right."
+   },
+   "materials": {
+    "ar": "أوك، أنثراسيت، ليد",
+    "en": "Oak, anthracite, LED"
+   },
+   "dims": {
+    "w": 260,
+    "d": 43,
+    "h": 220
+   },
+   "images": [
+    "assets/store/tv-black-oak-0.webp",
+    "assets/store/tv-black-oak-1.webp",
+    "assets/store/tv-black-oak-2.webp"
+   ],
+   "unit": "piece",
+   "price": null,
+   "old_price": null,
+   "badge": "",
+   "visible": true,
+   "featured": false,
+   "finishes": true,
+   "lead_days": 14
+  },
+  {
+   "id": "tv-stepped",
+   "cat": "living",
+   "name": {
+    "ar": "وحدة شاشة بلوط بصندوق راكب",
+    "en": "Oak TV unit with a riding box"
+   },
+   "desc": {
+    "ar": "صندوق بلوط أرضي جواه درجين أبيض، وصندوق تاني راكب على طرفه.",
+    "en": "A low oak box with two white drawers and a second box riding on its end."
+   },
+   "materials": {
+    "ar": "بلوط، أبيض",
+    "en": "Oak, white"
+   },
+   "dims": {
+    "w": 200,
+    "d": 40,
+    "h": 52
+   },
+   "images": [
+    "assets/store/tv-stepped-0.webp",
+    "assets/store/tv-stepped-1.webp",
+    "assets/store/tv-stepped-2.webp"
+   ],
+   "unit": "piece",
+   "price": null,
+   "old_price": null,
+   "badge": "new",
+   "visible": true,
+   "featured": false,
+   "finishes": true,
+   "lead_days": 14
+  },
+  {
+   "id": "shoe-float",
+   "cat": "living",
+   "name": {
+    "ar": "جزامة معلّقة بليد",
+    "en": "Floating shoe cabinet with LED"
+   },
+   "desc": {
+    "ar": "ضلفتين بفتح بالضغط وليد تحت.",
+    "en": "Two push-to-open doors with LED underneath."
+   },
+   "materials": {
+    "ar": "أوك",
+    "en": "Oak"
+   },
+   "dims": {
+    "w": 90,
+    "d": 37,
+    "h": 80
+   },
+   "images": [
+    "assets/store/shoe-float-0.webp",
+    "assets/store/shoe-float-1.webp",
+    "assets/store/shoe-float-2.webp"
+   ],
+   "unit": "piece",
+   "price": null,
+   "old_price": null,
+   "badge": "",
+   "visible": true,
+   "featured": false,
+   "finishes": true,
+   "lead_days": 14
+  },
+  {
+   "id": "glass-walnut",
+   "cat": "tables",
+   "name": {
+    "ar": "ترابيزة انتريه زجاج بماسكين جوز",
+    "en": "Glass coffee table with walnut clamps"
+   },
+   "desc": {
+    "ar": "صندوق بيج مرفوع عن الأرض بسطح زجاج، وماسكين جوز على الطرفين.",
+    "en": "A raised greige box with a glass top held by two walnut clamps."
+   },
+   "materials": {
+    "ar": "بيج، جوز، زجاج 8 مم",
+    "en": "Greige, walnut, 8 mm glass"
+   },
+   "dims": {
+    "w": 124,
+    "d": 64,
+    "h": 45
+   },
+   "images": [
+    "assets/store/glass-walnut-0.webp",
+    "assets/store/glass-walnut-1.webp",
+    "assets/store/glass-walnut-2.webp"
+   ],
+   "unit": "piece",
+   "price": null,
+   "old_price": null,
+   "badge": "",
+   "visible": true,
+   "featured": true,
+   "finishes": false,
+   "lead_days": 14
+  },
+  {
+   "id": "z-frame",
+   "cat": "tables",
+   "name": {
+    "ar": "ترابيزة انتريه إطار Z وصندوق جوز",
+    "en": "Z-frame coffee table with a walnut box"
+   },
+   "desc": {
+    "ar": "إطار أبيض على شكل Z بسطح عالي، وصندوق جوز مفتوح من قدام للكتب.",
+    "en": "A white Z frame with a raised top over an open walnut box for books."
+   },
+   "materials": {
+    "ar": "أبيض، جوز",
+    "en": "White, walnut"
+   },
+   "dims": {
+    "w": 101,
+    "d": 50,
+    "h": 48
+   },
+   "images": [
+    "assets/store/z-frame-0.webp",
+    "assets/store/z-frame-1.webp",
+    "assets/store/z-frame-2.webp"
+   ],
+   "unit": "piece",
+   "price": null,
+   "old_price": null,
+   "badge": "",
+   "visible": true,
+   "featured": false,
+   "finishes": false,
+   "lead_days": 14
+  },
+  {
+   "id": "two-tubes",
+   "cat": "tables",
+   "name": {
+    "ar": "ترابيزة انتريه أنبوبين وسطح بلوط",
+    "en": "Two-tube coffee table with an oak top"
+   },
+   "desc": {
+    "ar": "أنبوبين أبيض مفتوحين، وسطح بلوط بيعدّي جوه واحد ويقعد على التاني.",
+    "en": "Two open white tubes with an oak top passing through one and resting on the other."
+   },
+   "materials": {
+    "ar": "أبيض، بلوط",
+    "en": "White, oak"
+   },
+   "dims": {
+    "w": 119,
+    "d": 50,
+    "h": 45
+   },
+   "images": [
+    "assets/store/two-tubes-0.webp",
+    "assets/store/two-tubes-1.webp",
+    "assets/store/two-tubes-2.webp"
+   ],
+   "unit": "piece",
+   "price": null,
+   "old_price": null,
+   "badge": "new",
+   "visible": true,
+   "featured": false,
+   "finishes": false,
+   "lead_days": 14
+  },
+  {
+   "id": "waterfall",
+   "cat": "tables",
+   "name": {
+    "ar": "ترابيزة انتريه حرف نازل جوز",
+    "en": "Walnut waterfall coffee table"
+   },
+   "desc": {
+    "ar": "سطح جوز 3.6 سم نازل على الجنبين، ورف تحت.",
+    "en": "A 3.6 cm walnut top falling down both ends, with a shelf below."
+   },
+   "materials": {
+    "ar": "جوز",
+    "en": "Walnut"
+   },
+   "dims": {
+    "w": 120,
+    "d": 60,
+    "h": 40
+   },
+   "images": [
+    "assets/store/waterfall-0.webp",
+    "assets/store/waterfall-1.webp",
+    "assets/store/waterfall-2.webp"
+   ],
+   "unit": "piece",
+   "price": null,
+   "old_price": null,
+   "badge": "",
+   "visible": true,
+   "featured": false,
+   "finishes": false,
+   "lead_days": 14
+  },
+  {
+   "id": "side-c",
+   "cat": "tables",
+   "name": {
+    "ar": "ترابيزة جانبية C",
+    "en": "C side table"
+   },
+   "desc": {
+    "ar": "قاعدة وسطح بلوط طايرين، وعمود من 3 ألواح متدرجة.",
+    "en": "Cantilevered oak base and top on a column of three stepped panels."
+   },
+   "materials": {
+    "ar": "بلوط، زيتي",
+    "en": "Oak, olive"
+   },
+   "dims": {
+    "w": 45,
+    "d": 38,
+    "h": 58
+   },
+   "images": [
+    "assets/store/side-c-0.webp",
+    "assets/store/side-c-1.webp",
+    "assets/store/side-c-2.webp"
+   ],
+   "unit": "piece",
+   "price": null,
+   "old_price": null,
+   "badge": "",
+   "visible": true,
+   "featured": false,
+   "finishes": false,
+   "lead_days": 14
+  },
+  {
+   "id": "dining-oak",
+   "cat": "tables",
+   "name": {
+    "ar": "سفرة لوح أوك 8 أفراد",
+    "en": "Oak slab dining table for 8"
+   },
+   "desc": {
+    "ar": "سفرة 200×100 على رجلين 3.6 سم وعارضة.",
+    "en": "A 200×100 table on two 3.6 cm legs with a stretcher."
+   },
+   "materials": {
+    "ar": "أوك",
+    "en": "Oak"
+   },
+   "dims": {
+    "w": 200,
+    "d": 100,
+    "h": 75
+   },
+   "images": [
+    "assets/store/dining-oak-0.webp",
+    "assets/store/dining-oak-1.webp",
+    "assets/store/dining-oak-2.webp"
+   ],
+   "unit": "piece",
+   "price": null,
+   "old_price": null,
+   "badge": "",
+   "visible": true,
+   "featured": false,
+   "finishes": false,
+   "lead_days": 14
+  },
+  {
+   "id": "rings",
+   "cat": "shelves",
+   "name": {
+    "ar": "مكتبة بعمودين أسود وأحزمة بلوط",
+    "en": "Bookshelf with black rings and oak bands"
+   },
+   "desc": {
+    "ar": "عمودين أسود مقفولين، و3 أحزمة بلوط بتعدّي جواهم وتطلع على الجنبين.",
+    "en": "Two closed black columns with three oak bands passing through and out to both sides."
+   },
+   "materials": {
+    "ar": "أسود مطفي، بلوط",
+    "en": "Matt black, oak"
+   },
+   "dims": {
+    "w": 88,
+    "d": 32,
+    "h": 180
+   },
+   "images": [
+    "assets/store/rings-0.webp",
+    "assets/store/rings-1.webp",
+    "assets/store/rings-2.webp"
+   ],
+   "unit": "piece",
+   "price": null,
+   "old_price": null,
+   "badge": "new",
+   "visible": true,
+   "featured": true,
+   "finishes": false,
+   "lead_days": 14
+  },
+  {
+   "id": "zigzag",
+   "cat": "shelves",
+   "name": {
+    "ar": "مكتبة S أبيض وبلوط",
+    "en": "White S bookshelf with oak columns"
+   },
+   "desc": {
+    "ar": "أرفف أبيض على شكل S، وفي كل دور عمود بلوط في الناحية العكسية.",
+    "en": "White shelves in an S, with an oak column on the opposite side of each level."
+   },
+   "materials": {
+    "ar": "أبيض، بلوط",
+    "en": "White, oak"
+   },
+   "dims": {
+    "w": 90,
+    "d": 30,
+    "h": 175
+   },
+   "images": [
+    "assets/store/zigzag-0.webp",
+    "assets/store/zigzag-1.webp",
+    "assets/store/zigzag-2.webp"
+   ],
+   "unit": "piece",
+   "price": null,
+   "old_price": null,
+   "badge": "",
+   "visible": true,
+   "featured": false,
+   "finishes": false,
+   "lead_days": 14
+  },
+  {
+   "id": "bookcase",
+   "cat": "shelves",
+   "name": {
+    "ar": "مكتبة نيشات بليد",
+    "en": "Lit niche bookcase"
+   },
+   "desc": {
+    "ar": "4 نيشات مفتوحة بليد فوق ضلفتين.",
+    "en": "Four open lit niches above two doors."
+   },
+   "materials": {
+    "ar": "أبيض، أوك، ليد",
+    "en": "White, oak, LED"
+   },
+   "dims": {
+    "w": 90,
+    "d": 37,
+    "h": 220
+   },
+   "images": [
+    "assets/store/bookcase-0.webp",
+    "assets/store/bookcase-1.webp",
+    "assets/store/bookcase-2.webp"
+   ],
+   "unit": "piece",
+   "price": null,
+   "old_price": null,
+   "badge": "",
+   "visible": true,
+   "featured": false,
+   "finishes": true,
+   "lead_days": 14
+  },
+  {
+   "id": "bed-slats",
+   "cat": "bedroom",
+   "name": {
+    "ar": "سرير بضهر شرايح أوك",
+    "en": "Bed with an oak slatted headboard"
+   },
+   "desc": {
+    "ar": "شرايح رأسية بمسافات، ورف فوق الضهر بليد.",
+    "en": "Spaced vertical slats with a lit shelf above the headboard."
+   },
+   "materials": {
+    "ar": "أوك، ليد",
+    "en": "Oak, LED"
+   },
+   "dims": {
+    "w": 186,
+    "d": 209,
+    "h": 127
+   },
+   "images": [
+    "assets/store/bed-slats-0.webp",
+    "assets/store/bed-slats-1.webp",
+    "assets/store/bed-slats-2.webp"
+   ],
+   "unit": "piece",
+   "price": null,
+   "old_price": null,
+   "badge": "",
+   "visible": true,
+   "featured": true,
+   "finishes": true,
+   "lead_days": 21
+  },
+  {
+   "id": "bed-float",
+   "cat": "bedroom",
+   "name": {
+    "ar": "سرير معلّق بليد",
+    "en": "Floating bed with LED"
+   },
+   "desc": {
+    "ar": "صندوق تخزين بمكبس على قاعدة داخلة وليد تحت.",
+    "en": "A lift-up storage box on a recessed base with LED underneath."
+   },
+   "materials": {
+    "ar": "أوك، ليد، مكبس",
+    "en": "Oak, LED, gas lift"
+   },
+   "dims": {
+    "w": 166,
+    "d": 208,
+    "h": 110
+   },
+   "images": [
+    "assets/store/bed-float-0.webp",
+    "assets/store/bed-float-1.webp",
+    "assets/store/bed-float-2.webp"
+   ],
+   "unit": "piece",
+   "price": null,
+   "old_price": null,
+   "badge": "",
+   "visible": true,
+   "featured": false,
+   "finishes": true,
+   "lead_days": 21
+  },
+  {
+   "id": "nightstand",
+   "cat": "bedroom",
+   "name": {
+    "ar": "كومودينو معلّق بليد",
+    "en": "Floating nightstand with LED"
+   },
+   "desc": {
+    "ar": "درج بمقبض بلت إن ونيش مفتوح، وليد تحت.",
+    "en": "A drawer with a built-in handle, an open niche and LED underneath."
+   },
+   "materials": {
+    "ar": "أوك، ليد",
+    "en": "Oak, LED"
+   },
+   "dims": {
+    "w": 50,
+    "d": 42,
+    "h": 36
+   },
+   "images": [
+    "assets/store/nightstand-0.webp",
+    "assets/store/nightstand-1.webp",
+    "assets/store/nightstand-2.webp"
+   ],
+   "unit": "piece",
+   "price": null,
+   "old_price": null,
+   "badge": "",
+   "visible": true,
+   "featured": false,
+   "finishes": true,
+   "lead_days": 14
+  },
+  {
+   "id": "chest",
+   "cat": "bedroom",
+   "name": {
+    "ar": "شيفونيرة 6 أدراج",
+    "en": "Six-drawer chest"
+   },
+   "desc": {
+    "ar": "6 أدراج من غير مقابض ببروفايل بلت إن.",
+    "en": "Six handleless drawers with a built-in profile."
+   },
+   "materials": {
+    "ar": "أكريليك كريمي لامع",
+    "en": "Cream gloss acrylic"
+   },
+   "dims": {
+    "w": 80,
+    "d": 47,
+    "h": 130
+   },
+   "images": [
+    "assets/store/chest-0.webp",
+    "assets/store/chest-1.webp",
+    "assets/store/chest-2.webp"
+   ],
+   "unit": "piece",
+   "price": null,
+   "old_price": null,
+   "badge": "",
+   "visible": true,
+   "featured": false,
+   "finishes": true,
+   "lead_days": 14
+  },
+  {
+   "id": "office-exec",
+   "cat": "office",
+   "name": {
+    "ar": "مكتب مدير بعمودين",
+    "en": "Executive desk on two pedestals"
+   },
+   "desc": {
+    "ar": "مكتب 180×85 جوز غامق بعمودين وساتر.",
+    "en": "A 180×85 dark walnut desk on two pedestals with a modesty panel."
+   },
+   "materials": {
+    "ar": "جوز غامق",
+    "en": "Dark walnut"
+   },
+   "dims": {
+    "w": 180,
+    "d": 85,
+    "h": 76
+   },
+   "images": [
+    "assets/store/office-exec-0.webp",
+    "assets/store/office-exec-1.webp",
+    "assets/store/office-exec-2.webp"
+   ],
+   "unit": "piece",
+   "price": null,
+   "old_price": null,
+   "badge": "",
+   "visible": true,
+   "featured": false,
+   "finishes": true,
+   "lead_days": 21
+  },
+  {
+   "id": "desk-shelves",
+   "cat": "office",
+   "name": {
+    "ar": "مكتب بأرفف حيطة وليد",
+    "en": "Desk with wall shelves and LED"
+   },
+   "desc": {
+    "ar": "وحدة 3 أدراج ورفين على الحيطة بليد.",
+    "en": "A three-drawer unit and two lit wall shelves."
+   },
+   "materials": {
+    "ar": "أبيض، أوك، ليد",
+    "en": "White, oak, LED"
+   },
+   "dims": {
+    "w": 140,
+    "d": 60,
+    "h": 147
+   },
+   "images": [
+    "assets/store/desk-shelves-0.webp",
+    "assets/store/desk-shelves-1.webp",
+    "assets/store/desk-shelves-2.webp"
+   ],
+   "unit": "piece",
+   "price": null,
+   "old_price": null,
+   "badge": "",
+   "visible": true,
+   "featured": false,
+   "finishes": true,
+   "lead_days": 14
+  }
+ ]
+}
