@@ -387,18 +387,29 @@ function go(dir) {
   el.querySelector(".svbody")?.scrollTo?.(0, 0);
 }
 /** the survey → the project's room (keeping wall finishes the designer already chose) */
-function apply() {
+/** the room the survey describes, merged with what the designer already set (not written to the project) */
+function surveyRoom() {
   const s = SV(), d = s.draft;
-  const { room } = S.build(d);
   const old = P().room;
+  // lengths / angles untouched: the room keeps its own outline (no re-squaring, no turning)
+  const keep = old && S.sameWalls(old, d) ? old.pts : null;
+  const { room } = S.build(d, { pts: keep });
   if (old) {
     for (const w of room.walls) { const o = old.walls.find((x) => x.id === w.id); if (o) for (const k of ["finish", "color", "mat", "size", "band", "flip"]) if (o[k] !== undefined && w[k] === undefined) w[k] = o[k]; }
-    for (const k of ["floor", "wallAll"]) if (old[k]) room[k] = old[k];
+    for (const k of ["floor", "wallAll", "lights"]) if (old[k]) room[k] = JSON.parse(JSON.stringify(old[k]));
+    // free-standing columns (not on a wall) are not in the survey: keep them
+    for (const c of old.columns || []) if (!c.wall && !room.columns.some((x) => x.id === c.id)) room.columns.push({ ...c });
   }
+  room.survey = { at: new Date().toISOString(), by: s.info.by || "", geo: S.geoSig(d) };
+  return room;
+}
+function apply() {
+  const old = P().room, room = surveyRoom();
   const moved = !old || JSON.stringify(old.pts) !== JSON.stringify(room.pts);
-  room.survey = { at: new Date().toISOString(), by: s.info.by || "" };
   P().room = room;
-  if (moved) for (const u of P().units) delete u.pos;
+  // the units keep their places unless the walls really changed (a unit on a wall that is gone is laid out again)
+  const ids = new Set(room.walls.map((w) => w.id));
+  for (const u of P().units) if (moved || (u.pos?.wall && !ids.has(u.pos.wall))) delete u.pos;
   C.roomChanged?.();
   return room;
 }
@@ -410,7 +421,7 @@ async function finish() {
   apply();
   s.status = "measured"; s.doneAt = new Date().toISOString();
   const st = (P().stages ??= {});
-  st.measure = { ...(st.measure || {}), done: true, date: new Date().toISOString().slice(0, 10), note: s.info.by ? `رفع: ${s.info.by}` : (st.measure?.note || "") };
+  st.measure = { ...(st.measure || {}), done: new Date().toISOString(), date: new Date().toISOString().slice(0, 10), note: s.info.by ? `رفع: ${s.info.by}` : (st.measure?.note || "") };
   save();
   await C.saveNow?.();
   C.cloudSync?.();
@@ -496,7 +507,8 @@ async function onClick(e) {
   }
   if (d0.svpdf !== undefined) {
     const msg = el.querySelector("#svmsg"); b.disabled = true; if (msg) msg.textContent = "بيجهّز الكروكي…";
-    try { apply(); save(); const r = await surveyPdf(); if (msg) msg.textContent = r === "declined" ? "" : "تم ✓"; } catch (err) { console.error(err); if (msg) msg.textContent = err?.message?.length < 60 ? err.message : "ما كملش."; }
+    // the PDF shows the survey as typed, without applying it to the project (units keep their places)
+    try { const r = await surveyPdf(surveyRoom()); if (msg) msg.textContent = r === "declined" ? "" : "تم ✓"; } catch (err) { console.error(err); if (msg) msg.textContent = err?.message?.length < 60 ? err.message : "ما كملش."; }
     b.disabled = false; return;
   }
   if (d0.svdesign !== undefined) { apply(); save(); close(); C.openDesign(); return; }
@@ -535,23 +547,28 @@ async function savePhoto() {
   save(); draw();
   C.cloudSync?.();
 }
-async function toggleRec(tgt) {
+/** a finished recording → a voice note on the wall it was made for */
+async function keepNote(was, r) {
+  if (!r?.data || !was) return;
   const s = SV();
+  const m = await Media.put(r.data, { pid: P().id, dur: r.dur });
+  s.notes.push({ id: uid(), audio: m.id, dur: r.dur, wall: was === "gen" ? null : +was.split(":")[1], at: new Date().toISOString() });
+  save(); C.cloudSync?.();
+}
+async function toggleRec(tgt) {
   if (Media.recording()) {
     const was = V.recFor;
     V.recFor = null;
     const r = await Media.stopRecord();
-    if (r?.data) {
-      const m = await Media.put(r.data, { pid: P().id, dur: r.dur });
-      s.notes.push({ id: uid(), audio: m.id, dur: r.dur, wall: was === "gen" ? null : +was.split(":")[1], at: new Date().toISOString() });
-      save(); C.cloudSync?.();
-    }
+    await keepNote(was, r);
     draw();
     if (was === tgt) return;
   }
   try {
     V.recFor = tgt; V.recT = 0;
-    await Media.startRecord(60, (sec) => { V.recT = sec; const btn = el.querySelector(`[data-svrec="${tgt}"]`); if (btn) btn.textContent = `⏹ وقّف (${Math.round(sec)} ث)`; if (sec >= 60) setTimeout(() => toggleRec(tgt), 50); });
+    // at 60 s it stops by itself: the note is kept once and nothing restarts
+    await Media.startRecord(60, (sec) => { V.recT = sec; const btn = el.querySelector(`[data-svrec="${tgt}"]`); if (btn) btn.textContent = `⏹ وقّف (${Math.round(sec)} ث)`; },
+      async (r) => { if (V.recFor === tgt) V.recFor = null; try { await keepNote(tgt, r); } catch { /* storage */ } draw(); });
     draw();
   } catch { V.recFor = null; C.alertBar("المايك مش متاح — اسمح للتطبيق يستخدم المايك من الإعدادات."); draw(); }
 }
@@ -595,8 +612,8 @@ function planSvgBig(room, W, H) {
   for (const c of S.cornerPoints(room)) s += `<circle cx="${X(c.p)}" cy="${Z(c.p)}" r="14" fill="#d9a63a" stroke="#123f23" stroke-width="2"/><text x="${X(c.p)}" y="${Z(c.p) + 6}" font-size="16" font-weight="800" text-anchor="middle" fill="#123f23">${c.name}</text>`;
   return s;
 }
-async function surveyPdf() {
-  const s = SV(), d = s.draft, room = P().room;
+async function surveyPdf(roomArg) {
+  const s = SV(), d = s.draft, room = roomArg || P().room;
   const segs = Room.segments(room);
   const ids = [...s.photos, ...d.walls.flatMap((w) => w.photos || []), s.sign.client, s.sign.tech].filter(Boolean);
   await Media.preload(ids, C.cloud);
@@ -643,7 +660,9 @@ async function surveyPdf() {
     let q = "";
     const [a, b] = wallEnds(i);
     q += T(960, 104, `حيطة ${i + 1} — من ركن ${a} لركن ${b} — الطول ${r1(g.L)} سم`, 'font-size="20" font-weight="800"');
-    try { const e = C.elevSvg(g.id); if (e) q += `<rect x="40" y="124" width="920" height="420" fill="#fafaf6" stroke="#ddd"/>` + nestSvg(e, 50, 130, 900, 408); } catch { /* no elevation */ }
+    // the elevation is drawn from the project's room: show the survey's room just for this (synchronous) call
+    const keepRoom = P().room;
+    try { P().room = room; const e = C.elevSvg(g.id); P().room = keepRoom; if (e) q += `<rect x="40" y="124" width="920" height="420" fill="#fafaf6" stroke="#ddd"/>` + nestSvg(e, 50, 130, 900, 408); } catch { /* no elevation */ } finally { P().room = keepRoom; }
     let yy = 570;
     const items = [
       ...d.ops.filter((o) => o.wall === i).map((o) => `${o.kind === "door" ? "باب" : "شباك"}: ${r1(+o.w)} × ${r1(+o.h)}${o.kind === "door" ? "" : ` · الجلسة ${r1(+o.sill || 0)}`} · على بعد ${r1(+o.at || 0)} من ركن ${a}`),

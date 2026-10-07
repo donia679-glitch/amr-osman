@@ -10,8 +10,15 @@ function open() {
     try {
       const r = indexedDB.open(DB, 2);
       r.onupgradeneeded = () => { const d = r.result; if (!d.objectStoreNames.contains(STORE)) d.createObjectStore(STORE, { keyPath: "id" }); if (!d.objectStoreNames.contains(BK)) d.createObjectStore(BK, { keyPath: "k" }); };
-      r.onsuccess = () => resolve(r.result);
-      r.onerror = () => reject(r.error);
+      r.onsuccess = () => {
+        const d = r.result;
+        // another tab / a newer version wants to upgrade: let it (the next call opens again)
+        d.onversionchange = () => { try { d.close(); } catch { /* */ } dbp = null; };
+        resolve(d);
+      };
+      r.onerror = () => { dbp = null; reject(r.error); };
+      // an older connection (another tab) holds the database: don't hang — callers fall back to localStorage
+      r.onblocked = () => { dbp = null; reject(new Error("blocked")); };
     } catch (e) { reject(e); }
   });
   return dbp;
@@ -57,6 +64,8 @@ export async function del(id) {
   const m = lsAll();
   if (m[id]) { delete m[id]; lsSave(m); }
   idxDel(id);
+  // a deleted project keeps only its newest few snapshots (enough to bring it back)
+  prune(id, KEEP_DELETED).catch(() => {});
 }
 
 // ------------------------------------------------------------------ safety net
@@ -72,7 +81,7 @@ export async function missing() {
 }
 
 // 2) snapshots inside the database: one every 10 minutes of work (and whenever the units count changes), 12 per project; deleted projects keep theirs
-const KEEP = 12, EVERY = 10 * 60 * 1000;
+const KEEP = 12, KEEP_DELETED = 3, EVERY = 10 * 60 * 1000;
 const lastBk = {};
 async function backup(rec) {
   const n = rec.project?.units?.length || 0, prev = lastBk[rec.id], now = Date.now();
@@ -80,12 +89,18 @@ async function backup(rec) {
   lastBk[rec.id] = { t: now, n };
   const k = `${rec.id}|${rec.updatedAt}`;
   await run("readwrite", (s) => s.put({ k, id: rec.id, name: rec.name, updatedAt: rec.updatedAt, units: n, project: rec.project }), BK);
-  const mine = (await backupsOf(rec.id)).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-  for (const b of mine.slice(KEEP)) await run("readwrite", (s) => s.delete(b.k), BK).catch(() => {});
+  await prune(rec.id, KEEP);
 }
-async function backupsOf(id) {
-  const all = await run("readonly", (s) => s.getAll(), BK).catch(() => []);
-  return (all || []).filter((b) => b.id === id).map(({ project, ...b }) => b);
+/** the snapshot keys of one project ("<id>|<updatedAt>", so they sort oldest first) — keys only, no bodies */
+async function keysOf(id) {
+  let range = null;
+  try { range = IDBKeyRange.bound(`${id}|`, `${id}|\uffff`); } catch { return []; }
+  return (await run("readonly", (s) => s.getAllKeys(range), BK).catch(() => [])) || [];
+}
+async function prune(id, keep) {
+  const keys = (await keysOf(id)).slice().sort();
+  const drop = keys.slice(0, Math.max(0, keys.length - keep));
+  if (drop.length) await run("readwrite", (s) => { for (const k of drop) s.delete(k); }, BK).catch(() => {});
 }
 /** every snapshot on this device, newest first (without the project bodies) */
 export async function backups() {

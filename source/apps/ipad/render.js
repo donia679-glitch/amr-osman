@@ -24,7 +24,15 @@ export function sceneOf(state) {
 /** ceiling spots over the furniture + an area light under every LED strip */
 export function lightRig(view, s, box, wallH) {
   const THREE = view.three;
-  if (view.rig) { view.scene.remove(view.rig); view.rig.traverse((o) => o.dispose?.()); }
+  if (view.rig) {
+    view.scene.remove(view.rig);
+    // lights, and the meshes in the rig (ceiling discs) with their geometry and material
+    view.rig.traverse((o) => {
+      o.dispose?.();
+      o.geometry?.dispose?.();
+      for (const m of [].concat(o.material || [])) { for (const k of ["map", "emissiveMap"]) m[k]?.dispose?.(); m.dispose?.(); }
+    });
+  }
   const rig = (view.rig = new THREE.Group());
   view.scene.add(rig);
   const T = TIMES[s.time] || TIMES.day;

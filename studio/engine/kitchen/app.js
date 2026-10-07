@@ -171,7 +171,9 @@ export function computeKitchen(input, opts = {}) {
     if (String(params["unit_category"]) === "pullout" && stats.drawers > 0) {
         const L = Math.min(55, Math.max(30, Math.round((Number(params["depth"]) || 58) - 8)));
         delete res.hardware["أزواج سكك أدراج"];
-        res.hardware[`مجاري فول إكستنشن ${L} سم للبول أوت (زوج)`] = Math.min(2, Math.max(1, Number(params["pullout_tray_count"]) || 1));
+        // v110: the trays really built (a short unit drops some) — runners at the first and the last one
+        const trays = pieces.filter((pc) => /^صينية بول أوت \d+ - قاعدة$/.test(pc.name)).length;
+        res.hardware[`مجاري فول إكستنشن ${L} سم للبول أوت (زوج)`] = Math.min(2, Math.max(1, trays));
     }
     if (String(params["drawer_turbo"]) === "true" || params["drawer_turbo"] === true) {
         const n = res.hardware["أزواج سكك أدراج"];

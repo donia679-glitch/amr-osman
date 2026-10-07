@@ -85,7 +85,7 @@ export function diagSlots(d) {
 const minH = (w, dflt) => { const v = (w.hs || []).map(Number).filter((x) => x > 0); return v.length ? Math.min(...v) : dflt; };
 
 /** draft → { room, closure (cm the drawn outline misses by), angles } */
-export function build(d, { trueAngles = true } = {}) {
+export function build(d, { trueAngles = true, pts: keepPts = null } = {}) {
   const n = d.walls.length;
   const L = d.walls.map((w) => +w.L || 0);
   let a = 0, p = [0, 0];
@@ -105,6 +105,8 @@ export function build(d, { trueAngles = true } = {}) {
   // keep the numbers tidy (0.1 cm) and the drawing near the origin
   const mx = Math.min(...P.map((q) => q[0])), mz = Math.min(...P.map((q) => q[1]));
   P = P.map((q) => [r1(q[0] - mx), r1(q[1] - mz)]);
+  // the walls did not change: keep the outline the room already had (its true angles / position), not a re-squared one
+  if (Array.isArray(keepPts) && keepPts.length === P.length) P = keepPts.map((q) => [+q[0], +q[1]]);
   const walls = d.walls.slice(0, d.closed ? n : n).map((w) => ({ id: w.id, t: +w.t || +d.t || Room.WALL_T, h: minH(w, +d.h || Room.WALL_H), flip: false, hs: (w.hs || []).map((x) => (+x > 0 ? +x : null)), srvL: +w.L || null,
     ...(w.photos?.length ? { photos: [...w.photos] } : {}), ...(w.note ? { note: w.note } : {}) }));
   const room = { pts: P, closed: !!d.closed && n >= 3, walls, openings: [], points: [], columns: [] };
@@ -129,6 +131,26 @@ export function build(d, { trueAngles = true } = {}) {
     room.columns.push({ id: c.id || uid(), x: r1(x0), z: r1(z0), w: r1(x1 - x0), d: r1(z1 - z0), h: s.h, wall: s.id, at, along: w, depth: dp });
   }
   return { room, closure: r1(closure), angles };
+}
+
+/** the numbers that decide the room's outline (lengths, turns, diagonals) — equal signatures = same walls */
+export function geoSig(d) {
+  const diag = Object.entries(d.diag || {}).filter(([, v]) => +v > 0).map(([k, v]) => [k, r1(+v)]).sort((a, b) => String(a[0]).localeCompare(String(b[0])));
+  return JSON.stringify({ c: !!d.closed, L: d.walls.map((w) => r1(+w.L || 0)), t: (d.turns || []).slice(0, Math.max(0, d.walls.length - 1)), diag });
+}
+/** does the draft still describe the room's own walls (same ids, lengths and turns, no new diagonals)? */
+export function sameWalls(room, d) {
+  if (!room?.pts || !room.walls || room.walls.length !== d.walls.length || !!room.closed !== !!d.closed) return false;
+  if (!d.walls.every((w, i) => room.walls[i]?.id === w.id)) return false;
+  if (room.survey?.geo) return room.survey.geo === geoSig(d);
+  if (Object.values(d.diag || {}).some((v) => +v > 0)) return false;
+  const segs = Room.segments(room);
+  if (segs.length !== d.walls.length) return false;
+  return segs.every((s, i) => {
+    if (Math.abs(s.L - (+d.walls[i].L || 0)) > 0.5) return false;
+    if (i < segs.length - 1) { const nx = segs[i + 1], cr = s.d[0] * nx.d[1] - s.d[1] * nx.d[0]; if ((cr >= 0 ? 1 : -1) !== (d.turns[i] || 1)) return false; }
+    return true;
+  });
 }
 
 /** a room drawn some other way → a draft the surveyor can walk through (lengths, heights, what is on each wall) */

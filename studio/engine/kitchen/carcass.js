@@ -8,6 +8,7 @@ import { addColoredMarkerFace, adjustForFinish, assignLayer, bandAllSideEdges, b
 import { fs, strictFloat, strip, toF, toI, toS, truthy } from "./rb.js";
 import { cm, Point3d, rmax, rmin, Transformation, Vector3d } from "./su/geom.js";
 import { Entities, Group, Material, RubyError } from "./su/model.js";
+import { hingesForDoor } from "./hardware.js";
 export const TAGS = {
     carcass: "Kitchen - Carcass",
     back: "Kitchen - Back Panel",
@@ -25,6 +26,31 @@ export const MAX_CUSTOM_DRAWERS = 8;
 export const argError = (msg) => new RubyError("ArgumentError", msg);
 const pcm = (v) => cm(toF(v));
 const all = (b) => ({ top: b, bottom: b, left: b, right: b });
+/** cup centres along a hinge edge of length len: first/last `edge` from the ends, the rest evenly between */
+export function hingeCupPositionsAlong(z0, z1, edge, count) {
+    const first = z0 + edge;
+    const last = z1 - edge;
+    if (count <= 2)
+        return [first, last];
+    const step = (last - first) / (count - 1);
+    const out = [];
+    for (let i = 0; i < count; i++)
+        out.push(first + step * i);
+    return out;
+}
+/** NOVERA: how many hinges a door of this length (inches) gets — the user's «عدد الكبب» or the shared rule (hardware.js) */
+export function hingeCountIn(p, lenIn) {
+    return hingesForDoor(lenIn / cm(1.0), p);
+}
+/** the cup positions as ratios of the hinge edge's length (the label's hinge_ratios), [] when cups are off */
+export function hingeRatiosFor(p, lenIn) {
+    if (!truthy(p["include_hinge_cups"]))
+        return [];
+    const edge = pcm(p["hinge_cup_edge_distance"]);
+    if (!(lenIn > 2 * edge))
+        return [];
+    return hingeCupPositionsAlong(0, lenIn, edge, hingeCountIn(p, lenIn)).filter((c) => c > 0 && c < lenIn).map((c) => rround(c / lenIn, 4));
+}
 /** material_label_name */
 export function materialLabelName(m) {
     return m instanceof Material ? m.name : "خامة افتراضية";
@@ -399,9 +425,9 @@ export class CarcassBuilder {
     // ---------------------------------------------------------------- sides
     buildSides(e) {
         const sideGlass = toS(this.p["side_glass_door"]);
-        const sideRecess = toS(this.p["unit_type"]) === "base" ? this.handleRecess() : 0;
-        const sideTop = rmax(this.height() - sideRecess, this.z0Carcass());
-        const sideBottom = this.z0Carcass() - this.doorBottomExtension();
+        // v110: a glass side stands the full carcass height like a solid side (the bottom / top / rails join it the same way)
+        const sideTop = this.height();
+        const sideBottom = this.z0Carcass();
         const pt = this.panelT();
         let l;
         if (sideGlass === "left") {
@@ -416,7 +442,8 @@ export class CarcassBuilder {
             this.markLedChannel(l, pt);
         }
         assignLayer(this.ctx, l, TAGS.carcass);
-        this.recordSideLabel("جنب شمال");
+        if (sideGlass !== "left")
+            this.recordSideLabel("جنب شمال"); // a glass side's frame rails + glass were labelled by buildFramedGlassDoorSide
         let r;
         if (sideGlass === "right") {
             r = this.buildFramedGlassDoorSide(e, 0, this.depth(), sideBottom, sideTop, this.width() - pt, this.width(), "جنب يمين (زجاج)", this.metalFrameMaterial());
@@ -430,7 +457,8 @@ export class CarcassBuilder {
             this.markLedChannel(r, this.width() - pt);
         }
         assignLayer(this.ctx, r, TAGS.carcass);
-        this.recordSideLabel("جنب يمين");
+        if (sideGlass !== "right")
+            this.recordSideLabel("جنب يمين");
     }
     sideGroovePresent() {
         const [gy0, gy1] = this.grooveYRange();
@@ -448,7 +476,8 @@ export class CarcassBuilder {
         let ratios = [];
         if (truthy(this.p["include_hinge_cups"]) && hingeSide) {
             const edge = pcm(this.p["hinge_cup_edge_distance"]);
-            const count = Math.min(Math.max(toI(this.p["hinge_cup_count"]), 2), 4);
+            // v110: the same count the hardware list buys (explicit «عدد الكبب», else the NOVERA rule on the hinge edge)
+            const count = hingeCountIn(this.p, hingeSide === "top" ? x1 - x0 : z1 - z0);
             if (hingeSide === "top") {
                 const w = x1 - x0;
                 if (w > 2 * edge) {
@@ -810,7 +839,7 @@ export class CarcassBuilder {
         const bg = this.backGroove();
         const x0 = pt - bg;
         const x1 = this.width() - pt + bg;
-        const z0 = this.z0Carcass() + pt - bg;
+        const z0 = this.z0Carcass() + this.hoodLift() + pt - bg; // v110: over the raised hood shelf, not through it
         const z1 = this.height() - pt + bg;
         const y1 = this.depth() - this.backRearOffset();
         const y0 = y1 - this.backT();
@@ -1053,7 +1082,10 @@ export class CarcassBuilder {
             const name = `قاطوع رأسي ${i + 1}`;
             const d = createBox(this.ctx, e, name, dx - pt / 2.0, y0, o.z0, dx + pt / 2.0, dde, o.z1, this.carcassMaterial());
             assignLayer(this.ctx, d, TAGS.carcass);
-            this.ctx.labels.add(this.unitId, this.unitGroupName(), name, dde - y0, o.z1 - o.z0, pt, { banded: { ...NO_BAND }, material: this.carcassMaterialName() });
+            if (this.edgeBandingEnabled())
+                bandEdge(this.ctx, d, new Vector3d(0, -1, 0), this.edgeBandingMaterial());
+            // v110 (v101 rule): the front edge is free → banded; top / bottom / back join the carcass
+            this.ctx.labels.add(this.unitId, this.unitGroupName(), name, dde - y0, o.z1 - o.z0, pt, { banded: { ...NO_BAND, left: this.edgeBandingEnabled() }, material: this.carcassMaterialName() });
             this.ctx.labels.addDividerMark(this.unitId, this.unitGroupName(), name, dx - o.x0);
         }
     }
@@ -1116,7 +1148,14 @@ export class CarcassBuilder {
         const fy0 = overlay ? -this.frontT() : 0;
         const fy1 = overlay ? 0 : this.frontT();
         const isBottom = Math.abs(z0 - this.innerOpening().z0) < cm(0.5) || Math.abs(z0 - this.outerOpening().z0) < cm(0.5);
-        const bottomExt = isBottom && HINGED_DOOR_TYPES.includes(type) ? this.doorBottomExtension() : 0;
+        // v110: the fronts stop at the valances (the bottom one used to sit behind the doors, the top one behind overlay doors)
+        const [cz0, cz1] = this.frontZClamp(z0, z1);
+        const valanceBelow = cz0 > z0 + 1e-6;
+        z0 = cz0;
+        z1 = cz1;
+        if (z1 <= z0)
+            return;
+        const bottomExt = isBottom && !valanceBelow && HINGED_DOOR_TYPES.includes(type) ? this.doorBottomExtension() : 0;
         const zoneRecess = isBottom ? this.handleRecess() : 0;
         const zx0 = x0 + edgeGap;
         const zx1 = x1 - edgeGap;
@@ -1218,7 +1257,7 @@ export class CarcassBuilder {
                     const hinge = singleHinge();
                     const [hx, fx] = hinge === "left" ? [zx0, zx1] : [zx1, zx0];
                     tagDoorHinge(f, hx, fy0, fx, fy0, 0.0, -1.0);
-                    this.recordDoorLabel(name, zx0, zx1, zz0, top, hinge);
+                    this.recordGlassDoorHinge(f, name, zx0, zx1, zz0, top, hinge);
                 }
                 break;
             }
@@ -1241,8 +1280,8 @@ export class CarcassBuilder {
                     const f2 = this.buildFramedGlassDoor(e, mid + half, zx1, zz0, top, fy0, fy1, `${labelPrefix}${base} يمين`, metal ? this.metalFrameMaterial() : null);
                     tagDoorHinge(f1, zx0, fy0, mid - half, fy0, 0.0, -1.0);
                     tagDoorHinge(f2, zx1, fy0, mid + half, fy0, 0.0, -1.0);
-                    this.recordDoorLabel(`${labelPrefix}${base} شمال`, zx0, mid - half, zz0, top, "left");
-                    this.recordDoorLabel(`${labelPrefix}${base} يمين`, mid + half, zx1, zz0, top, "right");
+                    this.recordGlassDoorHinge(f1, `${labelPrefix}${base} شمال`, zx0, mid - half, zz0, top, "left");
+                    this.recordGlassDoorHinge(f2, `${labelPrefix}${base} يمين`, mid + half, zx1, zz0, top, "right");
                 }
                 break;
             }
@@ -1332,7 +1371,8 @@ export class CarcassBuilder {
         try {
             const d = pcm(this.p["hinge_cup_diameter"]);
             const edge = pcm(this.p["hinge_cup_edge_distance"]);
-            const count = Math.min(Math.max(toI(this.p["hinge_cup_count"]), 2), 4);
+            const count = hingeCountIn(this.p, z1 - z0);
+            door.setAttribute("KUD", "hinge_count", count);
             if (z1 - z0 <= 2 * edge)
                 return door;
             const cupX = hingeX + direction * edge;
@@ -1363,15 +1403,30 @@ export class CarcassBuilder {
         door.setAttribute("KUD", "hinge_side", direction > 0 ? "left" : "right");
     }
     hingeCupPositions(z0, z1, edge, count) {
-        const first = z0 + edge;
-        const last = z1 - edge;
-        if (count <= 2)
-            return [first, last];
-        const step = (last - first) / (count - 1);
-        const out = [];
-        for (let i = 0; i < count; i++)
-            out.push(first + step * i);
-        return out;
+        return hingeCupPositionsAlong(z0, z1, edge, count);
+    }
+    /** v110: a glass door is labelled as its frame rails + the glass (buildFramedGlassDoor) — no extra whole-door label.
+     *  The hinge data goes on the hinge-side rail (stood up: its length along h, like a door's height). */
+    recordGlassDoorHinge(door, name, x0, x1, z0, z1, hingeSide) {
+        const len = hingeSide === "top" ? x1 - x0 : z1 - z0;
+        door.setAttribute("KUD", "hinge_count", hingeCountIn(this.p, len));
+        const L = this.ctx.labels;
+        const railName = `${name} - إطار ${hingeSide === "right" ? "يمين" : hingeSide === "top" ? "فوق" : "شمال"}`;
+        const rail = L.last(this.unitId, railName);
+        const lab = rail ?? L.last(this.unitId, name);
+        if (!lab)
+            return;
+        if (rail && hingeSide !== "top") {
+            // both upright stiles are labelled the same way round (length on h), so their grain locks the same way in the cut plan
+            for (const sn of ["شمال", "يمين"]) {
+                const st = L.last(this.unitId, `${name} - إطار ${sn}`);
+                if (st && st.w > st.h)
+                    [st.w, st.h] = [st.h, st.w];
+            }
+        }
+        const span = hingeSide === "top" ? lab.w : lab.h;
+        lab.hinge_ratios = hingeRatiosFor(this.p, cm(span));
+        lab.hinge_side = hingeSide;
     }
     // ---------------------------------------------------------------- drawers
     drawerHeightsFor(count, total) {
@@ -1380,8 +1435,18 @@ export class CarcassBuilder {
             const v = i <= MAX_CUSTOM_DRAWERS ? toF(this.p[`drawer${i}_height`]) : 0;
             explicit.push(v > 0 ? cm(v) : null);
         }
-        const explicitSum = rsumF(explicit.filter((v) => v !== null));
+        let explicitSum = rsumF(explicit.filter((v) => v !== null));
         const autoCount = explicit.filter((v) => v === null).length;
+        // v110: typed heights (+ the gaps, + 12 cm for every drawer left on «auto») bigger than the opening are scaled down to fit, with a warning
+        const room = total - this.drawerGap() * (count - 1) - autoCount * cm(12.0);
+        if (explicitSum > 0 && explicitSum > room + cm(0.05) && room > 0) {
+            const f = room / explicitSum;
+            for (let i = 0; i < explicit.length; i++)
+                if (explicit[i] !== null)
+                    explicit[i] *= f;
+            explicitSum = room;
+            this.ctx.puts(`[KitchenUnitDesigner] ⚠ ارتفاعات الأدراج أكبر من الفتحة — اتظبطت على قد الفتحة (${explicit.map((v) => (v === null ? "تلقائي" : rround(v / cm(1.0), 1))).join(" + ")} سم).`);
+        }
         const available = total - this.drawerGap() * (count - 1) - explicitSum;
         const autoH = autoCount > 0 ? available / autoCount : 0;
         return explicit.map((v) => v ?? autoH);
@@ -1615,8 +1680,12 @@ export class CarcassBuilder {
             return [dz0, dz0];
         const fh = dz1 - dz0;
         const wallH = rmin(rmax(fh - (wallDropOverride ?? (this.drawerTurbo() ? cm(1.5) : this.drawerBoxWallDrop())), cm(1)), fh);
-        const sz0 = rmin(dz0 + this.drawerBoxBottomOffset(), dz0 + wallH - cm(1));
+        let sz0 = rmin(dz0 + this.drawerBoxBottomOffset(), dz0 + wallH - cm(1));
         const sz1 = dz0 + wallH;
+        // v110: an overlay bottom front starts below the carcass bottom's top — the box itself must stand clear ABOVE the bottom board
+        // (it sat 1.5 cm inside it). The plinth drawer's box (wholly under the carcass) is left alone.
+        if (sz1 > io.z0 + cm(1.0) && sz0 < io.z0 + cm(0.5))
+            sz0 = io.z0 + cm(0.5);
         if (sz1 <= sz0)
             return [dz0, dz0];
         const span = sz1 - sz0;
@@ -1676,34 +1745,39 @@ export class CarcassBuilder {
         });
         if (this.assemblyHoles()) {
             const zc = (bz0 + bz1) / 2.0;
-            this.markDrawerBoxJoint(e, "left", bx0, bx1, by0, by1, sz0, sz1, zc, t, `${label} - شمال`);
-            this.markDrawerBoxJoint(e, "right", bx0, bx1, by0, by1, sz0, sz1, zc, t, `${label} - يمين`);
+            this.markDrawerBoxJoint(e, "left", bx0, bx1, by0, by1, fbz0, fbz1, zc, t, `${label} - شمال`, glassFront);
+            this.markDrawerBoxJoint(e, "right", bx0, bx1, by0, by1, fbz0, fbz1, zc, t, `${label} - يمين`, glassFront);
         }
         return [bz1, bz0];
     }
-    markDrawerBoxJoint(e, side, bx0, bx1, by0, by1, _z0, _z1, camZc, wallT, label) {
+    /** v110: the box joints the way they are drilled — the front and back walls sit between the box sides, so each joint is a
+     *  column of holes up the side (drilled through the side's face, on the wall's centre line) and the cam lock in the wall's
+     *  inner face, `assembly_base_depth` in from its end. 3 holes per joint (2 on a low box), the cam on the middle one. */
+    markDrawerBoxJoint(e, side, bx0, bx1, by0, by1, z0, z1, _camZc, wallT, label, glassFront = false) {
         const inward = side === "left" ? 1.0 : -1.0;
-        const edgeX = side === "left" ? bx0 + wallT : bx1 - wallT;
-        const boxDepth = by1 - by0;
-        const ed = this.assemblyEdgeDist();
-        const sp = this.assemblyHoleSpacing();
-        const frontSet = [ed, ed + sp, ed + 2 * sp];
-        const backSet = [boxDepth - ed, boxDepth - ed - sp, boxDepth - ed - 2 * sp];
-        for (const [setLabel, offs] of [["قدام", frontSet], ["ورا", backSet]]) {
-            if (setLabel === "ورا" && rmin(...offs) <= rmax(...frontSet) + sp)
-                continue;
-            offs.forEach((yOff, i) => {
-                if (yOff < 0 || yOff > boxDepth)
-                    return;
-                const y = by0 + yOff;
-                const scx = edgeX - inward * (this.assemblySideDepth() / 2.0);
-                const m1 = createHoleMarker(this.ctx, e, `ثقب أليتا - ${label} - ${setLabel} - جنب - ${i + 1}`, scx, y, camZc, this.assemblyHoleD() / 2.0, this.assemblySideDepth(), COLORS.assembly);
+        const edgeX = side === "left" ? bx0 + wallT : bx1 - wallT; // the side's inner face
+        const h = z1 - z0;
+        if (h <= cm(1.0) || by1 - by0 <= 2 * wallT)
+            return;
+        const ed = rmin(this.assemblyEdgeDist(), h / 4.0);
+        const zs = h >= cm(8.0) ? [z0 + ed, (z0 + z1) / 2.0, z1 - ed] : [z0 + ed, z1 - ed];
+        const camIdx = zs.length === 3 ? 1 : 0;
+        const sideDepth = rmin(this.assemblySideDepth(), wallT);
+        const camDepth = rmin(this.assemblyCamDepth(), wallT - cm(0.1));
+        const camR = rmin(this.assemblyCamD() / 2.0, (h - cm(0.2)) / 2.0);
+        const sets = [["قدام", by0 + wallT / 2.0, by0 + wallT, 1.0], ["ورا", by1 - wallT / 2.0, by1 - wallT, -1.0]];
+        for (const [setLabel, wy, faceY, into] of sets) {
+            if (setLabel === "قدام" && glassFront)
+                continue; // a glass front has no wooden front wall (its frame is the box front)
+            zs.forEach((z, i) => {
+                const scx = edgeX - inward * (sideDepth / 2.0);
+                const m1 = createHoleMarker(this.ctx, e, `ثقب أليتا - ${label} - ${setLabel} - جنب - ${i + 1}`, scx, wy, z, this.assemblyHoleD() / 2.0, sideDepth, COLORS.assembly);
                 assignLayer(this.ctx, m1, TAGS.assembly);
-                if (i !== 1)
+                if (i !== camIdx || camDepth <= 0 || camR <= 0)
                     return;
                 const camX = edgeX + inward * this.assemblyBaseDepth();
-                const camZ = camZc - cm(0.5);
-                const m3 = createHoleMarkerZ(this.ctx, e, `ثقب قفل كام - ${label} - ${setLabel}`, camX, y, camZ, this.assemblyCamD() / 2.0, this.assemblyCamDepth(), COLORS.assembly);
+                // drilled into the wall from its inner face (towards the front for the front wall, towards the back for the back wall)
+                const m3 = createHoleMarkerY(this.ctx, e, `ثقب قفل كام - ${label} - ${setLabel}`, camX, faceY - into * (camDepth / 2.0), z, camR, camDepth, COLORS.assembly);
                 assignLayer(this.ctx, m3, TAGS.assembly);
             });
         }
@@ -1743,6 +1817,15 @@ export class CarcassBuilder {
         this.ctx.labels.add(this.unitId, this.unitGroupName(), name, x1 - x0, z1 - z0, this.frontT(), {
             banded: all(this.edgeBandingEnabled()), material: materialLabelName(pm),
         });
+    }
+    /** the front zone between the valances: above the bottom «وزرة ليد» and below the top «أورزة» (both stand in the door plane) */
+    frontZClamp(z0, z1) {
+        let a = z0, b = z1;
+        if (this.bottomValance() && this.bottomValanceH() > 0)
+            a = rmax(a, this.z0Carcass() + this.panelT() + this.bottomValanceH());
+        if (this.topValance() && this.valanceH() > 0)
+            b = rmin(b, this.height() - this.panelT() - this.valanceH());
+        return [a, b];
     }
     buildTopValancePanel(e, x0, x1) {
         if (!this.topValance())

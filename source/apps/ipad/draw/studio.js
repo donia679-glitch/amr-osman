@@ -128,18 +128,27 @@ export function open(model, opts = {}) {
   if (M.room?.walls?.[0]) { ui.wallT = +M.room.walls[0].t || Room.WALL_T; ui.wallH = +M.room.walls[0].h || Room.WALL_H; }
   mname = opts.name || "تصميم حر";
   hist.u = []; hist.r = [];
-  Object.assign(ui, { tool: opts.tool || "select", sel: new Set(), st: null, axis: null, plane: "auto", copy: false, editGroup: null, face2d: null, msg: "", panel: window.innerWidth > 900 || !!opts.tool, rsel: null });
+  Object.assign(ui, { tool: opts.tool || "select", sel: new Set(), st: null, axis: null, plane: "auto", copy: false, editGroup: null, face2d: null, msg: "", panel: window.innerWidth > 900 || !!opts.tool, rsel: null,
+    // nothing from the last opening carries over: section cut, the focused cabinet piece, a size being typed, picked faces / edges / corners
+    section: null, secPos: 0, cab: null, cabFocus: null, dimEdit: null, face: null, edge: null, vertex: null, tapeLast: null, lastMove: null, lastPush: null });
   startJSON = JSON.stringify(M);
   if (!el) build();
   el.hidden = false;
   document.body.classList.add("indraw");
   alive = true;
+  if (ui.ortho) { ui.ortho = false; swapCam(); }
+  vcbNormal(); { const i = el.querySelector("#dsVcb"); i.value = ""; delete i.dataset.typed; el.querySelector("#dsVcbL").textContent = "المقاس"; }
+  el.querySelector("#dsBoxSel").hidden = true; loupe = null;
   resize();
   rebuild();
-  if (M.solids.length || M.sketches.length || M.room?.pts?.length) zoomExtents(); else setView(opts.tool === "wall" ? "top" : "iso", opts.tool === "wall" ? 700 : 160);
+  // the first opening: the orbit controls load a moment later — the view waits for them (else their own default view wins)
+  const nonEmpty = !!(M.solids.length || M.sketches.length || M.room?.pts?.length);
+  const fit = () => { if (opts.tool === "wall") { setView("top", nonEmpty ? undefined : 700); if (nonEmpty) zoomExtents(); } else if (nonEmpty) { if (!camSet) setView("iso"); zoomExtents(); } else setView("iso", 160); camSet = true; };
+  if (ctl) fit(); else pendingView = fit;
   renderUI();
   loop();
 }
+let pendingView = null, camSet = false;
 export function close() {
   if (!el) return;
   el.hidden = true; alive = false;
@@ -209,14 +218,20 @@ function build() {
     ctl.enableDamping = false; ctl.screenSpacePanning = true; ctl.zoomToCursor = true;
     ctl.addEventListener("change", () => { wallFade(); need(); });
     applyControls();
-    setView("iso", 160);
+    if (pendingView) { const f = pendingView; pendingView = null; f(); } else setView("iso", 160);
   });
   // our own pointer handling runs first (capture on the view) so the tool decides before the orbit does
   view.addEventListener("pointerdown", onDown, true);
   el.querySelector("#dsHandles").addEventListener("pointerdown", handleDown);
   view.addEventListener("pointermove", onMove);
   view.addEventListener("pointerup", onUp);
-  view.addEventListener("pointercancel", () => { downs.clear(); press = null; });
+  view.addEventListener("pointercancel", () => {
+    downs.clear(); press = null; eraseDrag = false;
+    el.querySelector("#dsBoxSel").hidden = true; // a box select cut short by the system
+    if (loupe) { loupe = null; need(); }
+    if (ui.tool === "select" && ctl) { ctl.touches.ONE = -1; ctl.mouseButtons.LEFT = -1; }
+    rtDrop?.();
+  });
   view.addEventListener("dblclick", (e) => { if (ui.tool === "line" && ui.st?.wpts?.length >= 2) { finishLine(false); e.preventDefault(); } if (ui.tool === "wall" && ui.st?.wpts?.length >= 2) { finishWall(false); e.preventDefault(); } });
   view.addEventListener("contextmenu", (e) => e.preventDefault());
   el.addEventListener("click", onClick);
@@ -354,8 +369,18 @@ function triFaces(faces) {
 }
 const edgeMat = new THREE.LineBasicMaterial({ color: 0x2b2f2a });
 const selEdgeMat = new THREE.LineBasicMaterial({ color: 0x2f6fdf });
+edgeMat.userData.shared = selEdgeMat.userData.shared = true; // module-wide: never disposed
 function segGeo(segs) { const a = []; for (const [p, q] of segs) a.push(p[0], p[2], -p[1], q[0], q[2], -q[1]); const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.Float32BufferAttribute(a, 3)); return g; }
-function clear(g) { while (g.children.length) { const c = g.children.pop(); c.traverse?.((o) => { o.geometry?.dispose?.(); }); } }
+/** empty a group and free the GPU side of what it held (geometries and the per-rebuild materials — the iPad runs out of memory otherwise) */
+function clear(g) {
+  while (g.children.length) {
+    const c = g.children.pop();
+    c.traverse?.((o) => {
+      o.geometry?.dispose?.();
+      for (const m of Array.isArray(o.material) ? o.material : o.material ? [o.material] : []) { if (m.userData?.shared) continue; fatMats.delete(m); m.dispose?.(); }
+    });
+  }
+}
 function selected(ref) {
   if (ui.sel.has(ref)) return true;
   if (ref.startsWith("s:")) { const s = M.solids.find((x) => "s:" + x.id === ref); return !!(s?.group && ui.sel.has("G:" + s.group)); }
@@ -503,15 +528,22 @@ function scr(P) {
   const r = ren.domElement.getBoundingClientRect(), q = T3(P).project(cam);
   return [((q.x + 1) / 2) * r.width + r.left, ((1 - q.y) / 2) * r.height + r.top, q.z];
 }
-function pickMesh(cx, cy) {
+/** the mesh under the pointer. Cabinet cavity panes (see-through, at the cavity's front) only count with `panes`
+ *  (the select tool) and only when no piece sits right there (a shelf / partition / drawer box just behind the pane wins);
+ *  selection markers (no ref) never count */
+function pickMesh(cx, cy, { panes = false } = {}) {
   rayAt(cx, cy);
   const list = [];
   solidsG.children.forEach((o) => { if (o.isMesh) list.push(o); });
-  extraG.children.forEach((o) => { if (o.isMesh) list.push(o); });
+  extraG.children.forEach((o) => { if (o.isMesh && o.userData?.ref && (panes || o.userData.cav == null)) list.push(o); });
   roomG.children.forEach((o) => { if (o.isMesh && o.userData.ref && o.visible && !(o.userData.wall && !o.userData.open && o.material.opacity < 0.5 && !ui.xray)) list.push(o); });
   const hits = ray.intersectObjects(list, false).filter((h) => !ui.section || clipPlanes()[0].distanceToPoint(h.point) >= -0.01);
   if (!hits.length) return null;
-  const h = hits[0], ud = h.object.userData, fi = ud.tri2face?.[h.faceIndex];
+  const isPane = (x) => x.object.userData.cav != null;
+  const solid = hits.find((x) => !isPane(x)), pane = hits.find(isPane);
+  const h = pane && (!solid || solid.distance > pane.distance + 3) ? pane : solid;
+  if (!h) return null;
+  const ud = h.object.userData, fi = ud.tri2face?.[h.faceIndex];
   let n = null;
   if (ud.wall && !ud.open && h.face) {
     // a wall: the side of it facing the camera (walls are double sided)
@@ -548,7 +580,7 @@ function pickSketch(cx, cy) {
 function pickVertex(cx, cy, sid = null) {
   let best = null;
   for (const s of M.solids) {
-    if (sid && s.id !== sid) continue;
+    if ((sid && s.id !== sid) || s.hidden) continue;
     for (const q of G.solidPoints(s)) {
       const a = scr(q.p), d = Math.hypot(a[0] - cx, a[1] - cy);
       if (d < 18 && (!best || d < best.d)) best = { sid: s.id, d, p: q.p, vi: q.i, loop: q.loop, w: q.w };
@@ -563,7 +595,7 @@ function pickVertex(cx, cy, sid = null) {
 function pickEdge(cx, cy, sid = null) {
   let best = null;
   for (const s of M.solids) {
-    if (sid && s.id !== sid) continue;
+    if ((sid && s.id !== sid) || s.hidden) continue;
     const loops = [s.outer, ...(s.holes || [])];
     loops.forEach((L, li) => {
       for (let i = 0; i < L.length; i++) {
@@ -595,7 +627,7 @@ function vertexOf(v) {
   return { s, L, p: G.toWorld(s.plane, L[v.vi], v.level === "top" ? s.depth : 0) };
 }
 function pickAny(cx, cy) {
-  let m = pickMesh(cx, cy);
+  let m = pickMesh(cx, cy, { panes: true });
   // a tap on a wall near a socket / window / door means that thing, not the wall under it
   if (m?.ref?.startsWith("W:")) { const near = roomNearPick(cx, cy); if (near) m = near; }
   const k = pickSketch(cx, cy);
@@ -986,6 +1018,7 @@ TOOL.select = {
   click(xy) {
     const hit = pickAny(...xy);
     let ref = hit?.ref || null;
+    const rawRef = ref; // the board itself (before a group takes its place)
     // a cabinet: tapping a piece opens that piece's own settings; tapping a cavity pane opens that cavity
     if (ref?.startsWith("C:")) { const [cid, key] = ref.slice(2).split("|"); ui.cab = cid; ui.cabFocus = { kind: "cav", key }; ui.sel = new Set(["G:" + cid]); ui.face = null; rebuild(); renderUI(); setMsg("الفراغ ده — إعداداته في اللوحة"); return; }
     if (ref?.startsWith("s:") && !ui.addSel) { const s = M.solids.find((x) => "s:" + x.id === ref); if (s?.cab) { ui.cab = s.cab; ui.cabFocus = { kind: "piece", sid: s.id }; } else if (ui.cabFocus) ui.cabFocus = null; }
@@ -997,7 +1030,7 @@ TOOL.select = {
     // v62: pick modes — one tap picks a face / edge / corner straight away
     if (ui.pickMode === "vertex") { const v = pickVertex(...xy); if (v) { ui.vertex = v; ui.sel.clear(); ui.sel.add("s:" + v.sid); rebuild(); renderUI(); setMsg("اتختار الركن — حرّكه بأداة التحريك، أو امسحه بالممحاة"); return; } }
     if (ui.pickMode === "edge") { const e = pickEdge(...xy); if (e) { ui.edge = e; ui.sel.clear(); ui.sel.add("s:" + e.sid); rebuild(); renderUI(); setMsg("اتختار الحرف — حرّكه بأداة التحريك، أو اكتب طوله في اللوحة"); return; } }
-    if (ui.pickMode === "face" && ref?.startsWith("s:") && hit.face) { ui.face = { sid: hit.sid, kind: hit.face.kind, ref: hit.face.ref }; ui.sel.clear(); ui.sel.add(ref); rebuild(); renderUI(); setMsg("اتختار الوش — من اللوحة: إزاحة، سحب/زق، أو ارسم عليه"); return; }
+    if (ui.pickMode === "face" && rawRef?.startsWith("s:") && hit.face) { ui.face = { sid: hit.sid, kind: hit.face.kind, ref: hit.face.ref }; ui.sel.clear(); ui.sel.add(rawRef); rebuild(); renderUI(); setMsg("اتختار الوش — من اللوحة: إزاحة، سحب/زق، أو ارسم عليه"); return; }
     if (ref?.startsWith("s:") && hit.face && ui.sel.size === 1 && ui.sel.has(ref) && !ui.addSel) {
       // a second tap on the selected board: that one face
       const same = prevFace && prevFace.sid === hit.sid && prevFace.kind === hit.face.kind && JSON.stringify(prevFace.ref) === JSON.stringify(hit.face.ref);
@@ -1264,9 +1297,12 @@ function pushFace(s, face, d, dry = false) {
     const slide = (ai, bi) => { const a = L[ai], b = L[bi], ex = b[0] - a[0], ey = b[1] - a[1], k = ex * nx + ey * ny; return Math.abs(k) > 0.2 * Math.hypot(ex, ey) ? [ex * d / k, ey * d / k] : [nx * d, ny * d]; };
     const mp = slide((i - 1 + n) % n, i), mq = slide((i + 2) % n, (i + 1) % n);
     void dry;
+    const a0 = G.area(L);
     L[i] = [G.r2(p[0] + mp[0]), G.r2(p[1] + mp[1])];
     L[(i + 1) % n] = [G.r2(q[0] + mq[0]), G.r2(q[1] + mq[1])];
-    if (Math.abs(G.area(L)) < 0.5) return false;
+    // pushed past the opposite edge: the outline turns inside out (signed area flips) — refuse and put the edge back
+    const a1 = G.area(L);
+    if (Math.abs(a1) < 0.5 || Math.sign(a1) !== Math.sign(a0)) { L[i] = p; L[(i + 1) % n] = q; return false; }
     return true;
   }
   return false;
@@ -1453,11 +1489,47 @@ function xform(ref, fn) {
 /** copy several entities; boards copied out of a group land in a new group of their own */
 function copyRefs(refs) {
   const gmap = new Map();
-  return refs.map((r) => {
+  const made = refs.map((r) => {
     const c = copyRef(r);
     if (c && c[0] === "s") { const e = ent(c); if (e.group) { if (!gmap.has(e.group)) { const g0 = M.groups.find((g) => g.id === e.group); const ng = { id: uid(), name: (g0?.name || "مجموعة") + " (نسخة)" }; M.groups.push(ng); gmap.set(e.group, ng.id); } e.group = gmap.get(e.group); } }
     return c;
   }).filter(Boolean);
+  const copies = made.filter((r) => r[0] === "s").map(ent).filter(Boolean);
+  cabCopies(copies, M.cabs || [], (id) => M.solids.filter((s) => s.cab === id).length - copies.filter((s) => s.cab === id).length);
+  return made;
+}
+/** copied cabinet boards must not stay tied to the original (its next rebuild would delete them):
+ *  a whole cabinet becomes a new cabinet of its own (its description cloned, new id = its group); single pieces become plain boards */
+function cabCopies(copies, cabs, countOf) {
+  const by = new Map();
+  for (const s of copies) if (s.cab) { if (!by.has(s.cab)) by.set(s.cab, []); by.get(s.cab).push(s); }
+  for (const [id, list] of by) {
+    const src = cabs.find((c) => c.id === id);
+    if (src && list.length >= countOf(id) && list.some((s) => s.cabKey === "sideL" || (s.role === "side" && s.name === "جنب شمال"))) {
+      const nc = G.clone(src); nc.id = uid(); nc.name = `${src.name} (نسخة)`;
+      const oldG = list[0].group;
+      for (const s of list) { s.cab = nc.id; s.group = nc.id; }
+      M.groups.push({ id: nc.id, name: nc.name });
+      if (oldG && !M.solids.some((s) => s.group === oldG)) M.groups = M.groups.filter((g) => g.id !== oldG);
+      (M.cabs ||= []).push(nc);
+      const fr = Cab.cabFrame(nc, list.find((s) => s.cabKey === "sideL") || list.find((s) => s.role === "side" && s.name === "جنب شمال"));
+      if (fr) Object.assign(nc, fr);
+    } else for (const s of list) { delete s.cab; delete s.cabRef; delete s.cabKey; }
+  }
+}
+/** after a turn / mirror: every cabinet reads its new placement from its boards; one tipped off the floor becomes plain boards */
+function cabAfterXf() {
+  let broke = false;
+  for (const c of [...(M.cabs || [])]) {
+    const left = M.solids.find((s) => s.cab === c.id && s.cabKey === "sideL") || M.solids.find((s) => s.cab === c.id && s.role === "side" && s.name === "جنب شمال");
+    if (!left) continue;
+    const fr = Cab.cabFrame(c, left);
+    if (fr) { Object.assign(c, fr); continue; }
+    for (const s of M.solids) if (s.cab === c.id) { delete s.cab; delete s.cabRef; delete s.cabKey; }
+    M.cabs = M.cabs.filter((x) => x !== c); if (ui.cab === c.id) { ui.cab = null; ui.cabFocus = null; }
+    broke = true;
+  }
+  if (broke) setMsg("العلبة اتفكت لقطع عشان اتلفت");
 }
 function copyRef(ref) {
   const e = ent(ref); if (!e) return null;
@@ -1617,6 +1689,7 @@ function commitRotate(ang) {
     let refs = st.refs;
     if (ui.copy) refs = copyRefs(st.refs);
     for (const r of refs) xform(r, { p: (P) => G.rotP(P, st.c, st.k, ang) });
+    cabAfterXf();
   });
   overlay();
 }
@@ -1670,7 +1743,7 @@ function commitScale(k) {
     for (const r of st.refs) {
       const e = ent(r);
       if (r[0] === "s") scaleSolid(e, st.c, k);
-      else if (r[0] === "k") { const pl = e.plane, fu = Math.hypot(...pl.u.map((x, i) => x * k[i])), fv = Math.hypot(...pl.v.map((x, i) => x * k[i])); e.pts = e.pts.map(([a, b]) => [a * fu, b * fv]); e.plane = { ...pl, o: [0, 1, 2].map((i) => st.c[i] + (pl.o[i] - st.c[i]) * k[i]) }; }
+      else if (r[0] === "k") { const pl = e.plane, fu = Math.hypot(...pl.u.map((x, i) => x * k[i])), fv = Math.hypot(...pl.v.map((x, i) => x * k[i])); e.pts = e.pts.map(([a, b]) => [a * fu, b * fv]); if (e.center) e.center = [e.center[0] * fu, e.center[1] * fv]; e.plane = { ...pl, o: [0, 1, 2].map((i) => st.c[i] + (pl.o[i] - st.c[i]) * k[i]) }; }
       else xform(r, { p: (P) => [0, 1, 2].map((i) => st.c[i] + (P[i] - st.c[i]) * k[i]) });
     }
   });
@@ -1874,12 +1947,20 @@ function eraseAt(cx, cy) {
 }
 function hoverErase(cx, cy) { const hit = pickAny(cx, cy); overlay(() => { if (hit?.ref) ghostOf(hit.ref, (P) => P); }); }
 function delEnt(ref) {
-  if (ref.startsWith("G:")) { M.solids = M.solids.filter((s) => s.group !== ref.slice(2)); M.groups = M.groups.filter((g) => g.id !== ref.slice(2)); return; }
+  if (ref.startsWith("G:")) { M.solids = M.solids.filter((s) => s.group !== ref.slice(2)); M.groups = M.groups.filter((g) => g.id !== ref.slice(2)); pruneCabs(); return; }
   if (/^[WOE]:/.test(ref)) { delRoomRef(ref); return; }
   const k = ref[0], id = ref.slice(2);
   const key = { s: "solids", k: "sketches", p: "paths", w: "sweeps", g: "guides", d: "dims", t: "texts" }[k];
   if (key) M[key] = M[key].filter((x) => x.id !== id);
   ui.sel.delete(ref);
+  if (k === "s") pruneCabs();
+}
+/** a cabinet with none of its boards left is gone too (no ghost panes, no button, nothing to bring back on the next edit) */
+function pruneCabs() {
+  if (!M.cabs?.length) return;
+  M.cabs = M.cabs.filter((c) => M.solids.some((s) => s.cab === c.id));
+  if (ui.cab && !cabOf(ui.cab)) { ui.cab = null; ui.cabFocus = null; }
+  if (ui.cabFocus?.sid && !M.solids.some((s) => s.id === ui.cabFocus.sid)) ui.cabFocus = null;
 }
 
 // ================================================================== edit / undo
@@ -1960,9 +2041,10 @@ function mirrorSel(ax) {
           const n2 = G.nOf(e.plane), nOld = V(G.nOf(pl));
           if (G.dot(n2, nOld) < 0) { e.plane.o = G.add(e.plane.o, G.mul(nOld, e.depth)); }
           e.outer = G.ccw(flip(e.outer)); e.holes = e.holes.map((h) => G.cw(flip(h))); e.pockets = e.pockets.map((pk) => ({ ...pk, loop: G.ccw(flip(pk.loop)) }));
-        } else e.pts = flip(e.pts);
+        } else { e.pts = flip(e.pts); if (e.center) e.center = [e.center[0], -e.center[1]]; }
       } else xform(r, { p: P });
     }
+    cabAfterXf();
   });
 }
 /** stand the selected board(s) up — facing the front, facing the side — or lay them flat, staying where they were
@@ -1979,13 +2061,14 @@ function orientSel(kind) {
   const before = selBox(), c = selCenter();
   edit(() => {
     for (const r of selRefs()) xform(r, { p: (P) => G.rotP(P, c, axis, ang) });
-    const after = selBox(); if (!before || !after) return;
+    const after = selBox(); if (!before || !after) { cabAfterXf(); return; }
     const dv = [before.x0 - after.x0, before.y0 - after.y0, before.z0 - after.z0];
     for (const r of selRefs()) xform(r, { p: (P) => G.add(P, dv) });
+    cabAfterXf();
   });
   setMsg(kind === "v" ? "اتوقّف رأسي ووشه لقدام" : kind === "s" ? "اتوقّف رأسي ووشه للجنب" : "اتنيّم");
 }
-function rotSel90(ax) { const c = selCenter(); edit(() => { for (const r of selRefs()) xform(r, { p: (P) => G.rotP(P, c, AX[ax], Math.PI / 2) }); }); }
+function rotSel90(ax) { const c = selCenter(); edit(() => { for (const r of selRefs()) xform(r, { p: (P) => G.rotP(P, c, AX[ax], Math.PI / 2) }); cabAfterXf(); }); }
 function dupSel() { edit(() => { const made = copyRefs(selRefs()); for (const r of made) xform(r, { p: (P) => G.add(P, [10, 10, 0]) }); ui.sel = new Set(made); }); }
 function groupSel() {
   const ss = selSolids(); if (ss.length < 2) { setMsg("اختار أكتر من لوح (زرار «+» للاختيار المتعدد)"); return; }
@@ -2029,11 +2112,11 @@ function addBox(W, H, D, t, back) {
 /** translucent panes at the front of the current cabinet's cavities — tap one to work inside that cavity */
 function cabGhosts() {
   const c = curCab(); if (!c) return;
+  const xf = Cab.cabXf({ ...c, ...(Cab.cabFrame(c, cabLeft(c)) || {}) }); // where the boards are now (moved / turned since the last rebuild)
   for (const cv of Cab.cavities(c)) {
     const on = ui.cabFocus?.kind === "cav" && ui.cabFocus.key === cv.key;
-    const pl = { o: G.add([0, 0.6, 0], c.pos), u: [1, 0, 0], v: [0, 0, 1] };
-    const loop = G.rect(cv.x0 + 0.3, cv.z0 + 0.3, cv.x1 - 0.3, cv.z1 - 0.3);
-    const { geo } = triFaces([{ n: G.nOf(pl), outer: G.ccw(loop).map((p) => G.toWorld(pl, p, 0)), holes: [] }]);
+    const loop = [[cv.x0 + 0.3, cv.z0 + 0.3], [cv.x1 - 0.3, cv.z0 + 0.3], [cv.x1 - 0.3, cv.z1 - 0.3], [cv.x0 + 0.3, cv.z1 - 0.3]].map(([x, z]) => xf.P([x, 0.6, z]));
+    const { geo } = triFaces([{ n: G.norm(G.cross(G.sub(loop[1], loop[0]), G.sub(loop[3], loop[0]))), outer: loop, holes: [] }]);
     const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: on ? 0x2e7d4f : 0x2f6fdf, transparent: true, opacity: on ? 0.35 : 0.08, side: THREE.DoubleSide, depthWrite: false }));
     m.userData = { ref: `C:${c.id}|${cv.key}`, cav: cv.key }; m.renderOrder = 2;
     extraG.add(m);
@@ -2062,9 +2145,10 @@ function cabAdd() {
 function cabDel(c) { edit(() => { M.solids = M.solids.filter((s) => s.cab !== c.id); M.groups = M.groups.filter((g) => g.id !== c.id); M.cabs = M.cabs.filter((x) => x.id !== c.id); ui.cab = null; ui.sel.clear(); }); }
 /** the position the group is at now (the user may have moved it) → keep it as the cabinet's origin before regenerating */
 function cabSyncPos(c) {
-  const left = M.solids.find((s) => s.cab === c.id && s.role === "side");
-  if (left) { const b = G.solidBox(left); const z0 = c.bottom.joint === "under" ? c.bottom.kick + c.t : 0; c.pos = [G.r2(b.x0), G.r2(b.y0), G.r2(b.z0 - z0)]; }
+  const fr = Cab.cabFrame(c, cabLeft(c));
+  if (fr) Object.assign(c, fr); // position + turn about z + mirror, read from the left side as it stands
 }
+function cabLeft(c) { return M.solids.find((s) => s.cab === c.id && s.cabKey === "sideL") || M.solids.find((s) => s.cab === c.id && s.role === "side" && s.name === "جنب شمال") || null; }
 /** walk a dotted path into the cabinet ("fronts.0.parts.1") */
 function cabPath(c, path) { let o = c; for (const k of path.split(".")) { if (o == null) return null; o = o[k]; } return o ?? null; }
 const cabNum = (v, d) => { const n = parseFloat(String(v).replace(/[^\d.\-]/g, "")); return Number.isFinite(n) ? n : d; };
@@ -2074,6 +2158,9 @@ function cabChange(t) {
   if (path[0] === "cav") { edit(() => { cabSyncPos(c); const z = Cab.zoneOf(c, path[1]); Cab.setZone(c, [path[1]], v, z && z.cavs.length === 1 ? { hinge: z.hinge, n: z.n, hs: z.hs } : {}); cabRegen(c); }); return; }
   edit(() => {
     cabSyncPos(c);
+    // moving / re-banding a divider can reorder the cavities: zones, shelves and partitions stay with their physical cavity
+    const geo = path[0] === "dividers" || path[0] === "hdividers";
+    (geo ? (fn) => Cab.remapCavities(c, fn) : (fn) => fn())(() => {
     let o = c; for (let i = 0; i < path.length - 1; i++) { const k = path[i]; o = o[k] ??= {}; }
     const k = path[path.length - 1], cur = o[k];
     if (k === "hs") o[k] = String(v).split(/[،,\s]+/).map(Number).filter((x) => x > 0);
@@ -2084,6 +2171,7 @@ function cabChange(t) {
     // a fill that becomes drawers starts with 3 equal drawers
     if (path[0] === "fronts" && k === "kind" && v === "drawers") { o.n ??= 3; }
     if (path[0] === "fronts" && k === "kind" && v === "split") { o.dir ||= "h"; if (!(o.parts || []).length) o.parts = [{ kind: "drawers", n: 1, size: 20 }, { kind: "door1", hinge: "left" }]; }
+    });
     cabRegen(c);
   });
 }
@@ -2099,6 +2187,8 @@ function cabAction(kind, b) {
   const I = Cab.inner(c);
   edit(() => {
     cabSyncPos(c);
+    const run = (fn) => (/^(adddiv|addhdiv|deldiv:|delhdiv:)/.test(kind) ? Cab.remapCavities(c, fn) : fn());
+    run(() => {
     if (kind === "adddiv") { const col = Cab.columns(c, 0).sort((a, b) => (b.x1 - b.x0) - (a.x1 - a.x0))[0]; if (col) c.dividers.push({ id: uid(), from: "left", at: Math.round(col.x0 - I.x0 + (col.x1 - col.x0 - c.t) / 2), band: "" }); }
     else if (kind === "addhdiv") { const bd = Cab.bands(c).sort((a, b) => (b.z1 - b.z0) - (a.z1 - a.z0))[0]; (c.hdividers ||= []); if (bd) c.hdividers.push({ id: uid(), from: "bottom", at: Math.round(bd.z0 - I.z0 + (bd.z1 - bd.z0 - c.t) / 2) }); }
     else if (kind.startsWith("delhdiv:")) c.hdividers.splice(+kind.split(":")[1], 1);
@@ -2114,6 +2204,7 @@ function cabAction(kind, b) {
     else if (kind.startsWith("partdel:")) { const [, path, pi] = kind.split(":"); const o = cabPath(c, path); if (o?.parts) o.parts.splice(+pi, 1); }
     else if (kind.startsWith("zonedel:")) { const id = kind.slice(8); c.fronts = (c.fronts || []).filter((z) => z.id !== id); }
     else if (kind.startsWith("zonesplit:")) { const id = kind.slice(10); const z = (c.fronts || []).find((x) => x.id === id); if (z) { const keys = z.cavs; c.fronts = c.fronts.filter((x) => x.id !== id); for (const k of keys) Cab.setZone(c, [k], z.kind, { hinge: z.hinge, n: z.n }); } }
+    });
     cabRegen(c);
   });
 }
@@ -2408,7 +2499,7 @@ function onClick(e) {
   if (d.mv) { const [ax, sg] = d.mv.split(",").map(Number); const dist = +el.querySelector("#dsMvD").value; if (!(dist > 0)) { setMsg("اكتب المسافة الأول"); return; } ui.mvD = dist; moveSelBy(G.mul(AX[ax], sg * dist)); return; }
   if (d.align != null) { alignSel(+el.querySelector("#dsAlAx").value, d.align); return; }
   if (d.mirror != null) { mirrorSel(+d.mirror); return; }
-  if (d.pick) { ui.sel = new Set([d.pick]); ui.outline = true; rebuild(); renderUI(); return; }
+  if (d.pick) { ui.sel = new Set([d.pick]); ui.outline = true; ui.cabFocus = null; if (d.pick.startsWith("G:") && cabOf(d.pick.slice(2))) ui.cab = d.pick.slice(2); else if (ui.cab) ui.cab = null; rebuild(); renderUI(); return; }
   if (d.qb) { addBoard(+el.querySelector("#qbW").value || 60, +el.querySelector("#qbH").value || 40, +el.querySelector("#qbT").value || 1.8, d.qb); return; }
   if (d.vk) {
     const i = el.querySelector("#dsVcb");
@@ -2449,7 +2540,7 @@ function onClick(e) {
     case "extrude": { const k = ent(selRefs()[0]); const t = +el.querySelector("#dsQuickT").value || ui.thick; ui.thick = t; ui.st = { kind: "sketch", k, plane: k.plane, n: G.nOf(k.plane), a: G.toWorld(k.plane, k.pts[0]) }; commitPush(t); break; }
     case "qbox": addBox(+el.querySelector("#qxW").value || 60, +el.querySelector("#qxH").value || 72, +el.querySelector("#qxD").value || 58, ui.thick, el.querySelector("#qxB").checked); break;
     case "mylib": { if (!M.solids.length && !M.sweeps.length) { setMsg("مفيش حاجة مرسومة لسه"); break; } const nm = prompt("اسم التصميم في المكتبة:", mname || "تصميم"); if (nm === null) break; mname = nm.trim() || mname; ctx.saveLib?.(G.clone(M), mname); setMsg("اتحفظ في مكتبتي ⭐ — هتلاقيه في المكتبة تحت «مكتبتي»"); break; }
-    case "cablib": { const c = curCab(); if (!c) break; const nm = prompt("اسم العلبة في المكتبة:", c.name); if (nm === null) break; cabSyncPos(c); const sub = Cab.newCab(); Object.assign(sub, G.clone(c), { pos: [0, 0, 0], name: nm.trim() || c.name }); const m = newModel(); m.cabs = [sub]; m.groups = [{ id: sub.id, name: sub.name }]; m.solids = Cab.cabSolids(sub); ctx.saveLib?.(m, sub.name); setMsg("اتحفظت العلبة في مكتبتي ⭐"); break; }
+    case "cablib": { const c = curCab(); if (!c) break; const nm = prompt("اسم العلبة في المكتبة:", c.name); if (nm === null) break; cabSyncPos(c); const sub = Cab.newCab(); Object.assign(sub, G.clone(c), { pos: [0, 0, 0], rot: 0, name: nm.trim() || c.name }); const m = newModel(); m.cabs = [sub]; m.groups = [{ id: sub.id, name: sub.name }]; m.solids = Cab.cabSolids(sub); ctx.saveLib?.(m, sub.name); setMsg("اتحفظت العلبة في مكتبتي ⭐"); break; }
     case "selall": selectAll(); break;
     case "facex": faceAction("x"); break;
     case "edgex": case "edgelen": case "edgesplit": case "edgemove": case "vertexx": case "vertexset": case "vertexmove": case "vertexdel": subAction(d.ds); break;
@@ -2515,7 +2606,9 @@ function onChange(e) {
   if (d.gp) { edit(() => { const g = M.groups.find((x) => x.id === d.gp); if (g) g.name = t.value.trim() || g.name; }); return; }
   if (d.wp) { const w = ent(selRefs()[0]); if (w) edit(() => { w[d.wp] = t.value; }); return; }
   if (d.sp) {
-    const s = selSolids()[0] || (ui.cabFocus?.kind === "piece" ? M.solids.find((x) => x.id === ui.cabFocus.sid) : null);
+    // a focused cabinet piece first (a whole cabinet is selected then — its first board would be the left side)
+    const fp = ui.cabFocus?.kind === "piece" ? M.solids.find((x) => x.id === ui.cabFocus.sid) : null;
+    const s = (fp && selected("s:" + fp.id) ? fp : null) || selSolids()[0] || fp;
     if (!s) return;
     const v = t.type === "checkbox" ? t.checked : t.value;
     edit(() => {
@@ -2559,7 +2652,7 @@ function selBox(refs = selRefs()) {
 const BL = (b) => [b.x0, b.y0, b.z0], BH = (b) => [b.x1, b.y1, b.z1];
 
 // ---- handles on the selection: arrows move it along an axis, squares stretch it, labels type its size
-let hdrag = null;
+let hdrag = null, rtDrop = null; // rtDrop: takes the ↻ handle's window listeners off (a cancelled touch)
 function placeHandles() {
   const H = el?.querySelector("#dsHandles");
   if (!H) return;
@@ -2606,9 +2699,13 @@ function handleDown(e) {
   if (d.hrt != null) {
     // turn on lift, and only for a clean single tap (a pinch that starts here must not turn the board)
     const pid = e.pointerId, x0 = e.clientX, y0 = e.clientY; let spoiled = false;
+    rtDrop?.();
+    const drop = () => { window.removeEventListener("pointerup", lift, true); window.removeEventListener("pointerdown", other, true); window.removeEventListener("pointercancel", cancel, true); if (rtDrop === drop) rtDrop = null; };
     const other = (ev) => { if (ev.pointerId !== pid) spoiled = true; };
-    const lift = (ev) => { if (ev.pointerId !== pid) return; window.removeEventListener("pointerup", lift, true); window.removeEventListener("pointerdown", other, true); if (!spoiled && Math.hypot(ev.clientX - x0, ev.clientY - y0) < 10) rotSel90(+d.hrt); };
-    window.addEventListener("pointerdown", other, true); window.addEventListener("pointerup", lift, true);
+    const cancel = (ev) => { if (ev.pointerId === pid) drop(); };
+    const lift = (ev) => { if (ev.pointerId !== pid) return; drop(); if (!spoiled && Math.hypot(ev.clientX - x0, ev.clientY - y0) < 10) rotSel90(+d.hrt); };
+    window.addEventListener("pointerdown", other, true); window.addEventListener("pointerup", lift, true); window.addEventListener("pointercancel", cancel, true);
+    rtDrop = drop;
     return;
   }
   const box = selBox(); if (!box) return;
@@ -2665,16 +2762,28 @@ function applyHandle(st, d) {
 function stretchRefs(refs, ax, at, k) {
   const kk = [1, 1, 1]; kk[ax] = k;
   const c = [0, 0, 0]; c[ax] = at;
+  // several boards (a box): a board lying across the stretch keeps its thickness and only moves — flush with the end it
+  // touched, else with its middle scaled (one board on its own: its thickness is what the handle changes)
+  const multi = refs.filter((r) => r[0] === "s").length > 1, all = multi ? selBox(refs) : null;
+  const lo = all ? [all.x0, all.y0, all.z0][ax] : 0, hi = all ? [all.x1, all.y1, all.z1][ax] : 0;
+  const S = (v) => at + (v - at) * k;
   for (const r of refs) {
     const e = ent(r); if (!e) continue;
     if (r[0] === "s") {
       const n = G.nOf(e.plane);
+      if (multi && Math.abs(n[ax]) > 0.999) {
+        const b = G.solidBox(e), b0 = [b.x0, b.y0, b.z0][ax], b1 = [b.x1, b.y1, b.z1][ax];
+        const nb0 = Math.abs(b1 - hi) < 0.05 ? S(b1) - (b1 - b0) : Math.abs(b0 - lo) < 0.05 ? S(b0) : S((b0 + b1) / 2) - (b1 - b0) / 2;
+        const dv = [0, 0, 0]; dv[ax] = G.r2(nb0 - b0);
+        e.plane = { ...e.plane, o: G.add(e.plane.o, dv) };
+        continue;
+      }
       if (Math.abs(n[ax]) > 0.999 || Math.abs(e.plane.u[ax]) > 0.999 || Math.abs(e.plane.v[ax]) > 0.999) scaleSolid(e, c, kk);
       else { // a slanted board: scale it uniformly in its plane along the projected axis
         const pc = [...c]; for (let i = 0; i < 3; i++) if (i !== ax) pc[i] = e.plane.o[i];
         scaleSolid(e, pc, kk);
       }
-    } else if (r[0] === "k") { const pl = e.plane, fu = Math.hypot(...pl.u.map((x, i) => x * kk[i])), fv = Math.hypot(...pl.v.map((x, i) => x * kk[i])); e.pts = e.pts.map(([a, b]) => [a * fu, b * fv]); e.plane = { ...pl, o: pl.o.map((v, i) => c[i] + (v - c[i]) * kk[i] + (i === ax ? 0 : 0)) }; e.plane.o = pl.o.map((v, i) => (i === ax ? c[i] + (v - c[i]) * k : v)); }
+    } else if (r[0] === "k") { const pl = e.plane, fu = Math.hypot(...pl.u.map((x, i) => x * kk[i])), fv = Math.hypot(...pl.v.map((x, i) => x * kk[i])); e.pts = e.pts.map(([a, b]) => [a * fu, b * fv]); if (e.center) e.center = [e.center[0] * fu, e.center[1] * fv]; e.plane = { ...pl, o: pl.o.map((v, i) => c[i] + (v - c[i]) * kk[i] + (i === ax ? 0 : 0)) }; e.plane.o = pl.o.map((v, i) => (i === ax ? c[i] + (v - c[i]) * k : v)); }
     else xform(r, { p: (P) => P.map((v, i) => (i === ax ? at + (v - at) * k : v)) });
   }
 }
@@ -2742,7 +2851,8 @@ function selSameMat() {
 // ---- clipboard
 function copySel() {
   const refs = selRefs(); if (!refs.length) return;
-  ui.clip = { items: refs.map((r) => ({ k: r[0], e: G.clone(ent(r)) })).filter((x) => x.e), groups: G.clone(M.groups) };
+  ui.clip = { items: refs.map((r) => ({ k: r[0], e: G.clone(ent(r)) })).filter((x) => x.e), groups: G.clone(M.groups), cabs: G.clone(M.cabs || []) };
+  ui.clip.cabN = Object.fromEntries((M.cabs || []).map((c) => [c.id, M.solids.filter((s) => s.cab === c.id).length]));
   setMsg(`اتنسخ ${ui.clip.items.length} — «لزق» تحطهم`);
 }
 function pasteClip(inPlace) {
@@ -2759,6 +2869,8 @@ function pasteClip(inPlace) {
       xform(ref, { p: (P) => G.add(P, dv) });
       made.push(ref);
     }
+    const copies = made.filter((r) => r[0] === "s").map(ent).filter(Boolean);
+    cabCopies(copies, cb.cabs || [], (id) => cb.cabN?.[id] ?? Infinity);
     ui.sel = new Set(made.map((r) => { const e = ent(r); return r[0] === "s" && e.group ? "G:" + e.group : r; }));
   });
 }
@@ -3081,6 +3193,7 @@ const P2 = (P) => [P[0], -P[1]];
 const FLOOR = () => ({ ...G.GROUND, o: [0, 0, 0] });
 const ROOMTOOLS = ["wall", "door", "window", "mep"];
 const wallEdgeMat = new THREE.LineBasicMaterial({ color: 0x6f6a5f, transparent: true });
+wallEdgeMat.userData.shared = true;
 function roomSegs() { return M?.room?.pts?.length >= 2 ? Room.segments(M.room) : []; }
 const segById = (id) => roomSegs().find((s) => s.id === id);
 function roomEnt(rs) {

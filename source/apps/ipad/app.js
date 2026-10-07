@@ -57,6 +57,8 @@ document.addEventListener("input", (e) => {
 }, true);
 /** a money amount as typed: 1,500 · ١٬٥٠٠ · 1 500 → 1500 */
 const moneyNum = (v) => { const t = String(v ?? "").trim().replace(/[٠-٩۰-۹٫]/g, (c) => AR_DIG[c]).replace(/[,،٬\s]/g, "").replace(/[^0-9.\-]/g, ""); const n = parseFloat(t); return Number.isFinite(n) ? n : 0; };
+/** one pasted row → cells: Excel / Numbers rows are tab-separated (so "60,5" stays one number), typed rows use ; or ، or , */
+const pasteCells = (line) => (line.includes("\t") ? line.split("\t") : /[;؛،]/.test(line) ? line.split(/[;؛،]/) : line.split(",")).map((x) => x.trim());
 const toNum = (v) => { const t = String(v ?? "").trim().replace(/[٠-٩۰-۹٫،,]/g, (c) => AR_DIG[c]).replace(/[^0-9.\-]/g, ""); const n = parseFloat(t); return Number.isFinite(n) ? n : 0; };
 const uid = () => Math.random().toString(36).slice(2, 10);
 const clone = (o) => JSON.parse(JSON.stringify(o));
@@ -221,12 +223,33 @@ async function cloudSave() {
   cloud.dirty = false;
   const p = state.project;
   try {
-    await cloud.db.doc(`data/users/${cloud.me}/p_${p.id}`).set({ name: p.name, units: p.units, room: p.room || null, mats: p.mats || [], stages: p.stages || null, survey: p.survey || null, variants: p.variants || null, variant: p.variant || null, approval: p.approval || null, quoteTotal: p.quoteTotal || 0, clientOpts: p.clientOpts || null, views: p.views || null, updatedAt: new Date().toISOString() });
+    // the whole project goes up (variants, views, approval, progress, grain, qcut… all of it), stamped with the time it was last
+    // saved on this device — not "now" — so the copy online is never "newer" than the one it was made from
+    const stamp = state.savedAt || new Date().toISOString();
+    if (!state.savedAt) state.savedAt = stamp;
+    const body = JSON.parse(JSON.stringify(p));
+    delete body.id;
+    body.mats = body.mats || [];
+    body.updatedAt = stamp;
+    await cloud.db.doc(`data/users/${cloud.me}/p_${p.id}`).set(body);
+    cloud.stamp = { id: p.id, at: stamp };
     setCloud(cloud.dirty ? "pending" : "saved");
   } catch (e) {
     setCloud(e?.code === "quota_exceeded" ? "full" : "error");
   }
   cloud.saving = false;
+}
+/** a project read back from the account: every field it was saved with (shared by boot and openProject) */
+function projectFromCloud(id, v, local = null) {
+  const { updatedAt, ...rest } = v || {};
+  const p = { id };
+  for (const [k, x] of Object.entries(rest)) if (x !== null && x !== undefined) p[k] = x;
+  p.name ??= local?.name || "مشروع";
+  p.units = Array.isArray(p.units) ? p.units : [];
+  p.mats = Array.isArray(p.mats) ? p.mats : [];
+  // older uploads had no variants: keep the ones this device has
+  if (!p.variants && local?.variants) { p.variants = local.variants; if (local.variant != null) p.variant = local.variant; }
+  return p;
 }
 function setCloud(s) {
   ui.cloud = s;
@@ -240,7 +263,7 @@ function setCloud(s) {
 // ------------------------------------------------------------------ engines adapter
 const cache = new Map();
 function R(u) {
-  const key = u.kind + JSON.stringify(u.params) + JSON.stringify(u.libs || {}) + (u.org || "") + (u.orgOpts ? JSON.stringify(u.orgOpts) : "") + (u.extra?.length ? JSON.stringify(u.extra) : "") + (u.matOv ? JSON.stringify(u.matOv) : "");
+  const key = u.kind + JSON.stringify(u.params) + JSON.stringify(u.libs || {}) + (u.org || "") + (u.orgOpts ? JSON.stringify(u.orgOpts) : "") + (u.extra?.length ? JSON.stringify(u.extra) : "") + (u.matOv ? JSON.stringify(u.matOv) : "") + `|L${+u.lift || 0}|B${u.bandAll === true ? 1 : 0}`;
   if (cache.has(key)) return cache.get(key);
   if (cache.size > 80) cache.delete(cache.keys().next().value);
   let out = u.kind === "dressing" ? adaptDressing(u) : u.kind === "kitchen" ? adaptKitchen(u) : u.kind === "pieces" ? adaptPieces(u) : u.params?.model ? adaptModel(u) : adaptPanel(u);
@@ -327,7 +350,8 @@ const libColorOf = (lib) => Catalog.LIB[lib]?.[2] || Mat.get(lib)?.color || "#cc
 function withMatOv(u, out) {
   const ov = u.matOv || {}, names = { ...(out.names || {}) }, colors = { ...(out.colors || {}) }, used = new Set();
   const keyOf = (lib) => "ov:" + lib;
-  const parts = (out.parts || []).map((pt) => { const lib = ov[pt.name]; if (!lib || !pt.cut_piece) return pt; used.add(lib); return { ...pt, material: keyOf(lib), label: pt.label ? { ...pt.label, material: libDisplay(lib) } : pt.label }; });
+  // a studio board whose name is shared with others is keyed by its own id ("#<sid>"), else by the piece name
+  const parts = (out.parts || []).map((pt) => { const lib = (pt.model_sid && ov["#" + pt.model_sid]) || ov[pt.name]; if (!lib || !pt.cut_piece) return pt; used.add(lib); return { ...pt, material: keyOf(lib), label: pt.label ? { ...pt.label, material: libDisplay(lib) } : pt.label }; });
   const meshes = out.meshes ? out.meshes.map((m) => { const lib = ov[m.name]; if (!lib) return m; used.add(lib); const k = keyOf(lib); return { ...m, mat: k, faces: (m.faces || []).map((f) => ({ ...f, mat: k })) }; }) : out.meshes;
   if (!used.size) return out;
   for (const lib of used) { names[keyOf(lib)] = libDisplay(lib); colors[keyOf(lib)] = libColorOf(lib); }
@@ -760,11 +784,11 @@ function addCeilingUnit(u) {
   const seg = L?.wall ? Room.segments(state.project.room || { pts: [] }).find((g) => g.id === L.wall) : null;
   const ceil = seg?.h || state.project.room?.walls?.[0]?.h || Room.WALL_H;
   const t = +P.panel_thickness || 1.8, gap = 1; // 1 cm under the ceiling (uneven ceilings, fitting)
-  const z0 = (+P.wall_mount_height || 140) + (+P.height || 70) + t;
+  const z0 = (+u.lift || 0) + (+P.wall_mount_height || 140) + (+P.height || 70) + t; // a raised unit (lift) ends higher
   const h = Math.round((ceil - gap - z0) * 10) / 10;
   if (h < 20) { alertBar(`مفيش مكان فوقها: السقف ${n1(ceil)} سم والوحدة طالعة لحد ${n1(z0 - t)} سم`); return; }
   const c = clone(u);
-  c.id = uid(); delete c.code; c.name = `علوية سقف فوق ${u.code || u.name}`;
+  c.id = uid(); delete c.code; delete c.lift; c.name = `علوية سقف فوق ${u.code || u.name}`; // its mount height already includes the lift
   c.params = { ...c.params, unit_type: "wall", wall_mount_height: Math.round(z0 * 10) / 10, height: h, led_panel_below: true, shelf_count: h > 45 ? 1 : 0, include_shelves: h > 45, include_led_marker: false };
   if (L?.wall) { u.pos = { wall: L.wall, s: Math.round(L.s * 10) / 10 }; c.pos = { ...u.pos }; }
   else if (L) { u.pos = { x: L.x, z: L.z, rot: L.rot }; c.pos = { ...u.pos }; }
@@ -809,6 +833,12 @@ function adaptModel(u) {
     const aligned = axisOf(DG.nOf(s.plane)) >= 0 && axisOf(s.plane.u) >= 0;
     const plain = aligned && DG.plainRect(s);
     const out = { ...pt, label: { ...pt.label }, checks: [...(pt.checks || [])], model_sid: s.id };
+    // the grain direction chosen for the board in the studio (along its first / second axis) → the label's h or w
+    if (s.grain === "u" || s.grain === "v") {
+      const g = s.grain === "u" ? s.plane.u : s.plane.v, gi = [0, 1, 2].reduce((a, i) => (Math.abs(g[i]) > Math.abs(g[a]) ? i : a), 0);
+      if (aligned && pt.axes) { const ga = AXK[gi]; out.grainAxis = ga === pt.axes[1] ? "h" : ga === pt.axes[0] ? "w" : undefined; }
+      else out.grainAxis = "w"; // a slanted board's label is measured along its grain (geom.boardSize)
+    }
     if (!DG.isBoard(s)) out.checks.push(`⚠ ده مجسّم سمكه ${n1(s.depth)} سم — مش لوح بيتقص من الشيت`);
     if (plain) return out;
     out.shape = { type: "faces", faces: DG.solidFaces(s).map((f) => ({ n: f.n, outer: f.outer, holes: f.holes, mat: s.mat })) };
@@ -879,8 +909,24 @@ function openStudio(u, extra = {}) {
       }
       const empty = !model.solids.length && !model.sweeps.length && !model.sketches.length;
       // a board given a material of its own in the studio → that piece's material on the unit
-      const ov = {}; for (const sd of model.solids || []) if (sd.lib) ov[sd.name] = sd.lib;
-      if (u && state.project.units.includes(u)) { u.params = { ...u.params, model, template: "free" }; u.name = name || u.name; if (Object.keys(ov).length) u.matOv = { ...(u.matOv || {}), ...ov }; }
+      // (keyed by its name when the name is unique in the drawing, else by the board's own id)
+      const ovOf = (solids) => {
+        const cnt = {}; for (const sd of solids || []) cnt[sd.name] = (cnt[sd.name] || 0) + 1;
+        const o = {}; for (const sd of solids || []) if (sd.lib) o[cnt[sd.name] > 1 ? "#" + sd.id : sd.name] = sd.lib;
+        return { o, cnt };
+      };
+      const { o: ov } = ovOf(model.solids);
+      if (u && state.project.units.includes(u)) {
+        const prevSolids = u.params?.model?.solids || [];
+        const { o: prevOv } = ovOf(prevSolids);
+        const next = { ...(u.matOv || {}) };
+        // what the studio set before and is cleared now goes; a piece material chosen in the unit's panel stays
+        for (const [k, lib] of Object.entries(prevOv)) if (next[k] === lib && !(k in ov)) delete next[k];
+        for (const sd of prevSolids) if (sd.lib && next[sd.name] === sd.lib && !(sd.name in ov)) delete next[sd.name]; // old saves keyed shared names
+        Object.assign(next, ov);
+        u.params = { ...u.params, model, template: "free" }; u.name = name || u.name;
+        if (Object.keys(next).length) u.matOv = next; else delete u.matOv;
+      }
       else if (!empty) { const nu = { id: uid(), kind: "panel", name: name || "تصميم حر", params: { template: "free", model, materials: {} }, ...(Object.keys(ov).length ? { matOv: ov } : {}) }; state.project.units.push(nu); state.sel = nu.id; }
       for (const lib of Object.values(ov)) if (!Catalog.LIB[lib]) { const m = Mat.get(lib); if (m && !(state.project.mats || []).some((x) => x.id === lib)) state.project.mats = [...(state.project.mats || []), m]; }
       state.libOpen = false; save(); render(true);
@@ -1069,7 +1115,12 @@ function dimsText(u, r) {
 }
 
 const selUnit = () => state.project.units.find((u) => u.id === state.sel) || null;
-function expanded(u) { const p = clone(R(u).params || {}); delete p.preset; return p; }
+function expanded(u) {
+  const p = clone(R(u).params || {}); delete p.preset;
+  // cornerFit's computed corner depth / diagonal cut are not the user's: written back they'd stop following the unit's depth
+  if (u.kind === "kitchen") for (const k of ["corner_depth", "corner_diagonal_cut"]) { const v = u.params?.[k]; if (v == null || v === "") delete p[k]; }
+  return p;
+}
 function setParams(u, mutate) {
   // several units ticked: the same change goes to every one of the same kind (width, material, handle, plinth …)
   const all = ui.multi?.size > 1 && ui.multi.has(u.id) ? targetUnits().filter((x) => x.kind === u.kind) : [u];
@@ -1556,7 +1607,7 @@ $("#libBtn").addEventListener("click", () => { state.libOpen = !state.libOpen; r
     const hit = view.pickAny(e.clientX, e.clientY);
     if (!hit && ui.moveMode) { sceneMode(); alertBar("رجعت للوضع العادي — السحب بيلف المشهد كله."); return; }
     if (hit?.kind === "unit") {
-      if (ui.multi) { ui.multi.has(hit.id) ? ui.multi.delete(hit.id) : ui.multi.add(hit.id); renderMulti(); renderStrip(); renderProps(); view.update(); return; }
+      if (ui.multi) { multiToggle(hit.id); renderMulti(); renderStrip(); renderChips(); renderProps(); view.update(); return; }
       ui.room3d = false; ui.planSel = null;
       if (hit.id !== state.sel) { state.sel = hit.id; save(); renderStrip(); renderChips(); renderProps(); renderErrs(); view.update(); }
       else renderProps();
@@ -1977,7 +2028,9 @@ $("#home").addEventListener("click", async (e) => {
     if (d.hdup === state.project.id) await Lib.put(state.project).catch(() => {});
     const rec = await Lib.get(d.hdup).catch(() => null), src = rec?.project || (d.hdup === state.project.id ? state.project : null);
     if (!src) { alertBar("مالقتش المشروع ده على الجهاز"); return; }
-    const cp = clone(src); cp.id = uid(); cp.name = `${src.name} (نسخة)`; delete cp.stages; delete cp.shared;
+    const cp = clone(src); cp.id = uid(); cp.name = `${src.name} (نسخة)`;
+    // a fresh project: no stages, sharing, client signature, stock taken or workshop progress of the original
+    for (const k of ["stages", "shared", "sharedAt", "stockTaken", "approval", "progress"]) delete cp[k];
     await Lib.put(cp); showHome(); alertBar(`اتعملت نسخة: «${cp.name}»`); return;
   }
   if (d.hdel) {
@@ -2001,7 +2054,18 @@ $("#home").addEventListener("click", async (e) => {
     showHome();
   }
 });
-$("#home").addEventListener("input", (e) => { if (e.target.id !== "homeQ") return; ui.homeQ = e.target.value; clearTimeout(ui.hqT); ui.hqT = setTimeout(async () => { const at = e.target.selectionStart; await showHome(); const q = $("#homeQ"); if (q) { q.focus(); try { q.setSelectionRange(at, at); } catch { /* */ } } }, 350); });
+// the search only hides / shows the cards already on screen (no redraw, no saving on every key)
+$("#home").addEventListener("input", (e) => { if (e.target.id !== "homeQ") return; ui.homeQ = e.target.value; homeFilterQ(); });
+function homeFilterQ() {
+  const q = (ui.homeQ || "").trim(), list = $("#home .homelist");
+  if (!list) return;
+  let n = 0;
+  const cards = list.querySelectorAll(".hcard");
+  for (const c of cards) { const on = !q || (c.dataset.hname || "").includes(q); c.style.display = on ? "" : "none"; if (on) n++; }
+  let h = list.querySelector(".hnoq");
+  if (cards.length && !n) { if (!h) { h = document.createElement("p"); h.className = "hint hnoq"; h.textContent = I18n.isEn() ? I18n.tr("مفيش مشاريع بالبحث ده.") : "مفيش مشاريع بالبحث ده."; list.appendChild(h); } h.style.display = ""; }
+  else if (h) h.style.display = "none";
+}
 $("#home").addEventListener("keydown", (e) => { if (e.target.id === "homeName" && e.key === "Enter") newProject(e.target.value); });
 $("#home").addEventListener("change", async (e) => {
   if (e.target.id !== "homeImp" || !e.target.files?.[0]) return;
@@ -2485,7 +2549,7 @@ function renderStrip() {
 $("#unitStrip").addEventListener("click", (e) => {
   const b = e.target.closest("[data-unit]");
   if (!b) return;
-  if (ui.multi) { const id = b.dataset.unit; ui.multi.has(id) ? ui.multi.delete(id) : ui.multi.add(id); if (!state.sel) state.sel = id; renderMulti(); renderStrip(); renderProps(); view.update(); return; }
+  if (ui.multi) { multiToggle(b.dataset.unit); renderMulti(); renderStrip(); renderChips(); renderProps(); view.update(); return; }
   if (state.sel === b.dataset.unit && matchMedia("(max-width: 640px), (max-height: 520px)").matches) { ui.sheet = ui.sheet === "min" ? "half" : "min"; document.body.dataset.sheet = ui.sheet; setTimeout(() => view.resize(), 260); }
   state.sel = b.dataset.unit;
   save();
@@ -3226,7 +3290,7 @@ function kitchenProps(p) {
       ${numF("assembly_cam_depth", "عمق قفل الكام", p.assembly_cam_depth, 0.1)}</div><p class="hint">الأخرام بتبان في العرض لما تشغّل "شفاف".</p><details class="elevbox"><summary>🔩 شرح مصور لخرم الأليتا بالمقاسات دي</summary>${alitaGuideHtml({ params: p })}</details></details>`;
   }
   if (p.include_hinge_cups) {
-    h += `<details><summary>كبب المفصلات</summary><div class="grid2">${numF("hinge_cup_diameter", "قطر الكبة", p.hinge_cup_diameter, 0.1)}${numF("hinge_cup_edge_distance", "البعد عن الحرف", p.hinge_cup_edge_distance, 0.1)}${numF("hinge_cup_count", "عدد الكبب", p.hinge_cup_count, 1)}</div></details>`;
+    h += `<details><summary>كبب المفصلات</summary><div class="grid2">${numF("hinge_cup_diameter", "قطر الكبة", p.hinge_cup_diameter, 0.1)}${numF("hinge_cup_edge_distance", "البعد عن الحرف", p.hinge_cup_edge_distance, 0.1)}${numF("hinge_cup_count", "عدد الكبب (فاضي = حسب طول الضلفة)", p.hinge_cup_count, 1)}</div></details>`;
   }
   if (p.include_led_marker) h += `<details><summary>مجرى الليد</summary><div class="grid2">${numF("led_marker_offset", "البعد عن الحرف الأمامي", p.led_marker_offset, 0.1)}${numF("led_marker_width", "عرض المجرى", p.led_marker_width, 0.1)}</div></details>`;
   if (p.include_drawer_boxes) {
@@ -3521,10 +3585,9 @@ props.addEventListener("click", (e) => {
       const txt = $("#pcPaste")?.value || "";
       let n = 0;
       for (const line of txt.split(/\r?\n/)) {
-        const c = line.split(/\t|,|،|;/).map((x) => x.trim());
+        const c = pasteCells(line);
         if (c.length < 3) continue;
-        const num = (v) => +String(v).replace(/[٠-٩]/g, (d) => "٠١٢٣٤٥٦٧٨٩".indexOf(d)).replace("٫", ".");
-        const [name, L, W, q, T] = [c[0], num(c[1]), num(c[2]), num(c[3] || 1), num(c[4] || 0)];
+        const [name, L, W, q, T] = [c[0], toNum(c[1]), toNum(c[2]), c[3] ? toNum(c[3]) : 1, toNum(c[4] || 0)];
         if (!(L > 0 && W > 0)) continue;
         list.push({ ...PIECE_DEF(), name, l: L, w: W, qty: q > 0 ? Math.round(q) : 1, t: T > 0 ? T : list[list.length - 1]?.t || 1.8, lib: list[list.length - 1]?.lib || "hpl_white" });
         n++;
@@ -3777,9 +3840,17 @@ function applyLook() {
 // ---- several units at once: the selected unit plus the ones ticked in "اختار أكتر من وحدة"
 function targetUnits() {
   const u = selUnit();
-  if (!ui.multi?.size) return u ? [u] : [];
-  const list = state.project.units.filter((x) => ui.multi.has(x.id));
-  return u && !list.includes(u) ? [u, ...list] : list;
+  if (!ui.multi) return u ? [u] : [];
+  // multi-select: exactly the ticked units (the selected one can be unticked too)
+  return state.project.units.filter((x) => ui.multi.has(x.id));
+}
+/** tick / untick a unit in multi-select; unticking the selected unit moves the selection to another ticked one */
+function multiToggle(id) {
+  if (!ui.multi) return;
+  if (ui.multi.has(id)) {
+    ui.multi.delete(id);
+    if (state.sel === id) { const next = state.project.units.find((x) => ui.multi.has(x.id)); state.sel = next ? next.id : null; }
+  } else { ui.multi.add(id); if (!state.sel || !ui.multi.has(state.sel)) state.sel = id; }
 }
 /** several units at once: tick them in the 3D view or the strip below, then move / copy / delete / paint them together */
 function toggleMulti(add) {
@@ -5044,7 +5115,7 @@ $("#pop").addEventListener("click", async (e) => {
     const snap = await cloud.db.doc(`data/users/${cloud.me}/p_${d.openproj}`).get();
     if (!snap.exists) return;
     const v = snap.data();
-    state.project = { id: d.openproj, name: v.name, units: v.units || [], ...(v.room ? { room: v.room } : {}), mats: v.mats || [], ...(v.stages ? { stages: v.stages } : {}), ...(v.survey ? { survey: v.survey } : {}) };
+    state.project = projectFromCloud(d.openproj, v);
     for (const m of state.project.mats) Mat.register(m);
     state.sel = state.project.units[0]?.id ?? null;
     ui.pop = null;
@@ -5078,11 +5149,12 @@ async function openProject(id, quiet = false) {
   if (cloud.db && cloud.me) {
     try {
       const snap = await cloud.db.doc(`data/users/${cloud.me}/p_${id}`).get();
-      if (snap.exists && (!rec || (snap.data().updatedAt || "") > (rec.updatedAt || ""))) { const v = snap.data(); p = { id, name: v.name, units: v.units || [], ...(v.room ? { room: v.room } : {}), mats: v.mats || [], ...(v.stages ? { stages: v.stages } : {}), ...(v.survey ? { survey: v.survey } : {}), ...(v.approval ? { approval: v.approval } : {}), ...(v.quoteTotal ? { quoteTotal: v.quoteTotal } : {}), ...(v.clientOpts ? { clientOpts: v.clientOpts } : {}), ...(v.views ? { views: v.views } : {}), ...(v.variants ? { variants: v.variants, variant: v.variant } : rec?.project?.variants ? { variants: rec.project.variants, variant: rec.project.variant } : {}) }; }
+      if (snap.exists && (!rec || (snap.data().updatedAt || "") > (rec.updatedAt || ""))) p = projectFromCloud(id, snap.data(), rec?.project);
     } catch { /* offline: keep the local copy */ }
   }
   if (!p) { alertBar("المشروع ده مش موجود."); return; }
   state.project = p;
+  resetCut();
   for (const m of state.project.mats || []) Mat.register(m);
   state.sel = state.project.units[0]?.id ?? null;
   state.tab = "design";
@@ -5095,6 +5167,7 @@ async function newProject(name) {
   await Lib.put(state.project).catch(() => {});
   if (cloud.dirty) await cloudSave();
   state.project = { id: uid(), name: (name || "").trim() || "مشروع جديد", units: [] };
+  resetCut();
   state.sel = null; state.libOpen = false; state.tab = "design";
   ui.planSel = null; ui.multi = null; ui.asm = null;
   closeHome();
@@ -5128,13 +5201,19 @@ async function showHome() {
   el.hidden = false;
   document.body.classList.add("athome");
   el.innerHTML = `<div class="homein"><div class="homehead"><span class="mark big svgm">${MARK_SVG}</span><div><b>NOVERA Studio</b><small>تصميم وتصنيع المطابخ والأثاث</small></div></div><p class="hint">بيحمّل المشاريع…</p></div>`;
-  await Lib.put(state.project).catch(() => {});
+  // keep the open project in the list — written only when it changed since the last time (not on every visit)
+  const snapNow = JSON.stringify(state.project);
+  if (saveTimer || snapNow !== showHome.lastSnap) {
+    if (saveTimer) { clearTimeout(saveTimer); saveTimer = 0; persist(); }
+    else await Lib.put(state.project).catch(() => {});
+    showHome.lastSnap = snapNow;
+  }
   const list = await allProjects();
   const when = (t) => (t ? new Date(t).toLocaleString("ar-EG", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }) : "");
   const waiting = list.filter((x) => x.srv === "measured" && !x.stages?.design?.done).length;
   const f = ui.homeF || "all", q = (ui.homeQ || "").trim();
   const pf = (x) => { const p = projectPulse(x); return f === "work" ? p.inShop : f === "ok" ? p.waitOk && !p.done : f === "late" ? p.late.length && !p.done : f === "inst" ? p.install && p.install <= dayStr(addDays(new Date(), 7)) : true; };
-  const shown = list.filter((x) => (f === "all" || (f === "wait" ? x.srv === "measured" && !x.stages?.design?.done : f === "srv" ? x.srv === "measuring" : pf(x))) && (!q || String(x.name).includes(q)));
+  const shown = list.filter((x) => f === "all" || (f === "wait" ? x.srv === "measured" && !x.stages?.design?.done : f === "srv" ? x.srv === "measuring" : pf(x)));
   el.innerHTML = `<div class="homein">
     <div class="homehead"><span class="mark big svgm">${MARK_SVG}</span><div><b>NOVERA Studio</b><small>تصميم وتصنيع المطابخ والأثاث</small></div></div>
     <h3 class="hsec">ابدأ</h3>
@@ -5150,14 +5229,15 @@ async function showHome() {
     ${ui.lost?.length ? `<div class="hlost"><b>⚠️ في ${ui.lost.length} مشروع كان على الجهاز ومش لاقيه دلوقتي:</b> ${ui.lost.map((x) => esc(x.name)).join(" · ")}<br><small>غالباً النظام مسح تخزين التطبيق (مساحة قليلة، أو التطبيق اتنزّل من جديد). جرّب الاسترجاع — ومن النسخة دي كل مشروع بيتحفظ كمان كملف في «الملفات».</small><div><button class="sm" data-hrecover>🛟 استرجاع</button><button class="sm" data-hlostok>تمام، فاهم</button></div></div>` : ""}
     <div class="hprojhead"><h3 class="hsec">مشاريعي</h3><input id="homeQ" class="libq" placeholder="🔍 دوّر باسم المشروع" value="${esc(ui.homeQ || "")}">
       <div class="seg hfilt">${[["all", "الكل"], ["wait", `📐 مستني تصميم${waiting ? ` (${waiting})` : ""}`], ["srv", "بيترفع"]].map(([k, l]) => `<button data-hf="${k}" class="${f === k ? "on" : ""}">${l}</button>`).join("")}</div></div>
-    <div class="homelist">${shown.map((x) => `<div class="hcard ${x.id === state.project.id ? "cur" : ""}"><button class="hopen" data-hopen="${x.id}"><b>${esc(x.name)}</b>
+    <div class="homelist">${shown.map((x) => `<div class="hcard ${x.id === state.project.id ? "cur" : ""}" data-hname="${esc(String(x.name ?? ""))}"${q && !String(x.name).includes(q) ? ' style="display:none"' : ""}><button class="hopen" data-hopen="${x.id}"><b>${esc(x.name)}</b>
       ${x.srv === "measured" && !x.stages?.design?.done ? `<span class="hstage svwait">📐 اترفع — مستني تصميم</span>` : x.srv === "measuring" ? `<span class="hstage">📐 الرفع لسه شغال</span>` : x.stages && Object.values(x.stages).some((v) => v?.done) ? `<span class="hstage">🧭 ${esc(stageNow({ stages: x.stages }).cur)}</span>` : ""}
       ${x.stages ? pulseStrip(x) : ""}
       <small>${x.units != null ? `${x.units} وحدة · ` : ""}${x.variants > 1 ? `${x.variants} نسخ · ` : ""}${x.total ? `${money(x.total)} ج · ` : ""}${when(x.updatedAt)}${x.where === "cloud" ? " · أونلاين" : x.where === "both" ? " · على الجهاز وأونلاين" : ""}</small></button>
-      ${x.srv ? `<button class="hdel sm" data-hsv="${x.id}" title="شاشة الرفع" aria-label="شاشة الرفع">📐</button>` : ""}<button class="hdel sm" data-hdup="${x.id}" title="اعمل نسخة من المشروع" aria-label="نسخة من ${esc(x.name)}">⧉</button><button class="hdel danger sm" data-hdel="${x.id}" aria-label="امسح ${esc(x.name)}">${ICON.trash}</button></div>`).join("") || `<p class="hint">${q || f !== "all" ? "مفيش مشاريع بالبحث ده." : "مفيش مشاريع لسه — ابدأ مشروع جديد."}</p>`}</div>
+      ${x.srv ? `<button class="hdel sm" data-hsv="${x.id}" title="شاشة الرفع" aria-label="شاشة الرفع">📐</button>` : ""}<button class="hdel sm" data-hdup="${x.id}" title="اعمل نسخة من المشروع" aria-label="نسخة من ${esc(x.name)}">⧉</button><button class="hdel danger sm" data-hdel="${x.id}" aria-label="امسح ${esc(x.name)}">${ICON.trash}</button></div>`).join("") || `<p class="hint">${f !== "all" ? "مفيش مشاريع بالبحث ده." : "مفيش مشاريع لسه — ابدأ مشروع جديد."}</p>`}</div>
     <h3 class="hsec">أدوات</h3>
     <div class="homeacts"><label class="ghost2 filebtn">📂 افتح ملف مشروع<input type="file" id="homeImp" accept=".json,application/json" hidden></label><button class="ghost2" data-hrecover>🛟 استرجاع مشروع</button><button class="ghost2" data-hdefs>⚙ الإعدادات الافتراضية</button><button class="ghost2" data-hbrand>🏷 هوية المصنع</button><button class="ghost2" data-hlook>🎨 المظهر والكيبورد</button><button class="ghost2" data-habout>ⓘ عن التطبيق</button><button class="ghost2" data-hlang data-noi18n>🌐 ${I18n.lang === "en" ? "عربي" : "English"}</button></div>
     <p class="hint">المشاريع بتتحفظ لوحدها وانت شغال. خد نسخة احتياطي من ☰ ← تصدير ← نسخة من المشروع.</p></div>`;
+  homeFilterQ();
 }
 async function refreshProjects() {
   if (!cloud.db || !cloud.me) return;
@@ -5761,6 +5841,14 @@ const view = {
     step();
   },
   /** "render" look: time of day, soft shadows, image-based lighting, ceiling spots, LED light, AO + bloom, filmic tone mapping */
+  /** the ground's material: made again only when it really changes, the old one freed (the tile texture is shared) */
+  setFloorMat(key, make) {
+    if (this.floorKey === key && this.floor.material) return;
+    const old = this.floor.material;
+    this.floor.material = make();
+    this.floorKey = key;
+    if (old && old !== this.floor.material) old.dispose?.();
+  },
   async applyRender(box, dark) {
     const THREE = this.three, on = !!state.render, r = this.ren;
     const sc = (this.sceneSettings = Render.sceneOf(state));
@@ -5771,12 +5859,12 @@ const view = {
     this.sun.castShadow = on;
     this.floor.receiveShadow = on;
     if (!on) {
-      if (this.rig) { this.scene.remove(this.rig); this.rig = null; }
+      if (this.rig) { this.scene.remove(this.rig); this.rig.traverse((o) => { o.dispose?.(); o.geometry?.dispose?.(); for (const m of [].concat(o.material || [])) m.dispose?.(); }); this.rig = null; }
       this.hemi.intensity = 1.6; this.sun.intensity = 1.4; this.sun.color.set(0xffffff); this.sun.visible = true; this.fill.intensity = 0.7;
       this.sun.position.set(-150, 300, 260); this.sun.target.position.set(0, 0, 0);
       this.scene.environment = null;
       this.scene.background = null;
-      this.floor.material = new THREE.MeshLambertMaterial({ color: dark ? 0x26302a : 0xdedfd8 });
+      this.setFloorMat("plain:" + dark, () => new THREE.MeshLambertMaterial({ color: dark ? 0x26302a : 0xdedfd8 }));
       this.floor.position.y = -0.05;
       this.dirty = true;
       return;
@@ -5806,7 +5894,7 @@ const view = {
     const proj = ui.mode === "client" ? ui.sharedProject : state.project;
     const closedRoom = !!(proj?.room?.closed && wholeView() && proj.room.floor?.finish !== "none");
     this.floor.position.y = closedRoom ? -0.5 : -0.05;
-    this.floor.material = closedRoom ? new THREE.MeshStandardMaterial({ color: dark ? T.bgDark : T.bg, roughness: 0.9 }) : new THREE.MeshStandardMaterial({ map: this.floorTex, roughness: 0.35 });
+    this.setFloorMat(closedRoom ? `room:${dark ? T.bgDark : T.bg}` : "tiles", () => (closedRoom ? new THREE.MeshStandardMaterial({ color: dark ? T.bgDark : T.bg, roughness: 0.9 }) : new THREE.MeshStandardMaterial({ map: this.floorTex, roughness: 0.35 })));
     this.group?.traverse((o) => {
       if (!o.isMesh || o === this.floor) return;
       o.castShadow = !o.userData.wall && !o.material?.transparent && !o.userData.led;
@@ -6535,6 +6623,7 @@ function grainOf(u, pt, lib) {
   const ov = u?.grainOv?.[pt.name];
   if (ov === "free") return null;
   if (ov === "h" || ov === "w") return ov;
+  if (pt.grainAxis === "h" || pt.grainAxis === "w") return pt.grainAxis; // set on the board in the studio
   const P = grainPolicy(u);
   const grained = (lib || "").startsWith("wood_") || !!lb.grain || P.applies === "all";
   if (!grained) return null;
@@ -6658,7 +6747,9 @@ function groupSheet(g) {
 }
 let worker = null;
 try { worker = new Worker(new URL("./cutworker.js", import.meta.url), { type: "module" }); } catch { worker = null; }
-let cutReq = 0, cutData = null, cutKey = "";
+let cutReq = 0, cutData = null, cutKey = "", cutWaiters = [];
+/** forget the cut plan (another project is open now — its plan must never show this one's sheets / prices) */
+function resetCut() { cutData = null; cutKey = ""; cutReq++; const w = cutWaiters; cutWaiters = []; if (w.length) setTimeout(() => { for (const f of w) runCut(f); }, 0); }
 /** how the offcuts in stock are used: "first" (before new sheets), "pick" (only the ones I tick), "off" */
 const stockMode = () => state.cutOpts?.stockMode || (state.cutOpts?.useStock === false ? "off" : "first");
 /** is this offcut used by the cut plan of this project (never its own offcuts) */
@@ -6678,17 +6769,25 @@ function runCut(after) {
   const o = cutOptsSafe();
   const opts = { sheetW: +o.sheetW, sheetH: +o.sheetH, kerf: +o.kerf, trim: +o.trim };
   for (const g of groups) { g.remnants = (state.stock?.[g.key]?.remnants || []).filter(remUsed).map((r) => [+r.w, +r.h]); g.sheet = groupSheet(g); }
+  const pid = state.project.id;
   const key = JSON.stringify([groups.map((g) => [g.key, g.parts, g.remnants, g.sheet]), opts]);
+  if (cutData && cutData.pid !== pid) { cutData = null; cutKey = ""; }
   if (key === cutKey && cutData && !cutData.busy) { after ? after() : drawCut(); return; }
+  // the same plan is already being worked out: wait for it (every caller gets its answer)
+  if (key === cutKey && cutData?.busy) { if (after) cutWaiters.push(after); else drawCut(); return; }
   cutKey = key;
+  if (after) cutWaiters.push(after);
   const id = ++cutReq;
-  cutData = { busy: true, groups, outside, opts, results: null };
+  cutData = { busy: true, pid, key, groups, outside, opts, results: null };
   if (!after) drawCut();
   const plain = () => groups.map((g) => ({ key: g.key, result: optimize(g.parts.map(({ name, w, h, rotate }) => ({ name, w, h, rotate })), { ...opts, sheetW: g.sheet.w, sheetH: g.sheet.h, remnants: g.remnants, timeCap: 6 }) }));
   const done = (out) => {
     if (id !== cutReq) return;
-    cutData = { busy: false, groups, outside, opts, results: Object.fromEntries(out.map((x) => [x.key, x.result])) };
-    after ? after() : state.tab === "cut" && drawCut();
+    cutData = { busy: false, pid, key, groups, outside, opts, results: Object.fromEntries(out.map((x) => [x.key, x.result])) };
+    // a newer request replaced older ones: everyone who waited is answered by this plan
+    const w = cutWaiters; cutWaiters = [];
+    for (const f of w) { try { f(); } catch (err) { console.error(err); } }
+    if (!after && state.tab === "cut") drawCut();
   };
   if (worker) {
     worker.onmessage = (e) => { if (e.data.id === id) done(e.data.out); };
@@ -6702,7 +6801,11 @@ function sheetIndex() {
   if (!cutData?.results) return m;
   for (const g of cutData.groups) {
     const res = cutData.results[g.key];
-    res?.sheets.forEach((s, si) => s.placements.forEach((pl) => { const k = g.parts[pl.index]?.key; if (k && !m[k]) m[k] = `لوح ${si + 1} · ${g.key}`; }));
+    res?.sheets.forEach((s, si) => s.placements.forEach((pl) => {
+      const part = g.parts[pl.index]; if (!part) return;
+      // a merged drawer-front strip carries the keys of all its fronts (code "K01-04·K01-05…")
+      for (const k of [part.key, part.code, ...(part.strip || []).map((x) => x.code)]) if (k && !m[k]) m[k] = `لوح ${si + 1} · ${g.key}`;
+    }));
   }
   return m;
 }
@@ -6789,7 +6892,8 @@ function leftovers(min = +(state.cutOpts?.leftMin ?? 30)) {
   return cutData.groups.map((g) => {
     const res = cutData.results[g.key];
     const list = [];
-    res.sheets.forEach((sh, i) => { for (const o of sh.offcuts || []) if (Math.min(o.w, o.h) >= min) list.push({ w: Math.round(Math.max(o.w, o.h) * 10) / 10, h: Math.round(Math.min(o.w, o.h) * 10) / 10, sheet: i + 1 }); });
+    // kept as they lie on the sheet (w along the sheet's length = the grain axis), not turned to the longer side
+    res.sheets.forEach((sh, i) => { for (const o of sh.offcuts || []) if (Math.min(o.w, o.h) >= min) list.push({ w: Math.floor(o.w * 10) / 10, h: Math.floor(o.h * 10) / 10, sheet: i + 1 }); });
     list.sort((a, b) => b.w * b.h - a.w * a.h);
     const area = list.reduce((a, o) => a + (o.w * o.h) / 10000, 0);
     const sheetA = res.sheets.reduce((a, sh) => a + (sh.w * sh.h) / 10000, 0);
@@ -6821,7 +6925,7 @@ $("#v-cut").addEventListener("click", async (e) => {
     let n = 0;
     const pid = state.project.id, list = leftovers();
     for (const k of Object.keys(state.stock || {})) state.stock[k].remnants = (state.stock[k].remnants || []).filter((r) => r.from !== pid);
-    for (const x of list) { const st = stockOf(x.key); for (const o of x.list) { st.remnants.push({ id: uid(), w: Math.round(o.w), h: Math.round(o.h), from: pid, fromName: state.project.name }); n++; } }
+    for (const x of list) { const st = stockOf(x.key); for (const o of x.list) { st.remnants.push({ id: uid(), w: Math.floor(o.w), h: Math.floor(o.h), from: pid, fromName: state.project.name }); n++; } }
     save(); alertBar(`اتضاف ${n} باقي للمخزن — هيتستخدموا في المشاريع الجاية (الورشة والعميل ← المخزن).`); return;
   }
 });
@@ -7640,7 +7744,7 @@ function designChecks(project = state.project) {
         if (o.row !== "upper" || o.pose.wall !== hobIt.pose.wall) continue;
         const g = gapOn(hobIt, o);
         if (g == null || g > -5) continue;
-        const hp = prm(hobIt), hobTop = hp.unit_category === "cooker_gap" ? (+hp.cooker_base_height || 0) + 85 : (+hp.height || 72) + (+hp.toe_kick_height || 10) + (+hp.countertop_thickness || 3.8);
+        const hp = prm(hobIt), hobTop = hp.unit_category === "cooker_gap" ? (+hp.cooker_base_height || 0) + 85 : (+hp.height || 72) + (hp.include_toe_kick === false || hp.include_toe_kick === "false" ? 0 : +hp.toe_kick_height || 10) + (+hp.countertop_thickness || 3.8);
         const hoodBottom = +prm(o).wall_mount_height || 140; // a built-in hood hangs inside the unit: its bottom is the unit's bottom
         const clear = hoodBottom - hobTop;
         if (clear < 65) add("w", `${label(o)} فوق البوتجاز على ${n1(clear)} سم بس — الشفاط محتاج 65 سم على الأقل (غاز 75).`, o.id);
@@ -8079,8 +8183,19 @@ function m2Price(g, P = priceDefaults()) {
   const sh = g.sheet || groupSheet(g), sp = +P.sheets[g.key] || +P.defaultSheet || 0;
   return sp ? sp / ((sh.w * sh.h) / 10000) : 0;
 }
+/** running metres of a unit's countertop: ONE outline per unit (a sink cut-out splits it into 4 meshes), an L corner = both legs less the shared depth */
+const CTR_RX = /كونتر|countertop/i;
+function ctrMetres(r) {
+  let b = null;
+  for (const x of r.meshes || []) if (x.box && CTR_RX.test(`${x.name || ""} ${x.mat || ""}`)) {
+    b = b ? { x0: Math.min(b.x0, x.box.x0), x1: Math.max(b.x1, x.box.x1), y0: Math.min(b.y0, x.box.y0), y1: Math.max(b.y1, x.box.y1) } : { ...x.box };
+  }
+  if (!b) return 0;
+  const w = b.x1 - b.x0, d = b.y1 - b.y0;
+  return (w > 75 && d > 75 ? w + d - 60 : Math.max(w, d)) / 100;
+}
 function quoteCalc() {
-  if (!cutData?.results) return null;
+  if (!cutData?.results || cutData.pid !== state.project.id) return null;
   const P = priceDefaults();
   const byArea = true, wf = 1 + (+P.waste || 0) / 100;
   const roleOf = (kind) => (kind === "front" ? "front" : kind === "back" ? "back" : kind === "box" ? "box" : "body");
@@ -8140,8 +8255,7 @@ function quoteCalc() {
   let ctrM = 0;
   for (const u of state.project.units) {
     const r = R(u); if (!r.ok) continue;
-    let m = 0;
-    for (const x of r.meshes || []) if (x.box && /كونتر|countertop/i.test(`${x.name || ""} ${x.mat || ""}`)) { const w = x.box.x1 - x.box.x0, d = x.box.y1 - x.box.y0; m += (w > 75 && d > 75 ? w + d - 60 : Math.max(w, d)) / 100; }
+    const m = ctrMetres(r);
     if (m > 0) { ctrM += m; addU(u.id, m * (+P.ctr || 0)); }
   }
   if (ctrM > 0) { const q = Math.round(ctrM * 100) / 100; lines.push({ k: "ctr", label: "كونتر (رخام / كوارتز) — متر طولي", qty: q, unit: "م", price: +P.ctr || 0, total: q * (+P.ctr || 0) }); mat += q * (+P.ctr || 0); }
@@ -8154,7 +8268,8 @@ function quoteCalc() {
   const cost = mat + band + hwT + labor;
   const total = cost * (1 + (+P.margin || 0) / 100);
   let usedA = 0, sheetA = 0;
-  for (const g of cutData.groups) for (const sh of cutData.results[g.key].sheets) { sheetA += sh.w * sh.h; usedA += (sh.util || 0) * sh.w * sh.h; }
+  // waste = what is not inside a piece, over the whole board (the trimmed edge counts as waste too)
+  for (const g of cutData.groups) for (const sh of cutData.results[g.key].sheets) { sheetA += sh.w * sh.h; for (const pl of sh.placements || []) usedA += pl.w * pl.h; }
   const waste = sheetA ? Math.round((1 - usedA / sheetA) * 100) : null;
   // the client sees one price per unit
   let perUnit;
@@ -8407,7 +8522,8 @@ async function exportCutPdf() {
     const res = results[g.key];
     res.sheets.forEach((s, si) => {
       const svg = sheetSvg(s, si, g).match(/<svg[\s\S]*?<\/svg>/)[0].replace("<svg ", `<svg xmlns="http://www.w3.org/2000/svg" `);
-      const W = 1414, boxW = 980, boxH = (boxW * (s.h + 4)) / (s.w + 4);
+      // fit the sheet in the page both ways (a tall / portrait sheet used to run off the bottom)
+      const W = 1414, fitW = 980, fitH = 720, k = Math.min(fitW / (s.w + 4), fitH / (s.h + 4)), boxW = (s.w + 4) * k, boxH = (s.h + 4) * k;
       let t = `<text x="${W - 30}" y="104" font-size="22" font-weight="700" text-anchor="end">${esc(g.key)} — لوح ${si + 1} من ${res.sheets.length}</text>
         <text x="${W - 30}" y="134" font-size="15" fill="#555" text-anchor="end">${s.w} × ${s.h} سم · استغلال ${Math.round(s.util * 100)}% · ${s.placements.length} قطعة</text>`;
       t += nest(svg.replace(/class="sh"/g, 'fill="#fff" stroke="#111" stroke-width=".6"').replace(/class="off"/g, 'fill="#e6e6e0" stroke="#999" stroke-width=".3" stroke-dasharray="2 1.5"').replace(/class="pc"/g, 'stroke="#123f23" stroke-width=".5" fill-opacity=".85"').replace(/class="pcode"/g, 'font-weight="800"').replace(/class="dim"/g, ""), 1414 - 30 - boxW, 160, boxW, boxH);
@@ -8467,7 +8583,7 @@ async function exportLabelsPdf() {
     let t = "";
     pieces.slice(i, i + 21).forEach((pc, k) => {
       const col = k % 3, row = Math.floor(k / 3);
-      t += label(pc, (6 + col * 66) * mm, (12 + row * 41) * mm);
+      t += label(pc, (6 + col * 66) * mm, (8.5 + row * 40) * mm); // 7 rows of 40 mm end at 288.5 mm — inside the 297 mm page
     });
     pages.push(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1414" width="1000" height="1414" ${PFONT}><rect width="1000" height="1414" fill="#fff"/>${t}</svg>`);
   }
@@ -8562,16 +8678,19 @@ function cncOps(pc) {
   const mm = (v) => Math.round(v * 100) / 10;
   const u = state.project.units[pc.unitIdx], p = R(u).params || {};
   const W = mm(lb.w), H = mm(lb.h), T = mm(lb.t);
-  const op = { key: pc.key, unit: pc.unit, name: pt.name, mat: pc.mname, W, H, T, outline: null, cutouts: [], pockets: [], drills: [], grooves: [], note: [pt.note, ...(pt.checks || [])].filter(Boolean).join(" | "), banded: lb.banded || {}, bandAll: !!pt.band_all_sides, grain: !!lb.grain };
+  const op = { key: pc.key, unit: pc.unit, name: pt.name, mat: pc.mname, W, H, T, outline: null, cutouts: [], pockets: [], drills: [], grooves: [], note: [pt.note, ...(pt.checks || [])].filter(Boolean).join(" | "), banded: lb.banded || {}, bandAll: !!pt.band_all_sides, grain: !!pc.grain, grainAxis: pc.grain || null };
   if (pt.cnc?.outline?.length) {
     const P = (l) => l.map(([x, y]) => [mm(x), mm(y)]);
     op.outline = P(pt.cnc.outline);
     for (const h of pt.cnc.holes || []) op.cutouts.push(P(h));
     for (const pk of pt.cnc.pockets || []) op.pockets.push({ loop: P(pk.loop), z: mm(pk.depth), face: pk.face === "bottom" ? "back" : "front" });
   }
+  // drill depths from the unit's own assembly settings (face hole / cam), never through the board (T − 2 mm at most)
+  const AN = alitaNums(u), zMax = Math.max(1, T - 2);
   for (const ho of pt.holes || []) {
-    const dia = mm(ho.d || (ho.kind === "cam" ? 1.5 : ho.kind === "pin" ? 0.5 : 0.8));
-    const z = ho.kind === "cam" ? 13 : ho.kind === "pin" || dia <= 5 ? 10 : Math.min(12, Math.max(8, Math.round(T * 0.65)));
+    const dia = mm(ho.d || (ho.kind === "cam" ? AN.cd : ho.kind === "pin" ? 0.5 : AN.d));
+    const z0 = ho.kind === "cam" ? mm(AN.cdep) : ho.kind === "pin" || dia <= 5 ? 10 : mm(AN.fd);
+    const z = Math.min(zMax, Math.max(1, z0));
     op.drills.push({ x: Math.round(ho.w * W * 10) / 10, y: Math.round(ho.h * H * 10) / 10, d: dia, z, kind: ho.kind || "sys" });
   }
   const dl = pt.door_label;
@@ -8791,13 +8910,22 @@ async function exportAR() {
       // (an older app build, or the viewer failed silently) → the save pop, so there is always a way forward
       let bin = "";
       for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+      // one request at a time: a newer export ends the older one's wait, and a stale timeout / answer never touches the newer one
+      const tok = (exportAR.tok = (exportAR.tok || 0) + 1);
+      exportAR.cancel?.();
       const answer = new Promise((res) => {
-        const t = setTimeout(() => { window.noveraARDone = null; res({ ok: false, how: "", msg: "" }); }, 10000);
-        window.noveraARDone = (ok, how, msg) => { clearTimeout(t); window.noveraARDone = null; res({ ok, how, msg }); };
+        let mine = null;
+        const end = (v) => { clearTimeout(t); if (window.noveraARDone === mine) window.noveraARDone = null; if (exportAR.cancel === cancel) exportAR.cancel = null; res(v); };
+        const cancel = () => end({ stale: true });
+        const t = setTimeout(() => end({ ok: false, how: "", msg: "" }), 10000);
+        mine = (ok, how, msg) => end({ ok, how, msg });
+        window.noveraARDone = mine;
+        exportAR.cancel = cancel;
       });
-      nat.postMessage({ name, b64: btoa(bin) });
+      nat.postMessage({ name, b64: btoa(bin), token: tok });
       bin = "";
       const a = await answer;
+      if (a.stale || tok !== exportAR.tok) return "declined"; // a newer AR export took over
       if (a.ok && a.how === "ar") return "shared";
       if (a.ok && a.how === "share") { alertBar("الجهاز ده مفيهوش AR — احفظ الملف وافتحه من «الملفات» على آيفون أو آيباد."); return "shared"; }
       ui.arFile.err = a.msg || "الـAR ما فتحش من جوه التطبيق.";
@@ -8840,8 +8968,11 @@ function quickEstimate(units) {
   const P = priceDefaults();
   const o = state.cutOpts;
   const sheetA = (+o.sheetW || 244) * (+o.sheetH || 122);
-  const { groups } = cutGroups({ ...state.project, units: clone(units) });
+  const { groups, outside } = cutGroups({ ...state.project, units: clone(units) });
   let mat = 0, missing = 0, sheets = 0;
+  // like quoteCalc: pieces bought from suppliers (glass / stone / metal, by m²) and the countertop (running metre)
+  P.out ??= {};
+  for (const pc of outside || []) mat += (((+pc.lb?.w || 0) * (+pc.lb?.h || 0)) / 10000) * (+P.out[pc.mname || "خامة من مورّد"] || 0);
   for (const g of groups) {
     const a = g.parts.reduce((s, x) => s + x.w * x.h, 0);
     const gs = groupSheet(g);
@@ -8857,6 +8988,7 @@ function quickEstimate(units) {
     const r = R(u);
     if (!r.ok) continue;
     ok++; pieces += r.pieces || 0; band += r.banding;
+    mat += ctrMetres(r) * (+P.ctr || 0);
     for (const pt of r.parts) if (pt.cut_piece && pt.label) area += (pt.label.w * pt.label.h) / 10000;
     for (const [k, q] of Object.entries(r.hardware || {})) hw[k] = (hw[k] || 0) + (+q || 0);
   }
@@ -8955,7 +9087,8 @@ const AK_TIERS = {
 /** chains of walls that meet at right angles: [[seg], [seg, seg], [seg, seg, seg]] */
 function wallChains(room) {
   const segs = Room.segments(room).filter((s) => s.L >= 100);
-  const meets = (a, b) => Math.hypot(a.B[0] - b.A[0], a.B[1] - b.A[1]) < 1 && Math.abs(a.d[0] * b.d[0] + a.d[1] * b.d[1]) < 0.2;
+  // b must turn INTO the room (along a's inside normal) — an inward-sticking (reflex) corner can't take an L / U run
+  const meets = (a, b) => Math.hypot(a.B[0] - b.A[0], a.B[1] - b.A[1]) < 1 && Math.abs(a.d[0] * b.d[0] + a.d[1] * b.d[1]) < 0.2 && a.n[0] * b.d[0] + a.n[1] * b.d[1] > 0.5;
   const chains = [];
   for (const s of segs) {
     chains.push([s]);
@@ -9107,6 +9240,8 @@ function autoKitchen(room, chain, tier) {
     const xs = [lo, hi, (lo + hi) / 2, ...Array.from({ length: 5 }, (_, i) => lo + ((hi - lo) * (i + 1)) / 6)];
     for (const x of xs) {
       if (r === sinkRun) { const g = x + hobW <= sinkA ? sinkA - x - hobW : x - sinkA - sinkW; if (g < 30) continue; }
+      // never under a window (the hood needs the wall above the hob)
+      if (r.bl.windows.some((o) => x < +o.at + +o.w && x + hobW > +o.at)) continue;
       const c = at(r.seg, x + hobW / 2);
       const tri = D(c, sinkC) + (frC ? D(c, frC) + D(frC, sinkC) : D(c, sinkC) + 200);
       const score = Math.abs(tri - 550) + (tri > 790 ? (tri - 790) * 3 : 0) + (r === sinkRun && chain.length > 1 ? 40 : 0);
@@ -9280,7 +9415,9 @@ function takeStock(undo) {
         if (i >= 0) removed.push(...st.remnants.splice(i, 1));
       }
       const added = [];
-      for (const s of res.sheets) for (const o of s.offcuts || []) if (Math.min(o.w, o.h) >= 30) { const r = { id: uid(), w: Math.round(o.w), h: Math.round(o.h) }; st.remnants.push(r); added.push(r.id); }
+      // tagged with this project so its own plan never cuts from them; skipped when «خزّنها في المخزن» already stored them
+      const already = st.remnants.some((r) => r.from === p.id);
+      if (!already) for (const s of res.sheets) for (const o of s.offcuts || []) if (Math.min(o.w, o.h) >= 30) { const r = { id: uid(), w: Math.floor(o.w), h: Math.floor(o.h), from: p.id, fromName: p.name }; st.remnants.push(r); added.push(r.id); }
       rec.moves.push({ key: g.key, sheets: take, removed, added });
     }
     p.stockTaken = rec;
@@ -9306,7 +9443,7 @@ function stagesHtml() {
   for (const [k, l] of PSTAGES) {
     const s = st[k] || {};
     h += `<div class="strow ${s.done ? "on" : ""}"><label class="f b"><input type="checkbox" data-stg="${k}" ${s.done ? "checked" : ""}><span>${l}</span></label>
-      <input type="date" data-stgdate="${k}" value="${s.done ? s.done.slice(0, 10) : s.plan || ""}" aria-label="التاريخ"><input data-stgby="${k}" value="${esc(s.by || "")}" placeholder="مين" aria-label="المسؤول"></div>`;
+      <input type="date" data-stgdate="${k}" value="${s.done ? (typeof s.done === "string" ? s.done.slice(0, 10) : s.date || "") : s.plan || ""}" aria-label="التاريخ"><input data-stgby="${k}" value="${esc(s.by || "")}" placeholder="مين" aria-label="المسؤول"></div>`;
   }
   const P = priceDefaults(); P.lead ??= { ...LEAD_DEF };
   h += `</div><div class="btnrow"><button class="ghost2" data-autosched>📅 جدول تلقائي للمراحل الباقية</button><details class="leadbox"><summary>مدة كل مرحلة (أيام)</summary><div class="leadgrid">${PSTAGES.filter(([k]) => k !== "measure").map(([k, l]) => `<label class="f"><span>${l}</span><input type="text" inputmode="numeric" data-numf data-lead="${k}" value="${P.lead[k] ?? LEAD_DEF[k]}"></label>`).join("")}</div></details></div>`;
@@ -9319,7 +9456,7 @@ const b64url = (s) => btoa(unescape(encodeURIComponent(s))).replace(/\+/g, "-").
 function warrantyUrl(u) {
   const P = priceDefaults(), r = R(u);
   const care = u.kind === "kitchen" ? "k" : u.kind === "dressing" ? "d" : r.params?.environment === "wet" ? "b" : "f";
-  const d = { f: P.factory || "NOVERA", p: P.phone || "", pr: state.project.name, c: u.code, n: u.name, dm: dimsText(u, r), dt: (stagesOf().install?.done || new Date().toISOString()).slice(0, 10), w: P.warranty || "", k: care, m: Object.values(r.names || {}).filter(Boolean).slice(0, 3).join(" · ") };
+  const d = { f: P.factory || "NOVERA", p: P.phone || "", pr: state.project.name, c: u.code, n: u.name, dm: dimsText(u, r), dt: (typeof stagesOf().install?.done === "string" ? stagesOf().install.done : new Date().toISOString()).slice(0, 10), w: P.warranty || "", k: care, m: Object.values(r.names || {}).filter(Boolean).slice(0, 3).join(" · ") };
   return `${WARRANTY_URL}#d=${b64url(JSON.stringify(d))}`;
 }
 async function exportWarranty() {
@@ -9569,7 +9706,7 @@ const bandText = (pt) => { const b = pt.label?.banded || {}; if (pt.band_all_sid
 const PUR_CATS = [["boards", "🪵 ألواح"], ["band", "📏 شريط حواف"], ["hw", "🔩 هاردوير وإكسسوارات"], ["stone", "🪨 رخام / كوارتز"], ["glass", "🪟 زجاج ومرايات ومعدن"], ["appl", "🔌 أجهزة"], ["led", "💡 إضاءة"]];
 function suppliers() { const P = priceDefaults(); P.suppliers ??= []; P.supBy ??= {}; return P; }
 function purchaseData() {
-  if (!cutData?.results) return null;
+  if (!cutData?.results || cutData.pid !== state.project.id) return null;
   const P = priceDefaults();
   const out = { boards: [], band: [], hw: [], stone: [], glass: [], appl: [], led: [] };
   for (const g of cutData.groups) {
@@ -9593,7 +9730,7 @@ function purchaseData() {
   for (const pc of cutData.outside || []) { const k = pc.mname || "خامة من مورّد"; const o = outBy.get(k) || { a: 0, n: 0, dims: [] }; o.a += (pc.lb.w * pc.lb.h) / 10000; o.n++; o.dims.push(`${n1(pc.lb.w)}×${n1(pc.lb.h)}`); outBy.set(k, o); }
   for (const [k, o] of outBy) (STONE(Mat.findByName?.(k)?.id) || /رخام|كوارتز|جرانيت|marble|quartz/i.test(k) ? out.stone : out.glass).push({ name: k, qty: Math.round(o.a * 100) / 100, unit: "م²", note: `${o.n} قطعة: ${o.dims.slice(0, 6).join("، ")}${o.dims.length > 6 ? "…" : ""}`, price: +P.out?.[k] || 0 });
   let ctr = 0; const ctrN = new Set();
-  for (const u of state.project.units) { const r = R(u); if (!r.ok) continue; for (const x of r.meshes || []) if (x.box && /كونتر|countertop/i.test(`${x.name || ""} ${x.mat || ""}`)) { const w = x.box.x1 - x.box.x0, d = x.box.y1 - x.box.y0; ctr += (w > 75 && d > 75 ? w + d - 60 : Math.max(w, d)) / 100; ctrN.add(r.names?.countertop || "كونتر"); } }
+  for (const u of state.project.units) { const r = R(u); if (!r.ok) continue; const m = ctrMetres(r); if (m > 0) { ctr += m; ctrN.add(r.names?.countertop || "كونتر"); } }
   if (ctr > 0) out.stone.push({ name: `كونتر ${[...ctrN].join(" / ")}`, qty: Math.round(ctr * 100) / 100, unit: "م طولي", note: "بعمق 60 سم — بالتفصيل في المسقط", price: +P.ctr || 0 });
   for (const u of state.project.units) {
     const r = R(u); if (!r.ok || u.kind !== "kitchen") continue;
@@ -9608,7 +9745,7 @@ function purchaseData() {
     if (p.unit_category === "cooker_gap") add("cooker", "بوتجاز عادي", `فتحة ${n1(w)} سم`);
     if (p.unit_type === "wall" && (p.include_hood === true || p.include_hood === "true")) add("hood", "شفاط مدمج", `دولاب ${n1(w)} سم · فراغ ${n1(+p.hood_height || 18)} سم`);
     if (p.include_sink_cutout === true || p.include_sink_cutout === "true") add("sink", "حوض", `فتحة ${n1(+p.sink_cutout_width || w - 10)} × ${n1(+p.sink_cutout_depth || 45)} سم`);
-    if (/بوتجاز|مسطح|hob/i.test(`${p.unit_label || ""} ${u.name}`)) add("hob", "مسطح / بوتجاز بلت إن", `عرض ${n1(w)} سم`);
+    if (p.unit_category !== "cooker_gap" && /بوتجاز|مسطح|hob/i.test(`${p.unit_label || ""} ${u.name}`)) add("hob", "مسطح / بوتجاز بلت إن", `عرض ${n1(w)} سم`);
     if (!(p.include_hood === true || p.include_hood === "true") && /شفاط|hood/i.test(`${p.unit_label || ""} ${u.name}`)) add("hood", "شفاط", `عرض ${n1(w)} سم`);
   }
   for (const k of Object.keys(out)) out[k].forEach((l) => { l.total = l.price ? l.price * l.qty : 0; });
@@ -9677,7 +9814,7 @@ function autoSchedule(p = state.project, from = null) {
   const P = priceDefaults(); P.lead ??= { ...LEAD_DEF };
   const st = stagesOf(p);
   let cur = from ? new Date(from) : new Date();
-  for (const [k] of PSTAGES) { const s = st[k]; if (s?.done) cur = new Date(Math.max(cur, new Date(s.done))); }
+  for (const [k] of PSTAGES) { const s = st[k]; const t = s?.done ? new Date(typeof s.done === "string" ? s.done : s.date || 0) : null; if (t && !isNaN(t)) cur = new Date(Math.max(cur, t)); }
   for (const [k] of PSTAGES) {
     const s = (st[k] ??= {});
     if (s.done) continue;
@@ -9814,8 +9951,7 @@ function designHash() { return JSON.stringify(state.project.units.map((u) => [u.
 function signApprove() {
   const c = $("#v-shop #sigPad");
   if (!c?.dataset.inked) { alertBar("خلّي العميل يمضي الأول."); return; }
-  signApproveFrom(c, $("#v-shop [data-signame]")?.value);
-  drawShop();
+  signApproveFrom(c, $("#v-shop [data-signame]")?.value).then(() => drawShop());
 }
 /** the signature block at the end of the quote (and a flag if the design changed since) */
 function sigBlockSvg(y) {
@@ -9917,7 +10053,7 @@ function sayAr(text, lang = "ar") {
   try {
     speechSynthesis.cancel();
     const P = voicePrefs(), v = pickVoice(lang);
-    const parts = (lang === "ar" ? sayPrep(text) : String(text)).split(/(?<=[.!؟?])\s+|\n+/).map((x) => x.trim()).filter(Boolean);
+    const parts = (lang === "ar" ? sayPrep(text) : String(text)).replace(/([.!؟?])\s+/g, "$1\n").split(/\n+/).map((x) => x.trim()).filter(Boolean);
     for (const part of parts) {
       const m = new SpeechSynthesisUtterance(part);
       m.lang = v?.lang || (lang === "ar" ? "ar-EG" : "en-US"); if (v) m.voice = v;
@@ -10055,6 +10191,7 @@ function presentOn() {
   document.body.classList.add("present");
   render(true);
   renderPresent();
+  runCut(() => { if (ui.present) renderPresent(); }); // the price button needs this design's cut plan
   view.resize?.();
   setTimeout(() => view.preset("fit"), 120);
   if (!state.render) alertBar("💡 دوس «ريندر» لصورة واقعية — وممكن تلف المشهد بصباعك.");
@@ -10073,7 +10210,7 @@ function renderPresent() {
   if (!ui.present) return;
   let bar = $("#presentBar");
   if (!bar) { bar = document.createElement("div"); bar.id = "presentBar"; bar.className = "presentbar"; $(".stage").appendChild(bar); }
-  const o = state.project.clientOpts || { finishes: [] }, Q = cutData?.results ? quoteCalc() : null, B = brand();
+  const o = state.project.clientOpts || { finishes: [] }, Q = cutData?.results && cutData.pid === state.project.id ? quoteCalc() : null, B = brand();
   const fin = ui.present.lib, delta = fin ? +(o.finishes.find((f) => f.lib === fin)?.delta || 0) : 0;
   const views = state.project.views || [];
   bar.innerHTML = `<div class="pb-top"><b>${esc(B.name)}</b><span>${esc(state.project.name)}</span><button class="pb-x" data-pexit aria-label="خروج">✕</button></div>
@@ -10107,14 +10244,17 @@ function presentSign() {
   box.onclick = (e) => {
     if (e.target === box || e.target.closest("[data-psx]")) { box.hidden = true; box.innerHTML = ""; return; }
     if (e.target.closest("[data-sigwipe]")) { const c = box.querySelector("#sigPad"); c.getContext("2d").clearRect(0, 0, c.width, c.height); delete c.dataset.inked; return; }
-    if (e.target.closest("[data-sigok]")) { const c = box.querySelector("#sigPad"); if (!c?.dataset.inked) { alertBar("خلّي العميل يمضي الأول."); return; } signApproveFrom(c, box.querySelector("[data-signame]")?.value); box.hidden = true; box.innerHTML = ""; renderPresent(); return; }
+    if (e.target.closest("[data-sigok]")) { const c = box.querySelector("#sigPad"); if (!c?.dataset.inked) { alertBar("خلّي العميل يمضي الأول."); return; } const nm = box.querySelector("[data-signame]")?.value; signApproveFrom(c, nm).then(() => renderPresent()); box.hidden = true; box.innerHTML = ""; return; }
     if (e.target.closest("[data-sigclear]")) { state.project.approval = null; save(); box.hidden = true; box.innerHTML = ""; return; }
   };
 }
-function signApproveFrom(c, name) {
-  const Q = cutData?.results ? quoteCalc() : null;
+async function signApproveFrom(c, name) {
+  const sig = c.toDataURL("image/png"); // read the pad before the dialog closes
+  // the approved total must come from THIS design's cut plan, never a stale one
+  try { await cutReady(); } catch { /* priced without the plan */ }
+  const Q = cutData?.results && cutData.pid === state.project.id ? quoteCalc() : null;
   const delta = ui.present?.lib ? +(state.project.clientOpts?.finishes?.find((f) => f.lib === ui.present.lib)?.delta || 0) : 0;
-  state.project.approval = { status: "approved", at: new Date().toISOString(), name: (name || "").trim(), sig: c.toDataURL("image/png"), total: (Q?.total || 0) + delta, units: state.project.units.length, hash: designHash(), finish: ui.present?.lib || null, no: `Q-${new Date().toISOString().slice(2, 10).replace(/-/g, "")}-${state.project.id.slice(0, 4).toUpperCase()}` };
+  state.project.approval = { status: "approved", at: new Date().toISOString(), name: (name || "").trim(), sig, total: (Q?.total || 0) + delta, units: state.project.units.length, hash: designHash(), finish: ui.present?.lib || null, no: `Q-${new Date().toISOString().slice(2, 10).replace(/-/g, "")}-${state.project.id.slice(0, 4).toUpperCase()}` };
   const st = stagesOf(); st.approve = { done: new Date().toISOString(), by: state.project.approval.name || "العميل" };
   if (ui.present?.lib) { ui.present.orig = clone(state.project.units); ui.present.lib = null; }
   save(); renderSteps();
@@ -10129,8 +10269,14 @@ async function exportMachines() {
   const files = [];
   for (const f of Mach.mprZip(ops)) files.push({ name: `HOMAG woodWOP (MPR)/${f.name}`, data: f.data });
   for (const f of Mach.bppZip(ops)) files.push({ name: `Biesse (BPP)/${f.name}`, data: f.data });
-  files.push({ name: "Cutrite - parts.csv", data: "﻿" + Mach.cutriteParts(ops, { projectName: state.project.name }) });
-  files.push({ name: "Ardis - parts.csv", data: "﻿" + Mach.ardisParts(ops) });
+  // optimisers read "Length" as the grain direction: a piece whose grain runs along its width goes in turned (edges turned with it)
+  const byGrain = ops.map((o) => {
+    if (o.grainAxis !== "w") return o;
+    const b = o.banded || {};
+    return { ...o, W: o.H, H: o.W, banded: { left: !!b.top, right: !!b.bottom, top: !!b.left, bottom: !!b.right } };
+  });
+  files.push({ name: "Cutrite - parts.csv", data: "﻿" + Mach.cutriteParts(byGrain, { projectName: state.project.name }) });
+  files.push({ name: "Ardis - parts.csv", data: "﻿" + Mach.ardisParts(byGrain) });
   files.push({ name: "Edge bander - edges.csv", data: "﻿" + Mach.bandList(ops) });
   files.push({ name: "اقراني.txt", data: "NOVERA Studio — ملفات المكن الصناعي\r\n\r\n" + Mach.MACHINE_FORMATS.map(([, l, d]) => `• ${l}: ${d}`).join("\r\n") +
     "\r\n\r\nالملفات دي بتتولد من نفس قايمة القطع والأخرام بتاعة الـCNC (DXF). افتح ملف واحد الأول على المكنة واتأكد من اتجاه المحاور والتعويض قبل ما تشغّل الباقي.\r\nالأسماء العربية جوه ملفات MPR/BPP ممكن تظهر علامات استفهام على بعض المكن — رقم القطعة (K01-03) هو المرجع.\r\n" });
@@ -10376,11 +10522,15 @@ async function exportFinishCompare() {
 }
 
 // ================================================================== v47 — scan a label in the app (camera → piece card → tick the stage)
-const scan = { on: false, stream: null, raf: 0, det: null, lastHit: 0 };
+const scan = { on: false, stream: null, raf: 0, det: null, lastHit: 0, sess: 0 };
 function progressAll() { return { ...(state.project.progress || {}), ...(ui.ownerProgress || {}) }; }
 async function scanOpen() {
   let box = $("#scanBox");
   if (!box) { box = document.createElement("div"); box.id = "scanBox"; box.className = "libprev scanbox"; document.body.appendChild(box); }
+  // a new session: whatever an earlier one left running (camera, frame loop) stops first
+  cancelAnimationFrame(scan.raf);
+  if (scan.stream) { for (const t of scan.stream.getTracks()) t.stop(); scan.stream = null; }
+  const sess = ++scan.sess, live = () => scan.on && scan.sess === sess;
   box.hidden = false; scan.on = true;
   box.innerHTML = `<div class="lpcard scancard" role="dialog" aria-modal="true"><div class="lphead"><b>📷 امسح ملصق القطعة</b><button class="x" data-scx aria-label="قفل">×</button></div>
     <div class="scanstage"><video id="scanVid" playsinline muted autoplay></video><div class="scanframe"></div><p class="scanmsg">وجّه الكاميرا على الـQR اللي على الملصق…</p></div>
@@ -10401,25 +10551,30 @@ async function scanOpen() {
   }
   const vid = box.querySelector("#scanVid"), msg = box.querySelector(".scanmsg");
   try {
-    scan.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 } }, audio: false });
-    vid.srcObject = scan.stream; await vid.play();
-  } catch { msg.textContent = "الكاميرا مش متاحة — اكتب رقم القطعة تحت."; return; }
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 } }, audio: false });
+    // closed (or opened again) while the camera was starting: turn this one off
+    if (!live()) { for (const t of stream.getTracks()) t.stop(); return; }
+    scan.stream = stream;
+    vid.srcObject = stream; await vid.play();
+  } catch { if (live()) msg.textContent = "الكاميرا مش متاحة — اكتب رقم القطعة تحت."; return; }
+  if (!live()) return;
   // decoder: the browser's own, else jsQR from the CDN (web version only — the store build never loads remote code), else typing the code
   if ("BarcodeDetector" in window) { try { scan.det = new window.BarcodeDetector({ formats: ["qr_code"] }); } catch { scan.det = null; } }
   if (!scan.det && !window.jsQR && !STORE_BUILD) { try { await new Promise((res, rej) => { const sc = document.createElement("script"); sc.src = "https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js"; sc.onload = res; sc.onerror = rej; document.head.appendChild(sc); }); } catch { /* offline */ } }
+  if (!live()) return;
   if (!scan.det && !window.jsQR) { msg.textContent = "مش قادر أقرا الـQR على الجهاز ده — اكتب رقم القطعة تحت."; return; }
   const cv = document.createElement("canvas"), g = cv.getContext("2d", { willReadFrequently: true });
   const tick = async () => {
-    if (!scan.on) return;
+    if (!live()) return;
     if (vid.readyState >= 2 && performance.now() - scan.lastHit > 1500) {
       let text = null;
       try {
         if (scan.det) { const r = await scan.det.detect(vid); text = r[0]?.rawValue || null; }
         else { const w = 480, h = Math.round((vid.videoHeight / vid.videoWidth) * 480) || 360; cv.width = w; cv.height = h; g.drawImage(vid, 0, 0, w, h); const r = window.jsQR(g.getImageData(0, 0, w, h).data, w, h, { inversionAttempts: "dontInvert" }); text = r?.data || null; }
       } catch { text = null; }
-      if (text) { scan.lastHit = performance.now(); scanShow(text); }
+      if (text && live()) { scan.lastHit = performance.now(); scanShow(text); }
     }
-    scan.raf = requestAnimationFrame(tick);
+    if (live()) scan.raf = requestAnimationFrame(tick);
   };
   tick();
 }
@@ -11230,7 +11385,7 @@ function qcutPaste() {
   const u = qcutUnit(), list = u.params.pieces, txt = $("#qPaste")?.value || "";
   let n = 0;
   for (const line of txt.split(/\r?\n/)) {
-    const c = line.split(/\t|,|،|;/).map((x) => x.trim());
+    const c = pasteCells(line);
     if (c.length < 3) continue;
     const L = toNum(c[1]), W = toNum(c[2]), q = toNum(c[3]), T = toNum(c[4]);
     if (!(L > 0 && W > 0)) continue;
@@ -11279,7 +11434,15 @@ $("#v-qcut")?.addEventListener("click", async (e) => {
   }
 });
 
+/** v110: projects saved before v110 carry the old engine default hinge_cup_count = 2 in every edited kitchen unit — that was never a
+ *  user choice (hinges went by door height), so it goes back to "" = by height (the engine's new default). Runs once per project. */
+function migrateProject(p) {
+  if (!p || p.mig110) return;
+  for (const u of p.units || []) if (u.kind === "kitchen" && u.params && String(u.params.hinge_cup_count) === "2") u.params.hinge_cup_count = "";
+  p.mig110 = true;
+}
 function render(refit = false) {
+  migrateProject(state.project);
   ensureCodes(state.project);
   if (hist.pid !== state.project?.id) histTrack();
   renderSteps();
@@ -11421,13 +11584,15 @@ async function boot() {
     if (s.exists && s.data().updatedAt) {
       const v = s.data();
       const localAt = state.savedAt || "";
-      if (!localAt || v.updatedAt > localAt) { state.project = { id: state.project.id, name: v.name, units: v.units || [], ...(v.room ? { room: v.room } : {}), mats: v.mats || [], ...(v.stages ? { stages: v.stages } : {}), ...(v.survey ? { survey: v.survey } : {}) }; if (!state.project.units.find((u) => u.id === state.sel)) state.sel = state.project.units[0]?.id ?? null; render(true); }
+      if (!localAt || v.updatedAt > localAt) { state.project = projectFromCloud(state.project.id, v, state.project); for (const m of state.project.mats) Mat.register(m); state.savedAt = v.updatedAt; resetCut(); if (!state.project.units.find((u) => u.id === state.sel)) state.sel = state.project.units[0]?.id ?? null; render(true); }
       setCloud("saved");
     } else {
       const qs = await db.collection(`data/users/${cloud.me}`).orderBy("updatedAt", "desc").limit(1).get();
       if (!qs.empty && state.project.name === "مشروع تجريبي") {
         const d0 = qs.docs[0];
-        state.project = { id: d0.id.replace(/^p_/, ""), name: d0.data().name, units: d0.data().units || [] };
+        state.project = projectFromCloud(d0.id.replace(/^p_/, ""), d0.data());
+        for (const m of state.project.mats) Mat.register(m);
+        state.savedAt = d0.data().updatedAt || state.savedAt; resetCut();
         state.sel = state.project.units[0]?.id ?? null;
         render(true);
         setCloud("saved");
@@ -11442,7 +11607,7 @@ const _persist = persist;
 persist = function () { state.savedAt = new Date().toISOString(); _persist(); };
 const _render = render;
 let lastPid = state.project.id;
-render = function (refit) { _render(refit); if (state.project.id !== lastPid) { lastPid = state.project.id; watchOwnerShared(); } };
+render = function (refit) { if (cutData && cutData.pid !== state.project.id) resetCut(); _render(refit); if (state.project.id !== lastPid) { lastPid = state.project.id; watchOwnerShared(); } };
 Keypad.init({ enabled: () => state.kpad !== false });
 // ---- the surveyor's own screen (survey_ui.js) — separate from the design screen
 let svFrom = "home";
@@ -11517,4 +11682,4 @@ function cmdOpen() {
 function cmdClose() { const b = $("#cmdBox"); if (b) { b.hidden = true; b.innerHTML = ""; } }
 addEventListener("keydown", (e) => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); if ($("#cmdBox") && !$("#cmdBox").hidden) cmdClose(); else cmdOpen(); } });
 
-if (DEV) window.__dbg = { ergoData, exportAR, alitaJoints, stepJointsHtml, exportAsmBooklet, view, plan, R, render: (x) => render(x), ak: (t) => kitchenProposals(t), applyK: (u) => applyKitchen(u, null), checks: () => designChecks(), merge: (a, b) => mergeInto(a, b), get ui() { return ui; }, layout: asmLayout, libUnit, libSet, thumbs, openStudio: (u, x) => openStudio(u, x), exportUnitDrawings, exportPurchasePdf, exportPurchaseXlsx, renderPop, libAdd, exportQuotePdf, exportAsmBooklet, presentOn, presentOff, renderPresent, exportMachines, speakRun, applyLighting, setParams, cmdOpen, elev: (u) => unitElevSvg(u), cutReady, get cutData() { return cutData; }, projectPieces: () => projectPieces(state.project), workerOn, workerOff, renderWorker, zwLibPump, zwSolve, zwLibStore, zwLibPaint, ZW_LIB, get state() { return state; } };
+if (DEV) window.__dbg = { cmdItems: () => cmdItems(), exportLabelsPdf, exportCutPdf, quoteCalc, quickEstimate, purchaseData, takeStock, targetUnits, toggleMulti, multiToggle, showHome, openProject, exportCnc, ergoData, exportAR, alitaJoints, stepJointsHtml, exportAsmBooklet, view, plan, R, render: (x) => render(x), ak: (t) => kitchenProposals(t), applyK: (u) => applyKitchen(u, null), checks: () => designChecks(), merge: (a, b) => mergeInto(a, b), get ui() { return ui; }, layout: asmLayout, libUnit, libSet, thumbs, openStudio: (u, x) => openStudio(u, x), exportUnitDrawings, exportPurchasePdf, exportPurchaseXlsx, renderPop, libAdd, exportQuotePdf, exportAsmBooklet, presentOn, presentOff, renderPresent, exportMachines, speakRun, applyLighting, setParams, cmdOpen, elev: (u) => unitElevSvg(u), cutReady, get cutData() { return cutData; }, projectPieces: () => projectPieces(state.project), workerOn, workerOff, renderWorker, zwLibPump, zwSolve, zwLibStore, zwLibPaint, ZW_LIB, get state() { return state; } };

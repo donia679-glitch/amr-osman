@@ -247,9 +247,21 @@ export function arrange(room, items) {
   if (!room) corners.splice(0, corners.length, [segs[1], segs[0]]);
   // each row has its own corners: the base corner unit and the wall corner unit share the same room corner
   const ci = { lower: 0, upper: 0 };
+  // a corner already holding a pinned corner unit (of the same row) is not handed out again
+  const taken = { lower: new Set(), upper: new Set() };
+  for (const it of items) {
+    if (!it.corner || !it.pos || !out.has(it.id)) continue;
+    const P = out.get(it.id), rk = it.row === "upper" ? "upper" : "lower";
+    const mid = (pose) => { const f = footprint(pose, it.box); return [f.reduce((a, q) => a + q[0], 0) / f.length, f.reduce((a, q) => a + q[1], 0) / f.length]; };
+    const m0 = mid(P);
+    let bi = -1, bd = 40;
+    corners.forEach(([inc, o], i) => { const m1 = mid(poseInCorner(inc, o)), d = Math.hypot(m1[0] - m0[0], m1[1] - m0[1]); if (d < bd) { bd = d; bi = i; } });
+    if (bi >= 0) taken[rk].add(bi);
+  }
   for (const it of items) {
     if (out.has(it.id) || !it.corner) continue;
     const rk = it.row === "upper" ? "upper" : "lower";
+    while (ci[rk] < corners.length && taken[rk].has(ci[rk])) ci[rk]++;
     const c = corners[ci[rk]++];
     if (!c) continue;
     const [inc, outS] = c;
@@ -410,13 +422,20 @@ export function setCornerAngle(room, i, deg) {
   if (cur == null || !(deg > 0 && deg < 360)) return false;
   const delta = (sideOf(room) * (cur - deg) * Math.PI) / 180;
   const pts = room.pts, c = pts[i], cs = Math.cos(delta), sn = Math.sin(delta);
-  const last = pts.length - 1;
-  for (let k = i + 1; k <= last; k++) {
-    if (room.closed && k === 0) continue;
-    const v = sub(pts[k], c);
-    pts[k] = [r1(c[0] + v[0] * cs - v[1] * sn), r1(c[1] + v[0] * sn + v[1] * cs)];
-  }
-  return true;
+  const last = pts.length - 1, m = pts.length;
+  let moved = 0;
+  const turn = (k) => {
+    const v = sub(pts[k], c), q = [r1(c[0] + v[0] * cs - v[1] * sn), r1(c[1] + v[0] * sn + v[1] * cs)];
+    if (q[0] !== pts[k][0] || q[1] !== pts[k][1]) moved++;
+    pts[k] = q;
+  };
+  if (room.closed && (i === 0 || i === last)) {
+    // the first / last corner of a closed room: turn the walls after it round to the corner before it
+    // (the wall arriving there stretches to close the room) — never the whole room
+    const pred = (i - 1 + m) % m;
+    for (let k = (i + 1) % m; k !== pred && k !== i; k = (k + 1) % m) turn(k);
+  } else for (let k = i + 1; k <= last; k++) turn(k);
+  return moved > 0;
 }
 /** the next drawn point: length L from the last point, turning off the last wall so the inside angle is
  *  `inside` (90 = a normal corner), to the right (+1, room on the right) or left (-1) */
@@ -456,7 +475,14 @@ export function clampPoint(room, p) {
 export function removeWall(room, segIndex) {
   const w = room.walls[segIndex];
   if (!w) return;
-  room.openings = room.openings.filter((o) => o.wall !== w.id);
+  cutWall(room, segIndex);
+  // what stood on the walls that are gone goes with them (openings, electrical / plumbing points, wall columns)
+  const ids = new Set(room.walls.map((x) => x.id));
+  room.openings = (room.openings || []).filter((o) => ids.has(o.wall));
+  room.points = (room.points || []).filter((p) => !p.wall || ids.has(p.wall));
+  room.columns = (room.columns || []).filter((c) => !c.wall || ids.has(c.wall));
+}
+function cutWall(room, segIndex) {
   if (room.closed) { room.closed = false; room.pts = [...room.pts.slice(segIndex + 1), ...room.pts.slice(0, segIndex + 1)]; room.walls = [...room.walls.slice(segIndex + 1), ...room.walls.slice(0, segIndex)]; return; }
   if (segIndex === 0) { room.pts.shift(); room.walls.shift(); return; }
   if (segIndex === room.walls.length - 1) { room.pts.pop(); room.walls.pop(); return; }

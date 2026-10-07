@@ -78,7 +78,7 @@ function show(t) {
   if (!pad) build();
   const same = t === cur && pad.classList.contains("on"); // the same field taking the focus back (a tap on the background): keep what is typed
   if (cur && cur !== t && dirty) commit(cur); // tapped straight into another field: the number typed so far still counts
-  if (!same) { cur = t; fresh = true; dirty = false; }
+  if (!same) { cur = t; fresh = true; dirty = false; startVal = t.value; }
   pad.querySelector(".kplabel").textContent = labelOf(t);
   // the drawing studio's size box: sizes like 60,40 · x5 · /4 · 24s · −2 (a cut), and the pad off to the side
   const ex = t.hasAttribute("data-kpextra");
@@ -105,7 +105,7 @@ function hide(fromKey = false) {
   cur = null;
 }
 function sync() { if (pad && cur) pad.querySelector(".kpval").textContent = cur.value || "—"; }
-let dirty = false;
+let dirty = false, startVal = null;
 /** live = tell the app on every key (the survey's live notes); elsewhere the number waits for ✓ */
 const live = (t) => !!t?.closest?.("#survey");
 function put(v) {
@@ -117,8 +117,13 @@ function put(v) {
 /** hand the typed number to the app (input + change), once */
 function commit(t = cur) {
   if (!t) return;
+  // nothing typed and the value is what the field showed: no change event (a «change» with the shown value would
+  // overwrite every multi-selected unit with it)
+  const changed = dirty || (t === cur && t.value !== startVal);
+  if (!changed) return;
   if (dirty && !live(t)) t.dispatchEvent(new Event("input", { bubbles: true }));
   dirty = false;
+  if (t === cur) startVal = t.value;
   t.dispatchEvent(new Event("change", { bubbles: true }));
 }
 function step(dir) {
@@ -132,11 +137,27 @@ function step(dir) {
 function fields() {
   const root = cur.closest(".svbody, .props, .popbox, .svpopbox, #props, .cl-side, main, section") || document;
   return [...root.querySelectorAll("input:not([type=checkbox]):not([type=file]):not([type=range]):not([type=color]), textarea")]
-    .filter((x) => x.offsetParent !== null && !x.disabled && !x.closest("details:not([open])"));
+    .filter((x) => x.offsetParent !== null && !x.disabled && !x.closest("details:not([open])") && (x === cur || x.matches(SEL)));
 }
 const KEYS = ["data-num", "data-sv", "data-auto", "data-rw", "data-ro", "data-rp", "data-rc", "data-rf", "data-xnum", "id"];
 const NOT_KEY = new Set(["data-numf", "data-kpextra", "data-kpsolo", "data-inc", "data-neg", "data-keypad"]);
+/** a selector that finds the same field again after the panel is re-drawn — scoped by the nearest row
+ *  container (data-pi="3", data-qi …) when several rows share the same field attribute (data-pf="w") */
 function selOf(x) {
+  const base = selBase(x);
+  if (!base || !x.isConnected) return base;
+  const hits = document.querySelectorAll(base);
+  if (hits.length <= 1 && (!hits.length || hits[0] === x)) return base;
+  for (let a = x.parentElement; a && a !== document.body; a = a.parentElement) {
+    const at = [...a.attributes].find((q) => (q.name.startsWith("data-") || q.name === "id") && q.value);
+    if (!at) continue;
+    const scope = at.name === "id" ? `#${CSS.escape(at.value)}` : `[${at.name}="${CSS.escape(at.value)}"]`;
+    const sel = `${scope} ${base}`;
+    if (document.querySelector(sel) === x) return sel;
+  }
+  return base;
+}
+function selBase(x) {
   for (const k of KEYS) { const v = x.getAttribute(k); if (v) return k === "id" ? `#${CSS.escape(v)}` : `input[${k}="${CSS.escape(v)}"]`; }
   // any other data-* attribute with a value (data-price="sheets.X", data-co, data-def …), plus a second one when there is (data-gsz + data-gkey)
   const ds = [...x.attributes].filter((a) => a.name.startsWith("data-") && a.value && !NOT_KEY.has(a.name)).slice(0, 2);
@@ -145,6 +166,12 @@ function selOf(x) {
 function press(k, b) {
   if (!cur) return;
   b?.classList.add("hit"); setTimeout(() => b?.classList.remove("hit"), 120);
+  if (k === "ok" && cur.hasAttribute("data-kpsolo")) { // the studio's size box applies its value on Enter only
+    const t = cur;
+    commit(t);
+    t.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+    closedAt = Date.now(); hide(true); t.blur(); return;
+  }
   if (k === "close" || k === "ok") { closedAt = Date.now(); const t = cur; hide(true); t.blur(); return; }
   if (k === "next") {
     const t = cur;

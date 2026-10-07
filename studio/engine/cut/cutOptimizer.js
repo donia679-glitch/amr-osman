@@ -110,6 +110,9 @@ export function lowerBound(list, ctx) {
     return Math.max(Math.ceil((area - rem) / (ctx.uw * ctx.uh) - 1e-9), 0);
 }
 function better(a, b) {
+    // a plan that places more parts always wins (a part that only fits a remnant another part took is left out)
+    if ((a.dropped?.length || 0) !== (b.dropped?.length || 0))
+        return (a.dropped?.length || 0) < (b.dropped?.length || 0);
     if (a.full !== b.full)
         return a.full < b.full;
     if (a.remnants_used !== b.remnants_used)
@@ -161,6 +164,7 @@ function pack(list, order, fit, split, ctx) {
     const kerf = ctx.kerf;
     const bins = [];
     const remLeft = ctx.remnants.slice();
+    const dropped = [];
     for (const pi of order) {
         const [pw0, ph0, rot] = list[pi];
         let best = null;
@@ -192,8 +196,14 @@ function pack(list, order, fit, split, ctx) {
             best = tryRect(b.root, pw0, ph0, false, fit, bins.length - 1, null, b);
             if (rot)
                 best = tryRect(b.root, ph0, pw0, true, fit, bins.length - 1, best, b);
-            if (!best)
+            if (!best) {
+                // fits nothing left (only a remnant that is already used): report it, never lose it silently
+                bins.pop();
+                if (b.stock === "remnant")
+                    remLeft.push([b.w, b.h]);
+                dropped.push(pi);
                 continue;
+            }
         }
         place(best, pi, split, kerf, ctx.min_dim);
     }
@@ -202,6 +212,7 @@ function pack(list, order, fit, split, ctx) {
     const sheetsU = bins.filter((b) => b.stock === "sheet").map((b) => b.used / (b.w * b.h));
     return {
         bins,
+        dropped,
         full,
         remnants_used: bins.length - full,
         sq: sum(utils.map((u) => u * u)),
@@ -304,6 +315,13 @@ function place(best, pi, split, kerf, minDim) {
 // ------------------------------------------------------------------ result
 function finish(best, list, parts, oversized, ctx, trim, minOffcut, runs, secs) {
     const sheets = [];
+    if (best?.dropped?.length) {
+        oversized = oversized.slice();
+        for (const li of best.dropped) {
+            const it = list[li];
+            oversized.push({ name: String(parts[it[3]].name ?? ""), w: it[0], h: it[1], index: it[3] });
+        }
+    }
     if (best) {
         for (const b of best.bins) {
             const places = [];

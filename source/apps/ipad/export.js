@@ -112,7 +112,7 @@ export function pdfFromJpegs(pages, title = "NOVERA") {
   }
   objs[catalog - 1] = [`<< /Type /Catalog /Pages ${pagesObj} 0 R >>`];
   objs[pagesObj - 1] = [`<< /Type /Pages /Kids [${kids.map((k) => `${k} 0 R`).join(" ")}] /Count ${kids.length} >>`];
-  const info = add([`<< /Producer (NOVERA Studio) /Title <FEFF${[...title].map((c) => c.charCodeAt(0).toString(16).padStart(4, "0")).join("")}> >>`]);
+  const info = add([`<< /Producer (NOVERA Studio) /Title <FEFF${Array.from({ length: String(title).length }, (_, i) => String(title).charCodeAt(i).toString(16).padStart(4, "0")).join("")}> >>`]);
   const chunks = [u8("%PDF-1.4\n%âãÏÓ\n")];
   let pos = chunks[0].length;
   const xref = [];

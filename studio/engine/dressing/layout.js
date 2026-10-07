@@ -870,9 +870,8 @@ export class Engine {
         const hc = this.doors.hinge_count;
         if (hc !== "auto")
             return hc;
-        if (flip)
-            return len <= 60 ? 2 : len <= 120 ? 3 : 4;
-        return len <= 90 ? 2 : len <= 150 ? 3 : len <= 200 ? 4 : 5;
+        // the shared NOVERA rule (same as the kitchen and panel engines); a flip-up passes its width
+        return Handles.hingeCount(len);
     }
     hingePositions(len, flip) {
         const e = this.doors.hinge_edge;
@@ -1179,17 +1178,20 @@ export class Engine {
                 // frame 4 cm wide (narrower on small fronts), glass 4 mm sits 8 mm deep in a groove in the middle of the rails;
                 // the frame IS the drawer's front wall: the box sides screw into the back of the stiles, the bottom runs into the bottom rail's groove
                 const W = fx1 - fx0, H = fz1 - fz0, fw = Math.min(4.0, W / 4.0, H / 3.0), eng = 0.8;
+                // v110: the box bottom runs into a groove in the bottom rail — the rail reaches 0.5 cm over the bottom's top
+                // (the lowest drawer's box starts higher than its front, so its bottom used to float above a 4 cm rail)
+                const fwB = Math.min(Math.max(fw, bz0 + dr.bottom_inset + dr.bottom_t + 0.5 - fz0), H / 2.0);
                 const gt = this.doors.glass_t;
-                const gnote = `فريم وش درج زجاج: مفحار ${f(gt + 0.1)} مم عرض × 8 مم عمق في نص السمك على الحرف الداخلي، الزجاج بيتركب أثناء تجميع الفريم (دويلين في الأركان)`;
-                const rails = [["فوق", fx0, fz1 - fw, fx1, fz1, "الحرف اللي تحت ليه مفحار الزجاج — الحرف اللي فوق هو مسكة السحب"], ["تحت", fx0, fz0, fx1, fz0 + fw, "مفحار الزجاج فوق، ومفحار قاعدة الدرج من ورا"],
-                    ["شمال", fx0, fz0 + fw, fx0 + fw, fz1 - fw, "جنب الصندوق بيتثبت في ضهره بدويلين ومسمارين"], ["يمين", fx1 - fw, fz0 + fw, fx1, fz1 - fw, "جنب الصندوق بيتثبت في ضهره بدويلين ومسمارين"]];
+                const gnote = `فريم وش درج زجاج: مفحار ${f(rround((gt + 0.1) * 10, 1))} مم عرض × 8 مم عمق في نص السمك على الحرف الداخلي، الزجاج بيتركب أثناء تجميع الفريم (دويلين في الأركان)`;
+                const rails = [["فوق", fx0, fz1 - fw, fx1, fz1, "الحرف اللي تحت ليه مفحار الزجاج — الحرف اللي فوق هو مسكة السحب"], ["تحت", fx0, fz0, fx1, fz0 + fwB, `مفحار الزجاج فوق، ومفحار قاعدة الدرج من ورا على ارتفاع ${f(rround(bz0 + dr.bottom_inset - fz0, 1))} سم من تحت`],
+                    ["شمال", fx0, fz0 + fwB, fx0 + fw, fz1 - fw, "جنب الصندوق بيتثبت في ضهره بدويلين ومسمارين"], ["يمين", fx1 - fw, fz0 + fwB, fx1, fz1 - fw, "جنب الصندوق بيتثبت في ضهره بدويلين ومسمارين"]];
                 for (const [lbl, a0, b0, a1, b1, extra] of rails) {
                     this.addPart(`${name} - فريم ${lbl}`, "drawer_front", "drawer_front", this.box(a0, fy0, b0, a1, fy1, b1), {
                         label_axes: ["x", "z"], band: ["left", "right", "top", "bottom"], band_all_sides: true, layer: "front", group: key, note: `${gnote} · ${extra}`,
                     });
                 }
                 const ym = (fy0 + fy1) / 2.0;
-                this.addPart(`${name} - زجاج الوش`, "door_insert", "glass", this.box(fx0 + fw - eng, ym - gt / 2.0, fz0 + fw - eng, fx1 - fw + eng, ym + gt / 2.0, fz1 - fw + eng), {
+                this.addPart(`${name} - زجاج الوش`, "door_insert", "glass", this.box(fx0 + fw - eng, ym - gt / 2.0, fz0 + fwB - eng, fx1 - fw + eng, ym + gt / 2.0, fz1 - fw + eng), {
                     label_axes: ["x", "z"], band: [], layer: "front", group: key,
                 });
             }

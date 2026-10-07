@@ -3,6 +3,17 @@
 // (shared by the kitchen and dressing systems in the plugin). Pure computation only.
 import { has, inc, isHash, rs, toF, clamp } from "../core/ruby.js";
 import { rround, sum } from "../core/rubyMath.js";
+/** NOVERA hinge rule — ONE rule for every engine (kitchen, panel, dressing): by the door's length along its hinge edge
+ *  (height for side-hinged doors, width for flip-ups): ≤ 90 → 2, ≤ 160 → 3, ≤ 200 → 4, longer → 5 */
+export function hingeCount(len) {
+    if (len <= 90)
+        return 2;
+    if (len <= 160)
+        return 3;
+    if (len <= 200)
+        return 4;
+    return 5;
+}
 export const TYPES = {
     none: { label: "من غير مقبض", group: "بدون", holes: false },
     push: { label: "Push-to-open (تكة ضغط)", group: "بدون", holes: false },

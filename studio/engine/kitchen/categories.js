@@ -11,6 +11,10 @@ import { Entities, Material } from "./su/model.js";
 import { Vector3d } from "./su/geom.js";
 const pcm = (v) => cm(toF(v));
 export class StandardUnitBuilder extends CarcassBuilder {
+    /** v110: a unit of drawers has no loose shelves (they ran through the drawer boxes when include_shelves stayed on) */
+    shelvesEnabled() {
+        return toS(this.p["door_type"]) !== "drawers" && super.shelvesEnabled();
+    }
     buildFrontContent(e) {
         const zone = this.activeZone();
         const dt = toS(this.p["door_type"]);
@@ -113,8 +117,16 @@ export class WardrobeUnitBuilder extends StandardUnitBuilder {
             const x2b = columns[i + 1][0];
             if (x2b <= x1a)
                 continue;
-            const d = createBox(this.ctx, e, "قاطوع رأسي بين الأعمدة", x1a, y0, o.z0, x2b, y1, o.z1, this.carcassMaterial());
+            const name = columns.length > 2 ? `قاطوع رأسي بين الأعمدة ${i + 1}` : "قاطوع رأسي بين الأعمدة";
+            const d = createBox(this.ctx, e, name, x1a, y0, o.z0, x2b, y1, o.z1, this.carcassMaterial());
             assignLayer(this.ctx, d, TAGS.carcass);
+            if (this.edgeBandingEnabled())
+                bandEdges(this.ctx, d, [new Vector3d(0, -1, 0)], this.edgeBandingMaterial());
+            // v110: it was built in 3D but missing from the cut list — the front edge banded (v101), top / bottom / back join the carcass
+            this.ctx.labels.add(this.unitId, this.unitGroupName(), name, y1 - y0, o.z1 - o.z0, x2b - x1a, {
+                banded: { ...NO_BAND, left: this.edgeBandingEnabled() }, material: this.carcassMaterialName(),
+            });
+            this.ctx.labels.addDividerMark(this.unitId, this.unitGroupName(), name, (x1a + x2b) / 2.0 - o.x0);
         }
     }
     buildZone(e, n, z0, z1, x0, x1, prefix = "") {
@@ -150,11 +162,13 @@ export class WardrobeUnitBuilder extends StandardUnitBuilder {
     }
     buildSlidingDoors(e) {
         const o = this.activeZone();
-        this.buildSlidingPanels(e, o.x0, o.x1, o.z0, o.z1);
+        const [z0, z1] = this.frontZClamp(o.z0, o.z1); // v110: clear of the valances
+        this.buildSlidingPanels(e, o.x0, o.x1, z0, z1);
     }
     buildZoneDrawers(e, x0, x1, z0, z1, count, labelPrefix) {
         const overlay = this.doorPosition() === "overlay";
         const gap = overlay ? this.doorGapOverlay() : this.doorGapInset();
+        [z0, z1] = this.frontZClamp(z0, z1); // v110: clear of the valances
         const zx0 = x0 + gap;
         const zx1 = x1 - gap;
         const zz0 = z0 + gap;
@@ -306,7 +320,17 @@ export class FridgeHousingBuilder extends CarcassBuilder {
         return false;
     }
     z0Carcass() {
-        return this.once("fridge_z0", () => rmin(pcm(this.p["fridge_cavity_height"]), this.height() - this.panelT()));
+        return this.once("fridge_z0", () => {
+            // v110: the box over the fridge needs room for its bottom, top and at least 10 cm inside — a cavity taller than that
+            // gave negative boards (the back came out −0.2 cm). Clamp it and say so.
+            const want = pcm(this.p["fridge_cavity_height"]);
+            const max = rmax(this.height() - 2 * this.panelT() - cm(10.0), 0);
+            if (want > max) {
+                this.ctx.puts(`[KitchenUnitDesigner] ⚠ تجويف الثلاجة (${rround(want / cm(1.0), 1)} سم) أعلى من اللي ارتفاع الوحدة (${rround(this.height() / cm(1.0), 1)} سم) يسمح بيه — اتظبط على ${rround(max / cm(1.0), 1)} سم عشان يفضل فوقه صندوق. زوّد ارتفاع الوحدة أو قلّل ارتفاع التجويف.`);
+                return max;
+            }
+            return want;
+        });
     }
     buildCountertop(_e) { }
     buildFridgeFlankingPanels(e) {
@@ -389,13 +413,13 @@ export class WasherGapBuilder extends CarcassBuilder {
             const l = createBox(this.ctx, e, "جنب شمال", 0, 0, 0, pt, d, this.height(), this.carcassMaterial());
             assignLayer(this.ctx, l, TAGS.carcass);
             this.bandSideAllEdges(l);
-            this.ctx.labels.add(this.unitId, this.unitGroupName(), "جنب شمال", d, this.height(), pt, { banded: this.edgeBandingEnabled() ? { top: true, bottom: true, left: true, right: true } : { ...NO_BAND }, material: this.carcassMaterialName(), note });
+            this.ctx.labels.add(this.unitId, this.unitGroupName(), "جنب شمال", d, this.height(), pt, { banded: this.edgeBandingEnabled() ? { top: true, bottom: false, left: true, right: true } : { ...NO_BAND }, material: this.carcassMaterialName(), note }); // v110: the bottom edge stands on the floor (a joint)
         }
         if (g.right) {
             const r = createBox(this.ctx, e, "جنب يمين", this.width() - pt, 0, 0, this.width(), d, this.height(), this.carcassMaterial());
             assignLayer(this.ctx, r, TAGS.carcass);
             this.bandSideAllEdges(r);
-            this.ctx.labels.add(this.unitId, this.unitGroupName(), "جنب يمين", d, this.height(), pt, { banded: this.edgeBandingEnabled() ? { top: true, bottom: true, left: true, right: true } : { ...NO_BAND }, material: this.carcassMaterialName(), note });
+            this.ctx.labels.add(this.unitId, this.unitGroupName(), "جنب يمين", d, this.height(), pt, { banded: this.edgeBandingEnabled() ? { top: true, bottom: false, left: true, right: true } : { ...NO_BAND }, material: this.carcassMaterialName(), note });
         }
     }
     headLabel(name, x0, x1, y0, y1) {
@@ -490,7 +514,8 @@ export class PulloutBuilder extends CarcassBuilder {
         const gap = overlay ? this.doorGapOverlay() : this.doorGapInset();
         const fy0 = overlay ? -this.frontT() : 0, fy1 = overlay ? 0 : this.frontT();
         // the front: full zone height, its top lowered by the built-in handle recess (like every other base-unit front)
-        const x0 = zone.x0 + gap, x1 = zone.x1 - gap, z0 = zone.z0 + gap, z1 = rmax(zone.z1 - gap - this.handleRecess(), z0);
+        const [vz0, vz1] = this.frontZClamp(zone.z0, zone.z1); // v110: clear of the valances
+        const x0 = zone.x0 + gap, x1 = zone.x1 - gap, z0 = vz0 + gap, z1 = rmax(vz1 - gap - this.handleRecess(), z0);
         if (x1 <= x0 || z1 <= z0)
             return;
         const label = "بول أوت";
@@ -504,9 +529,20 @@ export class PulloutBuilder extends CarcassBuilder {
         this.recordDoorLabel(label, x0, x1, z0, z1, null);
         const t = this.drawerBoxT(), clr = this.drawerBoxSideClearance(), eb = this.edgeBandingEnabled();
         const mat = this.carcassMaterial(), matName = this.carcassMaterialName();
-        const depth = rmax(this.depth() - this.backT() - this.backRearOffset() - fy1 - cm(1.0), cm(20.0));
+        const warn = (m) => this.ctx.puts(`[KitchenUnitDesigner] ⚠ بول أوت: ${m}`);
+        // v110: never deeper than the space in front of the back (it was forced to ≥ 20 cm even in a shallow unit)
+        const depth = rmax(this.depth() - this.backT() - this.backRearOffset() - fy1 - cm(1.0), 0);
         const y0 = fy1, y1 = fy1 + depth;
-        const bz0 = zone.z0 + cm(0.5), bz1 = z1 - cm(1.5);
+        // v110: the spine / first tray stand ABOVE the carcass bottom (an overlay front starts below its top)
+        const io0 = this.innerOpening();
+        const bz0 = rmax(zone.z0, io0.z0) + cm(0.5), bz1 = z1 - cm(1.5);
+        if (depth < cm(15.0) || bz1 - bz0 < cm(10.0)) {
+            warn(`المكان جوه الوحدة صغير على البول أوت (عمق ${rround(depth / cm(1.0), 1)} سم، ارتفاع ${rround(rmax(bz1 - bz0, 0) / cm(1.0), 1)} سم) — اتعمل الوش بس. زوّد عمق / ارتفاع الوحدة.`);
+            tagDrawerSlide(group, rmin(rmax(depth, cm(5.0)) * 0.9, this.drawerSlideBase() + cm(30.0)));
+            this.buildTopValancePanel(e, this.innerOpening().x0, this.innerOpening().x1);
+            this.buildBottomValancePanel(e, this.innerOpening().x0, this.innerOpening().x1);
+            return;
+        }
         const spineRight = toS(this.p["pullout_spine_side"]) === "right";
         // the spine: one full-height panel on the runner side, screwed to the back of the front
         const io = this.innerOpening(), ox0 = rmax(x0, io.x0), ox1 = rmin(x1, io.x1); // v107: runners sit against the carcass sides
@@ -519,11 +555,23 @@ export class PulloutBuilder extends CarcassBuilder {
             note: "لوح رأسي واحد بارتفاع البول أوت: بيتثبت في ضهر الوش بدوبل ومسامير، والصواني بتتعلق فيه من جنب واحد، والمجرى بيتركب على وشه الخارجي",
         });
         // the trays: shallow open boxes hung off the spine (bottom + front, back and outer walls); the spine is the inner wall
-        const n = Math.min(Math.max(toI(this.p["pullout_tray_count"]), 1), 8);
-        const lip = rmin(rmax(pcm(this.p["pullout_tray_lip"]), cm(3.0)), cm(20.0));
+        const nWant = Math.min(Math.max(toI(this.p["pullout_tray_count"]), 1), 8);
         const bt = rmin(this.drawerBoxBaseT(), t), tx0 = spineRight ? ox0 + clr : sx1, tx1 = spineRight ? sx0 : ox1 - clr;
+        const lip = rmin(rmax(pcm(this.p["pullout_tray_lip"]), cm(3.0)), cm(20.0), rmax(bz1 - bz0 - bt, cm(1.0)));
         const trayH = bt + lip;
         const span = bz1 - bz0 - trayH;
+        // v110: trays that do not fit (narrower than their walls, or stacked into each other) are dropped with a warning
+        if (tx1 - tx0 < 2 * t + cm(3.0)) {
+            warn(`العرض الداخلي (${rround(rmax(tx1 - tx0, 0) / cm(1.0), 1)} سم بعد الجنب والمجاري) ما يكفيش صواني — اتعمل الوش والجنب بس. وسّع الوحدة.`);
+            tagDrawerSlide(group, rmin(depth * 0.9, this.drawerSlideBase() + cm(30.0)));
+            this.buildTopValancePanel(e, this.innerOpening().x0, this.innerOpening().x1);
+            this.buildBottomValancePanel(e, this.innerOpening().x0, this.innerOpening().x1);
+            return;
+        }
+        const nFit = span > 0 ? Math.max(1, Math.floor(span / (trayH + cm(2.0))) + 1) : 1;
+        const n = Math.min(nWant, nFit);
+        if (n < nWant)
+            warn(`${nWant} صواني مش هيدخلوا في الارتفاع — اتعملوا ${n}.`);
         const step = n > 1 ? span / (n - 1) : 0;
         for (let i = 0; i < n; i++) {
             const zt = bz0 + step * i, name = `صينية بول أوت ${i + 1}`;
@@ -560,10 +608,15 @@ export class DividedUnitBuilder extends CarcassBuilder {
         const half = this.panelT() / 2.0;
         const io = this.innerOpening();
         const extra = this.topValance() ? this.valanceH() : 0;
-        const d = createBox(this.ctx, e, "فاصل رأسي", dx - half, 0, io.z0, dx + half, this.depth(), io.z1 + extra, COLORS.carcass);
+        // v110: the divider stops at the back panel (it ran through it), in the carcass material, its front edge banded
+        const dy0 = 0; // flush with the sides' front edges (inset doors close between it and the sides)
+        const dy1 = rmax(this.depth() - this.backRearOffset() - this.backT(), dy0 + this.panelT());
+        const d = createBox(this.ctx, e, "فاصل رأسي", dx - half, dy0, io.z0, dx + half, dy1, io.z1 + extra, this.carcassMaterial());
         assignLayer(this.ctx, d, TAGS.carcass);
+        if (this.edgeBandingEnabled())
+            bandEdges(this.ctx, d, [new Vector3d(0, -1, 0)], this.edgeBandingMaterial());
         const dh = io.z1 + extra - io.z0;
-        this.ctx.labels.add(this.unitId, this.unitGroupName(), "فاصل رأسي", this.depth(), dh, this.panelT(), { banded: { ...NO_BAND }, material: this.carcassMaterialName() });
+        this.ctx.labels.add(this.unitId, this.unitGroupName(), "فاصل رأسي", dy1 - dy0, dh, this.panelT(), { banded: { ...NO_BAND, left: this.edgeBandingEnabled() }, material: this.carcassMaterialName() });
         this.buildFrontZone(e, zone.x0, dx - half, zone.z0, zone.z1, this.p["left_door_type"], "يسار - ", "left");
         this.buildFrontZone(e, dx + half, zone.x1, zone.z0, zone.z1, this.p["right_door_type"], "يمين - ", "right");
         this.buildTopValancePanel(e, io.x0, io.x1);

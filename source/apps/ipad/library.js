@@ -29,7 +29,7 @@ export const KITCHEN = {
   k_wall1_40: { label: "علوية ضلفة 40", desc: "ضلفة واحدة ورفين.", group: "مطابخ — علوي", params: { ...W, width: 40, door_type: "single", shelf_count: 2 } },
   k_wall_hood90: { label: "علوية فوق الشفاط 90", desc: "قلاب دبل، ارتفاع 50.", group: "مطابخ — علوي", params: { ...W, width: 90, height: 50, wall_mount_height: 160, door_type: "flip_up_double", include_shelves: false } }, // top in line with the 70 cm wall units (140 + 70)
   k_wall_tall80: { label: "علوية عالية لحد السقف 80", desc: "ارتفاع 90، 3 أرفف.", group: "مطابخ — علوي", params: { ...W, width: 80, height: 90, shelf_count: 3 } },
-  k_wall_flip_dbl: { label: "علوية قلاب دبل 80", desc: "ضلفتين قلاب فوق بعض.", group: "مطابخ — علوي", params: { ...W, width: 80, height: 80, door_type: "flip_up_double", include_shelves: false } },
+  k_wall_flip_dbl: { label: "علوية قلاب دبل 80", desc: "ضلفتين قلاب جنب بعض، كل واحدة بذراع رفع.", group: "مطابخ — علوي", params: { ...W, width: 80, height: 80, door_type: "flip_up_double", include_shelves: false } },
   k_wall_glass1: { label: "علوية ضلفة زجاج 40", desc: "زجاج بفريم ألومنيوم.", group: "مطابخ — علوي", params: { ...W, width: 40, door_type: "single_glass_metal", shelf_count: 2 } },
   k_wall_glass_wood: { label: "علوية ضلفتين زجاج 80", desc: "زجاج بفريم من نفس الخامة.", group: "مطابخ — علوي", params: { ...W, width: 80, door_type: "double_glass", shelf_count: 2 } },
   k_wall_micro: { label: "علوية ميكروويف 60", desc: "تجويف ميكروويف وضلفة فوقه.", group: "مطابخ — علوي", params: { ...W, unit_category: "microwave", width: 60, height: 90, depth: 35, microwave_cavity_bottom_offset: 0 } },

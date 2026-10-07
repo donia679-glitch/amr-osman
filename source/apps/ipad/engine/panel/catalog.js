@@ -118,16 +118,8 @@ export function wetOk(name) {
     const n = String(name ?? "").toLowerCase();
     return WET_OK_WORDS.some((w) => n.includes(w.toLowerCase()));
 }
-/** hinges by door length (NOVERA standard) */
-export function hingeCount(len) {
-    if (len <= 90)
-        return 2;
-    if (len <= 160)
-        return 3;
-    if (len <= 200)
-        return 4;
-    return 5;
-}
+/** hinges by door length (NOVERA standard) — the shared rule lives in handles/catalog.js */
+export { hingeCount } from "../handles/catalog.js";
 export const SLIDE_LENGTHS = [30, 35, 40, 45, 50, 55];
 export function slideFor(depthAvailable) {
     const ok = SLIDE_LENGTHS.filter((l) => l <= depthAvailable + 1e-6);

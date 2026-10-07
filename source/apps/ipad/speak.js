@@ -361,6 +361,9 @@ export function parseDesign(text) {
     while ((m = re.exec(w))) {
       const before = w.slice(Math.max(0, m.index - 25), m.index);
       const labelled = /(?:حيط|حايط|جدار|wall|طول|عرض)[ء-ي]*\s*(?:ال[ء-ي]+\s*)?$/.test(before);
+      // «الحيطة 2» / «حيطة 3» with no unit is the wall's number, not its length
+      const wallNo = !m[2] && /(?:حيط|حايط|جدار|wall)[ء-ي]*\s*$/.test(before) && Number.isInteger(+m[1]) && +m[1] >= 1 && +m[1] <= 8;
+      if (wallNo) continue;
       if (m[2] || labelled) found.push({ v: +m[1], txt: m[0].trim() });
     }
     if (!out.room && out.wallLen === null && found.length) out.wallLen = toCm(found.shift().v);
@@ -395,13 +398,15 @@ export function parseDesign(text) {
   }
 
   // ---- window / door
-  const winM = find(t, WIN);
-  if (winM || winW !== null) {
+  // «بدون شباك / مفيش شباك / من غير باب»: nothing is added
+  const winM0 = find(t, WIN), winNo = !!(winM0 && negBefore(t, winM0.i, 1));
+  const winM = winNo ? null : winM0;
+  if (winM || (winW !== null && !winNo)) {
     const seg = segAfter(t, WIN) || "";
     out.window = { wall: wallOf(seg), at: sideOf(seg), w: winW };
   }
   const doorM = find(t, DOOR);
-  if (doorM) {
+  if (doorM && !negBefore(t, doorM.i, 1)) {
     const seg = segAfter(t, DOOR) || "";
     out.door = { wall: wallOf(seg), at: sideOf(seg) };
   }

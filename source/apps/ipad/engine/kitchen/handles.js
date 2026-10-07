@@ -244,7 +244,8 @@ export function applyHandles(ctx, group, params, appDefault = null) {
     const notchable = !!(sL && sR && sR.x0 - sL.x1 > 5);
     const boards = notchable ? solids.filter((sd) => !sd.owner && sd.x1 - sd.x0 < 2.6 && sd.y1 - sd.y0 > 20 && sd.z1 - sd.z0 > 20 && /جنب|فاصل|قاطوع/.test(sd.name)) : [];
     if (notchable)
-        for (const f of fronts) { f.clipX = [sL.x0, sR.x1]; f.boards = boards; f.sides = [sL, sR]; }
+        // v110: a glass side (aluminium / wood frame + glass) can't be notched — the profile stops at its inner face
+        for (const f of fronts) { f.clipX = [/زجاج/.test(sL.name) ? sL.x1 : sL.x0, /زجاج/.test(sR.name) ? sR.x0 : sR.x1]; f.boards = boards; f.sides = [sL, sR]; }
     const notches = [];
     const recess = unitType === "base" ? toF(params["door_handle_recess"]) : 0.0;
     const pieces = ctx.labels.pieces.filter((p) => p.unit_id === unitId);
@@ -505,6 +506,20 @@ function updateLabel(ctx, group, pieces, used, f, plan) {
         const fr = plan.front;
         const fw = fr.x1 - fr.x0;
         const fh = fr.z1 - fr.z0;
+        // v110: a framed glass door has no whole-door label — its handle holes go on the free-side upright stile
+        if (!pc && f.kind === "door" && plan.holes.length && (f.hinge === "left" || f.hinge === "right")) {
+            const sn = f.hinge === "left" ? "يمين" : "شمال";
+            const st = pieces.find((p) => !used.has(p) && clean(p.name) === `${clean(f.name)} - إطار ${sn}`);
+            if (st) {
+                const sw = Math.min(toF(st.w), toF(st.h)), sx0 = f.hinge === "left" ? fw - sw : 0;
+                const holes = plan.holes.filter((hl) => hl.x - fr.x0 >= sx0 - 0.01 && hl.x - fr.x0 <= sx0 + sw + 0.01)
+                    .map((hl) => ({ y_ratio: rround((hl.x - fr.x0 - sx0) / sw, 4), z_ratio: rround((hl.z - fr.z0) / fh, 4), d: hl.d }));
+                if (holes.length)
+                    st.assembly_holes = [...(st.assembly_holes ?? []), ...holes];
+                if (plan.notes.length)
+                    st.note = [st.note, ...plan.notes].filter((x) => x != null && toS(x) !== "").join(" | ");
+            }
+        }
         if (pc) {
             used.add(pc);
             if (plan.reduce) {

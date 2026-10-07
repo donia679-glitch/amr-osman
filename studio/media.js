@@ -123,8 +123,9 @@ export function blobToData(blob) {
 // ---- voice notes
 let rec = null;
 export const canRecord = () => !!(navigator.mediaDevices?.getUserMedia && window.MediaRecorder);
-/** start recording; resolves once the microphone is open. stopRecord() gives { data, dur } */
-export async function startRecord(maxSec = 60, onTick) {
+/** start recording; resolves once the microphone is open. stopRecord() gives { data, dur }.
+ *  At maxSec the recording stops by itself and its result goes to onAuto(result) — once, nothing is restarted. */
+export async function startRecord(maxSec = 60, onTick, onAuto) {
   if (rec) return;
   const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
   const types = ["audio/mp4", "audio/webm;codecs=opus", "audio/webm", "audio/ogg"];
@@ -132,7 +133,14 @@ export async function startRecord(maxSec = 60, onTick) {
   const mr = new MediaRecorder(stream, { ...(mimeType ? { mimeType } : {}), audioBitsPerSecond: 24000 });
   const chunks = [];
   const t0 = Date.now();
-  rec = { mr, stream, chunks, t0, done: null, tick: setInterval(() => { const s = (Date.now() - t0) / 1000; onTick?.(s); if (s >= maxSec) stopRecord(); }, 250) };
+  const me = { mr, stream, chunks, t0, done: null, auto: false, tick: 0 };
+  me.tick = setInterval(() => {
+    if (rec !== me) { clearInterval(me.tick); return; }
+    const s = (Date.now() - t0) / 1000;
+    onTick?.(Math.min(s, maxSec));
+    if (s >= maxSec && !me.auto) { me.auto = true; stopRecord().then((r) => { try { onAuto?.(r); } catch (err) { console.error(err); } }); }
+  }, 250);
+  rec = me;
   rec.done = new Promise((res) => {
     mr.ondataavailable = (e) => { if (e.data?.size) chunks.push(e.data); };
     mr.onstop = async () => {

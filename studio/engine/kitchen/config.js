@@ -228,7 +228,7 @@ export const DEFAULTS = {
     "include_hinge_cups": false,
     "hinge_cup_diameter": 3.5,
     "hinge_cup_edge_distance": 2.2,
-    "hinge_cup_count": 2,
+    "hinge_cup_count": "", // NOVERA: empty = by the door length (the shared hinge rule), a number = the user's own count
     "assembly_hole_diameter": 0.8,
     "assembly_edge_distance": 1.0,
     "assembly_hole_spacing": 2.8,
