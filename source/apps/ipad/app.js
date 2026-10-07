@@ -2017,6 +2017,7 @@ $("#home").addEventListener("click", async (e) => {
   if (b.hasAttribute("data-hdefs")) { ui.pop = "defaults"; renderPop(); return; }
   if (b.hasAttribute("data-hbrand")) { ui.pop = "brand"; renderPop(); return; }
   if (b.hasAttribute("data-hrecover")) { await recoverOpen(); return; }
+  if (b.hasAttribute("data-hstock")) { stockOpen(); return; }
   if (b.hasAttribute("data-hlostok")) { try { const m2 = JSON.parse(localStorage.getItem("novera-projects-idx") || "{}"); for (const x of ui.lost || []) if (m2[x.id]) m2[x.id].deleted = new Date().toISOString(); localStorage.setItem("novera-projects-idx", JSON.stringify(m2)); } catch { /* */ } ui.lost = []; showHome(); return; }
   if (b.hasAttribute("data-hspeak")) { closeHome(); ui.pop = "speak"; renderPop(); setTimeout(() => $("#speakText")?.focus(), 100); return; }
   if (d.hf) { ui.homeF = d.hf; showHome(); return; }
@@ -4706,6 +4707,7 @@ function renderPop() {
   else if (ui.pop === "scrap") h = scrapPop();
   else if (ui.pop === "zero") h = zwPop();
   else if (ui.pop === "recover") h = recoverPop();
+  else if (ui.pop === "stock") h = stockPop();
   else if (ui.pop === "menu") {
     const it = (k, ic, t, d) => `<button class="mitem" data-menu="${k}"><span class="mic">${ic}</span><span><b>${t}</b><small>${d}</small></span></button>`;
     h = `<div class="popbox menubox" role="dialog" aria-label="القائمة"><div class="libhead"><h2>القائمة</h2><button class="x" data-close aria-label="قفل">×</button></div>
@@ -4945,7 +4947,7 @@ $("#pop").addEventListener("click", async (e) => {
     if (m === "tour") { state.tourDone = false; startTour(); return; }
     if (m === "present") { presentOn(); return; }
     if (m === "worker") { workerOn(); return; }
-    if (m === "gostock") { goShop("shStock"); return; }
+    if (m === "gostock") { stockOpen(); return; }
     if (m === "gosup") { goShop("shSup"); return; }
     if (m === "lang") { await Lib.put(state.project).catch(() => {}); I18n.setLang(I18n.lang === "en" ? "ar" : "en"); return; }
     ui.pop = m; renderPop(); return;
@@ -5223,6 +5225,7 @@ async function showHome() {
       <button class="htile" data-hspeak><b>🗣 اوصفلي المطبخ</b><small>جملة واحدة: الشكل والمقاس واللون — ويطلعلك مطبخ كامل</small></button>
       <button class="htile" data-hstudio><b>✏️ ورشة الرسم</b><small>ارسم وحدتك أو قطعتك من الصفر برسم 3D حر</small></button>
       <button class="htile" data-hcut><b>✂ كت ليست سريع</b><small>اكتب مقاسات القطع وخد خطة القص والملصقات</small></button>
+      <button class="htile" data-hstock><b>📦 المخزن</b><small>كل خامة بألواحها وبواقيها بالمقاسات، والهاردوير</small></button>
     </div>
     <button class="hcont" data-hlast><span>↩</span><span><b>كمّل «${esc(state.project.name)}»</b><small>${state.project.units.length} وحدة · آخر حاجة كنت شغال عليها</small></span></button>
     ${homeDash(list)}
@@ -6925,8 +6928,8 @@ $("#v-cut").addEventListener("click", async (e) => {
     let n = 0;
     const pid = state.project.id, list = leftovers();
     for (const k of Object.keys(state.stock || {})) state.stock[k].remnants = (state.stock[k].remnants || []).filter((r) => r.from !== pid);
-    for (const x of list) { const st = stockOf(x.key); for (const o of x.list) { st.remnants.push({ id: uid(), w: Math.floor(o.w), h: Math.floor(o.h), from: pid, fromName: state.project.name }); n++; } }
-    save(); alertBar(`اتضاف ${n} باقي للمخزن — هيتستخدموا في المشاريع الجاية (الورشة والعميل ← المخزن).`); return;
+    for (const x of list) { const st = stockOf(x.key); for (const o of x.list) { st.remnants.push({ id: uid(), w: Math.floor(o.w), h: Math.floor(o.h), from: pid, fromName: state.project.name, at: new Date().toISOString() }); n++; } }
+    save(); alertBar(`اتضاف ${n} باقي للمخزن ✓ — بيتستخدموا في المشاريع الجاية`); STK().f = "all"; for (const x of list) STK().open[x.key] = true; stockOpen(); return;
   }
 });
 $("#v-cut").addEventListener("change", (e) => {
@@ -7242,6 +7245,7 @@ $("#v-shop").addEventListener("click", async (e) => {
   if (!b) return;
   if (b.dataset.jump) { goShop(b.dataset.jump); return; }
   if (b.hasAttribute("data-scan")) { scanOpen(); return; }
+  if (b.hasAttribute("data-stkopen")) { stockOpen(); return; }
   if (b.hasAttribute("data-scrap")) { const S = scrap(); S.src = "stock"; S.keys = Object.entries(state.stock || {}).filter(([, v]) => (v.remnants || []).length).map(([k]) => k); ui.pop = "scrap"; renderPop(); return; }
   if (b.hasAttribute("data-sigok")) { signApprove(); return; }
   if (b.hasAttribute("data-sigwipe")) { const c = $("#v-shop #sigPad"); if (c) { c.getContext("2d").clearRect(0, 0, c.width, c.height); delete c.dataset.inked; } return; }
@@ -7258,7 +7262,7 @@ $("#v-shop").addEventListener("click", async (e) => {
   if (b.dataset.pmode) { priceDefaults().mode = b.dataset.pmode; save(); settingsPush(); drawShop(); return; }
   if (b.dataset.remadd) {
     const k = b.dataset.remadd, w = +document.querySelector(`[data-remw="${CSS.escape(k)}"]`)?.value, hh = +document.querySelector(`[data-remh="${CSS.escape(k)}"]`)?.value;
-    if (w > 5 && hh > 5) { stockOf(k).remnants.push({ id: uid(), w, h: hh }); save(); runCut(() => drawShop()); }
+    if (w > 5 && hh > 5) { stockOf(k).remnants.push({ id: uid(), w, h: hh, at: new Date().toISOString() }); save(); runCut(() => drawShop()); }
     return;
   }
   if (b.dataset.remtog) {
@@ -9345,7 +9349,7 @@ function stockOf(key) { state.stock ??= {}; return (state.stock[key] ??= { sheet
 function stockHtml() {
   if (!cutData?.results) return "";
   const P = priceDefaults();
-  let h = `<section class="mgroup" id="shStock"><div class="mg-h"><h3>📦 المخزن والمشتريات</h3></div>
+  let h = `<section class="mgroup" id="shStock"><div class="mg-h"><h3>📦 المخزن والمشتريات</h3><button class="ghost2 sm" data-stkopen>📦 افتح المخزن كله</button></div>
     <p class="hint">سجّل الألواح الكاملة والبواقي اللي عندك. خطة القص بتستخدم البواقي الأول${state.cutOpts.useStock === false ? " (مقفول دلوقتي)" : ""}، وبيطلعلك المحتاج تشتريه.</p>
     <div class="grid2">${stockModeSel("stockModeShop")}</div>
     <p class="hint">${stockMode() === "pick" ? "دوس على أي باقي يعلّم عليه ✓ عشان خطة القص تستخدمه — اللي مش متعلّم مش هيتلمس." : stockMode() === "first" ? "كل البواقي بتتستخدم الأول. دوس على باقي عشان تستبعده (بيبقى مشطوب)." : "خطة القص مش هتستخدم البواقي خالص — كله ألواح جديدة."}</p>
@@ -9417,7 +9421,7 @@ function takeStock(undo) {
       const added = [];
       // tagged with this project so its own plan never cuts from them; skipped when «خزّنها في المخزن» already stored them
       const already = st.remnants.some((r) => r.from === p.id);
-      if (!already) for (const s of res.sheets) for (const o of s.offcuts || []) if (Math.min(o.w, o.h) >= 30) { const r = { id: uid(), w: Math.floor(o.w), h: Math.floor(o.h), from: p.id, fromName: p.name }; st.remnants.push(r); added.push(r.id); }
+      if (!already) for (const s of res.sheets) for (const o of s.offcuts || []) if (Math.min(o.w, o.h) >= 30) { const r = { id: uid(), w: Math.floor(o.w), h: Math.floor(o.h), from: p.id, fromName: p.name, at: new Date().toISOString() }; st.remnants.push(r); added.push(r.id); }
       rec.moves.push({ key: g.key, sheets: take, removed, added });
     }
     p.stockTaken = rec;
@@ -9865,6 +9869,147 @@ function hwStockHtml() {
   for (const k of keys) { const n = +need[k] || 0, hv = +have[k] || 0; h += `<tr><td>${esc(k)}</td><td class="num">${n ? n1(n) : "—"}</td><td><input class="pin" type="text" inputmode="decimal" data-numf data-hwstock="${esc(k)}" value="${hv || 0}"></td><td class="num ${n > hv ? "bad" : ""}">${Math.max(0, Math.ceil((n - hv) * 100) / 100) || "—"}</td></tr>`; }
   return h + `</tbody></table></div></details>`;
 }
+
+// ================================================================== v112 — the warehouse «📦 المخزن» on its own screen
+// every material in stock (from any project, or typed by hand) with its full sheets, every offcut drawn to scale with
+// its size, area, the project it came from, the date, and whether the open project's cut plan uses it; + hardware.
+const STK = () => (ui.stk ??= { q: "", f: "all", sort: "big", open: {} });
+const stockKeyParts = (k) => { const m = /^(.*?) — (\d+(?:\.\d+)?) مم$/.exec(k); return m ? { name: m[1], mm: +m[2] } : { name: k, mm: 0 }; };
+function stockSheet(k) {
+  const o = state.cutOpts || {}, f = o.sheetFor?.[k];
+  if (f) return { w: +f[0], h: +f[1] };
+  const g = cutData?.groups?.find((x) => x.key === k);
+  if (g) { const s = g.sheet || groupSheet(g); return { w: +s.w, h: +s.h }; }
+  return { w: +o.sheetW || 244, h: +o.sheetH || 122 };
+}
+function stockM2(k) {
+  const P = priceDefaults();
+  if (+P.m2?.[k] > 0) return +P.m2[k];
+  const sh = stockSheet(k), sp = +P.sheets?.[k] || +P.defaultSheet || 0;
+  return sp ? sp / ((sh.w * sh.h) / 10000) : 0;
+}
+/** the offcuts of key k the open project's cut plan takes (matched by size, one each) */
+function stockUsedIds(k) {
+  const st = state.stock?.[k], res = cutData?.results?.[k], ids = new Set();
+  if (!st || !res || cutData.pid !== state.project.id) return ids;
+  for (const s of res.sheets.filter((x) => x.stock === "remnant")) {
+    const r = st.remnants.find((q) => !ids.has(q.id) && ((Math.abs(q.w - s.w) < 0.6 && Math.abs(q.h - s.h) < 0.6) || (Math.abs(q.w - s.h) < 0.6 && Math.abs(q.h - s.w) < 0.6)));
+    if (r) ids.add(r.id);
+  }
+  return ids;
+}
+function stockList() {
+  const keys = new Set(Object.keys(state.stock || {}));
+  if (cutData?.pid === state.project.id) for (const g of cutData.groups || []) keys.add(g.key);
+  return [...keys].map((k) => {
+    const st = state.stock?.[k] || { sheets: 0, remnants: [] }, sh = stockSheet(k), m2 = stockM2(k);
+    const rems = st.remnants || [], area = rems.reduce((a, r) => a + (+r.w * +r.h) / 10000, 0);
+    const value = (+st.sheets || 0) * (m2 * sh.w * sh.h / 10000) + area * m2;
+    return { k, ...stockKeyParts(k), st, sh, m2, rems, area, value, inProject: !!cutData?.groups?.some((g) => g.key === k) && cutData?.pid === state.project.id };
+  }).sort((a, b) => (b.st.sheets || 0) + b.rems.length - ((a.st.sheets || 0) + a.rems.length) || a.k.localeCompare(b.k));
+}
+const remTile = (r, sh, used, own) => {
+  // the full sheet (outline) with this offcut in its corner, both to scale; a long offcut lies along the sheet's length
+  const S = 120 / sh.w, H0 = Math.round(sh.h * S);
+  const [a, b] = +r.w >= +r.h ? [+r.w, +r.h] : [+r.h, +r.w];
+  const W = Math.min(118, Math.max(4, a * S)), H = Math.min(H0, Math.max(4, b * S));
+  return `<svg class="stkrem" viewBox="0 0 120 ${H0 + 2}" width="120" height="${H0 + 2}" aria-hidden="true"><rect x="1" y="1" width="118" height="${H0}" class="sh"/><rect x="1" y="1" width="${W}" height="${H}" class="r ${used ? "used" : own ? "own" : ""}"/></svg>`;
+};
+function stockPop() {
+  const U = STK(), all = stockList();
+  const tot = all.reduce((a, x) => ({ sheets: a.sheets + (+x.st.sheets || 0), rems: a.rems + x.rems.length, area: a.area + x.area, value: a.value + x.value }), { sheets: 0, rems: 0, area: 0, value: 0 });
+  const q = U.q.trim();
+  let list = all.filter((x) => (U.f === "all" || (U.f === "rem" ? x.rems.length : U.f === "sheets" ? +x.st.sheets > 0 : x.inProject)));
+  let h = `<div class="popbox wide stkbox" role="dialog" aria-label="المخزن"><div class="libhead"><h2>📦 المخزن</h2><button class="x" data-close aria-label="قفل">×</button></div>
+    <div class="stktiles"><div><b>${all.filter((x) => +x.st.sheets > 0 || x.rems.length).length}</b><small>خامة في المخزن</small></div><div><b>${tot.sheets}</b><small>لوح كامل</small></div><div><b>${tot.rems}</b><small>باقي</small></div><div><b>${n1(tot.area)}</b><small>م² بواقي</small></div>${tot.value ? `<div><b>${money(tot.value)}</b><small>ج قيمة تقريبية</small></div>` : ""}</div>
+    <div class="stkbar"><input id="stkQ" class="libq" placeholder="🔍 دوّر باسم الخامة أو المقاس" value="${esc(U.q)}">
+      <div class="seg">${[["all", "الكل"], ["rem", "فيها بواقي"], ["sheets", "فيها ألواح"], ["proj", "خامات المشروع ده"]].map(([k, l]) => `<button data-stkf="${k}" class="${U.f === k ? "on" : ""}">${l}</button>`).join("")}</div>
+      <div class="seg">${[["big", "الأكبر الأول"], ["new", "الأحدث الأول"]].map(([k, l]) => `<button data-stksort="${k}" class="${U.sort === k ? "on" : ""}">${l}</button>`).join("")}</div></div>
+    <p class="hint">كل خامة بألواحها الكاملة وكل باقي فيها مرسوم بمقاسه جوه لوح كامل. <span class="stkkey"><i class="own"></i>باقي من المشروع المفتوح (بيتستخدم في مشاريع تانية بس)</span> <span class="stkkey"><i class="used"></i>خطة القص الحالية هتستخدمه</span>${cutData?.pid === state.project.id ? "" : " — افتح خطة القص عشان تشوف اللي هيتستخدم."}</p>`;
+  if (!list.length) h += `<p class="hint stkempty">${all.length ? "مفيش حاجة بالفلتر ده." : "المخزن فاضي لسه. من «القص» ← «📦 خزّنها في المخزن» بيدخل بواقي المشروع هنا، أو ضيف خامة بإيدك تحت."}</p>`;
+  for (const x of list) {
+    const used = stockUsedIds(x.k), own = (r) => r.from === state.project.id;
+    const rems = [...x.rems].sort(U.sort === "new" ? (a, b) => String(b.at || "").localeCompare(String(a.at || "")) : (a, b) => b.w * b.h - a.w * a.h);
+    const open = U.open[x.k] ?? (list.length <= 3 || x.rems.length > 0);
+    const hay = `${x.k} ${x.rems.map((r) => `${r.w}×${r.h} ${r.fromName || ""}`).join(" ")}`;
+    h += `<details class="stkmat" data-stkname="${esc(hay)}" data-stkkey="${esc(x.k)}" ${open ? "open" : ""}${q && !hay.includes(q) ? ' style="display:none"' : ""}><summary><b>${esc(x.name)}</b>${x.mm ? `<span class="pill soft">${x.mm} مم</span>` : ""}<span class="pill">${+x.st.sheets || 0} لوح</span><span class="pill ${x.rems.length ? "gold" : "soft"}">${x.rems.length} باقي</span>${x.area ? `<span class="pill soft">${n1(x.area)} م²</span>` : ""}${x.inProject ? `<span class="pill soft">في المشروع المفتوح</span>` : ""}</summary>
+      <div class="stkinfo"><span>مقاس اللوح: <b>${x.sh.w}×${x.sh.h}</b></span><span>سعر المتر: <b>${x.m2 ? money(x.m2) + " ج" : "—"}</b></span>${x.value ? `<span>قيمة اللي في المخزن: <b>${money(x.value)} ج</b></span>` : ""}</div>
+      <div class="stksheets"><span>ألواح كاملة</span><button class="ghost2 sm" data-stks="${esc(x.k)}" data-d="-1" aria-label="أقل">−</button><input class="pin" type="text" inputmode="decimal" data-numf data-stksheets="${esc(x.k)}" value="${+x.st.sheets || 0}"><button class="ghost2 sm" data-stks="${esc(x.k)}" data-d="1" aria-label="أكتر">＋</button></div>
+      ${rems.length ? `<div class="stkgrid">${rems.map((r) => `<div class="stkcell ${used.has(r.id) ? "used" : own(r) ? "own" : ""}">${remTile(r, x.sh, used.has(r.id), own(r))}<b>${n1(r.w)} × ${n1(r.h)}</b><small>${n1(r.w * r.h / 10000)} م²${x.m2 ? ` · ${money(r.w * r.h / 10000 * x.m2)} ج` : ""}</small><small>${r.fromName ? `من «${esc(r.fromName)}»` : "اتضاف بإيدك"}${r.at ? ` · ${esc(whenAr(r.at))}` : ""}</small>${used.has(r.id) ? `<small class="ok">✓ هيتقص في المشروع ده</small>` : own(r) ? `<small>من المشروع المفتوح</small>` : ""}<button class="stkdel" data-stkdel="${esc(x.k)}|${r.id}" aria-label="شيل الباقي ده">×</button></div>`).join("")}</div>` : `<p class="hint">مفيش بواقي من الخامة دي.</p>`}
+      <div class="stkadd"><span>ضيف باقي:</span><input class="pin" type="text" inputmode="decimal" data-numf placeholder="طول" data-stkw="${esc(x.k)}"><input class="pin" type="text" inputmode="decimal" data-numf placeholder="عرض" data-stkh="${esc(x.k)}"><input class="pin" type="text" inputmode="decimal" data-numf placeholder="عدد" data-stkn="${esc(x.k)}" value="1"><button class="ghost2" data-stkadd="${esc(x.k)}">＋ ضيف</button></div>
+      <div class="stkacts">${x.rems.length ? `<button class="ghost2 sm" data-stksmall="${esc(x.k)}">🧹 شيل البواقي الأصغر من 30 سم</button>` : ""}<button class="danger sm" data-stkclear="${esc(x.k)}">🗑 فضّي الخامة دي</button></div></details>`;
+  }
+  const known = [...new Set([...all.map((x) => x.name), ...(cutData?.groups || []).map((g) => stockKeyParts(g.key).name)])];
+  h += `<details class="stknew"><summary>＋ خامة جديدة في المخزن</summary><datalist id="stkNames">${known.map((n) => `<option value="${esc(n)}">`).join("")}</datalist>
+    <div class="stkadd"><input id="stkNewName" list="stkNames" placeholder="اسم الخامة (زي ما في المشروع)"><input id="stkNewMm" class="pin" type="text" inputmode="decimal" data-numf placeholder="السمك مم" value="18"><input id="stkNewSh" class="pin" type="text" inputmode="decimal" data-numf placeholder="ألواح" value="0"><button class="primary" data-stknew>ضيف</button></div>
+    <p class="hint">خطة القص بتاخد من المخزن لما اسم الخامة والسمك يطابقوا خامة القطع بالظبط — اختار الاسم من القايمة.</p></details>`;
+  const hw = hwStock(), hk = Object.keys(hw).filter((k) => +hw[k] > 0 || U.hwShowAll);
+  h += `<details class="stknew" ${hk.length ? "open" : ""}><summary>🔩 الهاردوير (${hk.length} صنف)</summary>
+    ${hk.length ? `<div class="tblwrap"><table class="tbl"><thead><tr><th>الصنف</th><th>عندي</th><th></th></tr></thead><tbody>${hk.map((k) => `<tr><td>${esc(k)}</td><td><input class="pin" type="text" inputmode="decimal" data-numf data-stkhw="${esc(k)}" value="${+hw[k] || 0}"></td><td><button class="ghost2 sm" data-stkhwdel="${esc(k)}" aria-label="شيل">×</button></td></tr>`).join("")}</tbody></table></div>` : `<p class="hint">مفيش هاردوير متسجّل.</p>`}
+    <div class="stkadd"><input id="stkHwName" placeholder="الصنف (مفصلة، مجرى 45 سم…)"><input id="stkHwN" class="pin" type="text" inputmode="decimal" data-numf placeholder="العدد"><button class="ghost2" data-stkhwadd>＋ ضيف</button></div></details>
+    <div class="btnrow"><button class="ghost2" data-stkxlsx>📊 المخزن Excel</button><button class="ghost2" data-stkcopy>📋 انسخ قايمة المخزن</button><button class="ghost2" data-stkscrap>♻️ أعمل إيه من البواقي؟</button></div></div>`;
+  return h;
+}
+function stockText() {
+  const L = stockList().filter((x) => +x.st.sheets > 0 || x.rems.length);
+  return [`مخزن NOVERA — ${today()}`, "", ...L.map((x) => `• ${x.k}: ${+x.st.sheets || 0} لوح${x.rems.length ? ` + ${x.rems.length} باقي (${n1(x.area)} م²): ${x.rems.map((r) => `${n1(r.w)}×${n1(r.h)}`).join("، ")}` : ""}`),
+    ...Object.entries(hwStock()).filter(([, v]) => +v > 0).map(([k, v], i) => `${i ? "" : "\nهاردوير:\n"}• ${k}: ${v}`)].join("\n");
+}
+async function exportStockXlsx() {
+  const L = stockList().filter((x) => +x.st.sheets > 0 || x.rems.length);
+  const sum = [["الخامة", "السمك مم", "مقاس اللوح", "ألواح كاملة", "عدد البواقي", "مساحة البواقي م²", "سعر المتر", "القيمة"]];
+  for (const x of L) sum.push([x.name, x.mm || "", `${x.sh.w}×${x.sh.h}`, +x.st.sheets || 0, x.rems.length, Math.round(x.area * 100) / 100, Math.round(x.m2), Math.round(x.value)]);
+  const rem = [["الخامة", "الطول", "العرض", "المساحة م²", "من مشروع", "اتضاف"]];
+  for (const x of L) for (const r of x.rems) rem.push([x.k, +r.w, +r.h, Math.round(r.w * r.h / 100) / 100, r.fromName || "بإيدك", r.at ? whenAr(r.at) : ""]);
+  const hw = [["الصنف", "العدد"], ...Object.entries(hwStock()).filter(([, v]) => +v > 0).map(([k, v]) => [k, +v])];
+  return Exp.deliver(cloud.downloads, `مخزن NOVERA — ${new Date().toISOString().slice(0, 10)}.xlsx`, Exp.xlsx([{ name: "الخامات", rows: sum, widths: [34, 10, 12, 12, 12, 16, 12, 12] }, { name: "البواقي", rows: rem, widths: [40, 10, 10, 12, 30, 22] }, { name: "الهاردوير", rows: hw, widths: [40, 10] }]));
+}
+function stockOpen() { ui.pop = "stock"; renderPop(); }
+function stockRedraw() {
+  const box = $("#pop .stkbox"), top = box?.scrollTop || 0;
+  renderPop(); save();
+  const nb = $("#pop .stkbox"); if (nb) nb.scrollTop = top;
+}
+$("#pop").addEventListener("input", (e) => {
+  if (ui.pop !== "stock" || e.target.id !== "stkQ") return;
+  const q = (STK().q = e.target.value).trim();
+  for (const d of $("#pop").querySelectorAll(".stkmat")) d.style.display = !q || d.dataset.stkname.includes(q) ? "" : "none";
+});
+$("#pop").addEventListener("toggle", (e) => { if (ui.pop === "stock" && e.target.dataset?.stkkey) STK().open[e.target.dataset.stkkey] = e.target.open; }, true);
+$("#pop").addEventListener("change", (e) => {
+  if (ui.pop !== "stock") return;
+  const t = e.target;
+  if (t.dataset.stksheets) { stockOf(t.dataset.stksheets).sheets = Math.max(0, Math.round(toNum(t.value) || 0)); stockRedraw(); return; }
+  if (t.dataset.stkhw) { hwStock()[t.dataset.stkhw] = Math.max(0, toNum(t.value) || 0); stockRedraw(); }
+});
+$("#pop").addEventListener("click", async (e) => {
+  if (ui.pop !== "stock") return;
+  const b = e.target.closest("button"); if (!b) return;
+  const d = b.dataset, U = STK(), box = $("#pop");
+  if (d.stkf) { U.f = d.stkf; stockRedraw(); return; }
+  if (d.stksort) { U.sort = d.stksort; stockRedraw(); return; }
+  if (d.stks) { const st = stockOf(d.stks); st.sheets = Math.max(0, (+st.sheets || 0) + (+d.d || 0)); stockRedraw(); return; }
+  if (d.stkdel) { const [k, id] = d.stkdel.split("|"); const st = stockOf(k); st.remnants = st.remnants.filter((r) => r.id !== id); stockRedraw(); return; }
+  if (d.stkadd) {
+    const k = d.stkadd, sel = (a) => [...box.querySelectorAll(`[${a}]`)].find((i) => i.getAttribute(a) === k);
+    const w = toNum(sel("data-stkw")?.value), hh = toNum(sel("data-stkh")?.value), n = Math.min(50, Math.max(1, Math.round(toNum(sel("data-stkn")?.value) || 1)));
+    if (!(w > 5 && hh > 5)) { alertBar("اكتب الطول والعرض بالسنتي (أكبر من 5)"); return; }
+    for (let i = 0; i < n; i++) stockOf(k).remnants.push({ id: uid(), w: Math.round(w * 10) / 10, h: Math.round(hh * 10) / 10, at: new Date().toISOString() });
+    U.open[k] = true; stockRedraw(); return;
+  }
+  if (d.stksmall) { const st = stockOf(d.stksmall), n0 = st.remnants.length; st.remnants = st.remnants.filter((r) => Math.min(+r.w, +r.h) >= 30); alertBar(`اتشال ${n0 - st.remnants.length} باقي صغير`); stockRedraw(); return; }
+  if (d.stkclear) { if (!confirm(`تفضّي «${d.stkclear}» من المخزن (الألواح والبواقي)؟`)) return; delete state.stock[d.stkclear]; stockRedraw(); return; }
+  if (b.hasAttribute("data-stknew")) {
+    const name = ($("#stkNewName")?.value || "").trim(), mm = toNum($("#stkNewMm")?.value), n = Math.max(0, Math.round(toNum($("#stkNewSh")?.value) || 0));
+    if (!name || !(mm > 0)) { alertBar("اكتب اسم الخامة والسمك بالملّي"); return; }
+    const k = `${name} — ${n1(mm)} مم`; stockOf(k).sheets = (+stockOf(k).sheets || 0) + n; U.open[k] = true; U.f = "all"; stockRedraw(); return;
+  }
+  if (b.hasAttribute("data-stkhwadd")) { const k = ($("#stkHwName")?.value || "").trim(), n = toNum($("#stkHwN")?.value) || 0; if (!k) return; hwStock()[k] = (+hwStock()[k] || 0) + n; stockRedraw(); return; }
+  if (d.stkhwdel) { delete hwStock()[d.stkhwdel]; stockRedraw(); return; }
+  if (b.hasAttribute("data-stkcopy")) { try { await navigator.clipboard.writeText(stockText()); b.textContent = "اتنسخ ✓"; } catch { alertBar("ما قدرتش أنسخ — استخدم Excel"); } return; }
+  if (b.hasAttribute("data-stkxlsx")) { try { await exportStockXlsx(); } catch (err) { alertBar(err.message || "ما اتصدّرش"); } return; }
+  if (b.hasAttribute("data-stkscrap")) { const S = scrap(); S.src = "stock"; S.keys = Object.entries(state.stock || {}).filter(([, v]) => (v.remnants || []).length).map(([k]) => k); ui.pop = "scrap"; renderPop(); }
+});
 
 // ================================================================== v46 — assembly booklet (pictures per step, for the fitter)
 async function exportAsmBooklet(only = null) {

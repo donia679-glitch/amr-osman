@@ -1521,7 +1521,9 @@ export class CarcassBuilder {
                 });
                 this.buildDrawerBox(ie, ix0, ix1, ify1, iz0, iz1, `${label} - داخلي`, rmax(this.drawerBoxDepthCm() - cm(3.0), cm(20.0)), false, cm(1.0));
                 this.ctx.labels.addAssemblyMark(this.unitId, this.unitGroupName(), "drawer", `${label} - داخلي`, iz0 - this.drawerSlideClearance() - this.z0Carcass());
-                tagDrawerSlide(ig, this.drawerSlideBase() + index * this.drawerSlideStep() + cm(8.0));
+                // v112: it can never pass the big front (its own front sits 1 cm behind it) — it opens a bit less than the main drawer
+                const mainOpen = this.drawerSlideBase() + index * this.drawerSlideStep();
+                tagDrawerSlide(ig, rmax(mainOpen - cm(10.0), mainOpen * 0.6));
             }
         }
         this.ctx.labels.addAssemblyMark(this.unitId, this.unitGroupName(), "drawer", label, floorBottom - this.drawerSlideClearance() - this.z0Carcass());

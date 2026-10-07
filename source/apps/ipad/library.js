@@ -55,6 +55,7 @@ export const KITCHEN = {
   k_acc_basket: ACC("pullout_basket", "سلة سحب", "سلة جوه وحدة 30–40.", { accessory_width: 26, accessory_depth: 45, accessory_height: 50 }),
   k_acc_plates: ACC("plate_rack", "حامل أطباق", "مايل لتصفية الأطباق.", { accessory_width: 76, accessory_depth: 28, accessory_height: 30, accessory_rack_tilt: 15 }),
   k_acc_shelfdiv: ACC("shelf_dividers", "فواصل تحت رف", "للصواني والألواح.", { accessory_width: 76, accessory_depth: 45, accessory_height: 30, accessory_divider_count: 4 }),
+  k_x_acc_lids: ACC("shelf_dividers", "فواصل أغطية حلل", "خانات واقفة للأغطية جوه درج 80.", { accessory_width: 72, accessory_depth: 45, accessory_height: 18, accessory_divider_count: 6 }),
   // pull-outs, corner systems and organised drawers (the fittings are listed as hardware)
   k_oil20: { label: "ترولي زيت 20", desc: "سحب كامل بـ 3 سلات للزيت والتوابل جنب البوتجاز.", group: "مطابخ — ترولي ومنظمات", org: "oil", params: { width: 20, door_type: "drawers", drawer_count: 1, include_drawer_boxes: false, include_shelves: false } },
   k_oil30: { label: "ترولي زيت 30 (4 أدوار)", desc: "زيت وخل تحت، توابل فوق، بفواصل.", group: "مطابخ — ترولي ومنظمات", org: "oil", orgOpts: { levels: 4, rows: ["bottles", "oil", "spice", "spice"], div: [0, 1, 2, 2] }, params: { width: 30, door_type: "drawers", drawer_count: 1, include_drawer_boxes: false, include_shelves: false } },
@@ -74,6 +75,20 @@ export const KITCHEN = {
   k_knives30: { label: "3 أدراج 30: سكاكين وتوابل", desc: "فوق: سكاكين · نص: توابل · تحت: فويل وأكياس.", group: "مطابخ — ترولي ومنظمات", ins: { 3: "knives", 2: "spices", 1: "wraps" }, params: { width: 30, door_type: "drawers", drawer_count: 3, include_drawer_boxes: true, include_shelves: false } },
   k_spices40: { label: "4 أدراج 40 متقسمة", desc: "توابل · شاي وقهوة · لفايف · أدوات.", group: "مطابخ — ترولي ومنظمات", ins: { 4: "spices", 3: "tea", 2: "wraps", 1: "utensils" }, params: { width: 40, door_type: "drawers", drawer_count: 4, include_drawer_boxes: true, include_shelves: false } },
   k_plates_drw80: { label: "درجين 80: أطباق وحلل", desc: "فوق: أطباق واقفة · تحت: حلل وأغطية.", group: "مطابخ — ترولي ومنظمات", ins: { 2: "plates", 1: "pots" }, params: { width: 80, door_type: "drawers", drawer_count: 2, include_drawer_boxes: true, include_shelves: false } },
+  // v112: new ideas (2025–26 trends: toe-kick drawers, appliance garages, coffee stations, two-tone, glass display, corner pantry)
+  k_x_sink_kick80: { label: "حوض 80 بدرج وزرة", desc: "حوض وسيفون، ودرج واطي مكان السكلو للصواني والمفارش.", group: "مطابخ — سفلي", params: { width: 80, include_sink_cutout: true, include_ptrap_opening: true, include_shelves: false, toe_kick_height: 12, toe_kick_drawer: true, include_drawer_boxes: true } },
+  k_x_drawers90_olive: { label: "3 أدراج 90 زيتي (لونين)", desc: "السفلي لون غامق والعلوي فاتح — أدراج عريضة بدرج داخلي مخفي.", group: "مطابخ — سفلي", params: { width: 90, door_type: "drawers", drawer_count: 3, include_drawer_boxes: true, include_shelves: false, drawer_inner_1: true, door_color: "#5E6A57", material_front_name: "NOVERA - HPL زيتي" } },
+  k_x_island_back120: { label: "رفوف ظهر الجزيرة 120", desc: "عمق 30 من ناحية القعدة: 3 خانات مفتوحة لكتب الطبخ والديكور.", group: "مطابخ — سفلي", params: { unit_category: "open_shelf", width: 120, depth: 30, shelf_count: 1, include_vertical_dividers: true, vertical_divider_count: 2 } },
+  k_x_wall_niche90: { label: "علوية بنيش ليد تحت 90", desc: "ضلفتين فوق، ونيش مفتوح 25 سم تحتهم للبهارات والبرطمانات بليد.", group: "مطابخ — علوي", params: { ...W, unit_category: "wardrobe", width: 90, height: 80, wardrobe_zone_count: 2, wardrobe_zone1_type: "shelves_open", wardrobe_zone1_height: 25, wardrobe_zone1_count: 0, wardrobe_zone2_type: "shelves_double", wardrobe_zone2_count: 1, include_led_marker: true } },
+  k_x_wall_vitrine80: { label: "علوية فاترينة بجنب زجاج 80", desc: "ضلفتين زجاج بفريم ألومنيوم وجنب زجاج، وليد جوه — لعرض الأطباق.", group: "مطابخ — علوي", params: { ...W, width: 80, door_type: "double_glass_metal", side_glass_door: "left", shelf_count: 2, include_led_marker: true } },
+  k_x_wall_ledpanel120: { label: "علوية قلاب عريضة 120 بلوح ليد", desc: "قلابين جنب بعض ولوح ليد تحت الوحدة بينوّر الكونتر.", group: "مطابخ — علوي", params: { ...W, width: 120, height: 60, door_type: "flip_up_double", include_shelves: false, led_panel_below: true } },
+  k_x_garage90: { label: "جراج أجهزة على الكونتر 90", desc: "وحدة قاعدة على الكونتر بقلاب: الكاتل والتوستر والخلاط مستخبيين.", group: "مطابخ — علوي", params: { ...W, width: 90, height: 50, depth: 40, wall_mount_height: 86, door_type: "flip_up", include_shelves: false, include_led_marker: true, unit_label: "جراج أجهزة" } },
+  k_x_coffee90: { label: "عمود ركن قهوة 90", desc: "3 أدراج تحت، نيش مفتوح لماكينة القهوة، وضلفتين فوق.", group: "مطابخ — طويل", params: { ...T, unit_category: "wardrobe", width: 90, wardrobe_zone_count: 3, wardrobe_zone1_type: "drawers", wardrobe_zone1_height: 85, wardrobe_zone1_count: 3, wardrobe_zone2_type: "shelves_open", wardrobe_zone2_height: 55, wardrobe_zone2_count: 0, wardrobe_zone3_type: "shelves_double", wardrobe_zone3_count: 2 } },
+  k_x_pantry90_cols: { label: "تموين 90 عمودين", desc: "عمود أرفف بضلفتين، وعمود 4 أدراج تحت وأرفف فوق.", group: "مطابخ — طويل", params: { ...T, unit_category: "wardrobe", width: 90, wardrobe_column_count: 2, wardrobe_zone_count: 1, wardrobe_zone1_type: "shelves_double", wardrobe_zone1_count: 5, wardrobe_col2_zone_count: 2, wardrobe_col2_zone1_type: "drawers", wardrobe_col2_zone1_height: 90, wardrobe_col2_zone1_count: 4, wardrobe_col2_zone2_type: "shelves_double", wardrobe_col2_zone2_count: 3 } },
+  k_x_corner_pantry100: { label: "تموين ركنة L طويل 100×100", desc: "دولاب زاوية لحد 220 بأرفف L متصلة — بيستغل الركنة كلها.", group: "مطابخ — زوايا", params: { unit_category: "corner", corner_style: "l_shape", ...T, corner_leg1_length: 100, corner_leg2_length: 100, shelf_count: 5 } },
+  k_x_corner_vitrine_tall: { label: "فاترينة ركنة طويلة 90×90", desc: "عمود زجاج في الركنة لحد 200: ضلفة قدام وضلفة جنب بفريم، وأرفف للعرض.", group: "مطابخ — زوايا", params: { unit_category: "corner_glass_display", unit_type: "tall", height: 200, corner_depth: 40, corner_leg1_length: 90, corner_leg2_length: 90 } },
+  k_x_corner_notch90: { label: "زاوية L 90 بقصة عمود", desc: "الركنة مقصوصة 15 سم حوالين العمود اللي في الحيطة.", group: "مطابخ — زوايا", params: { unit_category: "corner", corner_style: "l_shape", corner_notch_size: 15 } },
+  k_x_spice15: { label: "بول أوت بهارات 15", desc: "ضيق جنب البوتجاز: 4 صواني بحافة على لوح رأسي.", group: "مطابخ — ترولي ومنظمات", params: { unit_category: "pullout", width: 15, include_shelves: false, include_drawer_boxes: true, pullout_tray_count: 4, pullout_tray_lip: 6, drawer_runner: "bottom", drawer_box_side_clearance: 0.6 } },
   // wardrobes
   k_wr_kids100: { label: "دولاب أطفال 100", desc: "شماعة واطية وأرفف ودرجين.", group: "دواليب غرف النوم", params: { unit_category: "bedroom_wardrobe", unit_type: "tall", width: 100, height: 200, depth: 55, wardrobe_zone_count: 3, wardrobe_zone1_type: "drawers", wardrobe_zone1_height: 40, wardrobe_zone1_count: 2, wardrobe_zone2_type: "rail_double", wardrobe_zone2_height: 110, wardrobe_zone3_type: "shelves_double", wardrobe_zone3_count: 1 } },
   k_wr_2col160: { label: "دولاب نوم 160 عمودين", desc: "عمود شماعة وعمود أرفف وأدراج.", group: "دواليب غرف النوم", params: { unit_category: "bedroom_wardrobe", unit_type: "tall", width: 160, height: 240, depth: 60, wardrobe_column_count: 2, wardrobe_zone_count: 1, wardrobe_zone1_type: "rail_double", wardrobe_col2_zone_count: 2, wardrobe_col2_zone1_type: "drawers", wardrobe_col2_zone1_height: 60, wardrobe_col2_zone1_count: 3, wardrobe_col2_zone2_type: "shelves_double", wardrobe_col2_zone2_count: 4 } },
@@ -129,6 +144,44 @@ export const DRESSING = {
       { width: 70, compartments: [DC({ height: 120, content: "rail", led: "top" }), DC({ content: "rail", led: "top" })] },
       { width: "auto", compartments: [DC({ height: 95, content: "drawers", drawer_count: 4, drawer_glass: true }), DC({ height: 115, content: "empty", led: "top" }), DC({ content: "shelves", shelf_count: 0 })] },
       { width: 70, compartments: [DC({ content: "shelves", shelf_count: 5, led: "shelves" })] },
+    ] } },
+  // v112: new ideas
+  d_x_island_chest120: { label: "جزيرة دريسنج 120 بدرج زجاج", desc: "وحدة أدراج في نص الأوضة: درج زجاج فوق للساعات والإكسسوار، وأدراج عميقة تحت.", libs: { carcass: "wood_walnut_v", drawer_front: "wood_walnut_v", back: "wood_walnut_v", glass: "glass_bronze" }, params: {
+    width: 120, height: 92, depth: 60, handles: { type: "gola" }, plinth: { enabled: true, height: 8, style: "frame", side_apron: "both" },
+    materials: { carcass: { name: "NOVERA - خشب جوز - عروق رأسي" }, drawer_front: { name: "NOVERA - خشب جوز - عروق رأسي" }, back: { name: "NOVERA - خشب جوز - عروق رأسي" }, glass: { name: "NOVERA - زجاج برونز" } },
+    sections: [
+      { width: "auto", compartments: [DC({ content: "drawers", drawer_count: 4, drawer_glass: [4] })] },
+      { width: "auto", compartments: [DC({ content: "drawers", drawer_count: 4, drawer_glass: [4] })] },
+    ] } },
+  d_x_corner_l200: { label: "دريسنج ركنة L 200", desc: "زاوية عمياء بأرفف متصلة في الركنة، شماعة طويلة، وأدراج بأرفف.", params: {
+    width: 200, height: 250, depth: 60,
+    sections: [
+      { kind: "blind", width: 60, blind_partition: "post", blind_through: true, compartments: [DC({ content: "shelves", shelf_count: 5 })] },
+      { width: "auto", compartments: [DC({ content: "rail", door: "double" })] },
+      { width: "auto", compartments: [DC({ height: 70, content: "drawers", drawer_count: 3 }), DC({ content: "shelves", shelf_count: 4, door: "double" })] },
+    ] } },
+  d_x_slide_mirror240: { label: "دولاب سحّاب مراية 240", desc: "3 ألواح مراية جرّار بفريم أسود — الأوضة تبان أوسع.", libs: { door_frame_alu: "alu_black" }, params: {
+    width: 240, height: 250, depth: 65, handles: { type: "none" }, doors: { layout: "sliding", sliding_panels: 3, style: "mirror_alu" },
+    materials: { door_frame_alu: { name: "NOVERA - ألومنيوم أسود" } },
+    sections: [
+      { width: "auto", compartments: [DC({ content: "rail" })] },
+      { width: "auto", compartments: [DC({ height: 75, content: "drawers", drawer_count: 3 }), DC({ content: "shelves", shelf_count: 4 })] },
+      { width: "auto", compartments: [DC({ height: 115, content: "rail" }), DC({ content: "rail" })] },
+    ] } },
+  d_x_boutique200: { label: "دريسنج بوتيك مفتوح 200", desc: "هيكل أنثراسيت وأرفف أوك، ليد على الجناب — العرض زي المحلات.", libs: { carcass: "hpl_anthracite", back: "hpl_anthracite", shelf: "wood_oak_natural_v", fixed_shelf: "wood_oak_natural_v", drawer_front: "wood_oak_natural_v" }, params: {
+    width: 200, height: 250, depth: 55, handles: { type: "gola" },
+    materials: { carcass: { name: "NOVERA - HPL أنثراسيت" }, back: { name: "NOVERA - HPL أنثراسيت" }, shelf: { name: "NOVERA - خشب أوك طبيعي - عروق رأسي" }, fixed_shelf: { name: "NOVERA - خشب أوك طبيعي - عروق رأسي" }, drawer_front: { name: "NOVERA - خشب أوك طبيعي - عروق رأسي" } },
+    sections: [
+      { width: "auto", compartments: [DC({ content: "rail", led: "top_sides" })] },
+      { width: "auto", compartments: [DC({ height: 60, content: "drawers", drawer_count: 2 }), DC({ content: "shelves", shelf_count: 5, led: "shelves" })] },
+      { width: "auto", compartments: [DC({ height: 120, content: "rail", led: "sides" }), DC({ content: "rail", led: "top" })] },
+    ] } },
+  d_x_shaker_sage160: { label: "دولاب شيكر رفيع أخضر 160", desc: "ضلف فريم رفيع 5 سم بلون سيج، وقلابات فوق للشنط.", libs: { door: "hpl_sage", drawer_front: "hpl_sage" }, params: {
+    width: 160, height: 250, depth: 60, doors: { style: "shaker", wood_frame_width: 5 }, handles: { type: "bar" },
+    materials: { door: { name: "NOVERA - HPL أخضر سيج" }, drawer_front: { name: "NOVERA - HPL أخضر سيج" } },
+    sections: [
+      { width: "auto", compartments: [DC({ height: 200, content: "rail", door: "double" }), DC({ content: "shelves", shelf_count: 0, door: "flip_up" })] },
+      { width: "auto", compartments: [DC({ height: 60, content: "drawers", drawer_count: 3 }), DC({ height: 140, content: "shelves", shelf_count: 3, door: "double" }), DC({ content: "shelves", shelf_count: 0, door: "flip_up" })] },
     ] } },
   d_wall_long: { label: "حيطة دريسنج كاملة 360", desc: "5 أقسام: شماعات، أرفف، أدراج، ركن جزم.", params: {
     width: 360, height: 260, depth: 60, plinth: { enabled: true, style: "legs" },
@@ -238,6 +291,34 @@ function floatingDesk({ w = 120, d = 50, t = 1.8 } = {}) {
   return [b("سطح المكتب", "horizontal", "accent", 0, 0, 74, w, d, t * 2), b("بانوه حيطة ورا", "back", "carcass", 0, d, 74 + t * 2, w, t, 60),
     b("رف فوق المكتب", "shelf", "shelf", 0, d - 22, 74 + t * 2 + 40, w, 22, t), b("درج تحت السطح (وش)", "other", "front", w - 50, 0, 60, 45, t, 13)];
 }
+// v112: kids loft bed 90×190 — the bed rides on two full-height end panels, a desk + book tower underneath, ladder in front
+function loftDesk({ L = 196, D = 96, t = 1.8 } = {}) {
+  const zr = 116, rh = 18, top = 165, dd = 60, dz = 74, tw = 45;
+  const out = [b("جنب طرف شمال", "side", "carcass", 0, 0, 0, t, D, top), b("جنب طرف يمين", "side", "carcass", L - t, 0, 0, t, D, top),
+    b("حلق السرير قدام", "horizontal", "front", t, 0, zr, L - 2 * t, t, rh), b("حلق السرير ورا", "horizontal", "front", t, D - t, zr, L - 2 * t, t, rh),
+    b("مسند المرتبة قدام", "other", "carcass", t + 1, t, zr, L - 2 * t - 2, 3.6, 3.6), b("مسند المرتبة ورا", "other", "carcass", t + 1, D - t - 3.6, zr, L - 2 * t - 2, 3.6, 3.6),
+    b("قاعدة المرتبة", "shelf", "carcass", t, t, zr + 3.6, L - 2 * t, D - 2 * t, t),
+    b("حماية قدام", "other", "front", 50, 0, zr + rh, L - t - 50, t, top - zr - rh), b("حماية ورا", "other", "front", t, D - t, zr + rh, L - 2 * t, t, top - zr - rh),
+    b("سطح المكتب", "horizontal", "accent", t, 0, dz, L - 2 * t, dd, 3.6), b("ساتر تحت المكتب", "back", "carcass", tw, dd - t, 40, L - t - tw, t, dz - 40),
+    b("جنب عمود الأرفف", "side", "carcass", tw - t, 0, 0, t, dd - t, dz)];
+  for (const [i, z] of [[1, 0], [2, 25], [3, 50]]) out.push(b(`رف عمود ${i}`, "shelf", "shelf", t, 0, z, tw - 2 * t, dd - t, t));
+  out.push(b("ضهر عمود الأرفف", "back", "carcass", t, dd - t, 0, tw - 2 * t, t, dz));
+  out.push(b("قايم سلم شمال", "side", "accent", 5, -8, 0, 3.6, 8, top - 7), b("قايم سلم يمين", "side", "accent", 41.4, -8, 0, 3.6, 8, top - 7));
+  for (const [i, z] of [[1, 28], [2, 54], [3, 80], [4, 106]]) out.push(b(`درجة سلم ${i}`, "other", "accent", 8.6, -8, z, 32.8, 8, 3.6));
+  return out;
+}
+// v112: entry hall tree — shoe bench with 4 cubbies, fluted oak wall above with a hook rail and a top shelf
+function hallTree({ w = 110, d = 40, t = 1.8, sh = 45 } = {}) {
+  const out = [b("لوح الحيطة", "back", "carcass", 0, d, 0, w, t, 200),
+    b("جنب بنش شمال", "side", "carcass", 0, 0, 0, t, d, sh), b("جنب بنش يمين", "side", "carcass", w - t, 0, 0, t, d, sh),
+    b("وزرة", "plinth", "carcass", t, 3, 0, w - 2 * t, t, 5), b("قاعدة البنش", "horizontal", "carcass", t, 0, 5, w - 2 * t, d, t),
+    b("فاصل نص", "divider", "carcass", w / 2 - t / 2, 0, 5 + t, t, d, sh - 5 - t), b("قعدة أوك", "horizontal", "accent", 0, 0, sh, w, d, 3.6)];
+  for (const [nm, x0, x1] of [["شمال", t, w / 2 - t / 2], ["يمين", w / 2 + t / 2, w - t]]) out.push(b(`رف جزم ${nm}`, "shelf", "shelf", x0, 0, 25, x1 - x0, d, t));
+  const sw = 8, gap = 2, n = Math.floor((w + gap) / (sw + gap)), x0 = (w - (n * sw + (n - 1) * gap)) / 2;
+  for (let i = 0; i < n; i++) out.push(b(`شريحة ${i + 1}`, "other", "accent", x0 + i * (sw + gap), d - t, sh + 3.6, sw, t, 180 - sh - 3.6));
+  out.push(b("شريط شماعات", "other", "accent", 0, d - 2 * t, 150, w, t, 10), b("رف فوق", "shelf", "accent", 0, 12, 180, w, d - 12, 3.6));
+  return out;
+}
 const FREE = (label, desc, panels, mats) => ({ group: "تصميمات من ألواح", label, desc, params: { template: "free", panels, materials: M(mats) } });
 export const FREE_PANELS = {
   app_free_bunk: FREE("سرير دورين 90×190 بسلم", "دورين بحماية فوق وسلم جنب.", bunkBed(), { carcass: "hpl_white", front: "wood_oak_light_v", accent: "wood_oak_light_v" }),
@@ -247,6 +328,8 @@ export const FREE_PANELS = {
   app_free_niche_wall: FREE("بانوه حيطة بنيش أرفف", "بانوهين جوز ونيش 60 بأرفف في النص.", wallPanelNiche(), { carcass: "hpl_white", accent: "wood_walnut_v", shelf: "hpl_white" }),
   app_free_ladder: FREE("مكتبة سلم 60", "أرفف بتصغر لفوق.", ladderShelf(), { accent: "wood_oak_light_v", shelf: "wood_oak_light_v" }),
   app_free_float_desk: FREE("مكتب معلّق برف 120", "سطح دبل وبانوه حيطة ورف.", floatingDesk(), { carcass: "hpl_white", accent: "wood_oak_natural_v", shelf: "wood_oak_natural_v", front: "hpl_white" }),
+  px_free_loft_desk: FREE("سرير أطفال علوي بمكتب تحته", "سرير 90×190 على ارتفاع 120، مكتب وعمود أرفف تحته وسلم قدام.", loftDesk(), { carcass: "hpl_white", front: "hpl_sage", accent: "wood_beech_zan_v", shelf: "hpl_white" }),
+  px_free_hall_tree: FREE("ركن مدخل: بنش وشماعات", "بنش جزم 4 خانات، حيطة شرايح أوك 8 سم بشريط شماعات ورف فوق.", hallTree(), { carcass: "hpl_white", accent: "wood_oak_natural_v", shelf: "hpl_white" }),
 };
 
 Object.assign(EXTRA_PRESETS, PANEL, FREE_PANELS);
@@ -290,6 +373,18 @@ export const SMART = {
   ] },
   s_laundry: { label: "ركن غسالة ومكانس 140", desc: "وحدة غسالة · دولاب مكانس 40 · تموين 40.", tier: "eco", items: [
     { k: "k_washer", at: 0, p: { width: 60 } }, { k: "k_broom40", at: 60 }, { k: "k_pantry40", at: 100 },
+  ] },
+  // v112: sets built from the new pieces
+  s_x_garage300: { label: "مطبخ 300 بجراج أجهزة وفاترينة", desc: "حوض بدرج وزرة · بول أوت بهارات · بوتجاز 90 · درجين حلل · صواني — وجراج أجهزة على الكونتر تحت فاترينة زجاج.", tier: "std", items: [
+    { k: "k_x_sink_kick80", at: 0 }, { k: "k_x_spice15", at: 80 }, { k: "k_hob90", at: 95 }, { k: "k_drawers2_80", at: 185, p: { width: 85 } }, { k: "k_base_tray30", at: 270 },
+    { k: "k_plates80", at: 0 }, { k: "k_wall_open60", at: 80, p: { width: 15 } }, { k: "k_wall_hood90", at: 95 }, { k: "k_x_garage90", at: 185, p: { width: 85 } }, { k: "k_x_wall_vitrine80", at: 185, p: { width: 85 } }, { k: "k_wall1_40", at: 270, p: { width: 30 } },
+  ] },
+  s_x_coffee_pantry210: { label: "حيطة قهوة وتموين 210", desc: "عمود ركن قهوة · تموين عمودين أدراج وأرفف · كارجو 30 — كلهم 220.", tier: "lux", items: [
+    { k: "k_x_coffee90", at: 0 }, { k: "k_x_pantry90_cols", at: 90 }, { k: "k_cargo30", at: 180 },
+  ] },
+  s_x_sink_zone200: { label: "منطقة حوض 200 بدرج وزرة", desc: "حوض بدرج وزرة · سلة زبالة سحب · أدراج متقسمة — وفوق: مصفاة وعلوية بنيش ليد.", tier: "std", items: [
+    { k: "k_x_sink_kick80", at: 0 }, { k: "k_bin60", at: 80 }, { k: "k_cutlery60", at: 140 },
+    { k: "k_plates80", at: 0 }, { k: "k_x_wall_niche90", at: 80, p: { width: 120 } },
   ] },
   s_bedroom: { label: "حيطة نوم 290: دولاب + ضلفة", desc: "دولاب 3 أعمدة 240 وضلفة 50 جنبه.", tier: "std", items: [
     { k: "k_wr_3col240", at: 0 }, { k: "k_wr_single50", at: 240, p: { height: 250, depth: 60 } },

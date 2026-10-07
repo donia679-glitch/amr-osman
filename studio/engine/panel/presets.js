@@ -2731,6 +2731,289 @@ export const LIST = {
                 }
             }
         }
+    },
+    // ---------------------------------------------------------------- v112: new designs (2025–2026 trends)
+    "x_bed_japandi_low": {
+        "label": "سرير ياباني واطي عائم",
+        "group": "غرف النوم",
+        "desc": "قاعدة واطية طايرة بليد، ضهر أوك واطي ورف فوقه — ستايل جابندي.",
+        "params": {
+            "template": "bed",
+            "bed": { "mattress_width": 160, "storage": "none", "height": 24, "floating": true, "float_height": 8, "float_setback": 12, "led": true,
+                "headboard_height": 95, "headboard_extra": 25, "headboard_thickness": 3.6, "headboard_shelf": true },
+            "materials": { "front": { "lib": "wood_oak_light_v" }, "carcass": { "lib": "hpl_offwhite" }, "accent": { "lib": "wood_oak_light" } }
+        }
+    },
+    "x_bed_fluted_wall": {
+        "label": "سرير بحيطة شرايح جوز وكومودينو معلّق",
+        "group": "غرف النوم",
+        "desc": "ضهر شرايح رفيعة 4 سم بعرض الحيطة، كومودينو معلّق في كل جناح وليد ورا.",
+        "params": {
+            "template": "bed",
+            "bed": { "mattress_width": 180, "storage": "lift", "headboard_style": "slats", "slat_width": 4, "slat_gap": 1.5, "headboard_height": 150,
+                "headboard_extra": 60, "side_tables": true, "led": true },
+            "handle": "gola",
+            "materials": { "front": { "lib": "hpl_anthracite" }, "carcass": { "lib": "hpl_anthracite" }, "accent": { "lib": "wood_walnut_v" } }
+        }
+    },
+    "x_night_waterfall": {
+        "label": "كومودينو بحرف أوك نازل",
+        "group": "غرف النوم",
+        "desc": "سطح أوك 3.6 بينزل على جنب لحد الأرض، صندوق أبيض بدرج ونيش مفتوح. 50×40×55.",
+        "params": {
+            "template": "blocks", "width": 50, "depth": 40, "height": 55, "thickness": 1.8,
+            "blocks": [
+                { "k": "slab", "name": "سطح أوك", "x": 0, "y": 0, "z": "H-3.6", "w": "W", "d": "D", "h": 3.6, "t": 3.6, "mat": "accent" },
+                { "k": "slab", "name": "رجل أوك نازلة", "x": "W-3.6", "y": 0, "z": 0, "w": 3.6, "d": "D", "h": "H-3.6", "t": 3.6, "mat": "accent" },
+                { "k": "drawer", "name": "صندوق الدرج", "x": 0, "y": 0, "z": 0, "w": "W-3.6", "d": "D", "h": "H-3.6", "faces": ["left", "bottom", "back"], "drawer_h": 18, "mat": "carcass", "front_mat": "front", "handle": "none" }
+            ],
+            "materials": { "carcass": { "lib": "hpl_white" }, "front": { "lib": "hpl_white" }, "accent": { "lib": "wood_oak_natural" } }
+        }
+    },
+    "x_bench_bed_end": {
+        "label": "بنش آخر السرير بدرجين",
+        "group": "غرف النوم",
+        "desc": "قعدة أوك 3.6 على صندوق بدرجين كبار، فوق وزرة داخلة = شكل طاير.",
+        "params": {
+            "template": "blocks", "width": 130, "depth": 42, "height": 46, "thickness": 1.8,
+            "blocks": [
+                { "k": "box", "name": "وزرة داخلة", "x": 6, "y": 6, "z": 0, "w": "W-12", "d": "D-12", "h": 8, "faces": ["left", "right", "front", "back"], "joint": "sides", "mat": "plinth" },
+                { "k": "drawer", "name": "درج شمال", "x": 0, "y": 0, "z": 8, "w": "W/2", "d": "D", "h": "H-8-3.6", "faces": ["left", "right", "bottom", "back"], "front_cover": "inset", "mat": "carcass", "front_mat": "front" },
+                { "k": "drawer", "name": "درج يمين", "x": "W/2", "y": 0, "z": 8, "w": "W/2", "d": "D", "h": "H-8-3.6", "faces": ["left", "right", "bottom", "back"], "front_cover": "inset", "mat": "carcass", "front_mat": "front" },
+                { "k": "slab", "name": "قعدة أوك", "x": 0, "y": -1.8, "z": "H-3.6", "w": "W", "d": "D+1.8", "h": 3.6, "t": 3.6, "mat": "accent" }
+            ],
+            "materials": { "carcass": { "lib": "hpl_greige" }, "front": { "lib": "hpl_greige" }, "accent": { "lib": "wood_oak_natural" }, "plinth": { "lib": "hpl_black" } }
+        }
+    },
+    "x_tv_fluted_sage": {
+        "label": "شاشة شرايح رفيعة بعمود مفتوح",
+        "group": "الريسبشن",
+        "desc": "شرايح أوك 3 سم (Fluted) على أخضر سيج، عمود أرفف مفتوح بليد شمال، أرضي معلّق بقلاب.",
+        "params": {
+            "template": "tv_unit", "width": 280, "height": 220, "handle": "push",
+            "tv": { "columns": "left", "column_width": 45, "column_doors": false, "column_shelves": 5, "base_fronts": "flap", "base_float": 30,
+                "panel_style": "slats", "slat_width": 3, "slat_gap": 1, "panel_height": 170, "led": true },
+            "materials": { "carcass": { "lib": "hpl_sage" }, "front": { "lib": "hpl_sage" }, "accent": { "lib": "wood_oak_natural_v" } }
+        }
+    },
+    "x_credenza_float": {
+        "label": "كريدنزا 180 أدراج ونيشين",
+        "group": "الريسبشن",
+        "desc": "أدراج في النص ونيش مفتوح برف في كل طرف، سطح جوز 3.6 ووزرة سودا داخلة.",
+        "params": {
+            "template": "blocks", "width": 180, "depth": 45, "height": 72, "thickness": 1.8,
+            "blocks": [
+                { "k": "box", "name": "وزرة داخلة", "x": 10, "y": 6, "z": 0, "w": "W-20", "d": "D-12", "h": 12, "faces": ["left", "right", "front", "back"], "joint": "sides", "mat": "plinth" },
+                { "k": "box", "name": "نيش شمال", "x": 0, "y": 0, "z": 12, "w": 40, "d": "D", "h": "H-12-3.6", "faces": ["left", "right", "bottom", "back"], "shelves": 1, "mat": "carcass" },
+                { "k": "drawer", "name": "درج تحت", "x": 40, "y": 0, "z": 12, "w": "W-80", "d": "D", "h": "(H-12-3.6)/2", "faces": ["bottom", "back"], "front_cover": "inset", "mat": "carcass", "front_mat": "front" },
+                { "k": "drawer", "name": "درج فوق", "x": 40, "y": 0, "z": "12+(H-12-3.6)/2", "w": "W-80", "d": "D", "h": "(H-12-3.6)/2", "faces": ["bottom", "back"], "front_cover": "inset", "mat": "carcass", "front_mat": "front" },
+                { "k": "box", "name": "نيش يمين", "x": "W-40", "y": 0, "z": 12, "w": 40, "d": "D", "h": "H-12-3.6", "faces": ["left", "right", "bottom", "back"], "shelves": 1, "mat": "carcass" },
+                { "k": "slab", "name": "سطح جوز", "x": 0, "y": -1.8, "z": "H-3.6", "w": "W", "d": "D+1.8", "h": 3.6, "t": 3.6, "mat": "accent" }
+            ],
+            "materials": { "carcass": { "lib": "hpl_offwhite" }, "front": { "lib": "wood_walnut" }, "accent": { "lib": "wood_walnut" }, "plinth": { "lib": "hpl_black" } }
+        }
+    },
+    "x_shoe_slim_flap": {
+        "label": "جزامة رفيعة 24 سم بقلابات",
+        "group": "الريسبشن",
+        "desc": "معلّقة، عمقها 24 بس للطرقات الضيقة — 3 قلابات Push ونيش مفاتيح بليد فوق.",
+        "params": {
+            "template": "shoe_cabinet", "width": 80, "height": 125, "depth": 24, "mount": "wall", "handle": "push", "led_under": true,
+            "fronts": [{ "type": "flap", "count": 1, "shelves": 0 }, { "type": "flap", "count": 1, "shelves": 0 }, { "type": "flap", "count": 1, "shelves": 0 }, { "type": "open", "height": 18, "shelves": 0, "led": true }],
+            "materials": { "carcass": { "lib": "hpl_white" }, "front": { "lib": "wood_oak_light_v" } }
+        }
+    },
+    "x_console_float_drawer": {
+        "label": "كونسول مدخل معلّق بدرج",
+        "group": "الريسبشن",
+        "desc": "شريط 120 معلّق بدرج جولا وليد تحت — للمفاتيح والمراية فوقه.",
+        "params": {
+            "template": "cabinet", "width": 120, "height": 20, "depth": 36, "mount": "wall", "handle": "gola", "led_under": true, "back": { "enabled": true },
+            "fronts": [{ "type": "drawers", "count": 1 }],
+            "materials": { "carcass": { "lib": "wood_walnut_v" }, "front": { "lib": "wood_walnut_v" }, "accent": { "lib": "wood_walnut_v" } }
+        }
+    },
+    "x_vanity_float_shelf": {
+        "label": "حوض معلّق بدرج ورف فوط",
+        "group": "الحمام",
+        "desc": "درج جوز جولا فوق، رف مفتوح للفوط تحت، ليد تحت الوحدة.",
+        "params": {
+            "template": "vanity", "width": 100, "height": 55, "handle": "gola", "led_under": true,
+            "fronts": [{ "type": "open", "height": 20, "shelves": 0, "led": true }, { "type": "drawers", "count": 1 }],
+            "materials": { "carcass": { "lib": "hpl_white" }, "front": { "lib": "wood_walnut_v" }, "accent": { "lib": "terrazzo" } }
+        }
+    },
+    "x_vanity_double150": {
+        "label": "حوض دبل 150 بأدراج",
+        "group": "الحمام",
+        "desc": "معلّق، درجين عراض جولا بعرض الحوضين، أخضر زيتي وسطح تيرازو.",
+        "params": {
+            "template": "vanity", "width": 150, "height": 52, "handle": "gola", "led_under": true,
+            "fronts": [{ "type": "drawers", "count": 2 }],
+            "materials": { "carcass": { "lib": "hpl_white" }, "front": { "lib": "hpl_olive" }, "accent": { "lib": "terrazzo" } }
+        }
+    },
+    "x_bath_over_wc_open": {
+        "label": "دولاب فوق التواليت بنيش",
+        "group": "الحمام",
+        "desc": "معلّق 70 سم: نيش مفتوح بليد تحت وضلفتين Push فوق.",
+        "params": {
+            "template": "cabinet", "environment": "wet", "width": 70, "height": 85, "depth": 22, "mount": "wall", "handle": "push",
+            "fronts": [{ "type": "open", "height": 25, "shelves": 0, "led": true }, { "type": "doors", "count": 2, "shelves": 1 }],
+            "materials": { "carcass": { "lib": "hpl_greige" }, "front": { "lib": "hpl_greige" } }
+        }
+    },
+    "x_dining_pill": {
+        "label": "سفرة كبسولة على عمودين",
+        "group": "الترابيزات",
+        "desc": "220×100 أطرافها نص دايرة (Pill)، عمودين صندوق كريمي — 8 أفراد.",
+        "params": {
+            "template": "dining_table", "width": 220, "depth": 100,
+            "table": { "shape": "stadium", "base": "pedestals", "columns": 2, "column_size": 40, "base_depth": 40, "overhang_x": 40, "stretcher": "center", "stretcher_height": 12 },
+            "materials": { "table_top": { "lib": "wood_oak_natural" }, "table_base": { "lib": "hpl_cream" } }
+        }
+    },
+    "x_coffee_round_plinth": {
+        "label": "انتريه دايرة على قاعدة صندوق",
+        "group": "الترابيزات",
+        "desc": "Ø95 رخام كريما على صندوق مايكروسمنت داخل 15 سم — شكل نحتي.",
+        "params": {
+            "template": "coffee_table", "width": 95, "depth": 95, "height": 36,
+            "table": { "shape": "round", "base": "box", "overhang_x": 15, "overhang_y": 15, "shelf": false, "stretcher": "none" },
+            "materials": { "table_top": { "lib": "marble_crema_marfil" }, "table_base": { "lib": "concrete_microcement" } }
+        }
+    },
+    "x_desk_pill_frame": {
+        "label": "مكتب كبسولة ببرواز",
+        "group": "الترابيزات",
+        "desc": "140×65 أطراف مدوّرة على رجول برواز أبيض، درج وفتحة كابلات.",
+        "params": {
+            "template": "office_table", "width": 140, "depth": 65,
+            "table": { "shape": "stadium", "base": "frame", "frame_width": 5, "overhang_x": 16, "overhang_y": 3, "modesty": false, "stretcher": "back", "stretcher_height": 10, "drawer": true, "grommets": 1 },
+            "materials": { "table_top": { "lib": "wood_oak_light" }, "table_base": { "lib": "hpl_white" } }
+        }
+    },
+    "x_blk_coffee_box_fall": {
+        "label": "انتريه صندوق بدرج وحرف نازل",
+        "group": "ترابيزات كتل",
+        "desc": "سطح جوز بيقعد على صندوق جريج بدرج شمال وبينزل لحد الأرض يمين، ورف بينهم.",
+        "params": {
+            "template": "blocks", "width": 120, "depth": 60, "height": 38, "thickness": 1.8,
+            "blocks": [
+                { "k": "slab", "name": "سطح جوز", "x": 0, "y": 0, "z": "H-3.6", "w": "W", "d": "D", "h": 3.6, "t": 3.6, "mat": "accent" },
+                { "k": "slab", "name": "رجل جوز نازلة", "x": "W-3.6", "y": 0, "z": 0, "w": 3.6, "d": "D", "h": "H-3.6", "t": 3.6, "mat": "accent" },
+                { "k": "drawer", "name": "صندوق الدرج", "x": 0, "y": 0, "z": 0, "w": 55, "d": "D", "h": "H-3.6", "faces": ["left", "right", "bottom", "back"], "drawer_h": 14, "mat": "carcass", "front_mat": "front", "handle": "none" },
+                { "k": "slab", "name": "رف تحت", "x": 55, "y": 6, "z": 8, "w": "W-55-3.6", "d": "D-12", "h": 1.8, "mat": "carcass" }
+            ],
+            "materials": { "carcass": { "lib": "hpl_greige" }, "front": { "lib": "hpl_greige" }, "accent": { "lib": "wood_walnut" } }
+        }
+    },
+    "x_blk_side_stacked": {
+        "label": "جانبية مكعبين متزحلقين",
+        "group": "ترابيزات كتل",
+        "desc": "مكعب أوك مفتوح قدام وفوقه مكعب أسود مزحلق 10 سم ومفتوح من الجنب.",
+        "params": {
+            "template": "blocks", "width": 55, "depth": 40, "height": 50, "thickness": 1.8,
+            "blocks": [
+                { "k": "box", "name": "مكعب تحت", "x": 0, "y": 0, "z": 0, "w": 45, "d": "D", "h": 25, "faces": ["left", "right", "top", "bottom", "back"], "mat": "carcass" },
+                { "k": "box", "name": "مكعب فوق", "x": 10, "y": 0, "z": 25, "w": 45, "d": "D", "h": 25, "faces": ["left", "top", "bottom", "back", "front"], "mat": "accent" }
+            ],
+            "materials": { "carcass": { "lib": "wood_oak_natural" }, "accent": { "lib": "hpl_black" } }
+        }
+    },
+    "x_shelf_offset": {
+        "label": "مكتبة فواصل متلخبطة بدرجين",
+        "group": "مكتبات",
+        "desc": "4 أدوار، كل دور فاصله في مكان مختلف (Asymmetric)، ودرجين مقفولين ملوّنين. 120×35×180.",
+        "params": {
+            "template": "blocks", "against_wall": true, "width": 120, "depth": 35, "height": 180, "thickness": 1.8,
+            "blocks": [
+                { "k": "slab", "name": "جنب شمال", "x": 0, "y": 0, "z": 0, "w": 1.8, "d": "D", "h": "H", "mat": "carcass" },
+                { "k": "slab", "name": "جنب يمين", "x": "W-1.8", "y": 0, "z": 0, "w": 1.8, "d": "D", "h": "H", "mat": "carcass" },
+                { "k": "slab", "name": "قاعدة", "x": 1.8, "y": 0, "z": 0, "w": "W-3.6", "d": "D", "h": 1.8, "mat": "carcass" },
+                { "k": "slab", "name": "رف 1", "x": 1.8, "y": 0, "z": 44.55, "w": "W-3.6", "d": "D", "h": 1.8, "mat": "carcass" },
+                { "k": "slab", "name": "رف 2", "x": 1.8, "y": 0, "z": 89.1, "w": "W-3.6", "d": "D", "h": 1.8, "mat": "carcass" },
+                { "k": "slab", "name": "رف 3", "x": 1.8, "y": 0, "z": 133.65, "w": "W-3.6", "d": "D", "h": 1.8, "mat": "carcass" },
+                { "k": "slab", "name": "رأس", "x": 1.8, "y": 0, "z": "H-1.8", "w": "W-3.6", "d": "D", "h": 1.8, "mat": "carcass" },
+                { "k": "slab", "name": "فاصل دور 1", "x": 40, "y": 0, "z": 1.8, "w": 1.8, "d": "D", "h": 42.75, "mat": "carcass" },
+                { "k": "slab", "name": "فاصل دور 2", "x": 78, "y": 0, "z": 46.35, "w": 1.8, "d": "D", "h": 42.75, "mat": "carcass" },
+                { "k": "slab", "name": "فاصل دور 3", "x": 30, "y": 0, "z": 90.9, "w": 1.8, "d": "D", "h": 42.75, "mat": "carcass" },
+                { "k": "slab", "name": "فاصل دور 4", "x": 64, "y": 0, "z": 135.45, "w": 1.8, "d": "D", "h": 42.75, "mat": "carcass" },
+                { "k": "drawer", "name": "درج دور 1", "x": 1.8, "y": 0, "z": 1.8, "w": 38.2, "d": "D", "h": 42.75, "faces": ["back"], "front_cover": "inset", "mat": "carcass", "front_mat": "front" },
+                { "k": "drawer", "name": "درج دور 3", "x": 31.8, "y": 0, "z": 90.9, "w": 86.4, "d": "D", "h": 42.75, "faces": ["back"], "front_cover": "inset", "mat": "carcass", "front_mat": "front" }
+            ],
+            "materials": { "carcass": { "lib": "wood_oak_light" }, "front": { "lib": "hpl_sage" } }
+        }
+    },
+    "x_shelf_divider": {
+        "label": "مكتبة فاصل غرفة بالوشين",
+        "group": "مكتبات",
+        "desc": "شبكة 4×4 مفتوحة من الناحيتين، ألواح جوز في نص العمق بشكل شطرنج — بتتشاف من الوشين. 160×35×160.",
+        "params": {
+            "template": "blocks", "width": 160, "depth": 35, "height": 160, "thickness": 1.8,
+            "blocks": [
+                { "k": "box", "name": "وزرة داخلة", "x": 6, "y": 6, "z": 0, "w": "W-12", "d": "D-12", "h": 8, "faces": ["left", "right", "front", "back"], "joint": "sides", "mat": "plinth" },
+                { "k": "slab", "name": "جنب شمال", "x": 0, "y": 0, "z": 8, "w": 1.8, "d": "D", "h": "H-8", "mat": "carcass" },
+                { "k": "slab", "name": "جنب يمين", "x": "W-1.8", "y": 0, "z": 8, "w": 1.8, "d": "D", "h": "H-8", "mat": "carcass" },
+                { "k": "slab", "name": "قاعدة", "x": 1.8, "y": 0, "z": 8, "w": "W-3.6", "d": "D", "h": 1.8, "mat": "carcass" },
+                { "k": "slab", "name": "رف 1", "x": 1.8, "y": 0, "z": 45.55, "w": "W-3.6", "d": "D", "h": 1.8, "mat": "carcass" },
+                { "k": "slab", "name": "رف 2", "x": 1.8, "y": 0, "z": 83.1, "w": "W-3.6", "d": "D", "h": 1.8, "mat": "carcass" },
+                { "k": "slab", "name": "رف 3", "x": 1.8, "y": 0, "z": 120.65, "w": "W-3.6", "d": "D", "h": 1.8, "mat": "carcass" },
+                { "k": "slab", "name": "رأس", "x": 1.8, "y": 0, "z": "H-1.8", "w": "W-3.6", "d": "D", "h": 1.8, "mat": "carcass" },
+                {"k": "slab", "name": "فاصل دور 1-1", "x": 39.55, "y": 0, "z": 9.8, "w": 1.8, "d": "D", "h": 35.75, "mat": "carcass"},
+                {"k": "slab", "name": "فاصل دور 1-2", "x": 79.1, "y": 0, "z": 9.8, "w": 1.8, "d": "D", "h": 35.75, "mat": "carcass"},
+                {"k": "slab", "name": "فاصل دور 1-3", "x": 118.65, "y": 0, "z": 9.8, "w": 1.8, "d": "D", "h": 35.75, "mat": "carcass"},
+                {"k": "slab", "name": "فاصل دور 2-1", "x": 39.55, "y": 0, "z": 47.35, "w": 1.8, "d": "D", "h": 35.75, "mat": "carcass"},
+                {"k": "slab", "name": "فاصل دور 2-2", "x": 79.1, "y": 0, "z": 47.35, "w": 1.8, "d": "D", "h": 35.75, "mat": "carcass"},
+                {"k": "slab", "name": "فاصل دور 2-3", "x": 118.65, "y": 0, "z": 47.35, "w": 1.8, "d": "D", "h": 35.75, "mat": "carcass"},
+                {"k": "slab", "name": "فاصل دور 3-1", "x": 39.55, "y": 0, "z": 84.9, "w": 1.8, "d": "D", "h": 35.75, "mat": "carcass"},
+                {"k": "slab", "name": "فاصل دور 3-2", "x": 79.1, "y": 0, "z": 84.9, "w": 1.8, "d": "D", "h": 35.75, "mat": "carcass"},
+                {"k": "slab", "name": "فاصل دور 3-3", "x": 118.65, "y": 0, "z": 84.9, "w": 1.8, "d": "D", "h": 35.75, "mat": "carcass"},
+                {"k": "slab", "name": "فاصل دور 4-1", "x": 39.55, "y": 0, "z": 122.45, "w": 1.8, "d": "D", "h": 35.75, "mat": "carcass"},
+                {"k": "slab", "name": "فاصل دور 4-2", "x": 79.1, "y": 0, "z": 122.45, "w": 1.8, "d": "D", "h": 35.75, "mat": "carcass"},
+                {"k": "slab", "name": "فاصل دور 4-3", "x": 118.65, "y": 0, "z": 122.45, "w": 1.8, "d": "D", "h": 35.75, "mat": "carcass"},
+                {"k": "slab", "name": "لوح نص العمق 1-1", "x": 1.8, "y": "D/2-0.9", "z": 9.8, "w": 37.75, "d": 1.8, "h": 35.75, "mat": "accent"},
+                {"k": "slab", "name": "لوح نص العمق 1-3", "x": 80.9, "y": "D/2-0.9", "z": 9.8, "w": 37.75, "d": 1.8, "h": 35.75, "mat": "accent"},
+                {"k": "slab", "name": "لوح نص العمق 2-2", "x": 41.35, "y": "D/2-0.9", "z": 47.35, "w": 37.75, "d": 1.8, "h": 35.75, "mat": "accent"},
+                {"k": "slab", "name": "لوح نص العمق 2-4", "x": 120.45, "y": "D/2-0.9", "z": 47.35, "w": 37.75, "d": 1.8, "h": 35.75, "mat": "accent"},
+                {"k": "slab", "name": "لوح نص العمق 3-1", "x": 1.8, "y": "D/2-0.9", "z": 84.9, "w": 37.75, "d": 1.8, "h": 35.75, "mat": "accent"},
+                {"k": "slab", "name": "لوح نص العمق 3-3", "x": 80.9, "y": "D/2-0.9", "z": 84.9, "w": 37.75, "d": 1.8, "h": 35.75, "mat": "accent"},
+                {"k": "slab", "name": "لوح نص العمق 4-2", "x": 41.35, "y": "D/2-0.9", "z": 122.45, "w": 37.75, "d": 1.8, "h": 35.75, "mat": "accent"},
+                {"k": "slab", "name": "لوح نص العمق 4-4", "x": 120.45, "y": "D/2-0.9", "z": 122.45, "w": 37.75, "d": 1.8, "h": 35.75, "mat": "accent"}
+            ],
+            "materials": { "carcass": { "lib": "hpl_white" }, "accent": { "lib": "wood_walnut" }, "plinth": { "lib": "hpl_black" } }
+        }
+    },
+    "x_shelf_stepped": {
+        "label": "مكتبة سلالم 4 أعمدة",
+        "group": "مكتبات",
+        "desc": "أعمدة بتعلى من 45 لحد 180 زي السلم، أوك وأبيض ودرج في أول عمود. 160×35.",
+        "params": {
+            "template": "blocks", "against_wall": true, "width": 160, "depth": 35, "height": 180, "thickness": 1.8,
+            "blocks": [
+                {"k": "slab", "name": "قايم 1", "x": 0.0, "y": 0, "z": 0, "w": 1.8, "d": "D", "h": 45, "mat": "accent"},
+                {"k": "slab", "name": "قايم 2", "x": 39.55, "y": 0, "z": 0, "w": 1.8, "d": "D", "h": 90, "mat": "accent"},
+                {"k": "slab", "name": "قايم 3", "x": 79.1, "y": 0, "z": 0, "w": 1.8, "d": "D", "h": 135, "mat": "accent"},
+                {"k": "slab", "name": "قايم 4", "x": 118.65, "y": 0, "z": 0, "w": 1.8, "d": "D", "h": 180, "mat": "accent"},
+                {"k": "slab", "name": "قايم 5", "x": 158.2, "y": 0, "z": 0, "w": 1.8, "d": "D", "h": 180, "mat": "accent"},
+                {"k": "slab", "name": "قاعدة عمود 1", "x": 1.8, "y": 0, "z": 0, "w": 37.75, "d": "D", "h": 1.8, "mat": "carcass"},
+                {"k": "slab", "name": "رأس عمود 1", "x": 1.8, "y": 0, "z": 43.2, "w": 37.75, "d": "D", "h": 1.8, "mat": "carcass"},
+                {"k": "slab", "name": "قاعدة عمود 2", "x": 41.35, "y": 0, "z": 0, "w": 37.75, "d": "D", "h": 1.8, "mat": "carcass"},
+                {"k": "slab", "name": "رف عمود 2 - 1", "x": 41.35, "y": 0, "z": 43.2, "w": 37.75, "d": "D", "h": 1.8, "mat": "carcass"},
+                {"k": "slab", "name": "رأس عمود 2", "x": 41.35, "y": 0, "z": 88.2, "w": 37.75, "d": "D", "h": 1.8, "mat": "carcass"},
+                {"k": "slab", "name": "قاعدة عمود 3", "x": 80.9, "y": 0, "z": 0, "w": 37.75, "d": "D", "h": 1.8, "mat": "carcass"},
+                {"k": "slab", "name": "رف عمود 3 - 1", "x": 80.9, "y": 0, "z": 43.2, "w": 37.75, "d": "D", "h": 1.8, "mat": "carcass"},
+                {"k": "slab", "name": "رف عمود 3 - 2", "x": 80.9, "y": 0, "z": 88.2, "w": 37.75, "d": "D", "h": 1.8, "mat": "carcass"},
+                {"k": "slab", "name": "رأس عمود 3", "x": 80.9, "y": 0, "z": 133.2, "w": 37.75, "d": "D", "h": 1.8, "mat": "carcass"},
+                {"k": "slab", "name": "قاعدة عمود 4", "x": 120.45, "y": 0, "z": 0, "w": 37.75, "d": "D", "h": 1.8, "mat": "carcass"},
+                {"k": "slab", "name": "رف عمود 4 - 1", "x": 120.45, "y": 0, "z": 43.2, "w": 37.75, "d": "D", "h": 1.8, "mat": "carcass"},
+                {"k": "slab", "name": "رف عمود 4 - 2", "x": 120.45, "y": 0, "z": 88.2, "w": 37.75, "d": "D", "h": 1.8, "mat": "carcass"},
+                {"k": "slab", "name": "رف عمود 4 - 3", "x": 120.45, "y": 0, "z": 133.2, "w": 37.75, "d": "D", "h": 1.8, "mat": "carcass"},
+                {"k": "slab", "name": "رأس عمود 4", "x": 120.45, "y": 0, "z": 178.2, "w": 37.75, "d": "D", "h": 1.8, "mat": "carcass"},
+                {"k": "drawer", "name": "درج عمود 1", "x": 1.8, "y": 0, "z": 1.8, "w": 37.75, "d": "D", "h": 41.4, "faces": ["back"], "front_cover": "inset", "mat": "carcass", "front_mat": "front"}
+            ],
+            "materials": { "carcass": { "lib": "hpl_white" }, "accent": { "lib": "wood_oak_natural_v" }, "front": { "lib": "wood_oak_natural" } }
+        }
     }
 };
 export const get = (key) => (Object.prototype.hasOwnProperty.call(LIST, key) ? LIST[key] : undefined);

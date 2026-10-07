@@ -1177,6 +1177,47 @@ html.lang-en .dsl.tip { transform: translate(10px, -150%); }
 
 .dscol{border:1px dashed var(--line);border-radius:8px;padding:6px;margin:6px 0}.dscav.shared{background:color-mix(in srgb,#2e7d4f 10%,var(--panel2));border-color:#2e7d4f}.dscav{border:1px solid var(--line);border-radius:8px;padding:6px;margin:6px 0}.dsin.sm{width:64px}
 details.dsbox>summary{font-weight:700;cursor:pointer}details.dsbox details{margin:6px 0;border-top:1px solid var(--line);padding-top:4px}details.dsbox details>summary{font-weight:600;font-size:13px;cursor:pointer}details.dsdet{margin:4px 0}.dsbox.focus{border:2px solid #2e7d4f;background:color-mix(in srgb,#2e7d4f 10%,var(--panel2));color:var(--ink)}.dsbox.focus h4{margin:10px 0 4px;font-size:13px;color:var(--ink)}.dsbox.focus small,.dscav small,.dscol small{color:var(--muted)}.dsbox.focus input,.dsbox.focus select,.dscav input,.dscav select,.dscol input,.dscol select{color:var(--ink);background:var(--panel);border:1px solid var(--line)}
+
+/* v112 — the warehouse */
+.popbox.wide { width: min(1000px, 100%); max-height: 92%; }
+.stktiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; margin: 6px 0 10px; }
+.stktiles > div { background: var(--panel2); border: 1px solid var(--line); border-radius: 12px; padding: 10px; text-align: center; }
+.stktiles b { display: block; font-size: 22px; color: var(--accent, #1d6b3a); }
+.stktiles small { color: var(--muted); font-size: 12px; }
+.stkbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 6px; }
+.stkbar .libq { flex: 1 1 220px; min-width: 0; }
+.stkkey { white-space: nowrap; margin-inline-start: 6px; }
+.stkkey i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: -2px; margin-inline-end: 4px; border: 1px solid var(--line); }
+.stkkey i.own { background: #c9b07a; } .stkkey i.used { background: #3b9b5d; }
+.stkmat { border: 1px solid var(--line); border-radius: 14px; margin: 10px 0; background: var(--panel); }
+.stkmat > summary { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 10px 12px; cursor: pointer; }
+.stkmat > summary b { font-size: 15px; margin-inline-end: 4px; }
+.stkmat[open] > summary { border-bottom: 1px solid var(--line); }
+.stkinfo { display: flex; flex-wrap: wrap; gap: 6px 18px; padding: 8px 12px 0; font-size: 13px; color: var(--muted); }
+.stkinfo b { color: var(--ink); }
+.stksheets, .stkadd { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 8px 12px; }
+.stksheets input { width: 70px; text-align: center; }
+.stkadd input { width: 84px; } .stkadd input:not(.pin) { flex: 1 1 180px; width: auto; }
+.stkadd input, .stksheets input { border: 1px solid var(--line); border-radius: 10px; padding: 7px 9px; background: var(--panel); color: var(--ink); font: inherit; }
+.stkgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; padding: 6px 12px; }
+.stkcell { position: relative; border: 1px solid var(--line); border-radius: 12px; padding: 8px; display: flex; flex-direction: column; gap: 2px; background: var(--panel2); }
+.stkcell b { font-size: 16px; direction: ltr; text-align: end; }
+.stkcell small { color: var(--muted); font-size: 11.5px; line-height: 1.35; }
+.stkcell small.ok { color: #2f8a4f; font-weight: 600; }
+.stkcell.used { border-color: #3b9b5d; box-shadow: inset 0 0 0 1px #3b9b5d; }
+.stkcell.own { border-style: dashed; }
+.stkrem { display: block; margin-bottom: 4px; }
+.stkrem .sh { fill: none; stroke: var(--muted); stroke-dasharray: 3 2; stroke-width: 1; }
+.stkrem .r { fill: #d8c49a; stroke: #8a6d33; stroke-width: 1; }
+.stkrem .r.own { fill: #e9dcc0; } .stkrem .r.used { fill: #9fd1ae; stroke: #2f8a4f; }
+.stkdel { position: absolute; top: 4px; inset-inline-end: 4px; width: 26px; height: 26px; border-radius: 50%; border: 1px solid var(--line); background: var(--panel); color: var(--muted); line-height: 1; }
+.stknew { border: 1px solid var(--line); border-radius: 14px; margin: 10px 0; padding: 0 0 6px; }
+.stknew > summary { padding: 10px 12px; cursor: pointer; font-weight: 600; }
+.stknew .tblwrap, .stknew > .hint { padding: 0 12px; }
+.stkempty { padding: 20px; text-align: center; }
+.stkacts { display: flex; flex-wrap: wrap; gap: 8px; padding: 4px 12px 12px; }
+.stkacts button, .stkadd button, .stksheets button { width: auto; flex: 0 0 auto; white-space: nowrap; }
+.stkadd > span, .stksheets > span { white-space: nowrap; color: var(--muted); font-size: 13px; }
 </style>
 <div id="splash" class="splash" aria-hidden="true">
   <div class="sp-in">
