@@ -448,35 +448,47 @@ export class Plan {
         }
         const gh = this.c.gola_height;
         const existing = Number(this.f.existing_recess ?? 0);
-        const top = e === "top" && (existing > 0 || this.f.is_top);
-        if (existing >= gh - 0.01) {
+        // v107: the gap the carcass already left above this front IS the handle gap — never cut the front a second time
+        if (existing >= gh - 0.31) {
             this.out.notes.push(`مقبض بلت إن في الفتحة الموجودة (${fmt(existing)} سم)`);
         }
         else {
-            if (!this.reduce(e, gh - existing))
+            if (!this.reduce(e, gh - Math.max(existing, 0)))
                 return;
-            this.out.notes.push(`مقبض بلت إن على ${EDGE_NAMES[e]} — الوش اتخصم ${fmt(gh - existing)} سم`);
+            this.out.notes.push(`مقبض بلت إن على ${EDGE_NAMES[e]} — الوش اتخصم ${fmt(gh - Math.max(existing, 0))} سم`);
         }
         const fr = this.out.front;
-        const g = Math.max(gh, existing);
-        // under the counter the L reaches the box top (the front's own 3 mm reveal sits above the recess)
-        const zb = e === "top" ? fr.z1 : fr.z0 - g, zt = e === "top" ? fr.z1 + g + (top && existing > 0 ? 0.3 : 0) : fr.z0;
-        const yc = this.f.overlay === false ? 0.0 : this.t, D = Number(this.f.rail_d ?? 2.5) || 2.5, a = 0.2, lip = 0.6, ov = 0.6;
+        const num = (k) => (this.f[k] === null || this.f[k] === undefined || !Number.isFinite(Number(this.f[k])) ? null : Number(this.f[k]));
+        const ceil = num("ceil"), nextZ0 = num("next_z0"), boxTop = num("box_top"), nextBox = num("next_box_z0");
+        const yc = this.f.overlay === false ? 0.0 : this.t, D = Number(this.f.rail_d ?? 2.5) || 2.5, a = 0.2, lip = 0.6;
         let kind, pts;
         if (e === "bottom") {
-            kind = "L";   // upside-down L: plate under the wall unit's bottom + wall up behind the door
+            // upside-down L under a wall unit / a flap: plate under the box bottom + wall up behind the door
+            kind = "L";
+            const zt = fr.z0, zb = fr.z0 - Math.max(gh, existing);
             pts = [[yc, zb], [yc + D, zb], [yc + D, zt + 1.0], [yc + D - a, zt + 1.0], [yc + D - a, zb + a], [yc + a, zb + a], [yc + a, zb + lip], [yc, zb + lip]];
         }
-        else if (top) {
-            kind = "L";   // L under the counter: plate on the box top + wall going down behind the front
-            pts = [[yc, zt], [yc + D, zt], [yc + D, zb - 1.0], [yc + D - a, zb - 1.0], [yc + D - a, zt - a], [yc + a, zt - a], [yc + a, zt - lip], [yc, zt - lip]];
+        else if (this.f.is_top || nextZ0 === null) {
+            // L under the counter / a board: the plate closes the top of the gap, the wall goes down behind the front (above its drawer box)
+            kind = "L";
+            const zt = ceil ?? fr.z1 + Math.max(gh, existing) + 0.3;
+            let zb = fr.z1 - 1.0;
+            if (boxTop !== null)
+                zb = Math.min(Math.max(zb, boxTop + 0.1), fr.z1 - 0.2);
+            pts = [[yc, zt], [yc + D, zt], [yc + D, zb], [yc + D - a, zb], [yc + D - a, zt - a], [yc + a, zt - a], [yc + a, zt - lip], [yc, zt - lip]];
         }
         else {
-            kind = "C";   // C between two fronts: plates behind both fronts + the back wall, open to the front
-            pts = [[yc, zt + ov], [yc + D, zt + ov], [yc + D, zb - ov], [yc, zb - ov], [yc, zb - ov + a], [yc + D - a, zb - ov + a], [yc + D - a, zt + ov - a], [yc, zt + ov - a]];
+            // C between two fronts, open to the front: the lower plate tucks behind this front's top, the upper plate sits level with the
+            // next front's bottom edge (the drawer box above stands on it, nothing goes into it)
+            kind = "C";
+            let zb = fr.z1 - 0.6;
+            if (boxTop !== null)
+                zb = Math.min(Math.max(zb, boxTop + 0.1), fr.z1 - 0.2);
+            const zt = Math.max(Math.min(nextZ0, nextBox ?? Infinity) - 0.05, fr.z1 + 1.0);
+            pts = [[yc, zt], [yc + D, zt], [yc + D, zb], [yc, zb], [yc, zb + a], [yc + D - a, zb + a], [yc + D - a, zt - a], [yc, zt - a]];
         }
-        const r = { x0: -0.15, x1: this.w + 0.15, z0: zb, z1: zt };
-        this.out.visuals.push({ ...r, z0: Math.min(...pts.map((q) => q[1])), z1: Math.max(...pts.map((q) => q[1])), y0: yc, y1: yc + D, mat: "gola", attach: "carcass", run: "x", section: pts.map(([y, z]) => [rround(y, 3), rround(z, 3)]), name: kind === "L" ? "بروفايل مقبض L" : "بروفايل مقبض C" });
+        const zs = pts.map((q) => q[1]);
+        this.out.visuals.push({ x0: -0.15, x1: this.w + 0.15, z0: Math.min(...zs), z1: Math.max(...zs), y0: yc, y1: yc + D, mat: "gola", attach: "carcass", run: "x", section: pts.map(([y, z]) => [rround(y, 3), rround(z, 3)]), name: kind === "L" ? "بروفايل مقبض L" : "بروفايل مقبض C" });
         inc(this.out.hardware, `بروفايل مقبض بلت إن ${kind === "L" ? "L (فوق)" : "C (بين وشين)"} (متر طولي)`, rround((this.w + 0.3) / 100.0, 3));
         this.out.edge = e;
     }

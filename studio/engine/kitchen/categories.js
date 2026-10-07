@@ -172,7 +172,7 @@ export class WardrobeUnitBuilder extends StandardUnitBuilder {
         for (let i = 0; i < count; i++) {
             const dz0 = z;
             const full = z + eachH;
-            const fdz1 = i === count - 1 ? rmax(full - this.handleRecess(), dz0) : full;
+            const fdz1 = i === count - 1 || this.golaMode() ? rmax(full - this.handleRecess(), dz0) : full;
             this.buildSingleDrawer(e, zx0, zx1, fy0, fy1, dz0, fdz1, full, i, count, `${labelPrefix}درج ${i + 1}`);
             z = full + this.drawerGap();
         }
@@ -509,7 +509,8 @@ export class PulloutBuilder extends CarcassBuilder {
         const bz0 = zone.z0 + cm(0.5), bz1 = z1 - cm(1.5);
         const spineRight = toS(this.p["pullout_spine_side"]) === "right";
         // the spine: one full-height panel on the runner side, screwed to the back of the front
-        const sx0 = spineRight ? x1 - clr - t : x0 + clr, sx1 = sx0 + t;
+        const io = this.innerOpening(), ox0 = rmax(x0, io.x0), ox1 = rmin(x1, io.x1); // v107: runners sit against the carcass sides
+        const sx0 = spineRight ? ox1 - clr - t : ox0 + clr, sx1 = sx0 + t;
         const sp = createBox(this.ctx, sub, "جنب البول أوت (الضهر الرأسي)", sx0, y0, bz0, sx1, y1, bz1, mat);
         assignLayer(this.ctx, sp, TAGS.front);
         if (eb) bandAllSideEdges(this.ctx, sp, this.edgeBandingMaterial());
@@ -520,7 +521,7 @@ export class PulloutBuilder extends CarcassBuilder {
         // the trays: shallow open boxes hung off the spine (bottom + front, back and outer walls); the spine is the inner wall
         const n = Math.min(Math.max(toI(this.p["pullout_tray_count"]), 1), 8);
         const lip = rmin(rmax(pcm(this.p["pullout_tray_lip"]), cm(3.0)), cm(20.0));
-        const bt = rmin(this.drawerBoxBaseT(), t), tx0 = spineRight ? x0 + clr : sx1, tx1 = spineRight ? sx0 : x1 - clr;
+        const bt = rmin(this.drawerBoxBaseT(), t), tx0 = spineRight ? ox0 + clr : sx1, tx1 = spineRight ? sx0 : ox1 - clr;
         const trayH = bt + lip;
         const span = bz1 - bz0 - trayH;
         const step = n > 1 ? span / (n - 1) : 0;

@@ -135,6 +135,80 @@ export function kickHandleMode(params) {
     const m = toS(params["toe_kick_drawer_handle"]);
     return ["none", "same", "routed", "gap"].includes(m) ? m : "none";
 }
+/** v107: every solid board of the unit (no fronts, holes, hinge cups or handle parts) in unit cm, tagged with the drawer front it rides with */
+function leafSolids(entities, tr, out, fronts, owner = null) {
+    for (const e of entities.list) {
+        if (!isInst(e) || attr(e, "handle_part", false))
+            continue;
+        if (/^(ثقب|خرم|كبة)/.test(e.name || ""))
+            continue;
+        const t = tr.mul(e.transformation);
+        const fr = fronts.find((f) => f.piece === e);
+        if (fr)
+            continue;
+        const own = owner ?? fronts.find((f) => f.kind === "drawer" && f.holder === e) ?? null;
+        const kids = e.definition.entities.insts();
+        if (kids.length)
+            leafSolids(e.definition.entities, t, out, fronts, own);
+        if (e.definition.entities.faces().length)
+            out.push({ ...boxIn(e, t), owner: own, name: e.name, inst: e });
+    }
+    return out;
+}
+/** v107: cut the profile's seat out of a carcass side — the front edge steps back by the profile depth over each profile's height */
+function notchSide(ctx, sd, list, pieces) {
+    if (!list.length)
+        return;
+    try {
+        const e = sd.inst, parent = e.parent;
+        if (!parent)
+            return;
+        const tr = e.transformation, inv = tr.inverse();
+        const P = (x, y, z) => inv.applyPoint(new Point3d(cm(x), cm(y), cm(z)));
+        const ns = list.map((n) => ({ z0: Math.max(n.z0, sd.z0), z1: Math.min(n.z1, sd.z1), d: Math.min(n.y1, sd.y1 - 1.0) })).filter((n) => n.z1 - n.z0 > 0.1 && n.d > sd.y0 + 0.1).sort((a, b) => a.z0 - b.z0);
+        if (!ns.length)
+            return;
+        // the side's outline in (y, z), walking the front edge bottom → top with the notches, then the back edge down
+        const fy = sd.y0, out = [[sd.y1, sd.z0], [sd.y1, sd.z1]];
+        const front = [];
+        let z = sd.z0;
+        front.push([fy, sd.z0]);
+        for (const n of ns) {
+            if (n.z0 < z - 0.01)
+                continue;
+            if (n.z0 > z + 0.01)
+                front.push([fy, n.z0]);
+            front.push([n.d, n.z0], [n.d, n.z1]);
+            if (n.z1 < sd.z1 - 0.01)
+                front.push([fy, n.z1]);
+            z = n.z1;
+        }
+        if (z < sd.z1 - 0.01)
+            front.push([fy, sd.z1]);
+        const poly = [...front, ...out.reverse()];
+        const yz = poly.map(([y, zz]) => { const q = P(sd.x0, y, zz); return [q.y, q.z]; });
+        const a = P(sd.x0, 0, 0), c = P(sd.x1, 0, 0);
+        const old = e.definition.entities.faces();
+        const body = old.reduce((m, f) => (!m || f.area() > m.area() ? f : m), null)?.material ?? null;
+        const tmp = createSlabAlongX(ctx, parent, `${e.name} (تفريغ)`, Math.min(a.x, c.x), Math.max(a.x, c.x), yz, body);
+        parent.remove(tmp);
+        // keep the edge banding on the same edges (front / top / bottom)
+        const bands = old.filter((f) => f.material && body && f.material !== body).map((f) => [f.normal(), f.material]);
+        for (const f of tmp.definition.entities.faces())
+            for (const [nv, m] of bands)
+                if (f.normal().dot(nv) > 0.9) { f.material = m; f.backMaterial = m; }
+        e.definition = tmp.definition;
+        const pc = pieces.find((p) => clean(p.name) === clean(e.name));
+        if (pc) {
+            const txt = ns.map((n) => `${fmtCm(n.d - fy)}×${fmtCm(n.z1 - n.z0)} عند ${fmtCm(n.z0 - sd.z0)}`).join(" · ");
+            pc.note = [pc.note, `تفريغ لبروفايل المقبض في الحرف الأمامي (عمق×ارتفاع، من تحت): ${txt}`].filter((x) => x).join(" | ");
+        }
+    }
+    catch (ex) {
+        ctx.puts(`[KitchenUnitDesigner] Handles notch warning: ${ex.message}`);
+    }
+}
+const fmtCm = (v) => String(rround(v, 1));
 export function applyHandles(ctx, group, params, appDefault = null) {
     const [cfg0, errors] = effectiveCfg(params, appDefault);
     const unitOn = !!(cfg0 && cfg0.type !== "none");
@@ -152,15 +226,26 @@ export function applyHandles(ctx, group, params, appDefault = null) {
         unitType = "base";
     const ub = localBounds(group);
     const unitZ0 = toCm(ub.min().z);
-    const fronts = collectFronts(group.entities, new Transformation(), []);
-    // the built-in profile is cut to fit between the two sides (corner units keep the fronts' own run)
+    const fronts0 = collectFronts(group.entities, new Transformation(), []);
+    // the built-in profile is cut to fit between the two sides
     const W = toF(params["width"]), T = toF(params["panel_thickness"]) || 1.8;
-    const clipX = W > 2 * T && !/corner/.test(toS(params["unit_category"])) ? [T, W - T] : null;
-    for (const f of fronts) {
+    const clipX = W > 2 * T ? [T, W - T] : null;
+    for (const f of fronts0) {
         f.box = boxIn(f.piece, f.piece_tr);
         f.clipX = clipX;
     }
-    const topZ = Math.max(...fronts.map((f) => f.box.z1));
+    // v107: only the fronts in the door plane get a handle — an inner drawer's own front («وش داخلي») hides behind the main front
+    const planeY = Math.min(...fronts0.map((f) => f.box.y0));
+    const fronts = fronts0.filter((f) => f.box.y0 <= planeY + 0.5);
+    const solids = cfg0?.type === "gola" ? leafSolids(group.entities, new Transformation(), [], fronts) : [];
+    // the carcass sides as built (a blind-corner box is wider than its «width» parameter)
+    const sL = solids.find((sd) => /^جنب شمال/.test(sd.name) && !sd.owner), sR = solids.find((sd) => /^جنب يمين/.test(sd.name) && !sd.owner);
+    // v107: the profile runs the full width of the box through notches cut in the sides (like a real gola), so it lines up with the fronts
+    const notchable = !!(sL && sR && sR.x0 - sL.x1 > 5);
+    const boards = notchable ? solids.filter((sd) => !sd.owner && sd.x1 - sd.x0 < 2.6 && sd.y1 - sd.y0 > 20 && sd.z1 - sd.z0 > 20 && /جنب|فاصل|قاطوع/.test(sd.name)) : [];
+    if (notchable)
+        for (const f of fronts) { f.clipX = [sL.x0, sR.x1]; f.boards = boards; f.sides = [sL, sR]; }
+    const notches = [];
     const recess = unitType === "base" ? toF(params["door_handle_recess"]) : 0.0;
     const pieces = ctx.labels.pieces.filter((p) => p.unit_id === unitId);
     const used = new Set();
@@ -172,11 +257,31 @@ export function applyHandles(ctx, group, params, appDefault = null) {
         if (!isKick && !unitOn)
             continue;
         const b = f.box;
+        // v107: what is really above this front — the next front (C between them) or a board / the counter (L under it);
+        // the gap the carcass already left there is used as is (it was counted twice before)
+        const xa = b.x0 + 1.0, xb = b.x1 - 1.0;
+        const xo = (o) => Math.min(o.x1, xb) - Math.max(o.x0, xa) > 0.5;
+        let next = null;
+        for (const o of fronts)
+            if (o !== f && o.holder.name !== KICK_DRAWER && xo(o.box) && o.box.z0 >= b.z1 - 0.01 && (!next || o.box.z0 < next.box.z0))
+                next = o;
+        let ceil = null;
+        for (const sd of solids)
+            if (sd.owner !== f && xo(sd) && sd.z0 >= b.z1 - 0.01 && Math.min(sd.y1, b.y1 + 2.5) - Math.max(sd.y0, b.y1) > 0.1 && (ceil === null || sd.z0 < ceil))
+                ceil = sd.z0;
+        const boxTop = Math.max(-Infinity, ...solids.filter((sd) => sd.owner === f).map((sd) => sd.z1));
+        const nextBox = next ? Math.min(Infinity, ...solids.filter((sd) => sd.owner === next).map((sd) => sd.z0)) : Infinity;
+        const underBoard = ceil !== null && (!next || ceil < next.box.z0 - 0.01);
+        const limit = underBoard ? ceil : next ? next.box.z0 : null;
+        const gapAbove = limit === null ? (recess > 0 ? recess + 0.3 : 0.0) : limit - b.z1;
         const front = {
             w: b.x1 - b.x0, h: b.z1 - b.z0, t: b.y1 - b.y0, kind: f.kind, hinge: f.hinge, unit_type: unitType,
-            z_base: b.z0 - unitZ0, framed: f.framed, existing_recess: recess > 0 && Math.abs(b.z1 - topZ) < 1.0 ? recess : 0.0,
-            is_top: Math.abs(b.z1 - topZ) < 1.0, drop: unitType === "wall" ? toF(params["door_bottom_extension"]) : 0.0,
+            z_base: b.z0 - unitZ0, framed: f.framed, existing_recess: gapAbove - 0.3 >= 0.9 ? rround(gapAbove - 0.3, 3) : 0.0,
+            is_top: next === null || underBoard, drop: unitType === "wall" ? toF(params["door_bottom_extension"]) : 0.0,
             overlay: toS(params["door_position"]) !== "inset", rail_d: toF(params["top_rail_front_inset"]) > 0 ? toF(params["top_rail_front_inset"]) : 2.5,
+            // in the front's own frame: the board / counter above, the next front's bottom, this drawer's box top, the next drawer's box bottom
+            ceil: limit === null ? null : limit - b.z0, next_z0: next && !underBoard ? next.box.z0 - b.z0 : null,
+            box_top: Number.isFinite(boxTop) ? boxTop - b.z0 : null, next_box_z0: next && !underBoard && Number.isFinite(nextBox) ? nextBox - b.z0 : null,
         };
         const plan = Catalog.compute(front, isKick && kcfg ? kcfg : cfg);
         for (const w of plan.warnings)
@@ -185,11 +290,21 @@ export function applyHandles(ctx, group, params, appDefault = null) {
             hardware[k] = rround((hardware[k] ?? 0) + v, 3);
         if (!plan.holes.length && !plan.visuals.length && !plan.pieces.length && plan.reduce == null)
             continue;
-        if (plan.reduce)
+        if (plan.reduce) {
             reshape(ctx, f, plan);
+            // v107: a drawer box never rises into the handle gap — its walls follow the cut front down (1 cm under its top)
+            if (f.kind === "drawer" && plan.reduce.edge === "top")
+                shrinkBoxes(pieces, solids.filter((sd) => sd.owner === f), b.z0 + plan.front.z1 - 1.0);
+        }
         draw(ctx, group, f, plan);
         updateLabel(ctx, group, pieces, used, f, plan);
+        for (const v of plan.visuals)
+            if (v.mat === "gola" && v.section)
+                notches.push({ x0: b.x0 + (v.rx0 ?? v.x0), x1: b.x0 + (v.rx1 ?? v.x1), y0: b.y0 + v.y0, y1: b.y0 + v.y1, z0: b.z0 + v.z0, z1: b.z0 + v.z1, kind: /L/.test(v.name) ? "L" : "C" });
     }
+    if (notchable && notches.length)
+        for (const sd of boards)
+            notchSide(ctx, sd, notches.filter((n) => n.x0 < sd.x1 - 0.05 && n.x1 > sd.x0 + 0.05), pieces);
     const uniq = [...new Set(warnings)];
     group.setAttribute("KUD", "handles_cfg_json", rubyJson(cfg, () => true));
     group.setAttribute("KUD", "handles_hardware_json", rubyJson(hardware, (k) => k.includes("(متر طولي)")));
@@ -197,6 +312,26 @@ export function applyHandles(ctx, group, params, appDefault = null) {
     if (uniq.length)
         ctx.puts(`[KitchenUnitDesigner] Handles: ${uniq.join(" | ")}`);
     return { fronts: fronts.length, hardware, warnings: uniq };
+}
+function shrinkBoxes(pieces, owned, lim) {
+    for (const sd of owned) {
+        const d = sd.z1 - lim;
+        if (d <= 0.01 || sd.z1 - sd.z0 - d < 1.0)
+            continue;
+        try {
+            const e = sd.inst, es = e.definition.entities, top = localBounds(e).max().z, tol = cm(0.01);
+            const faces = es.faces().filter((fc) => Math.abs(fc.normal().z) > 0.9 && fc.vertices().every((v) => Math.abs(v.position.z - top) < tol));
+            if (!faces.length)
+                continue;
+            es.transformEntities(Transformation.translation(new Vector3d(0, 0, -cm(d))), faces);
+            const h = sd.z1 - sd.z0, pc = pieces.find((p) => clean(p.name) === clean(sd.name) && (Math.abs(toF(p.h) - h) < 0.05 || Math.abs(toF(p.w) - h) < 0.05));
+            if (pc) {
+                if (Math.abs(toF(pc.h) - h) < 0.05) pc.h = rround(h - d, 3);
+                else pc.w = rround(h - d, 3);
+            }
+        }
+        catch (_) { }
+    }
 }
 function reshape(ctx, f, plan) {
     try {
@@ -263,7 +398,16 @@ function draw(ctx, group, f, plan) {
                 const circ = (n, r) => Array.from({ length: n }, (_, i) => [r * Math.cos((2 * Math.PI * i) / n), r * Math.sin((2 * Math.PI * i) / n)]);
                 if (v.section && v.run === "x") {
                     let vx0 = v.x0, vx1 = v.x1;
+                    if (v.attach === "carcass" && f.boards) {
+                        // run on to the outer face of a side / the middle of a divider next to this end (the boards are notched for it)
+                        const ex0 = b.x0 + vx0, ex1 = b.x0 + vx1;
+                        const lb = f.boards.find((q) => q.x1 >= ex0 - 2.5 && q.x0 <= ex0 + 0.5);
+                        const rb = f.boards.find((q) => q.x0 <= ex1 + 2.5 && q.x1 >= ex1 - 0.5);
+                        if (lb) vx0 = (lb === f.sides[0] ? lb.x0 : (lb.x0 + lb.x1) / 2.0) - b.x0;
+                        if (rb) vx1 = (rb === f.sides[1] ? rb.x1 : (rb.x0 + rb.x1) / 2.0) - b.x0;
+                    }
                     if (v.attach === "carcass" && f.clipX) { vx0 = Math.max(vx0, f.clipX[0] - b.x0); vx1 = Math.min(vx1, f.clipX[1] - b.x0); }
+                    v.rx0 = vx0; v.rx1 = vx1;
                     if (vx1 - vx0 < 0.5)
                         continue;
                     const a = L(vx0, 0, 0), c = L(vx1, 0, 0);

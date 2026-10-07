@@ -146,6 +146,15 @@ export class CarcassBuilder {
     handleRecess() {
         return pcm(this.p["door_handle_recess"] ?? 0);
     }
+    /** v107 (NOVERA): a base unit with a handle gap and no other handle gets the built-in aluminium profile (handles.js effectiveCfg) —
+     *  then EVERY drawer front leaves the gap at its top (a C profile between drawers, the L under the counter) and the boxes stay under it */
+    golaMode() {
+        if (toS(this.p["unit_type"]) !== "base" || !(this.handleRecess() > 0))
+            return false;
+        const h = this.p["kud_handles"];
+        const t = h && typeof h === "object" && !Array.isArray(h) ? toS(h["type"]) : "";
+        return t === "" || t === "none" || t === "gola";
+    }
     doorBottomExtension() {
         return pcm(toF(this.p["door_bottom_extension"]));
     }
@@ -1388,7 +1397,7 @@ export class CarcassBuilder {
             const dz0 = z;
             const full = z + h;
             const isTop = i === heights.length - 1;
-            const fdz1 = isTop ? rmax(full - this.handleRecess(), dz0) : full;
+            const fdz1 = isTop || this.golaMode() ? rmax(full - this.handleRecess(), dz0) : full;
             this.buildSingleDrawer(e, x0, x1, fy0, fy1, dz0, fdz1, full, i, heights.length, `${labelPrefix}درج ${i + 1}`);
             z = full + this.drawerGap();
         });
@@ -1424,15 +1433,18 @@ export class CarcassBuilder {
             this.recordDoorLabel(label, x0, x1, dz0, frontDz1, null); // the glass front's frame rails and glass were labelled by buildFramedGlassDoor
         // an inner (hidden) drawer behind a tall front: the main box takes the lower half, the inner box with its own small front sits above it
         const inner = this.drawerBoxesEnabled() && this.drawerInnerAt(index) && frontDz1 - dz0 >= cm(24.0);
-        const mainDz1 = inner ? dz0 + (frontDz1 - dz0) * 0.5 - cm(0.5) : boxDz1;
-        const [floorTop, floorBottom] = this.drawerBoxesEnabled() && mainDz1 > dz0 ? this.buildDrawerBox(sub, x0, x1, fy1, dz0, mainDz1, label, null, glass, inner ? cm(1.0) : null) : [dz0, dz0];
+        // v107: with the built-in profile the box follows its own front (its top stays under the C / L profile)
+        const gola = this.golaMode() && boxDz1 > frontDz1 + cm(0.01);
+        const mainDz1 = inner ? dz0 + (frontDz1 - dz0) * 0.5 - cm(0.5) : gola ? frontDz1 : boxDz1;
+        const drop = inner ? cm(1.0) : gola ? (this.drawerTurbo() ? cm(1.5) : rmax(this.drawerBoxWallDrop() - (boxDz1 - frontDz1), cm(1.0))) : null;
+        const [floorTop, floorBottom] = this.drawerBoxesEnabled() && mainDz1 > dz0 ? this.buildDrawerBox(sub, x0, x1, fy1, dz0, mainDz1, label, null, glass, drop) : [dz0, dz0];
         this.buildDrawerInsertFor(sub, index, x0, x1, fy1, dz0, floorTop);
         if (inner) {
             const t = this.drawerBoxT(), ig = e.addGroup();
             ig.name = `${label} - درج داخلي`;
             const ie = ig.entities;
             const iz0 = mainDz1 + cm(1.0), iz1 = frontDz1 - cm(1.5), ify0 = fy1 + cm(1.0), ify1 = ify0 + t;
-            const ix0 = x0 + this.drawerBoxSideClearance(), ix1 = x1 - this.drawerBoxSideClearance();
+            const io = this.innerOpening(), ix0 = rmax(x0, io.x0) + this.drawerBoxSideClearance(), ix1 = rmin(x1, io.x1) - this.drawerBoxSideClearance();
             if (iz1 - iz0 >= cm(6.0) && ix1 > ix0) {
                 const f = createBox(this.ctx, ie, `${label} - وش داخلي`, ix0, ify0, iz0, ix1, ify1, iz1, this.carcassMaterial());
                 assignLayer(this.ctx, f, TAGS.front);
@@ -1456,8 +1468,9 @@ export class CarcassBuilder {
         if (type === "" || type === "none")
             return;
         const boxes = this.drawerBoxesEnabled();
-        const ix0 = boxes ? x0 + this.drawerBoxSideClearance() + this.drawerBoxT() : x0 + cm(1.0);
-        const ix1 = boxes ? x1 - this.drawerBoxSideClearance() - this.drawerBoxT() : x1 - cm(1.0);
+        const io = this.innerOpening(), ox0 = rmax(x0, io.x0), ox1 = rmin(x1, io.x1);
+        const ix0 = boxes ? ox0 + this.drawerBoxSideClearance() + this.drawerBoxT() : ox0 + cm(1.0);
+        const ix1 = boxes ? ox1 - this.drawerBoxSideClearance() - this.drawerBoxT() : ox1 - cm(1.0);
         if (ix1 <= ix0)
             return;
         const iy0 = fy1 + (boxes ? this.drawerBoxT() : 0);
@@ -1586,8 +1599,10 @@ export class CarcassBuilder {
         return truthy(this.p[`drawer_inner_${index + 1}`]);
     }
     buildDrawerBox(e, fx0, fx1, fby, dz0, dz1, label, depthOverride = null, glassFront = false, wallDropOverride = null) {
-        const bx0 = fx0 + this.drawerBoxSideClearance();
-        const bx1 = fx1 - this.drawerBoxSideClearance();
+        // v107: the runner clearance is measured from the carcass side, not from the overlay front's edge (the box sat inside the side)
+        const io = this.innerOpening();
+        const bx0 = rmax(fx0, io.x0) + this.drawerBoxSideClearance();
+        const bx1 = rmin(fx1, io.x1) - this.drawerBoxSideClearance();
         if (bx1 <= bx0)
             return [dz0, dz0];
         const by0 = fby;
