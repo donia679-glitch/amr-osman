@@ -5652,5 +5652,14 @@
  "ليد ورا الوحدة من فوق": "LED behind the top of the unit",
  "وحدة أرضي تحتها (أدراج / قلاب)": "Low unit under it (drawers / flap)",
  "واجهة الأرضي (من تحت لفوق)": "Low unit fronts (bottom to top)",
- "المقاس = الفتحة الصافية من جوه. المكان: «من الشمال» من أول الوسط و«الارتفاع» من الأرض — سيبهم فاضيين يتوسّطوا. العمق من وش الوحدة المصمتة (أقصاه عمقها).": "Size = the clear opening. Position: «from the left» from the start of the solid unit and «height» from the floor — leave empty to centre. Depth from the unit's face (at most its depth)."
+ "المقاس = الفتحة الصافية من جوه. المكان: «من الشمال» من أول الوسط و«الارتفاع» من الأرض — سيبهم فاضيين يتوسّطوا. العمق من وش الوحدة المصمتة (أقصاه عمقها).": "Size = the clear opening. Position: «from the left» from the start of the solid unit and «height» from the floor — leave empty to centre. Depth from the unit's face (at most its depth).",
+ "⬆ تكملة الارتفاع": "⬆ Height complement",
+ "ارتفاع الدولاب اللي تحت (0 = تلقائي)": "Lower cabinet height (0 = auto)",
+ "واجهة التكملة (من تحت لفوق)": "Complement fronts (bottom to top)",
+ "أقصى طول لوح (أي ارتفاع أكتر منه بيتقسم)": "Max board length (anything taller is split)",
+ "طالعة لقدام عن الحيطة (عمود / ماسورة ورا)": "Stands forward of the wall (column / pipe behind)",
+ "جنابها راجعة لحد الحيطة (تداري اللي ورا)": "Sides run back to the wall (hide what is behind)",
+ "🎨 خامة واحدة للوحدة كلها / خامة لكل جزء": "🎨 One material for the whole unit / per part",
+ "كل الخامات مرة واحدة": "All materials at once",
+ "— اختار خامة تتطبّق على الكل —": "— pick a material for everything —"
 }

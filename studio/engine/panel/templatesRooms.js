@@ -456,6 +456,16 @@ export function rectMinus(x0, x1, z0, z1, holes) {
     }
     return out;
 }
+/** heights of a stack that fits the boards: the main part (splitAt, else as tall as a board leaving ≥ 25 cm on top), then complements ≤ one board */
+export function stackHeights(H, maxB, splitAt = 0) {
+    if (H <= maxB + 0.01) return [H];
+    const first = splitAt > 0 ? Math.min(splitAt, maxB, H - 10) : Math.min(maxB, H - 25);
+    const out = [first];
+    let rest = H - first;
+    while (rest > maxB + 0.01) { out.push(maxB); rest -= maxB; }
+    out.push(rest);
+    return out;
+}
 /** cut a face piece into equal columns / rows that fit a board (grain up) */
 function splitRect(f, maxW, maxH) {
     const nx = Math.max(1, Math.ceil((f.x1 - f.x0) / maxW - 1e-6)), nz = Math.max(1, Math.ceil((f.z1 - f.z0) / maxH - 1e-6));
@@ -469,7 +479,7 @@ export function tvWallDims(q) {
     const L = q.left, R = q.right, M = q.mid, C = q.clad;
     const lw = L.on ? +L.width : 0, rw = R.on ? +R.width : 0, mw = +M.width;
     const lowTop = M.low ? +M.z + +M.height : 0;
-    const D = Math.max(L.on ? +L.depth : 0, R.on ? +R.depth : 0, M.low ? +M.depth : 0, C.on ? +C.depth : 0, 5);
+    const D = Math.max(L.on ? +L.depth : 0, R.on ? +R.depth : 0, M.low ? +M.depth : 0, C.on ? +C.depth + (+C.offset || 0) : 0, 5);
     const H = Math.max(L.on ? +L.z + +L.height : 0, R.on ? +R.z + +R.height : 0, lowTop, C.on ? +C.top : 0, 10);
     return { lw, rw, mw, W: lw + mw + rw, D, H, lowTop };
 }
@@ -479,11 +489,26 @@ export function buildTvWall(tb) {
     const { lw, mw, W, D, lowTop } = tvWallDims(q);
     p.width = W; p.depth = D;
     // 1) the side cabinets — each one a full cabinet (its own fronts: doors / drawers / flaps / open, heights, shelves, glass)
+    // v116: a cabinet taller than one board (q.max_board, 240) is made as the main cabinet + a complement box on top of it (تكملة)
+    const maxB = Math.max(100, +q.max_board || 240);
+    const sideJoints = [];
     for (const [S, x, nm, tag] of [[L, 0.0, "دولاب شمال", "col_left"], [R, lw + mw, "دولاب يمين", "col_right"]]) {
         if (!S.on) continue;
         const float = +S.z > 0;
-        subUnit(tb, { width: +S.width, height: +S.height, depth: +S.depth, mount: float ? "wall" : "floor", top: "full", fronts: S.fronts, led_under: !!S.led && float },
-            [x, D - +S.depth, +S.z], nm, tag);
+        const segs = stackHeights(+S.height, maxB, +S.split_at || 0);
+        let z = +S.z;
+        segs.forEach((hh, k) => {
+            const first = k === 0;
+            subUnit(tb, { width: +S.width, height: hh, depth: +S.depth, mount: first && !float ? "floor" : "wall", top: "full",
+                fronts: first ? S.fronts : (S.top_fronts?.length ? S.top_fronts : [{ type: "open", count: 1, height: "auto", shelves: 0 }]),
+                led_under: first && !!S.led && float }, [x, D - +S.depth, z], first ? nm : `${nm} - تكملة${segs.length > 2 ? ` ${k}` : ""}`, `${tag}${k ? `_t${k}` : ""}`);
+            z += hh;
+            if (!first) sideJoints.push(z - hh);
+        });
+        if (segs.length > 1) {
+            inc(d.hardware, "مسمار ربط وحدات", 4 * (segs.length - 1));
+            d.notes.push(`${nm} ارتفاعه ${fmt(+S.height)} سم أطول من لوح (${fmt(maxB)}) — اتعمل دولاب ${fmt(segs[0])} سم + تكملة ${segs.slice(1).map(fmt).join(" + ")} سم فوقه، بيتربطوا ببعض بمسامير ربط.`);
+        }
     }
     // 2) the low middle unit (split into modules of at most 120 cm)
     if (M.low) {
@@ -500,7 +525,12 @@ export function buildTvWall(tb) {
     const cx0 = lw, cx1 = lw + mw;
     const cz0 = M.low ? lowTop + +C.gap : +C.z0, cz1 = +C.top;
     if (cz1 - cz0 < 10) { d.warnings.push("الوحدة المصمتة ارتفاعها أقل من 10 سم — اتشالت."); return; }
-    const cd = Math.max(+C.depth, t + 0.6), fy0 = D - cd, fy1 = fy0 + t, mat = C.mat || "accent";
+    // v116: the solid unit can stand forward of the wall by C.offset (a column / pipe behind it) — its frame either runs back to the wall
+    // (closed, default) or keeps its own depth with the gap behind it hidden
+    const off = Math.max(0, +C.offset || 0);
+    const cd = Math.max(+C.depth, t + 0.6), fy0 = D - cd - off, fy1 = fy0 + t, mat = C.mat || "accent";
+    const BK = off > 0 && C.close_back === false ? fy0 + cd : D;
+    if (off > 0) d.notes.push(C.close_back === false ? `الوحدة المصمتة طالعة ${fmt(off)} سم عن الحيطة ومفتوحة من ورا — بتتعلّق على كمر/زوايا مخفية في الحيطة.` : `الوحدة المصمتة طالعة ${fmt(off)} سم لقدام وجنابها راجعة لحد الحيطة (بتداري العمود أو الماسورة اللي ورا).`);
     const niches = [];
     (q.niches || []).forEach((n, i) => {
         if (!n || n.on === false) return;
@@ -520,30 +550,47 @@ export function buildTvWall(tb) {
         }
         niches.push(r);
     });
+    // the horizontal joints of a solid unit taller than one board: at the side cabinets' joint when there is one, else by the same rule
+    const joints = [];
+    if (cz1 - cz0 > maxB + 0.01) {
+        const sj = [...new Set(sideJoints.map((z) => rround(z, 2)))].sort((a, b) => a - b).filter((z) => z > cz0 + 30 && z < cz1 - 20);
+        let a = cz0;
+        for (const z of sj) if (z - a <= maxB + 0.01) { joints.push(z); a = z; }
+        while (cz1 - a > maxB + 0.01) { const step = stackHeights(cz1 - a, maxB, 0)[0]; a += step; joints.push(a); }
+        d.notes.push(`الوحدة المصمتة ارتفاعها ${fmt(cz1 - cz0)} سم أطول من لوح — اتقسمت على ${joints.length + 1} أجزاء فوق بعض عند ${joints.map(fmt).join(" و ")} سم، وعند كل فاصل لوح أفقي بيربط الجزئين.`);
+    }
+    const bands = [cz0, ...joints, cz1].map((z, i, arr) => (i + 1 < arr.length ? [z, arr[i + 1]] : null)).filter(Boolean);
     withModule(tb, "clad", () => {
         // the face, cut around the niches
         const holes = niches.map((r) => ({ x0: r.hx0, x1: r.hx1, z0: r.hz0, z1: r.hz1 }));
-        // every piece fits a board with its grain standing up: at most 118 wide and 240 high (equal columns / rows, joints noted)
-        const face = rectMinus(cx0, cx1, cz0, cz1, holes).flatMap((f) => splitRect(f, 118, 240));
+        // every piece fits a board with its grain standing up: at most 118 wide and one board high (equal columns / rows, joints noted)
+        const face = bands.flatMap(([a, b]) => rectMinus(cx0, cx1, a, b, holes)).flatMap((f) => splitRect(f, 118, maxB));
         if (face.some((f) => f.split)) d.notes.push("وش الوحدة المصمتة متقسّم على أكتر من لوح (أقصى لوح 118×240 بالعروق رأسي) — خلّي الفواصل على خط واحد أو اعمل بينهم شريط/حلية.");
         face.forEach((f, i) => tb.add(face.length > 1 ? `وش الوحدة المصمتة ${i + 1}` : "وش الوحدة المصمتة", "other", mat, tb.box(f.x0, fy0, f.z0, f.x1, fy1, f.z1),
             { band: ["left", "right", "top", "bottom"], grain: "z", layer: "front", note: i === 0 ? "بيتربط على الفريم من ورا (مسامير مخفية/لزق) — الفواصل بين الألواح على حروف التجاويف" : null }));
         // the frame behind the face (returns at its ends, top and bottom) holding it off the wall
-        const rd = D - fy1;
+        const rd = BK - fy1;
         if (rd > 0.5) {
-            tb.add("جنب الوحدة المصمتة شمال", "side", "carcass", tb.box(cx0, fy1, cz0, cx0 + t, D, cz1), { band: [], grain: "z", note: "بيتثبت في الحيطة بزوايا" });
-            tb.add("جنب الوحدة المصمتة يمين", "side", "carcass", tb.box(cx1 - t, fy1, cz0, cx1, D, cz1), { band: [], grain: "z", note: "بيتثبت في الحيطة بزوايا" });
+            bands.forEach(([a, b], k) => {
+                const sfx = bands.length > 1 ? ` ${k + 1}` : "";
+                tb.add(`جنب الوحدة المصمتة شمال${sfx}`, "side", "carcass", tb.box(cx0, fy1, a, cx0 + t, BK, b), { band: [], grain: "z", note: "بيتثبت في الحيطة بزوايا" });
+                tb.add(`جنب الوحدة المصمتة يمين${sfx}`, "side", "carcass", tb.box(cx1 - t, fy1, a, cx1, BK, b), { band: [], grain: "z", note: "بيتثبت في الحيطة بزوايا" });
+            });
+            for (const j of joints)
+                for (const [a, b] of strips(mw - 2 * t, maxB))
+                    tb.add(d.seqName("عرضية ربط الوحدة المصمتة"), "horizontal", "carcass", tb.box(cx0 + t + a, fy1, j - t, cx0 + t + b, BK, j), { band: [], grain: "x", note: "بتربط الجزء اللي تحت باللي فوق" });
             for (const [a, b] of strips(mw - 2 * t, 240)) {
                 const two = mw - 2 * t > 240;
-                tb.add(d.seqName(two ? "رأس الوحدة المصمتة" : "رأس الوحدة المصمتة "), "horizontal", "carcass", tb.box(cx0 + t + a, fy1, cz1 - t, cx0 + t + b, D, cz1), { band: [], grain: "x" });
-                tb.add(d.seqName(two ? "قاعدة الوحدة المصمتة" : "قاعدة الوحدة المصمتة "), "horizontal", "carcass", tb.box(cx0 + t + a, fy1, cz0, cx0 + t + b, D, cz0 + t), { band: [], grain: "x" });
+                tb.add(d.seqName(two ? "رأس الوحدة المصمتة" : "رأس الوحدة المصمتة "), "horizontal", "carcass", tb.box(cx0 + t + a, fy1, cz1 - t, cx0 + t + b, BK, cz1), { band: [], grain: "x" });
+                tb.add(d.seqName(two ? "قاعدة الوحدة المصمتة" : "قاعدة الوحدة المصمتة "), "horizontal", "carcass", tb.box(cx0 + t + a, fy1, cz0, cx0 + t + b, BK, cz0 + t), { band: [], grain: "x" });
             }
             // a stud every 60 cm keeps a wide face flat
             const n = Math.floor((mw - 2 * t) / 60);
             for (let k = 1; k <= n; k++) {
                 const x = cx0 + (mw * k) / (n + 1);
                 if (niches.some((r) => x > r.hx0 - t && x < r.hx1 + t)) continue;
-                tb.add(d.seqName("عرق الوحدة المصمتة"), "divider", "carcass", tb.box(x - t / 2, fy1, cz0 + t, x + t / 2, D, cz1 - t), { band: [], grain: "z" });
+                for (const [a, b] of bands)
+                    tb.add(d.seqName("عرق الوحدة المصمتة"), "divider", "carcass", tb.box(x - t / 2, fy1, a + (a === cz0 ? t : 0), x + t / 2, BK, b - t), { band: [], grain: "z" });
             }
         }
         inc(d.hardware, "زاوية تثبيت الوحدة المصمتة في الحيطة", 4 + 2 * Math.floor(mw / 60));
@@ -555,18 +602,18 @@ export function buildTvWall(tb) {
             let k = 0;
             for (let i = 0; i < n; i++) {
                 const x = start + i * (sw + gap);
-                for (const f of rectMinus(x, x + sw, cz0, cz1, holes.map((h) => ({ ...h, x0: h.x0 - 0.01, x1: h.x1 + 0.01 }))))
+                for (const f of bands.flatMap(([a, b]) => rectMinus(x, x + sw, a, b, holes.map((h) => ({ ...h, x0: h.x0 - 0.01, x1: h.x1 + 0.01 })))))
                     if (f.x1 - f.x0 > sw - 0.1) tb.add(`شريحة كسوة ${++k}`, "other", C.slat_mat || "carcass", tb.box(f.x0, fy0 - t, f.z0, f.x1, fy0, f.z1), { band: ["left", "right", "top", "bottom"], grain: "z", layer: "front" });
             }
             d.notes.push(`شرايح الوحدة المصمتة ${k} قطعة × ${fmt(sw)} سم بمسافة ${fmt(gap)} سم — بتتلزق وتتسمر من ورا على وش الوحدة المصمتة، ومقطوعة عند التجاويف.`);
         }
-        if (C.led) d.addLed("ليد ورا الوحدة المصمتة", tb.box(cx0 + 3, D - 0.8, cz1 - 3.0, cx1 - 3, D, cz1 - 1.4));
+        if (C.led) d.addLed("ليد ورا الوحدة المصمتة", tb.box(cx0 + 3, BK - 0.8, cz1 - 3.0, cx1 - 3, BK, cz1 - 1.4));
     });
     // the niches: four lining boards from the face back to the niche back, a back panel, optional shelves + LED
     niches.forEach((r) => {
         const n = r.n, nm = `تجويف ${r.i + 1}`;
         // depth from the face to the niche back (the back board sits on the wall when the niche is as deep as the cladding)
-        const by1 = Math.min(fy0 + Math.max(+n.depth || cd, t + 1), D - t);
+        const by1 = Math.min(fy0 + Math.max(+n.depth || cd, t + 1), BK - t);
         withModule(tb, `niche${r.i}`, () => {
             const lm = n.lining || "accent";
             tb.add(`${nm} - سقف`, "horizontal", lm, tb.box(r.hx0, fy0, r.z1, r.hx1, by1, r.hz1), { band: ["front"], grain: "x" });

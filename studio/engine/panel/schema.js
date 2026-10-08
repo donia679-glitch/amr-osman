@@ -123,13 +123,14 @@ export const TEMPLATE_DEFAULTS = {
     tv_wall: {
         environment: "dry", width: 320.0, height: 240.0, depth: 35.0, fronts: [], handle: "push",
         tvw: {
-            left: { on: true, width: 60.0, height: 240.0, depth: 35.0, z: 0.0, led: false,
+            max_board: 240.0,
+            left: { on: true, width: 60.0, height: 240.0, depth: 35.0, z: 0.0, led: false, split_at: 0.0,
                 fronts: [{ type: "open", count: 1, height: "auto", shelves: 5, led: true }] },
-            right: { on: true, width: 60.0, height: 240.0, depth: 35.0, z: 0.0, led: false,
+            right: { on: true, width: 60.0, height: 240.0, depth: 35.0, z: 0.0, led: false, split_at: 0.0,
                 fronts: [{ type: "open", count: 1, height: "auto", shelves: 5, led: true }] },
             mid: { width: 200.0, low: false, height: 45.0, depth: 45.0, z: 15.0, led: false, module_max: 90.0,
                 fronts: [{ type: "flap", count: 1, height: "auto", shelves: 0 }] },
-            clad: { on: true, match: true, gap: 0.0, z0: 0.0, top: 240.0, depth: 30.0, mat: "accent", style: "flat", slat_width: 5.0, slat_gap: 1.5, slat_mat: "carcass", led: false },
+            clad: { on: true, match: true, gap: 0.0, z0: 0.0, top: 240.0, depth: 30.0, offset: 0.0, close_back: true, mat: "accent", style: "flat", slat_width: 5.0, slat_gap: 1.5, slat_mat: "carcass", led: false },
             niches: [{ on: true, x: "center", z: 40.0, w: 150.0, h: 35.0, depth: 25.0, shelves: 0, led: true, lining: "carcass", back: "carcass" }],
         },
     },
@@ -308,7 +309,7 @@ export function normalize(rawIn) {
     }
     else if (tpl !== "free") {
         num(p, ["width"], "العرض", 10, tpl === "tv_wall" ? 800 : 400, errors);
-        num(p, ["height"], "الارتفاع", 10, 300, errors);
+        num(p, ["height"], "الارتفاع", 10, tpl === "tv_wall" ? 400 : 300, errors);
         num(p, ["depth"], "العمق", 5, TableSpec.isTable(tpl) ? 200 : 120, errors);
     }
     num(p, ["thickness"], "سمك الخشب", 0.6, 5.4, errors);
@@ -455,9 +456,12 @@ function normalizeTvWall(p, raw, errors) {
     for (const [k, nm] of [["left", "الدولاب الشمال"], ["right", "الدولاب اليمين"]]) {
         const S = q[k] = isHash(q[k]) ? deepMerge(deepDup(D[k]), q[k]) : deepDup(D[k]);
         B(S, "on"); B(S, "led");
-        N(S, "width", 15, 150, `عرض ${nm}`); N(S, "height", 20, 300, `ارتفاع ${nm}`); N(S, "depth", 10, 80, `عمق ${nm}`); N(S, "z", 0, 200, `${nm} مرفوع عن الأرض`);
+        N(S, "width", 15, 150, `عرض ${nm}`); N(S, "height", 20, 400, `ارتفاع ${nm}`); N(S, "depth", 10, 80, `عمق ${nm}`); N(S, "z", 0, 200, `${nm} مرفوع عن الأرض`);
+        S.split_at = toF(S.split_at) ?? 0; if (S.split_at < 0) S.split_at = 0;
         S.fronts = rArray(raw?.tvw?.[k]?.fronts ?? S.fronts).map((z, i) => normalizeZone(z, i, errors)).filter((z) => z !== null);
+        S.top_fronts = rArray(raw?.tvw?.[k]?.top_fronts ?? S.top_fronts ?? [{ type: "open", count: 1, height: "auto", shelves: 0 }]).map((z, i) => normalizeZone(z, i, errors)).filter((z) => z !== null);
     }
+    { const v = toF(q.max_board); q.max_board = v === null ? 240 : clamp(v, 100, 300); }
     const M = q.mid = isHash(q.mid) ? deepMerge(deepDup(D.mid), q.mid) : deepDup(D.mid);
     B(M, "low"); B(M, "led");
     N(M, "width", 30, 500, "عرض الوسط"); N(M, "height", 10, 120, "ارتفاع الوحدة الوسطانية"); N(M, "depth", 10, 80, "عمق الوحدة الوسطانية");
@@ -465,8 +469,9 @@ function normalizeTvWall(p, raw, errors) {
     M.fronts = rArray(raw?.tvw?.mid?.fronts ?? M.fronts).map((z, i) => normalizeZone(z, i, errors)).filter((z) => z !== null);
     const C = q.clad = isHash(q.clad) ? deepMerge(deepDup(D.clad), q.clad) : deepDup(D.clad);
     B(C, "on"); B(C, "led"); B(C, "match");
-    N(C, "gap", 0, 100, "المسافة بين الوحدة والكسوة"); N(C, "z0", 0, 250, "بداية الكسوة"); N(C, "top", 20, 320, "نهاية الكسوة من الأرض");
-    N(C, "depth", 2.4, 60, "بروز الكسوة عن الحيطة"); N(C, "slat_width", 1, 20, "عرض الشريحة"); N(C, "slat_gap", 0.3, 15, "المسافة بين الشرايح");
+    N(C, "gap", 0, 100, "المسافة بين الوحدة والكسوة"); N(C, "z0", 0, 250, "بداية الكسوة"); N(C, "top", 20, 400, "نهاية الكسوة من الأرض");
+    N(C, "depth", 2.4, 60, "بروز الكسوة عن الحيطة");
+    N(C, "offset", 0, 100, "تقديم الوحدة المصمتة لقدام"); C.close_back = C.close_back !== false && C.close_back !== "false"; N(C, "slat_width", 1, 20, "عرض الشريحة"); N(C, "slat_gap", 0.3, 15, "المسافة بين الشرايح");
     if (!["flat", "slats"].includes(C.style)) C.style = "flat";
     // «نفس ارتفاع الدولاب»: the solid middle unit runs from its start to the top of the tallest side cabinet
     if (C.match && (q.left.on || q.right.on)) C.top = Math.max(q.left.on ? q.left.z + q.left.height : 0, q.right.on ? q.right.z + q.right.height : 0);
@@ -480,6 +485,6 @@ function normalizeTvWall(p, raw, errors) {
     });
     const lw = q.left.on ? q.left.width : 0, rw = q.right.on ? q.right.width : 0;
     p.width = lw + M.width + rw;
-    p.depth = Math.max(q.left.on ? q.left.depth : 0, q.right.on ? q.right.depth : 0, M.low ? M.depth : 0, C.on ? C.depth : 0, 5);
+    p.depth = Math.max(q.left.on ? q.left.depth : 0, q.right.on ? q.right.depth : 0, M.low ? M.depth : 0, C.on ? C.depth + (C.offset || 0) : 0, 5);
     p.height = Math.max(q.left.on ? q.left.z + q.left.height : 0, q.right.on ? q.right.z + q.right.height : 0, M.low ? M.z + M.height : 0, C.on ? C.top : 0, 10);
 }

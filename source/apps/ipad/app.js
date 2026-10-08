@@ -1721,6 +1721,7 @@ function renderMatp() {
   const n = matTargets(u).length;
   el.innerHTML = `<div class="sph"><b>🎨 خامات «${esc(u.name)}»</b><button class="x" data-mclose aria-label="قفل">×</button></div>
     <label class="chk"><input type="checkbox" data-matall ${ui.matAll ? "checked" : ""}> طبّق على كل وحدات ${u.kind === "kitchen" ? "المطبخ" : u.kind === "dressing" ? "الدريسنج" : "النوع ده"} في المشروع${ui.matAll ? ` (${n})` : ""}</label>
+    <div class="mqrow mqall"><i style="background:linear-gradient(135deg,#c9a46a,#5b6b5a)"></i><div><b>كل الخامات مرة واحدة</b><select data-qmatall aria-label="كل الخامات"><option value="">— اختار خامة تتطبّق على الكل —</option><optgroup label="خامات المشروع">${O.own.map((x) => opt(x, "")).join("")}</optgroup>${O.mine.length ? `<optgroup label="خاماتي">${O.mine.map((x) => opt(x, "")).join("")}</optgroup>` : ""}<optgroup label="الكتالوج">${O.cat.map((x) => opt(x, "")).join("")}</optgroup></select></div></div>
     <div class="mqlist">${keys.map(([k, l]) => { const cur = unitLibOf(u, k, r); return `<div class="mqrow"><i style="background:${esc(cur ? libColorOf(cur) : r.colors?.[k] || "#ccc")}"></i><div><b>${esc(l)}</b><select data-qmat="${k}" aria-label="${esc(l)}"><option value="">— الافتراضي</option><optgroup label="خامات المشروع">${O.own.map((x) => opt(x, cur)).join("")}</optgroup>${O.mine.length ? `<optgroup label="خاماتي">${O.mine.map((x) => opt(x, cur)).join("")}</optgroup>` : ""}<optgroup label="الكتالوج">${O.cat.map((x) => opt(x, cur)).join("")}</optgroup></select></div><button class="sm" data-qfin="${k}" title="الكتالوج بالصور واللمعة">✦</button></div>`; }).join("")}</div>
     <p class="hint">✦ بيفتح الكتالوج بالصور واللمعة. لقطعة واحدة بعينها (ضلفة بلون تاني): من إعدادات الوحدة ← «🎨 خامة لكل قطعة».</p>`;
 }
@@ -1728,6 +1729,17 @@ $("#matp").addEventListener("pointerdown", (e) => e.stopPropagation());
 $("#matp").addEventListener("change", (e) => {
   const t = e.target, u = selUnit(); if (!u) return;
   if (t.hasAttribute("data-matall")) { ui.matAll = t.checked; renderMatp(); return; }
+  if (t.hasAttribute("data-qmatall")) {
+    // v116: one material for every board slot of the unit (the back, glass, mirror, handles, LED and rails keep theirs)
+    const lib = t.value; if (!lib) return;
+    if (Mat.isCustom(lib)) { const m = Mat.get(lib); if (m) state.project.mats = [...(state.project.mats || []).filter((x) => x.id !== lib), m]; }
+    const skip = /^(back|back_panel|glass|mirror|handle|handle_profile|led|rail|hinge|countertop|counter|plinth_leg|banding|door_frame_alu|gola|drawer_bottom)$/;
+    const slots = unitMatKeys(u).filter(([k]) => !skip.test(k)).map(([k]) => k);
+    for (const x of matTargets(u)) for (const k of slots) applyLibTo(x, k, lib);
+    alertBar(`اتطبّقت «${libDisplay(lib)}» على ${slots.length} خامات — الضهر والزجاج والمقابض فضلت زي ما هي.`);
+    renderMatp();
+    return;
+  }
   if (t.dataset.qmat) {
     const lib = t.value;
     if (lib && Mat.isCustom(lib)) { const m = Mat.get(lib); if (m) state.project.mats = [...(state.project.mats || []).filter((x) => x.id !== lib), m]; }
@@ -3079,21 +3091,28 @@ function zonesEd(prefix, zones) {
 }
 function tvWallProps(p) {
   const q = p.tvw || {}, L = q.left || {}, R = q.right || {}, M = q.mid || {}, C = q.clad || {};
+  const maxB = +q.max_board || 240;
+  const tvSeg = (S) => { const H = +S.height; if (H <= maxB + 0.01) return [H]; const sa = +S.split_at || 0, f = sa > 0 ? Math.min(sa, maxB, H - 10) : Math.min(maxB, H - 25); const out = [f]; let r = H - f; while (r > maxB + 0.01) { out.push(maxB); r -= maxB; } out.push(r); return out; };
   const side = (k, S, nm) => `<details ${S.on ? "open" : ""}><summary>🗄 ${nm} ${S.on ? `— ${n1(S.width)}×${n1(S.height)}×${n1(S.depth)}` : "(مش موجود)"}</summary>
     <div class="bools">${boolF(`tvw.${k}.on`, `فيه ${nm}`, S.on)}${S.on ? boolF(`tvw.${k}.led`, "ليد تحته (لو معلّق)", S.led) : ""}</div>
     ${S.on ? `<div class="grid2">${numF(`tvw.${k}.width`, "العرض", S.width)}${numF(`tvw.${k}.height`, "الارتفاع", S.height)}${numF(`tvw.${k}.depth`, "العمق", S.depth)}${numF(`tvw.${k}.z`, "مرفوع عن الأرض (0 = على الأرض)", S.z)}</div>
     <h4 class="advh">الواجهة (من تحت لفوق)</h4>${zonesEd(`tvw.${k}.fronts`, S.fronts)}
+    ${+S.height > maxB ? `<h4 class="advh">⬆ تكملة الارتفاع</h4><p class="hint">الارتفاع ${n1(S.height)} أطول من لوح (${n1(maxB)}) — بيتعمل دولاب ${n1(tvSeg(S)[0])} سم وفوقه تكملة ${tvSeg(S).slice(1).map(n1).join(" + ")} سم بتتربط فيه.</p>
+      <div class="grid2">${numF(`tvw.${k}.split_at`, "ارتفاع الدولاب اللي تحت (0 = تلقائي)", S.split_at || 0)}</div>
+      <h4 class="advh">واجهة التكملة (من تحت لفوق)</h4>${zonesEd(`tvw.${k}.top_fronts`, S.top_fronts)}` : ""}
     <div class="btnrow"><button class="ghost2 sm" data-tvcopy="${k}">⇄ خلّي ${k === "left" ? "اليمين" : "الشمال"} زيه (معكوس)</button></div>` : ""}</details>`;
   let h = `<details open><summary>📺 وحدة الشاشة — ${n1(p.width)} × ${n1(p.height)} × ${n1(p.depth)} سم</summary>
-    <p class="hint">من الشمال لليمين: الدولاب الشمال + الوحدة المصمتة (مكان الشاشة) + الدولاب اليمين. كل مقاس هنا بيتغيّر لوحده.</p></details>`;
+    <p class="hint">من الشمال لليمين: الدولاب الشمال + الوحدة المصمتة (مكان الشاشة) + الدولاب اليمين. كل مقاس هنا بيتغيّر لوحده.</p>
+    <div class="grid2">${numF("tvw.max_board", "أقصى طول لوح (أي ارتفاع أكتر منه بيتقسم)", maxB)}</div>
+    <div class="btnrow"><button class="ghost2 sm" data-tvmat>🎨 خامة واحدة للوحدة كلها / خامة لكل جزء</button></div></details>`;
   h += side("left", L, "الدولاب الشمال");
   const solidH = C.on ? n1(C.top - (M.low ? M.z + M.height + C.gap : C.z0)) : 0;
   h += `<details open><summary>▮ الوحدة المصمتة (مكان الشاشة) — ${n1(M.width)} × ${solidH} × ${n1(C.depth)}</summary>
     <div class="bools">${boolF("tvw.clad.on", "فيه وحدة مصمتة", C.on)}${C.on ? boolF("tvw.clad.match", "نفس ارتفاع الدولاب", C.match) : ""}</div>
-    <div class="grid2">${numF("tvw.mid.width", "العرض", M.width)}${C.on ? numF("tvw.clad.depth", "العمق (من الحيطة)", C.depth) + (C.match ? "" : numF("tvw.clad.top", "نهايتها من الأرض", C.top)) + (M.low ? numF("tvw.clad.gap", "المسافة فوق الوحدة الأرضي", C.gap) : numF("tvw.clad.z0", "بدايتها من الأرض", C.z0)) : ""}</div>
+    <div class="grid2">${numF("tvw.mid.width", "العرض", M.width)}${C.on ? numF("tvw.clad.depth", "العمق", C.depth) + numF("tvw.clad.offset", "طالعة لقدام عن الحيطة (عمود / ماسورة ورا)", C.offset || 0) + (C.match ? "" : numF("tvw.clad.top", "نهايتها من الأرض", C.top)) + (M.low ? numF("tvw.clad.gap", "المسافة فوق الوحدة الأرضي", C.gap) : numF("tvw.clad.z0", "بدايتها من الأرض", C.z0)) : ""}</div>
     ${C.on ? `<div class="grid2">${selF("tvw.clad.mat", "خامة الوش", TVW_MATS, C.mat)}${selF("tvw.clad.style", "شكل الوش", { flat: "سادة", slats: "شرايح رأسية" }, C.style)}
       ${C.style === "slats" ? numF("tvw.clad.slat_width", "عرض الشريحة", C.slat_width) + numF("tvw.clad.slat_gap", "المسافة بين الشرايح", C.slat_gap) + selF("tvw.clad.slat_mat", "خامة الشرايح", TVW_MATS, C.slat_mat) : ""}</div>
-      <div class="bools">${boolF("tvw.clad.led", "ليد ورا الوحدة من فوق", C.led)}</div>` : ""}
+      <div class="bools">${boolF("tvw.clad.led", "ليد ورا الوحدة من فوق", C.led)}${+C.offset > 0 ? boolF("tvw.clad.close_back", "جنابها راجعة لحد الحيطة (تداري اللي ورا)", C.close_back !== false) : ""}</div>` : ""}
     <div class="bools">${boolF("tvw.mid.low", "وحدة أرضي تحتها (أدراج / قلاب)", M.low)}${M.low ? boolF("tvw.mid.led", "ليد تحتها (لو معلّقة)", M.led) : ""}</div>
     ${M.low ? `<div class="grid2">${numF("tvw.mid.height", "ارتفاع الأرضي", M.height)}${numF("tvw.mid.depth", "عمق الأرضي", M.depth)}${numF("tvw.mid.z", "مرفوعة عن الأرض (0 = على الأرض)", M.z)}${numF("tvw.mid.module_max", "أقصى عرض للعلبة الواحدة", M.module_max, 5)}</div>
     <h4 class="advh">واجهة الأرضي (من تحت لفوق)</h4>${zonesEd("tvw.mid.fronts", M.fronts)}` : ""}</details>`;
@@ -3856,6 +3875,7 @@ props.addEventListener("click", (e) => {
   else if (b.hasAttribute("data-nadd")) setParams(u, (p) => { p.tvw.niches ??= []; p.tvw.niches.push({ on: true, x: 15, z: "center", w: 40, h: 60, depth: p.tvw.clad?.depth || 12, shelves: 0, led: true, lining: "accent", back: "front" }); });
   else if (d.ndel != null) setParams(u, (p) => p.tvw.niches.splice(+d.ndel, 1));
   else if (d.ndup != null) setParams(u, (p) => { const n = JSON.parse(JSON.stringify(p.tvw.niches[+d.ndup])); if (typeof n.x === "number") n.x += n.w + 10; p.tvw.niches.push(n); });
+  else if (b.hasAttribute("data-tvmat")) { ui.matpOpen = true; ui.nudgeOpen = false; renderMatp(); }
   else if (d.tvcopy) setParams(u, (p) => { const a = d.tvcopy, b2 = a === "left" ? "right" : "left"; const S = JSON.parse(JSON.stringify(p.tvw[a])); S.fronts = (S.fronts || []).map((z) => ({ ...z, hinge: z.hinge === "left" ? "right" : z.hinge === "right" ? "left" : z.hinge })); p.tvw[b2] = S; });
   else if (b.hasAttribute("data-zadd")) setParams(u, (p) => p.fronts.push({ type: "open", count: 1, height: "auto", shelves: 1, hinge: "left", led: false }));
   else if (d.secdel != null) setParams(u, (p) => { if (p.sections.length > 1) p.sections.splice(+d.secdel, 1); });
