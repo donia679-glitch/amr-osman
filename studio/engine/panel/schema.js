@@ -15,6 +15,7 @@ export const TEMPLATES = {
     dresser: { label: "تسريحة بمراية", group: "غرف النوم" },
     desk: { label: "مكتب", group: "غرف النوم" },
     tv_unit: { label: "وحدة شاشة (أرضي + بانوه + أعمدة)", group: "الريسبشن" },
+    tv_wall: { label: "وحدة شاشة مرنة (دولابين + وحدة وسط + تجويف)", group: "الريسبشن" },
     shoe_cabinet: { label: "جزامة", group: "الريسبشن" },
     open_shelf: { label: "مكتبة / أرفف مفتوحة", group: "الريسبشن" },
     cabinet: { label: "وحدة عامة (أي علبة بضلف/أدراج)", group: "عام" },
@@ -119,6 +120,19 @@ export const TEMPLATE_DEFAULTS = {
             shelf_width: 60.0, shelf_thickness: 1.8, shelves_side: "right", led: false,
         },
     },
+    tv_wall: {
+        environment: "dry", width: 300.0, height: 240.0, depth: 45.0, fronts: [], handle: "push",
+        tvw: {
+            left: { on: true, width: 60.0, height: 240.0, depth: 40.0, z: 0.0, led: false,
+                fronts: [{ type: "drawers", count: 2, height: 40.0 }, { type: "doors", count: 1, height: "auto", shelves: 4, hinge: "left" }] },
+            right: { on: true, width: 60.0, height: 240.0, depth: 40.0, z: 0.0, led: false,
+                fronts: [{ type: "drawers", count: 2, height: 40.0 }, { type: "doors", count: 1, height: "auto", shelves: 4, hinge: "right" }] },
+            mid: { width: 200.0, low: true, height: 45.0, depth: 45.0, z: 15.0, led: true, module_max: 90.0,
+                fronts: [{ type: "flap", count: 1, height: "auto", shelves: 0 }] },
+            clad: { on: true, gap: 0.0, z0: 0.0, top: 240.0, depth: 12.0, mat: "accent", style: "flat", slat_width: 4.0, slat_gap: 1.5, slat_mat: "carcass", led: false },
+            niches: [{ on: true, x: "center", z: 150.0, w: 150.0, h: 50.0, depth: 12.0, shelves: 0, led: true, lining: "accent", back: "front" }],
+        },
+    },
     bed: {
         environment: "dry", width: 0.0, height: 0.0, depth: 0.0, fronts: [],
         bed: {
@@ -149,6 +163,7 @@ export const TEMPLATE_DEFAULTS = {
 };
 const U = undefined;
 export const SPECIAL = {
+    tv_wall: { hide: ["size", "fronts"], fields: [] },
     tv_unit: { hide: ["fronts", "depth"], fields: [
             ["tv.base_height", "ارتفاع الأرضي", "num", U, 20, 120], ["tv.base_depth", "عمق الأرضي", "num", U, 20, 70],
             ["tv.base_float", "الأرضي معلّق على ارتفاع (0 = على الأرض)", "num", U, 0, 100],
@@ -287,11 +302,12 @@ export function normalize(rawIn) {
     p.back.enabled = truthy(p.back.enabled);
     p.joints.enabled = truthy(p.joints.enabled);
     validateSpecial(p, errors);
+    if (tpl === "tv_wall") normalizeTvWall(p, raw, errors);
     if (tpl === "bed") {
         // bed dimensions come from the mattress
     }
     else if (tpl !== "free") {
-        num(p, ["width"], "العرض", 10, 400, errors);
+        num(p, ["width"], "العرض", 10, tpl === "tv_wall" ? 800 : 400, errors);
         num(p, ["height"], "الارتفاع", 10, 300, errors);
         num(p, ["depth"], "العمق", 5, TableSpec.isTable(tpl) ? 200 : 120, errors);
     }
@@ -428,4 +444,40 @@ function num(p, path, name, lo, hi, errors) {
     if (v < lo - 1e-9 || v > hi + 1e-9)
         errors.push(`${name} لازم يكون بين ${fmt(lo)} و ${fmt(hi)}.`);
     h[last] = v;
+}
+
+// v113: the flexible TV wall — each part's numbers clamped, its fronts normalised like a cabinet's, the overall size computed
+function normalizeTvWall(p, raw, errors) {
+    const D = TEMPLATE_DEFAULTS.tv_wall.tvw;
+    const q = p.tvw = isHash(p.tvw) ? p.tvw : deepDup(D);
+    const N = (o, k, lo, hi, name) => { const v = toF(o[k]); o[k] = v === null ? lo : clamp(v, lo, hi); if (v !== null && (v < lo || v > hi)) errors.push(`${name} لازم يكون بين ${lo} و ${hi}.`); };
+    const B = (o, k) => { o[k] = truthy(o[k]); };
+    for (const [k, nm] of [["left", "الدولاب الشمال"], ["right", "الدولاب اليمين"]]) {
+        const S = q[k] = isHash(q[k]) ? deepMerge(deepDup(D[k]), q[k]) : deepDup(D[k]);
+        B(S, "on"); B(S, "led");
+        N(S, "width", 15, 150, `عرض ${nm}`); N(S, "height", 20, 300, `ارتفاع ${nm}`); N(S, "depth", 10, 80, `عمق ${nm}`); N(S, "z", 0, 200, `${nm} مرفوع عن الأرض`);
+        S.fronts = rArray(raw?.tvw?.[k]?.fronts ?? S.fronts).map((z, i) => normalizeZone(z, i, errors)).filter((z) => z !== null);
+    }
+    const M = q.mid = isHash(q.mid) ? deepMerge(deepDup(D.mid), q.mid) : deepDup(D.mid);
+    B(M, "low"); B(M, "led");
+    N(M, "width", 30, 500, "عرض الوسط"); N(M, "height", 10, 120, "ارتفاع الوحدة الوسطانية"); N(M, "depth", 10, 80, "عمق الوحدة الوسطانية");
+    N(M, "z", 0, 150, "الوحدة الوسطانية مرفوعة عن الأرض"); N(M, "module_max", 40, 150, "أقصى عرض لكل علبة في الوسط");
+    M.fronts = rArray(raw?.tvw?.mid?.fronts ?? M.fronts).map((z, i) => normalizeZone(z, i, errors)).filter((z) => z !== null);
+    const C = q.clad = isHash(q.clad) ? deepMerge(deepDup(D.clad), q.clad) : deepDup(D.clad);
+    B(C, "on"); B(C, "led");
+    N(C, "gap", 0, 100, "المسافة بين الوحدة والكسوة"); N(C, "z0", 0, 250, "بداية الكسوة"); N(C, "top", 20, 320, "نهاية الكسوة من الأرض");
+    N(C, "depth", 2.4, 60, "بروز الكسوة عن الحيطة"); N(C, "slat_width", 1, 20, "عرض الشريحة"); N(C, "slat_gap", 0.3, 15, "المسافة بين الشرايح");
+    if (!["flat", "slats"].includes(C.style)) C.style = "flat";
+    q.niches = rArray(raw?.tvw?.niches ?? q.niches).filter(isHash).map((n0, i) => {
+        const n = deepMerge(deepDup(D.niches[0]), n0);
+        B(n, "on"); B(n, "led");
+        N(n, "w", 5, 400, `عرض التجويف ${i + 1}`); N(n, "h", 5, 250, `ارتفاع التجويف ${i + 1}`); N(n, "depth", 1, 60, `عمق التجويف ${i + 1}`);
+        N(n, "shelves", 0, 6, `أرفف التجويف ${i + 1}`);
+        for (const k of ["x", "z"]) if (!(n[k] === "center" || n[k] === "" || n[k] == null)) { const v = toF(n[k]); n[k] = v === null ? "center" : clamp(v, 0, 500); }
+        return n;
+    });
+    const lw = q.left.on ? q.left.width : 0, rw = q.right.on ? q.right.width : 0;
+    p.width = lw + M.width + rw;
+    p.depth = Math.max(q.left.on ? q.left.depth : 0, q.right.on ? q.right.depth : 0, M.low ? M.depth : 0, C.on ? C.depth : 0, 5);
+    p.height = Math.max(q.left.on ? q.left.z + q.left.height : 0, q.right.on ? q.right.z + q.right.height : 0, M.low ? M.z + M.height : 0, C.on ? C.top : 0, 10);
 }

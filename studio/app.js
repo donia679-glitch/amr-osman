@@ -3018,6 +3018,7 @@ function panelProps(p, r) {
     for (const [path, label, type] of spec.fields) if (type === "bool") h += boolF(path, label, getPath(p, path));
     h += `</div></details>`;
   }
+  if (tpl === "tv_wall") h += tvWallProps(p);
   if (tpl === "free") {
     const ROLE_AR = { side: "جنب", horizontal: "قاعدة/رأس", fixed_shelf: "رف ثابت", divider: "قاطوع", shelf: "رف", back: "ظهر", door: "ضلفة/غطا", plinth: "وزرة", other: "تاني" };
     const mats = Object.fromEntries(Object.entries(PANEL_MATS).filter(([k]) => !k.startsWith("table")));
@@ -3059,6 +3060,50 @@ function panelProps(p, r) {
     h += `<button class="add" data-zadd>${ICON.plus}ضيف جزء</button></details>`;
   }
   return h + panelAdvanced(p, h);
+}
+// ---- v113: the flexible TV wall — every part with its own sizes and fronts, the cladding and its niches
+const TVW_MATS = { accent: "الخامة المميزة", front: "خامة الضلف", carcass: "خامة الهيكل", shelf: "خامة الأرفف" };
+function zonesEd(prefix, zones) {
+  let h = "";
+  (zones || []).forEach((z, i) => {
+    h += `<div class="zone-ed"><div class="zh"><b>جزء ${i + 1}</b><button data-zdel2="${prefix}|${i}" class="danger sm" aria-label="شيل الجزء">${ICON.trash}</button></div><div class="grid2">
+      ${selF(`${prefix}.${i}.type`, "النوع", Schema.FRONT_TYPES, z.type)}${autoF(`${prefix}.${i}.height`, "الارتفاع", z.height)}
+      ${numF(`${prefix}.${i}.count`, "العدد", z.count, 1)}${numF(`${prefix}.${i}.shelves`, "الأرفف", z.shelves, 1)}
+      ${selF(`${prefix}.${i}.hinge`, "المفصلة", { left: "شمال", right: "يمين" }, z.hinge)}${boolF(`${prefix}.${i}.led`, "ليد في الخانة", z.led)}</div>${z.type === "drawers" ? glassChips(`${prefix}.${i}.glass`, z.glass, Math.max(1, +z.count || 1)) : ""}</div>`;
+  });
+  return h + `<button class="add" data-zadd2="${prefix}">${ICON.plus}ضيف جزء (من تحت لفوق)</button>`;
+}
+function tvWallProps(p) {
+  const q = p.tvw || {}, L = q.left || {}, R = q.right || {}, M = q.mid || {}, C = q.clad || {};
+  const side = (k, S, nm) => `<details ${S.on ? "open" : ""}><summary>🗄 ${nm} ${S.on ? `— ${n1(S.width)}×${n1(S.height)}×${n1(S.depth)}` : "(مش موجود)"}</summary>
+    <div class="bools">${boolF(`tvw.${k}.on`, `فيه ${nm}`, S.on)}${S.on ? boolF(`tvw.${k}.led`, "ليد تحته (لو معلّق)", S.led) : ""}</div>
+    ${S.on ? `<div class="grid2">${numF(`tvw.${k}.width`, "العرض", S.width)}${numF(`tvw.${k}.height`, "الارتفاع", S.height)}${numF(`tvw.${k}.depth`, "العمق", S.depth)}${numF(`tvw.${k}.z`, "مرفوع عن الأرض (0 = على الأرض)", S.z)}</div>
+    <h4 class="advh">الواجهة (من تحت لفوق)</h4>${zonesEd(`tvw.${k}.fronts`, S.fronts)}
+    <div class="btnrow"><button class="ghost2 sm" data-tvcopy="${k}">⇄ خلّي ${k === "left" ? "اليمين" : "الشمال"} زيه (معكوس)</button></div>` : ""}</details>`;
+  let h = `<details open><summary>📺 وحدة الشاشة — ${n1(p.width)} × ${n1(p.height)} × ${n1(p.depth)} سم</summary>
+    <p class="hint">العرض الكلي = الدولاب الشمال + الوسط + الدولاب اليمين. كل جزء ليه مقاساته وواجهته، والكسوة فوق الوحدة الوسطانية بارزة عن الحيطة وفيها التجاويف.</p></details>`;
+  h += side("left", L, "الدولاب الشمال");
+  h += `<details open><summary>▭ الوسط — عرض ${n1(M.width)} سم</summary><div class="grid2">${numF("tvw.mid.width", "عرض الوسط (بين الدولابين)", M.width)}</div>
+    <div class="bools">${boolF("tvw.mid.low", "وحدة أرضي في الوسط", M.low)}${M.low ? boolF("tvw.mid.led", "ليد تحتها (لو معلّقة)", M.led) : ""}</div>
+    ${M.low ? `<div class="grid2">${numF("tvw.mid.height", "ارتفاع الوحدة", M.height)}${numF("tvw.mid.depth", "عمق الوحدة", M.depth)}${numF("tvw.mid.z", "مرفوعة عن الأرض (0 = على الأرض)", M.z)}${numF("tvw.mid.module_max", "أقصى عرض للعلبة الواحدة", M.module_max, 5)}</div>
+    <h4 class="advh">واجهة الوحدة (من تحت لفوق)</h4>${zonesEd("tvw.mid.fronts", M.fronts)}` : ""}</details>`;
+  h += side("right", R, "الدولاب اليمين");
+  h += `<details open><summary>🧱 الكسوة (البانوه البارز)</summary><div class="bools">${boolF("tvw.clad.on", "فيه كسوة فوق الوحدة", C.on)}${C.on ? boolF("tvw.clad.led", "ليد ورا الكسوة من فوق", C.led) : ""}</div>
+    ${C.on ? `<div class="grid2">${numF("tvw.clad.depth", "بروزها عن الحيطة (العمق)", C.depth)}${numF("tvw.clad.top", "نهايتها من الأرض", C.top)}${M.low ? numF("tvw.clad.gap", "المسافة فوق الوحدة", C.gap) : numF("tvw.clad.z0", "بدايتها من الأرض", C.z0)}
+      ${selF("tvw.clad.mat", "خامة الوش", TVW_MATS, C.mat)}${selF("tvw.clad.style", "شكل الوش", { flat: "سادة", slats: "شرايح رأسية" }, C.style)}
+      ${C.style === "slats" ? numF("tvw.clad.slat_width", "عرض الشريحة", C.slat_width) + numF("tvw.clad.slat_gap", "المسافة بين الشرايح", C.slat_gap) + selF("tvw.clad.slat_mat", "خامة الشرايح", TVW_MATS, C.slat_mat) : ""}</div>` : ""}</details>`;
+  if (C.on) {
+    h += `<details open><summary>⬜ التجاويف الديكور (${(q.niches || []).length})</summary><p class="hint">المقاس = الفتحة الصافية من جوه. المكان: «من الشمال» من أول الوسط و«الارتفاع» من الأرض — سيبهم فاضيين يتوسّطوا. العمق من وش الكسوة (أقصاه بروز الكسوة).</p>`;
+    (q.niches || []).forEach((n, i) => {
+      h += `<div class="zone-ed"><div class="zh"><b>تجويف ${i + 1}</b><button data-ndup="${i}" class="sm" aria-label="نسخة">${ICON.copy}</button><button data-ndel="${i}" class="danger sm" aria-label="شيل التجويف">${ICON.trash}</button></div>
+        <div class="grid3">${numF(`tvw.niches.${i}.w`, "العرض", n.w)}${numF(`tvw.niches.${i}.h`, "الارتفاع", n.h)}${numF(`tvw.niches.${i}.depth`, "العمق", n.depth)}
+        ${autoF(`tvw.niches.${i}.x`, "من الشمال (فاضي = في النص)", n.x === "center" ? "auto" : n.x)}${autoF(`tvw.niches.${i}.z`, "الارتفاع من الأرض (فاضي = في النص)", n.z === "center" ? "auto" : n.z)}${numF(`tvw.niches.${i}.shelves`, "أرفف جوه", n.shelves, 1)}</div>
+        <div class="grid2">${selF(`tvw.niches.${i}.lining`, "خامة الحروف", TVW_MATS, n.lining)}${selF(`tvw.niches.${i}.back`, "خامة الضهر", TVW_MATS, n.back)}</div>
+        <div class="bools">${boolF(`tvw.niches.${i}.on`, "ظاهر", n.on !== false)}${boolF(`tvw.niches.${i}.led`, "ليد في سقفه", n.led)}</div></div>`;
+    });
+    h += `<button class="add" data-nadd>${ICON.plus}ضيف تجويف</button></details>`;
+  }
+  return h;
 }
 /** the panel engine's construction settings (same keys as the plugin's panel dialog) */
 function panelAdvanced(p, shown) {
@@ -3800,6 +3845,12 @@ props.addEventListener("click", (e) => {
     alertBar(`اتضاف ${found.length} عمود من الأوضة — الوحدة اتقصّت حواليه.`);
   }
   else if (b.hasAttribute("data-fpadd")) setParams(u, (p) => { (p.panels ??= []).push({ name: `لوح ${p.panels.length + 1}`, role: "other", material: "carcass", x: 0, y: 0, z: 0, w: 60, d: 40, h: 1.8 }); });
+  else if (d.zadd2) setParams(u, (p) => { const a = getPath(p, d.zadd2); const z = { type: "open", count: 1, height: "auto", shelves: 1, hinge: "left", led: false }; if (Array.isArray(a)) a.push(z); else setPath(p, d.zadd2, [z]); });
+  else if (d.zdel2) { const [path, i] = d.zdel2.split("|"); setParams(u, (p) => { const a = getPath(p, path); if (Array.isArray(a)) a.splice(+i, 1); }); }
+  else if (b.hasAttribute("data-nadd")) setParams(u, (p) => { p.tvw.niches ??= []; p.tvw.niches.push({ on: true, x: 15, z: "center", w: 40, h: 60, depth: p.tvw.clad?.depth || 12, shelves: 0, led: true, lining: "accent", back: "front" }); });
+  else if (d.ndel != null) setParams(u, (p) => p.tvw.niches.splice(+d.ndel, 1));
+  else if (d.ndup != null) setParams(u, (p) => { const n = JSON.parse(JSON.stringify(p.tvw.niches[+d.ndup])); if (typeof n.x === "number") n.x += n.w + 10; p.tvw.niches.push(n); });
+  else if (d.tvcopy) setParams(u, (p) => { const a = d.tvcopy, b2 = a === "left" ? "right" : "left"; const S = JSON.parse(JSON.stringify(p.tvw[a])); S.fronts = (S.fronts || []).map((z) => ({ ...z, hinge: z.hinge === "left" ? "right" : z.hinge === "right" ? "left" : z.hinge })); p.tvw[b2] = S; });
   else if (b.hasAttribute("data-zadd")) setParams(u, (p) => p.fronts.push({ type: "open", count: 1, height: "auto", shelves: 1, hinge: "left", led: false }));
   else if (d.secdel != null) setParams(u, (p) => { if (p.sections.length > 1) p.sections.splice(+d.secdel, 1); });
   else if (b.hasAttribute("data-secadd")) setParams(u, (p) => { p.sections.push({ width: "auto", kind: "normal", compartments: [DC({ content: "shelves", shelf_count: 4, door: "single_left" })] }); p.width += 50; });

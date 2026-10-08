@@ -2,6 +2,7 @@
 // (runs after the builder, exactly like the plugin's BuilderFactory hook).
 import { rround } from "../core/rubyMath.js";
 import * as Catalog from "../handles/catalog.js";
+import { recessFor } from "./config.js";
 import { COLORS as KCOLORS } from "./config.js";
 import { assignLayer, createBox, createFlatSlab, createHoleMarkerY, createSlabAlongX, NO_BAND } from "./helpers.js";
 import { TAGS } from "./carcass.js";
@@ -88,7 +89,14 @@ function collectFronts(entities, tr, out) {
                 continue;
             const hinge = Math.abs(toF(attr(e, "axis_x", 0))) > 0.5 ? "top" : toF(attr(e, "hinge_x", 0)) < toF(attr(e, "free_x", 0)) ? "left" : "right";
             const framed = e.name.includes("زجاج") || e.definition.entities.list.some((c) => isInst(c) && attr(c, "is_cut_piece", false));
-            out.push({ kind: "door", hinge, piece: e, piece_tr: t, holder: e, holder_tr: t, framed, name: e.name, parent_ents: entities });
+            // v113: a framed door's handle sits on the middle of its upright / rail — the frame member's width
+            let frameW = 0;
+            if (framed) {
+                const db = boxIn(e, t), dh = db.z1 - db.z0;
+                const ws = e.definition.entities.list.filter((c) => isInst(c)).map((c) => boxIn(c, t.mul(c.transformation))).filter((b) => b.z1 - b.z0 > dh * 0.5 && b.x1 - b.x0 < (db.x1 - db.x0) * 0.4).map((b) => b.x1 - b.x0);
+                frameW = ws.length ? Math.min(...ws) : 0;
+            }
+            out.push({ kind: "door", hinge, piece: e, piece_tr: t, holder: e, holder_tr: t, framed, frameW, name: e.name, parent_ents: entities });
         }
         else if (attr(e, "is_drawer", false)) {
             const kids = e.definition.entities.insts();
@@ -238,6 +246,10 @@ export function applyHandles(ctx, group, params, appDefault = null) {
     const planeY = Math.min(...fronts0.map((f) => f.box.y0));
     const fronts = fronts0.filter((f) => f.box.y0 <= planeY + 0.5);
     const solids = cfg0?.type === "gola" ? leafSolids(group.entities, new Transformation(), [], fronts) : [];
+    // v113: a front with a board standing right in front of it (a drawer behind a sliding door, a filler) gets no handle that sticks out
+    const blockers = leafSolids(group.entities, new Transformation(), [], fronts0);
+    const blockedBy = (f) => blockers.find((sd) => sd.owner !== f && sd.y1 <= f.box.y0 + 0.05 && sd.y1 > f.box.y0 - 8.0 &&
+        Math.min(sd.x1, f.box.x1) - Math.max(sd.x0, f.box.x0) > 2.0 && Math.min(sd.z1, f.box.z1) - Math.max(sd.z0, f.box.z0) > 2.0);
     // the carcass sides as built (a blind-corner box is wider than its «width» parameter)
     const sL = solids.find((sd) => /^جنب شمال/.test(sd.name) && !sd.owner), sR = solids.find((sd) => /^جنب يمين/.test(sd.name) && !sd.owner);
     // v107: the profile runs the full width of the box through notches cut in the sides (like a real gola), so it lines up with the fronts
@@ -247,7 +259,7 @@ export function applyHandles(ctx, group, params, appDefault = null) {
         // v110: a glass side (aluminium / wood frame + glass) can't be notched — the profile stops at its inner face
         for (const f of fronts) { f.clipX = [/زجاج/.test(sL.name) ? sL.x1 : sL.x0, /زجاج/.test(sR.name) ? sR.x0 : sR.x1]; f.boards = boards; f.sides = [sL, sR]; }
     const notches = [];
-    const recess = unitType === "base" ? toF(params["door_handle_recess"]) : 0.0;
+    const recess = unitType === "base" ? recessFor(params) : 0.0;
     const pieces = ctx.labels.pieces.filter((p) => p.unit_id === unitId);
     const used = new Set();
     const hardware = {};
@@ -258,6 +270,11 @@ export function applyHandles(ctx, group, params, appDefault = null) {
         if (!isKick && !unitOn)
             continue;
         const b = f.box;
+        const hidden = blockedBy(f);
+        if (hidden && ["bar", "knob", "edge_pull", "profile"].includes((isKick && kcfg ? kcfg : cfg)?.type)) {
+            warnings.push(`${f.name}: ورا «${hidden.name}» — اتعمل من غير مقبض بارز (قصّة إيد أو Push).`);
+            continue;
+        }
         // v107: what is really above this front — the next front (C between them) or a board / the counter (L under it);
         // the gap the carcass already left there is used as is (it was counted twice before)
         const xa = b.x0 + 1.0, xb = b.x1 - 1.0;
@@ -277,7 +294,7 @@ export function applyHandles(ctx, group, params, appDefault = null) {
         const gapAbove = limit === null ? (recess > 0 ? recess + 0.3 : 0.0) : limit - b.z1;
         const front = {
             w: b.x1 - b.x0, h: b.z1 - b.z0, t: b.y1 - b.y0, kind: f.kind, hinge: f.hinge, unit_type: unitType,
-            z_base: b.z0 - unitZ0, framed: f.framed, existing_recess: gapAbove - 0.3 >= 0.9 ? rround(gapAbove - 0.3, 3) : 0.0,
+            z_base: b.z0 - unitZ0, framed: f.framed, frame_w: f.frameW || 0, existing_recess: gapAbove - 0.3 >= 0.9 ? rround(gapAbove - 0.3, 3) : 0.0,
             is_top: next === null || underBoard, drop: unitType === "wall" ? toF(params["door_bottom_extension"]) : 0.0,
             overlay: toS(params["door_position"]) !== "inset", rail_d: toF(params["top_rail_front_inset"]) > 0 ? toF(params["top_rail_front_inset"]) : 2.5,
             // in the front's own frame: the board / counter above, the next front's bottom, this drawer's box top, the next drawer's box bottom

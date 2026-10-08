@@ -294,7 +294,8 @@ export class Plan {
     }
     handleCenterZ(span) {
         const dh = this.c.door_height;
-        const off = this.c.edge_offset;
+        const fw0 = this.f.framed ? Number(this.f.frame_w ?? 0) : 0;
+        const off = fw0 > 0 ? fw0 / 2.0 : this.c.edge_offset;
         let z;
         if (dh === "center")
             z = this.h / 2.0;
@@ -318,7 +319,10 @@ export class Plan {
         const c = this.c;
         const bar = c.type === "bar";
         const sp = bar ? c.spacing : 0.0;
-        const off = c.edge_offset;
+        // v113: on a framed (glass / mirror / panel-in-frame) door the handle goes on the middle of the frame member, never on the glass
+        const fw = this.f.framed ? Number(this.f.frame_w ?? 0) : 0;
+        // (a knob wider than a slim aluminium frame keeps its edge flush with the door edge)
+        const off = fw > 0 ? Math.max(fw / 2.0, (bar ? 1.2 : 2.4) / 2.0 + 0.1) : c.edge_offset;
         let vertical = this.door() && !this.flip() && c.door_orientation === "vertical";
         let short = false;
         if (vertical && bar && this.h < sp + 2 * off && this.w >= sp + 2 * off) {

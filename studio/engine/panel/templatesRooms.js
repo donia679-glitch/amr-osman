@@ -427,3 +427,162 @@ export function buildDesk(tb) {
     if (!(ns > 0))
         p.height = dh;
 }
+// ================================================================ v113 — flexible TV wall
+// left cabinet · middle (low unit + a wall cladding built out from the wall, with decorative niches) · right cabinet.
+// y = 0 is the front of the deepest part, y = D is the wall. Every size comes from p.tvw (see schema TEMPLATE_DEFAULTS.tv_wall).
+/** rectangles of [x0, x1] × [z0, z1] minus the holes → pieces (rows split at every hole edge, equal neighbours merged upward) */
+export function rectMinus(x0, x1, z0, z1, holes) {
+    const zs = [...new Set([z0, z1, ...holes.flatMap((h) => [h.z0, h.z1])].filter((z) => z >= z0 && z <= z1))].sort((a, b) => a - b);
+    const rows = [];
+    for (let i = 0; i + 1 < zs.length; i++) {
+        const a = zs[i], b = zs[i + 1];
+        if (b - a < 0.05) continue;
+        const cut = holes.filter((h) => h.z0 < b - 0.01 && h.z1 > a + 0.01).map((h) => [Math.max(x0, h.x0), Math.min(x1, h.x1)]).filter(([p, q]) => q > p).sort((u, v) => u[0] - v[0]);
+        const segs = [];
+        let x = x0;
+        for (const [p, q] of cut) { if (p > x + 0.05) segs.push([x, p]); x = Math.max(x, q); }
+        if (x1 > x + 0.05) segs.push([x, x1]);
+        rows.push({ z0: a, z1: b, segs });
+    }
+    const out = [];
+    let open = [];
+    for (const r of rows) {
+        const next = [];
+        for (const [p, q] of r.segs) {
+            const m = open.find((o) => Math.abs(o.x0 - p) < 0.01 && Math.abs(o.x1 - q) < 0.01 && Math.abs(o.z1 - r.z0) < 0.01);
+            if (m) { m.z1 = r.z1; next.push(m); } else { const o = { x0: p, x1: q, z0: r.z0, z1: r.z1 }; out.push(o); next.push(o); }
+        }
+        open = next;
+    }
+    return out;
+}
+/** cut a face piece into equal columns / rows that fit a board (grain up) */
+function splitRect(f, maxW, maxH) {
+    const nx = Math.max(1, Math.ceil((f.x1 - f.x0) / maxW - 1e-6)), nz = Math.max(1, Math.ceil((f.z1 - f.z0) / maxH - 1e-6));
+    if (nx === 1 && nz === 1) return [f];
+    const out = [];
+    for (let i = 0; i < nx; i++) for (let j = 0; j < nz; j++)
+        out.push({ x0: f.x0 + ((f.x1 - f.x0) * i) / nx, x1: f.x0 + ((f.x1 - f.x0) * (i + 1)) / nx, z0: f.z0 + ((f.z1 - f.z0) * j) / nz, z1: f.z0 + ((f.z1 - f.z0) * (j + 1)) / nz, split: true });
+    return out;
+}
+export function tvWallDims(q) {
+    const L = q.left, R = q.right, M = q.mid, C = q.clad;
+    const lw = L.on ? +L.width : 0, rw = R.on ? +R.width : 0, mw = +M.width;
+    const lowTop = M.low ? +M.z + +M.height : 0;
+    const D = Math.max(L.on ? +L.depth : 0, R.on ? +R.depth : 0, M.low ? +M.depth : 0, C.on ? +C.depth : 0, 5);
+    const H = Math.max(L.on ? +L.z + +L.height : 0, R.on ? +R.z + +R.height : 0, lowTop, C.on ? +C.top : 0, 10);
+    return { lw, rw, mw, W: lw + mw + rw, D, H, lowTop };
+}
+export function buildTvWall(tb) {
+    const { d, p, t } = tb;
+    const q = p.tvw, L = q.left, R = q.right, M = q.mid, C = q.clad;
+    const { lw, mw, W, D, lowTop } = tvWallDims(q);
+    p.width = W; p.depth = D;
+    // 1) the side cabinets — each one a full cabinet (its own fronts: doors / drawers / flaps / open, heights, shelves, glass)
+    for (const [S, x, nm, tag] of [[L, 0.0, "دولاب شمال", "col_left"], [R, lw + mw, "دولاب يمين", "col_right"]]) {
+        if (!S.on) continue;
+        const float = +S.z > 0;
+        subUnit(tb, { width: +S.width, height: +S.height, depth: +S.depth, mount: float ? "wall" : "floor", top: "full", fronts: S.fronts, led_under: !!S.led && float },
+            [x, D - +S.depth, +S.z], nm, tag);
+    }
+    // 2) the low middle unit (split into modules of at most 120 cm)
+    if (M.low) {
+        const mods = strips(mw, Math.max(40, +M.module_max || 120));
+        const float = +M.z > 0;
+        mods.forEach(([a, b], i) => {
+            subUnit(tb, { width: b - a, height: +M.height, depth: +M.depth, mount: float ? "wall" : "floor", top: "full", fronts: M.fronts, led_under: !!M.led && float },
+                [lw + a, D - +M.depth, +M.z], mods.length > 1 ? `الوحدة الوسطانية ${i + 1}` : "الوحدة الوسطانية", `mid${i}`);
+        });
+        if (mods.length > 1) inc(d.hardware, "مسمار ربط وحدات", 2 * (mods.length - 1));
+    }
+    // 3) the cladding: a face built out from the wall by C.depth over the middle, with the niches cut through it
+    if (!C.on) return;
+    const cx0 = lw, cx1 = lw + mw;
+    const cz0 = M.low ? lowTop + +C.gap : +C.z0, cz1 = +C.top;
+    if (cz1 - cz0 < 10) { d.warnings.push("الكسوة اللي فوق الوحدة الوسطانية ارتفاعها أقل من 10 سم — اتشالت."); return; }
+    const cd = Math.max(+C.depth, t + 0.6), fy0 = D - cd, fy1 = fy0 + t, mat = C.mat || "accent";
+    const niches = [];
+    (q.niches || []).forEach((n, i) => {
+        if (!n || n.on === false) return;
+        const w = +n.w, h = +n.h;
+        const x0 = n.x === "center" || n.x === "" || n.x == null ? cx0 + (mw - w) / 2 : cx0 + +n.x;
+        const z0 = n.z === "center" || n.z === "" || n.z == null ? cz0 + (cz1 - cz0 - h) / 2 : +n.z;
+        // w × h = the clear opening; the hole in the face is one board thickness bigger all round (the lining sits in it)
+        const r = { i, x0, x1: x0 + w, z0, z1: z0 + h, hx0: x0 - t, hx1: x0 + w + t, hz0: z0 - t, hz1: z0 + h + t, n };
+        if (w < 5 || h < 5) { d.warnings.push(`التجويف ${i + 1}: مقاسه صغير قوي — اتشال.`); return; }
+        if (r.hx0 < cx0 + t - 0.01 || r.hx1 > cx1 - t + 0.01 || r.hz0 < cz0 + t - 0.01 || r.hz1 > cz1 - t + 0.01) {
+            d.errors.push(`التجويف ${i + 1} (${fmt(w)}×${fmt(h)}) طالع برا الكسوة — لازم يبعد ${fmt(2 * t)} سم على الأقل عن أطرافها (الكسوة من ${fmt(cz0)} لـ ${fmt(cz1)} سم ارتفاع، وعرضها ${fmt(mw)}).`);
+            return;
+        }
+        if (niches.some((o) => o.hx0 < r.hx1 + 3 && r.hx0 < o.hx1 + 3 && o.hz0 < r.hz1 + 3 && r.hz0 < o.hz1 + 3)) {
+            d.errors.push(`التجويف ${i + 1} راكب على تجويف تاني — سيب بينهم ${fmt(2 * t + 3)} سم على الأقل.`);
+            return;
+        }
+        niches.push(r);
+    });
+    withModule(tb, "clad", () => {
+        // the face, cut around the niches
+        const holes = niches.map((r) => ({ x0: r.hx0, x1: r.hx1, z0: r.hz0, z1: r.hz1 }));
+        // every piece fits a board with its grain standing up: at most 118 wide and 240 high (equal columns / rows, joints noted)
+        const face = rectMinus(cx0, cx1, cz0, cz1, holes).flatMap((f) => splitRect(f, 118, 240));
+        if (face.some((f) => f.split)) d.notes.push("وش الكسوة متقسّم على أكتر من لوح (أقصى لوح 118×240 بالعروق رأسي) — خلّي الفواصل على خط واحد أو اعمل بينهم شريط/حلية.");
+        face.forEach((f, i) => tb.add(face.length > 1 ? `وش الكسوة ${i + 1}` : "وش الكسوة", "other", mat, tb.box(f.x0, fy0, f.z0, f.x1, fy1, f.z1),
+            { band: ["left", "right", "top", "bottom"], grain: "z", layer: "front", note: i === 0 ? "بيتربط على الفريم من ورا (مسامير مخفية/لزق) — الفواصل بين الألواح على حروف التجاويف" : null }));
+        // the frame behind the face (returns at its ends, top and bottom) holding it off the wall
+        const rd = D - fy1;
+        if (rd > 0.5) {
+            tb.add("جنب الكسوة شمال", "side", "carcass", tb.box(cx0, fy1, cz0, cx0 + t, D, cz1), { band: [], grain: "z", note: "بيتثبت في الحيطة بزوايا" });
+            tb.add("جنب الكسوة يمين", "side", "carcass", tb.box(cx1 - t, fy1, cz0, cx1, D, cz1), { band: [], grain: "z", note: "بيتثبت في الحيطة بزوايا" });
+            for (const [a, b] of strips(mw - 2 * t, 240)) {
+                const two = mw - 2 * t > 240;
+                tb.add(d.seqName(two ? "رأس الكسوة" : "رأس الكسوة "), "horizontal", "carcass", tb.box(cx0 + t + a, fy1, cz1 - t, cx0 + t + b, D, cz1), { band: [], grain: "x" });
+                tb.add(d.seqName(two ? "قاعدة الكسوة" : "قاعدة الكسوة "), "horizontal", "carcass", tb.box(cx0 + t + a, fy1, cz0, cx0 + t + b, D, cz0 + t), { band: [], grain: "x" });
+            }
+            // a stud every 60 cm keeps a wide face flat
+            const n = Math.floor((mw - 2 * t) / 60);
+            for (let k = 1; k <= n; k++) {
+                const x = cx0 + (mw * k) / (n + 1);
+                if (niches.some((r) => x > r.hx0 - t && x < r.hx1 + t)) continue;
+                tb.add(d.seqName("عرق الكسوة"), "divider", "carcass", tb.box(x - t / 2, fy1, cz0 + t, x + t / 2, D, cz1 - t), { band: [], grain: "z" });
+            }
+        }
+        inc(d.hardware, "زاوية تثبيت الكسوة في الحيطة", 4 + 2 * Math.floor(mw / 60));
+        // slats on the face, interrupted by the niches
+        if (C.style === "slats") {
+            const sw = +C.slat_width, gap = +C.slat_gap;
+            const n = Math.floor((mw + gap) / (sw + gap));
+            const start = cx0 + (mw - (n * sw + (n - 1) * gap)) / 2;
+            let k = 0;
+            for (let i = 0; i < n; i++) {
+                const x = start + i * (sw + gap);
+                for (const f of rectMinus(x, x + sw, cz0, cz1, holes.map((h) => ({ ...h, x0: h.x0 - 0.01, x1: h.x1 + 0.01 }))))
+                    if (f.x1 - f.x0 > sw - 0.1) tb.add(`شريحة كسوة ${++k}`, "other", C.slat_mat || "carcass", tb.box(f.x0, fy0 - t, f.z0, f.x1, fy0, f.z1), { band: ["left", "right", "top", "bottom"], grain: "z", layer: "front" });
+            }
+            d.notes.push(`شرايح الكسوة ${k} قطعة × ${fmt(sw)} سم بمسافة ${fmt(gap)} سم — بتتلزق وتتسمر من ورا على وش الكسوة، ومقطوعة عند التجاويف.`);
+        }
+        if (C.led) d.addLed("ليد ورا الكسوة", tb.box(cx0 + 3, D - 0.8, cz1 - 3.0, cx1 - 3, D, cz1 - 1.4));
+    });
+    // the niches: four lining boards from the face back to the niche back, a back panel, optional shelves + LED
+    niches.forEach((r) => {
+        const n = r.n, nm = `تجويف ${r.i + 1}`;
+        // depth from the face to the niche back (the back board sits on the wall when the niche is as deep as the cladding)
+        const by1 = Math.min(fy0 + Math.max(+n.depth || cd, t + 1), D - t);
+        withModule(tb, `niche${r.i}`, () => {
+            const lm = n.lining || "accent";
+            tb.add(`${nm} - سقف`, "horizontal", lm, tb.box(r.hx0, fy0, r.z1, r.hx1, by1, r.hz1), { band: ["front"], grain: "x" });
+            tb.add(`${nm} - قاعدة`, "horizontal", lm, tb.box(r.hx0, fy0, r.hz0, r.hx1, by1, r.z0), { band: ["front"], grain: "x" });
+            tb.add(`${nm} - جنب شمال`, "side", lm, tb.box(r.hx0, fy0, r.z0, r.x0, by1, r.z1), { band: ["front"], grain: "z" });
+            tb.add(`${nm} - جنب يمين`, "side", lm, tb.box(r.x1, fy0, r.z0, r.hx1, by1, r.z1), { band: ["front"], grain: "z" });
+            tb.add(`${nm} - ضهر`, "back", n.back || "accent", tb.box(r.x0, by1, r.z0, r.x1, by1 + t, r.z1), { band: [], grain: r.x1 - r.x0 >= r.z1 - r.z0 ? "x" : "z", note: "ضهر التجويف — لون/خامة مختلفة بتدّيه عمق" });
+            const ns = Math.max(0, Math.min(6, Math.trunc(+n.shelves || 0)));
+            for (let k = 1; k <= ns; k++) {
+                const z = r.z0 + ((r.z1 - r.z0) * k) / (ns + 1) - t / 2;
+                tb.add(`${nm} - رف ${k}`, "fixed_shelf", n.shelf_mat || lm, tb.box(r.x0, fy0 + 1, z, r.x1, by1, z + t), { band: ["front"], grain: "x" });
+            }
+            if (n.led) d.addLed(`ليد ${nm}`, tb.box(r.x0 + 1, fy0 + 1.5, r.z1 - 0.6, r.x1 - 1, fy0 + 3.1, r.z1));
+        });
+    });
+    if (niches.length) d.notes.push(`التجاويف: ${niches.map((r) => `${fmt(r.x1 - r.x0)}×${fmt(r.z1 - r.z0)} على ارتفاع ${fmt(r.z0)} سم`).join(" · ")} — حروف وش الكسوة حواليها بتتشرّط.`);
+    inc(d.hardware, "حامل شاشة حيطة", 1);
+    d.notes.push("حامل الشاشة يتثبت في الحيطة نفسها (أو عرق جوه الكسوة) مش في وش الكسوة. منتصف الشاشة المعتاد 110–120 سم من الأرض.");
+}

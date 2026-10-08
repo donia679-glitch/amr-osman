@@ -1,6 +1,6 @@
 // Port of the non-rectangular builders in lib/builders_categories.rb (Diagonal / Open / L-shape
 // corners, accessories) and lib/corner_glass_display_unit_builder.rb.
-import { COLORS, FRONT_THICKNESS_CM } from "./config.js";
+import { COLORS, FRONT_THICKNESS_CM, recessFor } from "./config.js";
 import { addColoredMarkerFace, adjustForFinish, assignLayer, bandAllSideEdges, bandEdge, bandEdges, createAngledPanel, createBox, createFlatSlab, createHoleMarker, createHoleMarkerY, getOrCreateNamedMaterial, hexToRgb, tagDoorHinge, NO_BAND, } from "./helpers.js";
 import { argError, hingeCountIn, hingeCupPositionsAlong, hingeRatiosFor, materialLabelName, TAGS } from "./carcass.js";
 import { fs } from "./rb.js";
@@ -270,7 +270,7 @@ export class DiagonalCornerUnitBuilder extends PlainBuilder {
             const ft = cm(FRONT_THICKNESS_CM);
             const ps = p3.offset(dir, gap);
             const pe = p4.offset(dir, -gap);
-            const recess = toS(p["unit_type"]) === "base" ? cm(toF(p["door_handle_recess"])) : 0;
+            const recess = toS(p["unit_type"]) === "base" ? cm(recessFor(p)) : 0;
             // v110: overlay doors cover the base / top edges like the straight units (the inset range was used for both)
             const [dz0, dz1] = this.cornerDoorZ(z0, t, h, recess);
             if (dz1 > dz0 && pe.distance(ps) > 0) {
@@ -340,7 +340,7 @@ export class OpenCornerUnitBuilder extends PlainBuilder {
             return;
         const gap = this.doorGap();
         const ft = cm(FRONT_THICKNESS_CM);
-        const recess = toS(p["unit_type"]) === "base" ? cm(toF(p["door_handle_recess"])) : 0;
+        const recess = toS(p["unit_type"]) === "base" ? cm(recessFor(p)) : 0;
         // v110: the straight units' rule — overlay doors stand IN FRONT of the base / top and cover their edges, inset doors close between them
         const ov = this.overlay();
         const [dz0, dz1] = this.cornerDoorZ(z0, t, h, recess);
@@ -598,7 +598,7 @@ export class LShapeCornerUnitBuilder extends PlainBuilder {
         const outer = pcm(p["door_gap_overlay"]);
         const gap = overlay ? outer : inset;
         const ft = cm(FRONT_THICKNESS_CM);
-        const recess = toS(p["unit_type"]) === "base" ? cm(toF(p["door_handle_recess"])) : 0;
+        const recess = toS(p["unit_type"]) === "base" ? cm(recessFor(p)) : 0;
         const [dz0, dz1] = this.doorZRange(overlay, gap, recess, z0, t, h);
         return { overlay, inset, gap, ft, dz0, dz1 };
     }

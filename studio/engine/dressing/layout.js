@@ -964,7 +964,7 @@ export class Engine {
             });
         }
         const handleTarget = flip ? railBottom : stiles[hingeSide === "left" ? "right" : "left"];
-        const plan = this.handlePlan(name, "door", hingeSide, x0, x1, z0, z1, fy0, fy1, true);
+        const plan = this.handlePlan(name, "door", hingeSide, x0, x1, z0, z1, fy0, fy1, true, fw);
         this.placeHandle(name, key, handleTarget, plan, x0, z0, fy0);
         const insKey = spec.insert;
         const insT = insKey === "glass" ? this.doors.glass_t : insKey === "mirror" ? this.doors.mirror_t : this.doors.panel_t;
@@ -1001,9 +1001,9 @@ export class Engine {
         }
     }
     // ======================================================= handles
-    handlePlan(name, kind, hingeSide, x0, x1, z0, z1, fy0, fy1, framed) {
+    handlePlan(name, kind, hingeSide, x0, x1, z0, z1, fy0, fy1, framed, frameW = 0) {
         const front = { w: x1 - x0, h: z1 - z0, t: fy1 - fy0, kind, hinge: hingeSide,
-            unit_type: "tall", z_base: z0, framed };
+            unit_type: "tall", z_base: z0, framed, frame_w: framed ? frameW : 0 };
         const plan = Handles.compute(front, this.p.handles);
         for (const wr of plan.warnings)
             this.warnings.push(`${name}: ${wr}`);

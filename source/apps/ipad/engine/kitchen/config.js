@@ -264,3 +264,12 @@ export const DEFAULTS = {
     "accessory_grid_cols": 4,
     "accessory_grid_rows": 3,
 };
+
+/** v113 (NOVERA): the handle gap at the top of base fronts exists only for the built-in profile — with a bar / knob / edge pull …
+ *  the fronts run full height (no empty 4 cm strip under the counter or between drawers) */
+export function recessFor(p) {
+    const h = p?.["kud_handles"];
+    const t = h && typeof h === "object" && !Array.isArray(h) ? String(h["type"] ?? "").trim() : "";
+    if (t !== "" && t !== "none" && t !== "gola") return 0.0;
+    return Number(p?.["door_handle_recess"] ?? 0) || 0.0;
+}

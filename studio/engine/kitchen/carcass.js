@@ -3,7 +3,7 @@
 // end panel, fillers, door/drawer fronts, drawer boxes and inserts). Method for method, same
 // order of operations, same inch arithmetic — the parity tests compare with real SketchUp.
 import { rround, sum as rsumF } from "../core/rubyMath.js";
-import { COLORS, FRONT_THICKNESS_CM, MIN_DIMENSION_CM } from "./config.js";
+import { COLORS, FRONT_THICKNESS_CM, MIN_DIMENSION_CM, recessFor } from "./config.js";
 import { addColoredMarkerFace, adjustForFinish, assignLayer, bandAllSideEdges, bandEdge, bandEdges, createBox, createFlatSlab, createHoleMarker, createHoleMarkerY, createHoleMarkerZ, createSlabAlongX, getOrCreateNamedMaterial, hexToRgb, tagDoorHinge, tagDoorHinge3d, tagDrawerSlide, NO_BAND, } from "./helpers.js";
 import { fs, strictFloat, strip, toF, toI, toS, truthy } from "./rb.js";
 import { cm, Point3d, rmax, rmin, Transformation, Vector3d } from "./su/geom.js";
@@ -170,7 +170,7 @@ export class CarcassBuilder {
         return Math.min(Math.max(toI(this.p["drawer_count"]), 1), 15);
     }
     handleRecess() {
-        return pcm(this.p["door_handle_recess"] ?? 0);
+        return pcm(recessFor(this.p));
     }
     /** v107 (NOVERA): a base unit with a handle gap and no other handle gets the built-in aluminium profile (handles.js effectiveCfg) —
      *  then EVERY drawer front leaves the gap at its top (a C profile between drawers, the L under the counter) and the boxes stay under it */
