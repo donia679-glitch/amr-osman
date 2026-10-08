@@ -2032,6 +2032,10 @@ $("#home").addEventListener("click", async (e) => {
     const cp = clone(src); cp.id = uid(); cp.name = `${src.name} (نسخة)`;
     // a fresh project: no stages, sharing, client signature, stock taken or workshop progress of the original
     for (const k of ["stages", "shared", "sharedAt", "stockTaken", "approval", "progress"]) delete cp[k];
+    // v114: the copy is a new job — its units get new codes (no two labels in the shop with the same code)
+    for (const u of cp.units || []) delete u.code;
+    for (const v of cp.variants || []) for (const u of v?.units || []) delete u.code;
+    ensureCodes(cp);
     await Lib.put(cp); showHome(); alertBar(`اتعملت نسخة: «${cp.name}»`); return;
   }
   if (d.hdel) {
@@ -6637,17 +6641,42 @@ const view = {
 /** unit codes: K = kitchen, D = dressing, P = other furniture + a running number (K01, K02, D01 …).
  * Stored on the unit, so editing or deleting another unit never renumbers it. */
 const CODE_PREFIX = { kitchen: "K", dressing: "D", panel: "P", pieces: "C" };
+// v114: unit codes are unique on this device across ALL projects (Amr: three tables in three projects all came out «P01»):
+// one running number per letter in state.codeSeq — a new unit takes the next number; old projects keep the codes already on their labels.
+const codeSeq = () => (state.codeSeq ??= {});
+function bumpSeq(code) {
+  const m = /^([A-Z]+)(\d+)$/.exec(code || "");
+  if (m) { const s = codeSeq(); if (+m[2] > (s[m[1]] || 0)) s[m[1]] = +m[2]; }
+}
 function ensureCodes(project) {
   if (!project?.units) return;
   const used = new Set(project.units.map((u) => u.code).filter(Boolean));
+  for (const c of used) bumpSeq(c);
+  let added = false;
   for (const u of project.units) {
     if (u.code) continue;
-    const pre = CODE_PREFIX[u.kind] || "P";
-    let n = 1;
+    const pre = CODE_PREFIX[u.kind] || "P", s = codeSeq();
+    let n = (s[pre] || 0) + 1;
     while (used.has(pre + String(n).padStart(2, "0"))) n++;
     u.code = pre + String(n).padStart(2, "0");
+    s[pre] = n;
     used.add(u.code);
+    added = true;
   }
+  if (added) save();
+}
+/** once per device: start the running numbers after the highest code in every saved project */
+async function seedCodeSeq() {
+  if (state.codeSeeded) return;
+  try {
+    for (const x of await Lib.list()) {
+      const rec = await Lib.get(x.id).catch(() => null);
+      for (const u of rec?.project?.units || []) bumpSeq(u.code);
+      for (const v of rec?.project?.variants || []) for (const u of v?.units || []) bumpSeq(u.code);
+    }
+    for (const u of state.project?.units || []) bumpSeq(u.code);
+    state.codeSeeded = true; save();
+  } catch { /* try again next time */ }
 }
 const unitCode = (u) => u.code || "";
 /** every sheet piece of a project; key = the piece number printed everywhere (K01-07) */
@@ -11741,6 +11770,7 @@ async function boot() {
     render(true);
     view.init("#view3d");
     showHome();
+    seedCodeSeq();
     setTimeout(recoverCheck, 1500);
   }
   // the splash stays at least a moment so the logo is seen, then fades into the start screen
