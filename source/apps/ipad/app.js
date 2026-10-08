@@ -3085,19 +3085,21 @@ function tvWallProps(p) {
     <h4 class="advh">الواجهة (من تحت لفوق)</h4>${zonesEd(`tvw.${k}.fronts`, S.fronts)}
     <div class="btnrow"><button class="ghost2 sm" data-tvcopy="${k}">⇄ خلّي ${k === "left" ? "اليمين" : "الشمال"} زيه (معكوس)</button></div>` : ""}</details>`;
   let h = `<details open><summary>📺 وحدة الشاشة — ${n1(p.width)} × ${n1(p.height)} × ${n1(p.depth)} سم</summary>
-    <p class="hint">العرض الكلي = الدولاب الشمال + الوسط + الدولاب اليمين. كل جزء ليه مقاساته وواجهته، والكسوة فوق الوحدة الوسطانية بارزة عن الحيطة وفيها التجاويف.</p></details>`;
+    <p class="hint">من الشمال لليمين: الدولاب الشمال + الوحدة المصمتة (مكان الشاشة) + الدولاب اليمين. كل مقاس هنا بيتغيّر لوحده.</p></details>`;
   h += side("left", L, "الدولاب الشمال");
-  h += `<details open><summary>▭ الوسط — عرض ${n1(M.width)} سم</summary><div class="grid2">${numF("tvw.mid.width", "عرض الوسط (بين الدولابين)", M.width)}</div>
-    <div class="bools">${boolF("tvw.mid.low", "وحدة أرضي في الوسط", M.low)}${M.low ? boolF("tvw.mid.led", "ليد تحتها (لو معلّقة)", M.led) : ""}</div>
-    ${M.low ? `<div class="grid2">${numF("tvw.mid.height", "ارتفاع الوحدة", M.height)}${numF("tvw.mid.depth", "عمق الوحدة", M.depth)}${numF("tvw.mid.z", "مرفوعة عن الأرض (0 = على الأرض)", M.z)}${numF("tvw.mid.module_max", "أقصى عرض للعلبة الواحدة", M.module_max, 5)}</div>
-    <h4 class="advh">واجهة الوحدة (من تحت لفوق)</h4>${zonesEd("tvw.mid.fronts", M.fronts)}` : ""}</details>`;
+  const solidH = C.on ? n1(C.top - (M.low ? M.z + M.height + C.gap : C.z0)) : 0;
+  h += `<details open><summary>▮ الوحدة المصمتة (مكان الشاشة) — ${n1(M.width)} × ${solidH} × ${n1(C.depth)}</summary>
+    <div class="bools">${boolF("tvw.clad.on", "فيه وحدة مصمتة", C.on)}${C.on ? boolF("tvw.clad.match", "نفس ارتفاع الدولاب", C.match) : ""}</div>
+    <div class="grid2">${numF("tvw.mid.width", "العرض", M.width)}${C.on ? numF("tvw.clad.depth", "العمق (من الحيطة)", C.depth) + (C.match ? "" : numF("tvw.clad.top", "نهايتها من الأرض", C.top)) + (M.low ? numF("tvw.clad.gap", "المسافة فوق الوحدة الأرضي", C.gap) : numF("tvw.clad.z0", "بدايتها من الأرض", C.z0)) : ""}</div>
+    ${C.on ? `<div class="grid2">${selF("tvw.clad.mat", "خامة الوش", TVW_MATS, C.mat)}${selF("tvw.clad.style", "شكل الوش", { flat: "سادة", slats: "شرايح رأسية" }, C.style)}
+      ${C.style === "slats" ? numF("tvw.clad.slat_width", "عرض الشريحة", C.slat_width) + numF("tvw.clad.slat_gap", "المسافة بين الشرايح", C.slat_gap) + selF("tvw.clad.slat_mat", "خامة الشرايح", TVW_MATS, C.slat_mat) : ""}</div>
+      <div class="bools">${boolF("tvw.clad.led", "ليد ورا الوحدة من فوق", C.led)}</div>` : ""}
+    <div class="bools">${boolF("tvw.mid.low", "وحدة أرضي تحتها (أدراج / قلاب)", M.low)}${M.low ? boolF("tvw.mid.led", "ليد تحتها (لو معلّقة)", M.led) : ""}</div>
+    ${M.low ? `<div class="grid2">${numF("tvw.mid.height", "ارتفاع الأرضي", M.height)}${numF("tvw.mid.depth", "عمق الأرضي", M.depth)}${numF("tvw.mid.z", "مرفوعة عن الأرض (0 = على الأرض)", M.z)}${numF("tvw.mid.module_max", "أقصى عرض للعلبة الواحدة", M.module_max, 5)}</div>
+    <h4 class="advh">واجهة الأرضي (من تحت لفوق)</h4>${zonesEd("tvw.mid.fronts", M.fronts)}` : ""}</details>`;
   h += side("right", R, "الدولاب اليمين");
-  h += `<details open><summary>🧱 الكسوة (البانوه البارز)</summary><div class="bools">${boolF("tvw.clad.on", "فيه كسوة فوق الوحدة", C.on)}${C.on ? boolF("tvw.clad.led", "ليد ورا الكسوة من فوق", C.led) : ""}</div>
-    ${C.on ? `<div class="grid2">${numF("tvw.clad.depth", "بروزها عن الحيطة (العمق)", C.depth)}${numF("tvw.clad.top", "نهايتها من الأرض", C.top)}${M.low ? numF("tvw.clad.gap", "المسافة فوق الوحدة", C.gap) : numF("tvw.clad.z0", "بدايتها من الأرض", C.z0)}
-      ${selF("tvw.clad.mat", "خامة الوش", TVW_MATS, C.mat)}${selF("tvw.clad.style", "شكل الوش", { flat: "سادة", slats: "شرايح رأسية" }, C.style)}
-      ${C.style === "slats" ? numF("tvw.clad.slat_width", "عرض الشريحة", C.slat_width) + numF("tvw.clad.slat_gap", "المسافة بين الشرايح", C.slat_gap) + selF("tvw.clad.slat_mat", "خامة الشرايح", TVW_MATS, C.slat_mat) : ""}</div>` : ""}</details>`;
   if (C.on) {
-    h += `<details open><summary>⬜ التجاويف الديكور (${(q.niches || []).length})</summary><p class="hint">المقاس = الفتحة الصافية من جوه. المكان: «من الشمال» من أول الوسط و«الارتفاع» من الأرض — سيبهم فاضيين يتوسّطوا. العمق من وش الكسوة (أقصاه بروز الكسوة).</p>`;
+    h += `<details open><summary>⬜ التجاويف الديكور (${(q.niches || []).length})</summary><p class="hint">المقاس = الفتحة الصافية من جوه. المكان: «من الشمال» من أول الوسط و«الارتفاع» من الأرض — سيبهم فاضيين يتوسّطوا. العمق من وش الوحدة المصمتة (أقصاه عمقها).</p>`;
     (q.niches || []).forEach((n, i) => {
       h += `<div class="zone-ed"><div class="zh"><b>تجويف ${i + 1}</b><button data-ndup="${i}" class="sm" aria-label="نسخة">${ICON.copy}</button><button data-ndel="${i}" class="danger sm" aria-label="شيل التجويف">${ICON.trash}</button></div>
         <div class="grid3">${numF(`tvw.niches.${i}.w`, "العرض", n.w)}${numF(`tvw.niches.${i}.h`, "الارتفاع", n.h)}${numF(`tvw.niches.${i}.depth`, "العمق", n.depth)}

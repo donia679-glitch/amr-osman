@@ -121,16 +121,16 @@ export const TEMPLATE_DEFAULTS = {
         },
     },
     tv_wall: {
-        environment: "dry", width: 300.0, height: 240.0, depth: 45.0, fronts: [], handle: "push",
+        environment: "dry", width: 320.0, height: 240.0, depth: 35.0, fronts: [], handle: "push",
         tvw: {
-            left: { on: true, width: 60.0, height: 240.0, depth: 40.0, z: 0.0, led: false,
-                fronts: [{ type: "drawers", count: 2, height: 40.0 }, { type: "doors", count: 1, height: "auto", shelves: 4, hinge: "left" }] },
-            right: { on: true, width: 60.0, height: 240.0, depth: 40.0, z: 0.0, led: false,
-                fronts: [{ type: "drawers", count: 2, height: 40.0 }, { type: "doors", count: 1, height: "auto", shelves: 4, hinge: "right" }] },
-            mid: { width: 200.0, low: true, height: 45.0, depth: 45.0, z: 15.0, led: true, module_max: 90.0,
+            left: { on: true, width: 60.0, height: 240.0, depth: 35.0, z: 0.0, led: false,
+                fronts: [{ type: "open", count: 1, height: "auto", shelves: 5, led: true }] },
+            right: { on: true, width: 60.0, height: 240.0, depth: 35.0, z: 0.0, led: false,
+                fronts: [{ type: "open", count: 1, height: "auto", shelves: 5, led: true }] },
+            mid: { width: 200.0, low: false, height: 45.0, depth: 45.0, z: 15.0, led: false, module_max: 90.0,
                 fronts: [{ type: "flap", count: 1, height: "auto", shelves: 0 }] },
-            clad: { on: true, gap: 0.0, z0: 0.0, top: 240.0, depth: 12.0, mat: "accent", style: "flat", slat_width: 4.0, slat_gap: 1.5, slat_mat: "carcass", led: false },
-            niches: [{ on: true, x: "center", z: 150.0, w: 150.0, h: 50.0, depth: 12.0, shelves: 0, led: true, lining: "accent", back: "front" }],
+            clad: { on: true, match: true, gap: 0.0, z0: 0.0, top: 240.0, depth: 30.0, mat: "accent", style: "flat", slat_width: 5.0, slat_gap: 1.5, slat_mat: "carcass", led: false },
+            niches: [{ on: true, x: "center", z: 40.0, w: 150.0, h: 35.0, depth: 25.0, shelves: 0, led: true, lining: "carcass", back: "carcass" }],
         },
     },
     bed: {
@@ -464,10 +464,12 @@ function normalizeTvWall(p, raw, errors) {
     N(M, "z", 0, 150, "الوحدة الوسطانية مرفوعة عن الأرض"); N(M, "module_max", 40, 150, "أقصى عرض لكل علبة في الوسط");
     M.fronts = rArray(raw?.tvw?.mid?.fronts ?? M.fronts).map((z, i) => normalizeZone(z, i, errors)).filter((z) => z !== null);
     const C = q.clad = isHash(q.clad) ? deepMerge(deepDup(D.clad), q.clad) : deepDup(D.clad);
-    B(C, "on"); B(C, "led");
+    B(C, "on"); B(C, "led"); B(C, "match");
     N(C, "gap", 0, 100, "المسافة بين الوحدة والكسوة"); N(C, "z0", 0, 250, "بداية الكسوة"); N(C, "top", 20, 320, "نهاية الكسوة من الأرض");
     N(C, "depth", 2.4, 60, "بروز الكسوة عن الحيطة"); N(C, "slat_width", 1, 20, "عرض الشريحة"); N(C, "slat_gap", 0.3, 15, "المسافة بين الشرايح");
     if (!["flat", "slats"].includes(C.style)) C.style = "flat";
+    // «نفس ارتفاع الدولاب»: the solid middle unit runs from its start to the top of the tallest side cabinet
+    if (C.match && (q.left.on || q.right.on)) C.top = Math.max(q.left.on ? q.left.z + q.left.height : 0, q.right.on ? q.right.z + q.right.height : 0);
     q.niches = rArray(raw?.tvw?.niches ?? q.niches).filter(isHash).map((n0, i) => {
         const n = deepMerge(deepDup(D.niches[0]), n0);
         B(n, "on"); B(n, "led");

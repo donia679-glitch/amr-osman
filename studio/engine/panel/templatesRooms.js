@@ -499,7 +499,7 @@ export function buildTvWall(tb) {
     if (!C.on) return;
     const cx0 = lw, cx1 = lw + mw;
     const cz0 = M.low ? lowTop + +C.gap : +C.z0, cz1 = +C.top;
-    if (cz1 - cz0 < 10) { d.warnings.push("الكسوة اللي فوق الوحدة الوسطانية ارتفاعها أقل من 10 سم — اتشالت."); return; }
+    if (cz1 - cz0 < 10) { d.warnings.push("الوحدة المصمتة ارتفاعها أقل من 10 سم — اتشالت."); return; }
     const cd = Math.max(+C.depth, t + 0.6), fy0 = D - cd, fy1 = fy0 + t, mat = C.mat || "accent";
     const niches = [];
     (q.niches || []).forEach((n, i) => {
@@ -511,7 +511,7 @@ export function buildTvWall(tb) {
         const r = { i, x0, x1: x0 + w, z0, z1: z0 + h, hx0: x0 - t, hx1: x0 + w + t, hz0: z0 - t, hz1: z0 + h + t, n };
         if (w < 5 || h < 5) { d.warnings.push(`التجويف ${i + 1}: مقاسه صغير قوي — اتشال.`); return; }
         if (r.hx0 < cx0 + t - 0.01 || r.hx1 > cx1 - t + 0.01 || r.hz0 < cz0 + t - 0.01 || r.hz1 > cz1 - t + 0.01) {
-            d.errors.push(`التجويف ${i + 1} (${fmt(w)}×${fmt(h)}) طالع برا الكسوة — لازم يبعد ${fmt(2 * t)} سم على الأقل عن أطرافها (الكسوة من ${fmt(cz0)} لـ ${fmt(cz1)} سم ارتفاع، وعرضها ${fmt(mw)}).`);
+            d.errors.push(`التجويف ${i + 1} (${fmt(w)}×${fmt(h)}) طالع برا الوحدة المصمتة — لازم يبعد ${fmt(2 * t)} سم على الأقل عن أطرافها (الوحدة المصمتة من ${fmt(cz0)} لـ ${fmt(cz1)} سم ارتفاع، وعرضها ${fmt(mw)}).`);
             return;
         }
         if (niches.some((o) => o.hx0 < r.hx1 + 3 && r.hx0 < o.hx1 + 3 && o.hz0 < r.hz1 + 3 && r.hz0 < o.hz1 + 3)) {
@@ -525,28 +525,28 @@ export function buildTvWall(tb) {
         const holes = niches.map((r) => ({ x0: r.hx0, x1: r.hx1, z0: r.hz0, z1: r.hz1 }));
         // every piece fits a board with its grain standing up: at most 118 wide and 240 high (equal columns / rows, joints noted)
         const face = rectMinus(cx0, cx1, cz0, cz1, holes).flatMap((f) => splitRect(f, 118, 240));
-        if (face.some((f) => f.split)) d.notes.push("وش الكسوة متقسّم على أكتر من لوح (أقصى لوح 118×240 بالعروق رأسي) — خلّي الفواصل على خط واحد أو اعمل بينهم شريط/حلية.");
-        face.forEach((f, i) => tb.add(face.length > 1 ? `وش الكسوة ${i + 1}` : "وش الكسوة", "other", mat, tb.box(f.x0, fy0, f.z0, f.x1, fy1, f.z1),
+        if (face.some((f) => f.split)) d.notes.push("وش الوحدة المصمتة متقسّم على أكتر من لوح (أقصى لوح 118×240 بالعروق رأسي) — خلّي الفواصل على خط واحد أو اعمل بينهم شريط/حلية.");
+        face.forEach((f, i) => tb.add(face.length > 1 ? `وش الوحدة المصمتة ${i + 1}` : "وش الوحدة المصمتة", "other", mat, tb.box(f.x0, fy0, f.z0, f.x1, fy1, f.z1),
             { band: ["left", "right", "top", "bottom"], grain: "z", layer: "front", note: i === 0 ? "بيتربط على الفريم من ورا (مسامير مخفية/لزق) — الفواصل بين الألواح على حروف التجاويف" : null }));
         // the frame behind the face (returns at its ends, top and bottom) holding it off the wall
         const rd = D - fy1;
         if (rd > 0.5) {
-            tb.add("جنب الكسوة شمال", "side", "carcass", tb.box(cx0, fy1, cz0, cx0 + t, D, cz1), { band: [], grain: "z", note: "بيتثبت في الحيطة بزوايا" });
-            tb.add("جنب الكسوة يمين", "side", "carcass", tb.box(cx1 - t, fy1, cz0, cx1, D, cz1), { band: [], grain: "z", note: "بيتثبت في الحيطة بزوايا" });
+            tb.add("جنب الوحدة المصمتة شمال", "side", "carcass", tb.box(cx0, fy1, cz0, cx0 + t, D, cz1), { band: [], grain: "z", note: "بيتثبت في الحيطة بزوايا" });
+            tb.add("جنب الوحدة المصمتة يمين", "side", "carcass", tb.box(cx1 - t, fy1, cz0, cx1, D, cz1), { band: [], grain: "z", note: "بيتثبت في الحيطة بزوايا" });
             for (const [a, b] of strips(mw - 2 * t, 240)) {
                 const two = mw - 2 * t > 240;
-                tb.add(d.seqName(two ? "رأس الكسوة" : "رأس الكسوة "), "horizontal", "carcass", tb.box(cx0 + t + a, fy1, cz1 - t, cx0 + t + b, D, cz1), { band: [], grain: "x" });
-                tb.add(d.seqName(two ? "قاعدة الكسوة" : "قاعدة الكسوة "), "horizontal", "carcass", tb.box(cx0 + t + a, fy1, cz0, cx0 + t + b, D, cz0 + t), { band: [], grain: "x" });
+                tb.add(d.seqName(two ? "رأس الوحدة المصمتة" : "رأس الوحدة المصمتة "), "horizontal", "carcass", tb.box(cx0 + t + a, fy1, cz1 - t, cx0 + t + b, D, cz1), { band: [], grain: "x" });
+                tb.add(d.seqName(two ? "قاعدة الوحدة المصمتة" : "قاعدة الوحدة المصمتة "), "horizontal", "carcass", tb.box(cx0 + t + a, fy1, cz0, cx0 + t + b, D, cz0 + t), { band: [], grain: "x" });
             }
             // a stud every 60 cm keeps a wide face flat
             const n = Math.floor((mw - 2 * t) / 60);
             for (let k = 1; k <= n; k++) {
                 const x = cx0 + (mw * k) / (n + 1);
                 if (niches.some((r) => x > r.hx0 - t && x < r.hx1 + t)) continue;
-                tb.add(d.seqName("عرق الكسوة"), "divider", "carcass", tb.box(x - t / 2, fy1, cz0 + t, x + t / 2, D, cz1 - t), { band: [], grain: "z" });
+                tb.add(d.seqName("عرق الوحدة المصمتة"), "divider", "carcass", tb.box(x - t / 2, fy1, cz0 + t, x + t / 2, D, cz1 - t), { band: [], grain: "z" });
             }
         }
-        inc(d.hardware, "زاوية تثبيت الكسوة في الحيطة", 4 + 2 * Math.floor(mw / 60));
+        inc(d.hardware, "زاوية تثبيت الوحدة المصمتة في الحيطة", 4 + 2 * Math.floor(mw / 60));
         // slats on the face, interrupted by the niches
         if (C.style === "slats") {
             const sw = +C.slat_width, gap = +C.slat_gap;
@@ -558,9 +558,9 @@ export function buildTvWall(tb) {
                 for (const f of rectMinus(x, x + sw, cz0, cz1, holes.map((h) => ({ ...h, x0: h.x0 - 0.01, x1: h.x1 + 0.01 }))))
                     if (f.x1 - f.x0 > sw - 0.1) tb.add(`شريحة كسوة ${++k}`, "other", C.slat_mat || "carcass", tb.box(f.x0, fy0 - t, f.z0, f.x1, fy0, f.z1), { band: ["left", "right", "top", "bottom"], grain: "z", layer: "front" });
             }
-            d.notes.push(`شرايح الكسوة ${k} قطعة × ${fmt(sw)} سم بمسافة ${fmt(gap)} سم — بتتلزق وتتسمر من ورا على وش الكسوة، ومقطوعة عند التجاويف.`);
+            d.notes.push(`شرايح الوحدة المصمتة ${k} قطعة × ${fmt(sw)} سم بمسافة ${fmt(gap)} سم — بتتلزق وتتسمر من ورا على وش الوحدة المصمتة، ومقطوعة عند التجاويف.`);
         }
-        if (C.led) d.addLed("ليد ورا الكسوة", tb.box(cx0 + 3, D - 0.8, cz1 - 3.0, cx1 - 3, D, cz1 - 1.4));
+        if (C.led) d.addLed("ليد ورا الوحدة المصمتة", tb.box(cx0 + 3, D - 0.8, cz1 - 3.0, cx1 - 3, D, cz1 - 1.4));
     });
     // the niches: four lining boards from the face back to the niche back, a back panel, optional shelves + LED
     niches.forEach((r) => {
@@ -582,7 +582,7 @@ export function buildTvWall(tb) {
             if (n.led) d.addLed(`ليد ${nm}`, tb.box(r.x0 + 1, fy0 + 1.5, r.z1 - 0.6, r.x1 - 1, fy0 + 3.1, r.z1));
         });
     });
-    if (niches.length) d.notes.push(`التجاويف: ${niches.map((r) => `${fmt(r.x1 - r.x0)}×${fmt(r.z1 - r.z0)} على ارتفاع ${fmt(r.z0)} سم`).join(" · ")} — حروف وش الكسوة حواليها بتتشرّط.`);
+    if (niches.length) d.notes.push(`التجاويف: ${niches.map((r) => `${fmt(r.x1 - r.x0)}×${fmt(r.z1 - r.z0)} على ارتفاع ${fmt(r.z0)} سم`).join(" · ")} — حروف وش الوحدة المصمتة حواليها بتتشرّط.`);
     inc(d.hardware, "حامل شاشة حيطة", 1);
-    d.notes.push("حامل الشاشة يتثبت في الحيطة نفسها (أو عرق جوه الكسوة) مش في وش الكسوة. منتصف الشاشة المعتاد 110–120 سم من الأرض.");
+    d.notes.push("حامل الشاشة يتثبت في الحيطة نفسها (أو عرق جوه الوحدة المصمتة) مش في وش الوحدة المصمتة. منتصف الشاشة المعتاد 110–120 سم من الأرض.");
 }

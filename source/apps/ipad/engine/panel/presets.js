@@ -3017,41 +3017,34 @@ export const LIST = {
     }
     ,
     "tvw_flex": {
-        "label": "وحدة شاشة مرنة: دولابين + وحدة وسط + تجويف",
+        "label": "وحدة شاشة: دولابين مفتوحين + وحدة مصمتة بتجويف",
         "group": "الريسبشن",
-        "desc": "كل جزء بمقاساته وواجهته: دولاب شمال ويمين (أدراج + ضلفة بأرفف)، وحدة أرضي معلّقة في النص، كسوة بارزة فوقها فيها تجويف بليد.",
+        "desc": "دولاب أرفف مفتوح بليد يمين وشمال، وبينهم وحدة مصمتة بارتفاعهم فيها تجويف بليد — كل مقاس بيتظبط لوحده.",
         "params": { "template": "tv_wall", "handle": "push",
+            "tvw": { "left": { "on": true, "width": 60, "height": 240, "depth": 35, "z": 0, "fronts": [ { "type": "open", "count": 1, "height": "auto", "shelves": 5, "led": true } ] }, "right": { "on": true, "width": 60, "height": 240, "depth": 35, "z": 0, "fronts": [ { "type": "open", "count": 1, "height": "auto", "shelves": 5, "led": true } ] }, "mid": { "width": 200, "low": false },
+                "clad": { "on": true, "match": true, "z0": 0, "depth": 30, "mat": "accent", "style": "flat", "led": false },
+                "niches": [ { "on": true, "x": "center", "z": 40, "w": 150, "h": 35, "depth": 25, "shelves": 0, "led": true, "lining": "carcass", "back": "carcass" } ] },
             "materials": { "carcass": { "lib": "hpl_offwhite" }, "front": { "lib": "hpl_offwhite" }, "accent": { "lib": "wood_walnut_v" }, "shelf": { "lib": "hpl_offwhite" } } }
     },
     "tvw_slats_two_niches": {
-        "label": "وحدة شاشة شرايح بتجويفين",
+        "label": "وحدة شاشة: دولابين مفتوحين + وحدة مصمتة سادة",
         "group": "الريسبشن",
-        "desc": "كسوة شرايح أوك بين دولابين مفتوحين، تجويف للشاشة وتجويف تاني صغير برفين وليد.",
+        "desc": "نفس الفكرة من غير تجويف: وحدة مصمتة أوك بارتفاع الدواليب بين دولابين أرفف بليد.",
         "params": { "template": "tv_wall", "handle": "push",
-            "tvw": {
-                "left": { "on": true, "width": 50, "height": 230, "depth": 35, "z": 0, "fronts": [ { "type": "doors", "count": 1, "height": 60, "shelves": 1, "hinge": "left" }, { "type": "open", "count": 1, "height": "auto", "shelves": 4, "led": true } ] },
-                "right": { "on": true, "width": 50, "height": 230, "depth": 35, "z": 0, "fronts": [ { "type": "doors", "count": 1, "height": 60, "shelves": 1, "hinge": "right" }, { "type": "open", "count": 1, "height": "auto", "shelves": 4, "led": true } ] },
-                "mid": { "width": 220, "low": true, "height": 40, "depth": 45, "z": 20, "led": true, "module_max": 110, "fronts": [ { "type": "drawers", "count": 1, "height": "auto" } ] },
-                "clad": { "on": true, "gap": 0, "top": 230, "depth": 15, "mat": "accent", "style": "slats", "slat_width": 5, "slat_gap": 1.5, "slat_mat": "accent", "led": true },
-                "niches": [
-                    { "on": true, "x": 20, "z": 95, "w": 130, "h": 75, "depth": 15, "shelves": 0, "led": true, "lining": "carcass", "back": "front" },
-                    { "on": true, "x": 162, "z": 100, "w": 34, "h": 70, "depth": 15, "shelves": 2, "led": true, "lining": "carcass", "back": "front" }
-                ]
-            },
-            "materials": { "carcass": { "lib": "hpl_white" }, "front": { "lib": "hpl_anthracite" }, "accent": { "lib": "wood_oak_natural_v" }, "shelf": { "lib": "hpl_white" } } }
+            "tvw": { "left": { "on": true, "width": 60, "height": 240, "depth": 35, "z": 0, "fronts": [ { "type": "open", "count": 1, "height": "auto", "shelves": 5, "led": true } ] }, "right": { "on": true, "width": 60, "height": 240, "depth": 35, "z": 0, "fronts": [ { "type": "open", "count": 1, "height": "auto", "shelves": 5, "led": true } ] }, "mid": { "width": 200, "low": false },
+                "clad": { "on": true, "match": true, "z0": 0, "depth": 30, "mat": "accent", "style": "flat", "led": false },
+                "niches": [] },
+            "materials": { "carcass": { "lib": "hpl_offwhite" }, "front": { "lib": "hpl_offwhite" }, "accent": { "lib": "wood_oak_natural_v" }, "shelf": { "lib": "hpl_offwhite" } } }
     },
     "tvw_floating": {
-        "label": "وحدة شاشة معلّقة بكسوة لحد السقف",
+        "label": "وحدة شاشة: دولاب واحد + وحدة مصمتة بتجويف طويل",
         "group": "الريسبشن",
-        "desc": "من غير دواليب جنب: أرضي معلّق طويل بأدراج، وكسوة من فوقه لحد 260 سم فيها تجويف رفيع رأسي على الجنب.",
-        "params": { "template": "tv_wall", "handle": "gola",
-            "tvw": {
-                "left": { "on": false }, "right": { "on": false },
-                "mid": { "width": 280, "low": true, "height": 38, "depth": 42, "z": 25, "led": true, "module_max": 95, "fronts": [ { "type": "drawers", "count": 1, "height": "auto" } ] },
-                "clad": { "on": true, "gap": 15, "top": 260, "depth": 16, "mat": "front", "style": "flat", "led": true },
-                "niches": [ { "on": true, "x": 225, "z": 100, "w": 30, "h": 140, "depth": 16, "shelves": 3, "led": true, "lining": "accent", "back": "accent" } ]
-            },
-            "materials": { "carcass": { "lib": "hpl_offwhite" }, "front": { "lib": "hpl_greige" }, "accent": { "lib": "wood_walnut_v" }, "shelf": { "lib": "hpl_offwhite" } } }
+        "desc": "دولاب أرفف مفتوح بليد على الشمال بس، وجنبه وحدة مصمتة بارتفاعه فيها تجويف طويل بليد.",
+        "params": { "template": "tv_wall", "handle": "push",
+            "tvw": { "left": { "on": true, "width": 70, "height": 240, "depth": 35, "z": 0, "fronts": [ { "type": "open", "count": 1, "height": "auto", "shelves": 5, "led": true } ] }, "right": { "on": false, "width": 60, "height": 240, "depth": 35, "z": 0, "fronts": [ { "type": "open", "count": 1, "height": "auto", "shelves": 5, "led": true } ] }, "mid": { "width": 220, "low": false },
+                "clad": { "on": true, "match": true, "z0": 0, "depth": 30, "mat": "accent", "style": "flat", "led": false },
+                "niches": [ { "on": true, "x": "center", "z": 35, "w": 180, "h": 30, "depth": 25, "shelves": 0, "led": true, "lining": "carcass", "back": "carcass" } ] },
+            "materials": { "carcass": { "lib": "hpl_anthracite" }, "front": { "lib": "hpl_anthracite" }, "accent": { "lib": "hpl_greige" }, "shelf": { "lib": "wood_oak_natural_v" } } }
     }
 };
 export const get = (key) => (Object.prototype.hasOwnProperty.call(LIST, key) ? LIST[key] : undefined);
