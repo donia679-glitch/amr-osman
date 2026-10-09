@@ -28,6 +28,7 @@ import * as Keypad from "./keypad.js";
 import * as Studio from "./draw/studio.js";
 import * as WComp from "./wallcomp.js";
 import * as KWall from "./kitwall.js";
+import * as Acc from "./acc.js";
 import * as DevChat from "./devchat.js";
 import * as WCL from "./engine/panel/templatesRooms.js";
 import * as I18n from "./i18n.js";
@@ -37,7 +38,7 @@ import * as DG from "./draw/geom.js";
 
 const APP_URL = "https://claude.ai/artifact/EP8c8LmBNS8d3EqLcDioXi";
 const APP_VERSION = "1.0";
-const RELEASE = "v122"; // bumped with every shipped version (the developer notes carry it)
+const RELEASE = "v123"; // bumped with every shipped version (the developer notes carry it)
 // the NOVERA mark — the same one as the website (two cream panels, the brass profile between them, the brass base line)
 const MARK_SVG = '<svg viewBox="0 0 40 40" aria-hidden="true"><rect width="40" height="40" rx="3" fill="#0f2e1c"/><rect x="9" y="9" width="7" height="22" fill="#e9d9b0"/><rect x="24" y="9" width="7" height="22" fill="#e9d9b0"/><path d="M16 9h3l5 22h-3z" fill="#b98d34"/><rect x="6" y="33" width="28" height="2" fill="#b98d34"/></svg>';
 /** the App Store build (inside the iOS app): no links to the online version, no plugin / other-brand wording */
@@ -269,7 +270,7 @@ function setCloud(s) {
 // ------------------------------------------------------------------ engines adapter
 const cache = new Map();
 function R(u) {
-  const key = u.kind + JSON.stringify(u.params) + JSON.stringify(u.libs || {}) + (u.org || "") + (u.orgOpts ? JSON.stringify(u.orgOpts) : "") + (u.extra?.length ? JSON.stringify(u.extra) : "") + (u.matOv ? JSON.stringify(u.matOv) : "") + `|L${+u.lift || 0}|B${u.bandAll === true ? 1 : 0}`;
+  const key = u.kind + JSON.stringify(u.params) + JSON.stringify(u.libs || {}) + (u.org || "") + (u.orgOpts ? JSON.stringify(u.orgOpts) : "") + (u.extra?.length ? JSON.stringify(u.extra) : "") + (u.matOv ? JSON.stringify(u.matOv) : "") + (u.acc?.length ? "|A" + JSON.stringify(u.acc) : "") + (u.mech ? "|M" + JSON.stringify(u.mech) : "") + `|L${+u.lift || 0}|B${u.bandAll === true ? 1 : 0}`;
   if (cache.has(key)) return cache.get(key);
   if (cache.size > 80) cache.delete(cache.keys().next().value);
   let out = u.kind === "dressing" ? adaptDressing(u) : u.kind === "kitchen" ? adaptKitchen(u) : u.kind === "pieces" ? adaptPieces(u) : u.params?.model ? adaptModel(u) : adaptPanel(u);
@@ -280,6 +281,7 @@ function R(u) {
   }
   if (out.ok && u.kind !== "kitchen" && u.kind !== "pieces" && u.bandAll !== true) out = hideBands(u, out);
   if (u.extra?.length && out.ok) out = withExtra(u, out);
+  if ((u.acc?.length || (u.mech && Object.values(u.mech).some(Boolean))) && out.ok && u.kind !== "pieces") { try { out = withAcc(u, out); } catch (e) { console.warn("acc", e); } }
   if ((u.matOv || out.params?.template === "wall_comp") && out.ok) out = withMatOv(u, out);
   if (!R.noCache) cache.set(key, out);
   return out;
@@ -476,6 +478,81 @@ function withExtra(u, out) {
   if (Array.isArray(out.partMover)) res.partMover = [...out.partMover, ...panels.map(() => null)];
   res.pieces = (out.pieces || 0) + panels.length;
   res.banding = bandM(res.parts);
+  return res;
+}
+/** v123: accessories + mechanisms (acc.js) — hardware lines, the loose shelves they replace, shelves shortened for door racks,
+ * their wooden parts (cut list + labels, riding their own mover), and the plan the 3D draws from (r.accPlan) */
+function withAcc(u, out) {
+  const P = Acc.plan(u, out);
+  const res = { ...out, hardware: { ...(out.hardware || {}) }, warnings: [...(out.warnings || []), ...P.warn], notes: [...(out.notes || []), ...P.notes], accPlan: P, movers: [...(out.movers || []), ...P.movers] };
+  // a chosen hinge / runner system replaces the unit's own generic lines (not added on top of them)
+  const mech = u.mech || {};
+  for (const k of Object.keys(out.hardware || {})) {
+    if (mech.hinge && /^مفصل/.test(k)) delete res.hardware[k];
+    if (mech.drawer && /مجر[ىي].*(درج|أدراج)|(درج|أدراج).*مجر[ىي]/.test(k)) delete res.hardware[k];
+    if (mech.flap && /قلاب|جاك|أفينتوس|Aventos|ذراع/.test(k)) delete res.hardware[k];
+  }
+  for (const [k, q] of Object.entries(P.hw)) res.hardware[k] = Math.round(((res.hardware[k] || 0) + q) * 100) / 100;
+  const kit = !!out.meshes;
+  const inCav = (b, c) => { const cx = (b.x0 + b.x1) / 2, cz = (b.z0 + b.z1) / 2; return cx > c.x0 - 0.5 && cx < c.x1 + 0.5 && cz > c.z0 - 0.5 && cz < c.z1 + 0.5; };
+  const loose = (name, role, mat) => (kit ? /^رف(?!.*ثابت)/.test(name || "") : (role === "shelf" || /^رف(?!.*ثابت)/.test(name || "")) && mat !== "fixed_shelf" && role !== "fixed_shelf");
+  // 1) drop the loose shelves an accessory replaces
+  if (P.drops.length) {
+    if (kit) {
+      const gone = new Set(out.meshes.filter((m) => m.mover == null && loose(m.name) && P.drops.some((c) => inCav(m.box, c))).map((m) => m.name));
+      if (gone.size) { res.meshes = out.meshes.filter((m) => !gone.has(m.name)); res.parts = out.parts.filter((pt) => !gone.has(pt.name)); res.shelvesDropped = gone.size; }
+    } else {
+      const keep = out.parts.map((pt, i) => !(pt.box && (out.partMover?.[i] ?? null) === null && loose(pt.name, pt.role, pt.material) && P.drops.some((c) => inCav(pt.box, c))));
+      if (keep.some((k) => !k)) { res.parts = out.parts.filter((_, i) => keep[i]); if (Array.isArray(out.partMover)) res.partMover = out.partMover.filter((_, i) => keep[i]); res.shelvesDropped = keep.filter((k) => !k).length; }
+    }
+  }
+  if (res.shelvesDropped) for (const k of Object.keys(res.hardware)) if (/فرش|حامل رف|دبل رف|مسامير رف/.test(k)) res.hardware[k] = Math.max(0, res.hardware[k] - res.shelvesDropped);
+  // 2) door racks: the shelves behind the door get shorter at the front
+  for (const { c, by } of P.trims) {
+    if (!by) continue;
+    const cut = (b) => ({ ...b, y0: Math.max(b.y0, c.y0 + by) });
+    if (kit) {
+      res.meshes = (res.meshes || out.meshes).map((m) => {
+        if (m.mover != null || !loose(m.name) || !inCav(m.box, c) || m.box.y0 >= c.y0 + by) return m;
+        const nb = cut(m.box), dd = nb.y0 - m.box.y0;
+        const lp = (res.parts || out.parts).find((pt) => pt.name === m.name);
+        if (lp?.label) { const L = lp.label, D0 = m.box.y1 - m.box.y0; if (Math.abs(L.h - D0) < 0.6) L.h = Math.round((L.h - dd) * 10) / 10; else if (Math.abs(L.w - D0) < 0.6) L.w = Math.round((L.w - dd) * 10) / 10; }
+        return { ...m, box: nb, faces: Obs.boxFaces(nb, m.mat) };
+      });
+      res.parts = (res.parts || out.parts).map((pt) => (pt.label ? { ...pt, label: { ...pt.label } } : pt));
+    } else {
+      res.parts = (res.parts || out.parts).map((pt, i) => {
+        if (!pt.box || (res.partMover || out.partMover)?.[i] != null || !loose(pt.name, pt.role, pt.material) || !inCav(pt.box, c) || pt.box.y0 >= c.y0 + by) return pt;
+        const nb = cut(pt.box), dd = nb.y0 - pt.box.y0, L = pt.label ? { ...pt.label } : null;
+        if (L && pt.axes) { if (pt.axes[0] === "y") L.w = Math.round((L.w - dd) * 10) / 10; else if (pt.axes[1] === "y") L.h = Math.round((L.h - dd) * 10) / 10; }
+        return { ...pt, box: nb, label: L, shape: undefined, checks: [...(pt.checks || []), `✂ اتقصّر ${Math.round(dd * 10) / 10} سم من قدام عشان الإكسسوار اللي على الضلفة`] };
+      });
+    }
+  }
+  // 3) the accessories' own wooden parts
+  if (P.panels.length) {
+    let fr = null;
+    const allowed = ["carcass", "front", "shelf", "accent", "back"];
+    try { fr = panelCompute({ template: "free", panels: P.panels.map((q) => ({ name: q.name, x: q.x, y: q.y, z: q.z, w: q.w, d: q.d, h: q.h, role: q.material === "back" ? "back" : "other", material: allowed.includes(q.material) ? q.material : "carcass" })) }); } catch { fr = null; }
+    if (fr?.ok) {
+      const matOk = (m) => (out.colors?.[m] ? m : kit ? (m === "back" ? "back" : "carcass") : out.colors?.carcass ? "carcass" : m);
+      res.parts = [...(res.parts || out.parts)];
+      if (kit) res.meshes = [...(res.meshes || out.meshes)];
+      else if (Array.isArray(res.partMover || out.partMover)) res.partMover = [...(res.partMover || out.partMover)];
+      fr.parts.forEach((pt, i) => {
+        const q = P.panels[i]; if (!q) return;
+        const mat = matOk(q.material), name = `${q.name} (${P.list.find((x) => x.i === q.acc)?.def.label || "إكسسوار"})`;
+        if (kit) {
+          res.parts.push({ id: `a${i}`, name, material: mat, cut_piece: true, label: { ...pt.label, led: null }, holes: [], door_label: null, checks: ["🧰 قطعة إكسسوار"], material_name: null });
+          res.meshes.push({ id: `am${i}`, name, layer: "Kitchen - Carcass", mat, door: false, drawer: false, mover: q.accMover ?? null, faces: Obs.boxFaces(pt.box, mat), box: { ...pt.box } });
+        } else {
+          res.parts.push({ ...pt, id: 96000 + i, name, material: mat, checks: ["🧰 قطعة إكسسوار"], holes: [], ...(u.kind === "dressing" ? { layer: "carcass" } : {}) });
+          if (res.partMover) res.partMover.push(q.accMover ?? null);
+        }
+      });
+    }
+  }
+  if (res.parts !== out.parts) { res.pieces = res.parts.filter((pt) => pt.cut_piece !== false).length; res.banding = bandM(res.parts); }
   return res;
 }
 /** solid boxes of a unit (engine frame) — what a drawn piece snaps between */
@@ -3059,7 +3136,7 @@ function renderProps() {
 /** a freshly opened unit: every section closed except the unit's size section, so all the headings are in view at once */
 const DIMS_SEC = /^(المقاسات|المقاسات والنظام|الوحدة|🍳 مقاسات)/;
 function collapseProps(el) {
-  for (const d of el.children) if (d.tagName === "DETAILS" && !d.classList.contains("keepopen")) d.open = DIMS_SEC.test(d.querySelector(":scope > summary")?.textContent.trim() || "");
+  for (const d of el.children) if (d.tagName === "DETAILS" && !d.classList.contains("keepopen") && !(d.hasAttribute("data-accbox") && ui.accOpen)) d.open = DIMS_SEC.test(d.querySelector(":scope > summary")?.textContent.trim() || "");
 }
 // remember the last field touched in the panel (the change re-draws it after the field lost focus)
 document.addEventListener("pointerdown", (e) => { const p = $("#props"); if (p && p.contains(e.target)) { const t = e.target.closest("input, select, textarea, button, label"); const q = t && (fieldSel(t) || fieldSel(t.querySelector?.("input, select"))); if (q) ui.lastField = q; } }, true);
@@ -3106,6 +3183,7 @@ function renderProps0() {
     el.innerHTML = h; return;
   }
   if (u.kind === "kitchen" && r.ok) h += applianceField(u, p) + (p.unit_category === "washer_gap" || p.unit_category === "cooker_gap" ? "" : organizerField(u, r));
+  if (r.ok && u.kind !== "pieces") h += accProps(u, r);
   if (r.ok) h += summaryHtml(u);
   if (r.ok) h += `<div class="btnrow"><button class="ghost2" data-tostudio title="نسخة من الوحدة كألواح تعدّلها بحرية">✏️ عدّلها بحرية في ورشة الرسم</button></div>`;
   h += u.kind === "dressing" ? dressingProps(p) : u.kind === "kitchen" ? kitchenProps(p) : panelProps(p, r);
@@ -3949,8 +4027,10 @@ function dressingProps(p) {
 }
 
 const props = $("#props");
+props.addEventListener("toggle", (e) => { if (e.target.hasAttribute?.("data-accbox")) ui.accOpen = e.target.open; }, true);
 props.addEventListener("change", (e) => {
   const t = e.target;
+  if (t.dataset?.accat != null) { const u = selUnit(), e0 = u?.acc?.[+t.dataset.accat]; if (e0) { e0.at = t.value; ui.accCav = t.value; ui.accOpen = true; save(); render(); } return; }
   if (t.hasAttribute?.("data-tlev")) { const u = selUnit(), T = u && trolleyOpts(u); if (T) { u.orgOpts = { ...T, levels: +t.value }; save(); render(); } return; }
   const prow = t.closest?.(".pcrow");
   if (prow) {
@@ -4101,6 +4181,12 @@ props.addEventListener("click", (e) => {
   const pu = selUnit();
   if (pu && rb && rb.dataset.ins) { const [i, k] = rb.dataset.ins.split("|"); applyInsert(pu, +i, k); return; }
   if (pu && rb && rb.dataset.org !== undefined) { applyOrg(pu, rb.dataset.org); return; }
+  const cavHit = e.target.closest?.("[data-acccav]");
+  if (pu && cavHit) { ui.accCav = ui.accCav === cavHit.dataset.acccav ? null : cavHit.dataset.acccav; ui.accOpen = true; renderProps(); return; }
+  if (pu && rb && rb.hasAttribute("data-accpick")) { ui.pop = "acc"; ui.accGrp = null; renderPop(); return; }
+  if (pu && rb && rb.dataset.accdel != null) { pu.acc = (pu.acc || []).filter((_, i) => i !== +rb.dataset.accdel); if (!pu.acc.length) delete pu.acc; ui.accOpen = true; save(); render(); return; }
+  if (pu && rb && rb.dataset.accopt) { const [i, k, v] = rb.dataset.accopt.split("|"); const e0 = pu.acc?.[+i]; if (e0) { e0.o = { ...(e0.o || {}), [k]: Number.isFinite(+v) && v !== "" ? +v : v }; ui.accOpen = true; save(); render(); } return; }
+  if (pu && rb && rb.dataset.mech) { const [cat, k] = rb.dataset.mech.split("|"); pu.mech = { ...(pu.mech || {}), [cat]: k }; if (!k) delete pu.mech[cat]; if (!Object.keys(pu.mech).length) delete pu.mech; ui.accOpen = true; save(); render(); return; }
   if (pu && rb && (rb.dataset.trow || rb.dataset.tdiv)) {
     const T = trolleyOpts(pu); if (!T) return;
     const [i, v] = (rb.dataset.trow || rb.dataset.tdiv).split("|");
@@ -4658,6 +4744,80 @@ function orgHardware(u) {
   const what = [...new Set(t.rows.filter((k) => k !== "empty").map((k) => TROLLEY_ROWS[k].label.replace(/^\S+\s/, "")))].join(" / ");
   return { [`${u.org === "oil" ? "ترولي زيت" : "ترولي طويل (كارجو)"} ${w} سم — ${t.levels} أدوار (${what}) + مجرى فتح كامل`]: 1, ...(t.div.some((x) => x) ? { "فواصل ترولي ستانلس": t.div.reduce((a, b) => a + b, 0) } : {}) };
 }
+// ---- v123: accessories + mechanisms panel (acc.js) ----------------------------------------------------------------------
+function accCavs(u, r) {
+  if (ui.accCavU !== u.id) { ui.accCavU = u.id; ui.accCav = null; ui.accOpen = false; } // the picked cavity belongs to one unit
+  if (r.accPlan?.cavs) return r.accPlan.cavs;
+  try { return Acc.cavities(r); } catch { return []; }
+}
+function accProps(u, r) {
+  const cavs = accCavs(u, r), list = r.accPlan?.list || [], mech = u.mech || {};
+  const a = Acc.mechCounts(r);
+  const sel = cavs.find((c) => c.key === ui.accCav) || null;
+  let h = `<details class="appbox accbox" ${ui.accOpen ? "open" : ""} data-accbox><summary>🧰 الإكسسوارات والميكانيزمات${list.length ? ` · ${list.length}` : ""}${Object.values(mech).some(Boolean) ? " · ⚙" : ""}</summary>`;
+  if (cavs.length) {
+    h += `<p class="hint">دوس على خانة في الرسمة وبعدين «＋ ضيف إكسسوار» — أو ضيف على طول والبرنامج بيختار الخانة اللي تناسبه. الإكسسوار بيظهر في الـ3D وبيتحرك مع الفتح، وبينزل في طلب الهاردوير، وقطعه الخشب في الكت ليست.</p>
+      <div class="accwrap">${Acc.cavSvg(cavs, ui.accCav, list)}<div class="accsel">${sel ? `<b>الخانة ${sel.n}</b><small>${n1(sel.w)} عرض × ${n1(sel.h)} ارتفاع × ${n1(sel.d)} عمق${sel.front ? sel.front.kind === "door" ? (sel.front.flap ? " · ورا قلاب" : " · ورا ضلفة") : " · ورا درج" : " · مفتوحة"}${sel.drawers ? " · فيها أدراج" : ""}</small>` : `<small>${cavs.length} خانة في الوحدة — اختار واحدة أو سيبها على البرنامج</small>`}
+      <button class="add" data-accpick>${ICON.plus}ضيف إكسسوار${sel ? ` في الخانة ${sel.n}` : ""}</button></div></div>`;
+  } else h += `<p class="hint">مالقيتش خانات فاضية جوه الوحدة دي (كلها أدراج أو مقفولة).</p>`;
+  for (const it of list) {
+    const opts = Object.entries(it.def.opts || {});
+    h += `<div class="accrow ${it.ok ? "" : "bad"}"><div class="acch"><span class="acci">${it.def.icon}</span><b>${esc(it.def.label)}</b><span class="accera">${Acc.ERA[it.def.era] || ""}</span><button class="x" data-accdel="${it.i}" aria-label="شيل">×</button></div>
+      <small>${it.ok ? "" : "⚠ "}الخانة ${it.c.n} (${n1(it.c.w)}×${n1(it.c.h)}×${n1(it.c.d)})${it.ok ? "" : " — " + esc(Acc.fits(it.def, it.c).why)}</small>
+      ${cavs.length > 1 ? `<label class="f"><span>الخانة</span><select data-accat="${it.i}">${cavs.map((c) => `<option value="${c.key}" ${c.key === it.c.key ? "selected" : ""}>${c.n} — ${n1(c.w)}×${n1(c.h)}×${n1(c.d)}${Acc.fits(it.def, c).ok ? "" : " (مش مناسبة)"}</option>`).join("")}</select></label>` : ""}
+      ${opts.map(([k, o]) => `<div class="dglass"><span>${esc(o.label)}</span><div class="chips2">${o.ch.map(([v, t]) => `<button class="chip tog ${String(it.o[k]) === String(v) ? "on" : ""}" data-accopt="${it.i}|${k}|${v}">${esc(t)}</button>`).join("")}</div></div>`).join("")}</div>`;
+  }
+  // unit-wide mechanisms: only the ones this unit has something for
+  const has = { open: a.doors + a.flaps + a.drawers > 0, hinge: a.doors + a.flaps > 0, drawer: a.drawers > 0, flap: a.flaps > 0, slide: a.sliders > 0 || a.doors > 0 };
+  h += `<h4>⚙ ميكانيزمات الوحدة</h4>`;
+  for (const [cat, C] of Object.entries(Acc.MECH)) {
+    if (!has[cat]) continue;
+    h += `<div class="dglass"><span>${esc(C.label)}</span><div class="chips2">${Object.entries(C.items).map(([k, it]) => `<button class="chip tog ${(mech[cat] || "") === k ? "on" : ""}" data-mech="${cat}|${k}" title="${esc(Acc.ERA[it.era] || "")}">${esc(it.label)}</button>`).join("")}</div></div>`;
+  }
+  const hw = r.accPlan?.hw || {};
+  if (Object.keys(hw).length) h += `<p class="hint">🔩 اتضاف للهاردوير: ${Object.entries(hw).map(([k, q]) => `${esc(k)} × ${q}`).join("، ")}. حط أسعارهم في «الورشة والعميل».</p>`;
+  for (const n of r.accPlan?.notes || []) h += `<p class="hint">ℹ ${esc(n)}</p>`;
+  return h + `</details>`;
+}
+/** the catalogue pop: groups, era, fits / why not for the chosen cavity (or anywhere in the unit) */
+function accPop() {
+  const u = selUnit(), r = u && R(u);
+  if (!u || !r?.ok) return `<div class="popbox"><p class="hint">اختار وحدة الأول.</p></div>`;
+  const cavs = accCavs(u, r), sel = cavs.find((c) => c.key === ui.accCav) || null;
+  const grp = ui.accGrp || (u.kind === "kitchen" ? (r.params?.unit_type === "wall" ? "kw" : r.params?.unit_type === "tall" ? "kt" : "kb") : u.kind === "dressing" ? "wd" : "wd");
+  let h = `<div class="popbox wide accpop" role="dialog" aria-label="الإكسسوارات"><div class="libhead"><h2>🧰 إكسسوارات وميكانيزمات ${sel ? `— الخانة ${sel.n} (${n1(sel.w)}×${n1(sel.h)}×${n1(sel.d)})` : ""}</h2><button class="x" data-close aria-label="قفل">×</button></div>
+    <p class="hint">من الكلاسيك للأحدث — اللي مكتوب جنبه ✓ بيركب${sel ? " في الخانة دي" : " في خانة من خانات الوحدة"}، والباقي مكتوب ليه لأ.</p>
+    <div class="kwtabs">${Acc.GROUPS.map(([k, l]) => `<button data-accgrp="${k}" class="${grp === k ? "on" : ""}">${l}</button>`).join("")}</div><div class="accgrid">`;
+  for (const [id, d] of Object.entries(Acc.ACC)) {
+    if (d.g !== grp) continue;
+    const pool = sel ? [sel] : cavs;
+    const okc = pool.find((c) => Acc.fits(d, c).ok);
+    const why = okc ? "" : pool.length ? Acc.fits(d, pool.reduce((a, c) => (c.w * c.h * c.d > a.w * a.h * a.d ? c : a))).why : "مفيش خانات";
+    h += `<button class="acccard ${okc ? "" : "no"}" data-accadd="${id}"><span class="acci">${d.icon}</span><b>${esc(d.label)}</b><span class="accera">${Acc.ERA[d.era] || ""}</span><small>${esc(d.desc)}</small><em>${okc ? `✓ ${sel ? "بيركب هنا" : `بيركب في الخانة ${okc.n}`}` : `✕ ${esc(why)}`}</em></button>`;
+  }
+  return h + `</div></div>`;
+}
+function accAdd(u, id) {
+  const r = R(u), cavs = accCavs(u, r), d = Acc.ACC[id];
+  const sel = cavs.find((c) => c.key === ui.accCav);
+  const usedKeys = new Set((r.accPlan?.list || []).filter((it) => it.def.mv !== "door").map((it) => it.c.key));
+  const cand = (sel ? [sel] : cavs).filter((c) => Acc.fits(d, c).ok);
+  if (!cand.length) { alertBar(`${d.label}: مفيش خانة مناسبة — ${sel ? Acc.fits(d, sel).why : "شوف المقاسات المطلوبة"}`); return; }
+  // the free cavity that fits closest (least wasted volume), unless one was picked
+  let c = sel;
+  if (!c) {
+    // a free cavity first; door racks want the whole door (the biggest), the rest the smallest cavity they fit in
+    let free = cand.filter((x) => d.mv === "door" || !usedKeys.has(x.key));
+    // accessories that replace the loose shelves take the whole column when there is one
+    if (d.clear && free.some((x) => x.col)) free = free.filter((x) => x.col);
+    const pool = free.length ? free : cand, vol = (x) => x.w * x.h * x.d;
+    c = [...pool].sort((a, b) => (d.mv === "door" || d.clear && d.need?.h?.[0] >= 80 ? vol(b) - vol(a) : vol(a) - vol(b)))[0];
+  }
+  u.acc = [...(u.acc || []), { id, at: c.key, o: {} }];
+  ui.accCav = c.key; ui.accOpen = true; ui.pop = null;
+  save(); render(); renderPop();
+  alertBar(`🧰 ${d.label} اتحط في الخانة ${c.n} — افتح الضلف (⇄) عشان تشوفه بيتحرك`);
+}
 function organizerField(u, r) {
   const p = r.params || {};
   let h = `<details open class="appbox orgbox"><summary>🧩 التقسيمات الداخلية</summary>`;
@@ -5027,7 +5187,7 @@ function applyLibTo(u, key, lib) {
   } else setParams(u, (p) => { p.materials ??= {}; p.materials[key] = lib ? { lib } : {}; });
 }
 // ---- the settings panel: "basic" shows only what most units need, search finds any field
-const BASIC_SECTIONS = ["✏️ ورشة الرسم", "درج الوزرة", "الحيطة الجاية بالمقاس", "الرسم بالقلم", "الأبواب والشبابيك", "المكان", "المقاسات", "المقاسات والنظام", "الوحدة", "الواجهة", "من جوه", "الخامات", "الأقسام (من الشمال لليمين)", "الواجهة (من تحت لفوق)", "الألواح", "اللون والتشطيب", "🧩 التقسيمات الداخلية", "الأوضة", "كل الحيطان", "🎨 خامة لكل قطعة"];
+const BASIC_SECTIONS = ["✏️ ورشة الرسم", "درج الوزرة", "الحيطة الجاية بالمقاس", "الرسم بالقلم", "الأبواب والشبابيك", "المكان", "المقاسات", "المقاسات والنظام", "الوحدة", "الواجهة", "من جوه", "الخامات", "الأقسام (من الشمال لليمين)", "الواجهة (من تحت لفوق)", "الألواح", "اللون والتشطيب", "🧩 التقسيمات الداخلية", "🧰 الإكسسوارات والميكانيزمات", "الأوضة", "كل الحيطان", "🎨 خامة لكل قطعة"];
 /** the sections the workshop cares about: construction, joints, hinges, grooves, banding, drawers, assembly sizes, summary */
 const SHOP_SECTIONS = /التصنيع والتجميع|الهيكل والتجميع|الأليتا|كبب المفصلات|مفحار|الأورزة|درج الوزرة|صناديق الأدراج|الأدراج بالتفصيل|مقاسات التركيب|ملخص الوحدة|تفاصيل الضلف|المقاسات|القطع|الجهاز اللي هيتركب|مجرى الليد/;
 const normAr = (t) => String(t || "").toLowerCase().replace(/[أإآ]/g, "ا").replace(/ة/g, "ه").replace(/ى/g, "ي").replace(/[ًٌٍَُِّْـ]/g, "");
@@ -5481,6 +5641,7 @@ function renderPop0() {
   else if (ui.pop === "fincmp") h = fincmpPop();
   else if (ui.pop === "scrap") h = scrapPop();
   else if (ui.pop === "zero") h = zwPop();
+  else if (ui.pop === "acc") h = accPop();
   else if (ui.pop === "recover") h = recoverPop();
   else if (ui.pop === "stock") h = stockPop();
   else if (ui.pop === "menu") {
@@ -5688,6 +5849,10 @@ $("#pop").addEventListener("click", async (e) => {
   const d = b.dataset;
   if (b.hasAttribute("data-opendefs")) { ui.pop = "defaults"; renderPop(); return; }
   if (ui.pop === "brand" && b.hasAttribute("data-brandlogo-del")) { brandSet("logo", ""); renderPop(); return; }
+  if (ui.pop === "acc") {
+    if (d.accgrp) { ui.accGrp = d.accgrp; renderPop(); return; }
+    if (d.accadd) { const u = selUnit(); if (u) accAdd(u, d.accadd); return; }
+  }
   if (ui.pop === "zero") {
     const Z = zw();
     if (d.zwmode) { Z.mode = d.zwmode; Z.res = null; renderPop(); return; }
@@ -6758,6 +6923,10 @@ const view = {
     const THREE = this.three;
     const T = (v) => new THREE.Vector3(v[0], v[2], -v[1]);
     const m = new THREE.Matrix4();
+    if (mv.kind === "spin") { // v123: a turntable / carousel turns about its vertical axis
+      const h = T(mv.hinge);
+      return m.makeTranslation(h.x, h.y, h.z).multiply(new THREE.Matrix4().makeRotationY((mv.ang ?? 1) * k)).multiply(new THREE.Matrix4().makeTranslation(-h.x, -h.y, -h.z));
+    }
     if (mv.kind === "door") {
       const h = T(mv.hinge), a = T(mv.axis).normalize(), f = T(mv.free), n = T(mv.normal);
       const sign = new THREE.Vector3().crossVectors(a, f.clone().sub(h)).dot(n) >= 0 ? 1 : -1;
@@ -7139,6 +7308,7 @@ const view = {
       minZ = Math.min(minZ, -b.y1); maxZ = Math.max(maxZ, -b.y0);
     }
     if (u.kind === "pieces") for (const pt of r.parts) g.add(pieceTag(THREE, pt, unitCode(u)));
+    if (r.accPlan && !vis && !state.xray && !ui.hideCls?.has("appl")) Acc.draw(THREE, u, r, this, g, { RBox: this.RBox, shadows: !!state.render });
     if (!r.meshes && !vis && !state.xray && !ui.hideCls?.has("soft")) {
       for (const { mesh, partIndex } of Decor.softFor(THREE, Mat, u, r, { render: !!state.render, RBox: this.RBox, name: "مفروشات" })) {
         const mvI = partIndex !== null ? r.partMover?.[partIndex] ?? null : null;
@@ -12997,4 +13167,4 @@ function cmdOpen() {
 function cmdClose() { const b = $("#cmdBox"); if (b) { b.hidden = true; b.innerHTML = ""; } }
 addEventListener("keydown", (e) => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); if ($("#cmdBox") && !$("#cmdBox").hidden) cmdClose(); else cmdOpen(); } });
 
-if (DEV) window.__dbg = { exportPlanPdf: (m) => exportPlanPdf(m), planPrintSvg: (m) => planPrintSvg(m), cmdItems: () => cmdItems(), cncOps: (pc) => cncOps(pc), cncPieces: () => cncPieces(), exportLabelsPdf, exportCutPdf, quoteCalc, quickEstimate, purchaseData, takeStock, targetUnits, toggleMulti, multiToggle, showHome, openProject, exportCnc, ergoData, exportAR, alitaJoints, stepJointsHtml, exportAsmBooklet, view, plan, R, render: (x) => render(x), ak: (t) => kitchenProposals(t), applyK: (u) => applyKitchen(u, null), checks: () => designChecks(), merge: (a, b) => mergeInto(a, b), get ui() { return ui; }, layout: asmLayout, libUnit, libSet, thumbs, openStudio: (u, x) => openStudio(u, x), exportUnitDrawings, exportPurchasePdf, exportPurchaseXlsx, renderPop, libAdd, exportQuotePdf, exportAsmBooklet, presentOn, presentOff, renderPresent, exportMachines, speakRun, applyLighting, setParams, cmdOpen, elev: (u) => unitElevSvg(u), cutReady, get cutData() { return cutData; }, projectPieces: () => projectPieces(state.project), workerOn, workerOff, renderWorker, zwLibPump, zwSolve, zwLibStore, zwLibPaint, ZW_LIB, get state() { return state; } };
+if (DEV) window.__dbg = { Acc, accAdd: (u, id) => accAdd(u, id), exportPlanPdf: (m) => exportPlanPdf(m), planPrintSvg: (m) => planPrintSvg(m), cmdItems: () => cmdItems(), cncOps: (pc) => cncOps(pc), cncPieces: () => cncPieces(), exportLabelsPdf, exportCutPdf, quoteCalc, quickEstimate, purchaseData, takeStock, targetUnits, toggleMulti, multiToggle, showHome, openProject, exportCnc, ergoData, exportAR, alitaJoints, stepJointsHtml, exportAsmBooklet, view, plan, R, render: (x) => render(x), ak: (t) => kitchenProposals(t), applyK: (u) => applyKitchen(u, null), checks: () => designChecks(), merge: (a, b) => mergeInto(a, b), get ui() { return ui; }, layout: asmLayout, libUnit, libSet, thumbs, openStudio: (u, x) => openStudio(u, x), exportUnitDrawings, exportPurchasePdf, exportPurchaseXlsx, renderPop, libAdd, exportQuotePdf, exportAsmBooklet, presentOn, presentOff, renderPresent, exportMachines, speakRun, applyLighting, setParams, cmdOpen, elev: (u) => unitElevSvg(u), cutReady, get cutData() { return cutData; }, projectPieces: () => projectPieces(state.project), workerOn, workerOff, renderWorker, zwLibPump, zwSolve, zwLibStore, zwLibPaint, ZW_LIB, get state() { return state; } };
