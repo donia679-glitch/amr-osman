@@ -188,6 +188,14 @@ function norm(op) {
       drills.push({ x, y, d: dia, z: Math.max(0, num(d.z, 12)), kind });
     }
 
+    const hdrills = []; // edge (horizontal) bores: face left|right|bottom|top, the point on that edge, zc = height from the face
+    for (const d of Array.isArray(op.hdrills) ? op.hdrills : []) {
+      if (!d || typeof d !== "object" || !["left", "right", "bottom", "top"].includes(d.face)) continue;
+      const x = toNum(d.x), y = toNum(d.y);
+      if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+      hdrills.push({ face: d.face, x, y, zc: num(d.zc, T / 2), d: pos(d.d) || 8, z: Math.max(0, num(d.z, 32)), kind: typeof d.kind === "string" ? d.kind : "sys" });
+    }
+
     const grooves = [];
     for (const g of Array.isArray(op.grooves) ? op.grooves : []) {
       if (!g || typeof g !== "object") continue;
@@ -227,7 +235,7 @@ function norm(op) {
       name: txt0(op.name),
       mat: txt0(op.mat),
       W, H, T,
-      outline, cutouts, pockets, drills, grooves,
+      outline, cutouts, pockets, drills, hdrills, grooves,
       note: txt0(op.note),
       edges,
       grain: op.grain === true,
@@ -254,7 +262,8 @@ function normList(ops) {
 
 // Macro ids as requested by the app spec. (Check in woodWOP: if your version
 // numbers them differently, only these constants need changing.)
-const MPR_ID = { drill: 100, groove: 102, contour: 103, pocket: 105 };
+// woodWOP macro numbers: 100 WerkStck · 102 BohrVert · 103 BohrHoriz · 105 Konturfraesen · 109 Nut · 112 Tasche
+const MPR_ID = { piece: 100, drill: 102, hdrill: 103, contour: 105, groove: 109, pocket: 112 };
 
 /** `<100 \BohrVert\` + parameter lines + blank line. */
 function mprMacro(id, name, params) {
@@ -312,6 +321,7 @@ function buildMpr(o) {
   push('KM="Thickness"');
   push("");
 
+
   // Contours (outline, cutouts, non-rectangular pockets) first, macros afterwards.
   const contours = []; // {text, elements}
   const addContour = (pts) => {
@@ -331,6 +341,8 @@ function buildMpr(o) {
   const cutN = o.cutouts.map((c) => addContour(c));
   const outN = o.outline ? addContour(o.outline) : 0;
   for (const c of contours) push(c.text);
+  // the workpiece itself (raw size = finished size, no overhang) — after the contour blocks, before the operations
+  push(mprMacro(MPR_ID.piece, "WerkStck", [["LA", "L"], ["BR", "B"], ["DI", "D"], ["FNX", "0"], ["FNY", "0"], ["AX", "0"], ["AY", "0"]]));
 
   // Vertical drilling
   for (const d of o.drills) {
@@ -339,6 +351,16 @@ function buildMpr(o) {
       ["XA", f1(xa)], ["YA", f1(ya)], ["BM", "LS"], ["TI", f1(d.z)], ["DU", f1(d.d)],
       ["AN", "1"], ["MI", "0"], ["S_", "1"], ["AB", "32"], ["ZT", "0"],
       ["KM", txt(d.kind)], ["KO", "00"],
+    ]));
+  }
+
+  // Horizontal (edge) drilling — the bore direction turns with the piece: left edge → −Y, right → +Y, bottom → +X, top → −X
+  for (const d of o.hdrills) {
+    const [xa, ya] = tx(d.x, d.y);
+    const bm = { left: "YM", right: "YP", bottom: "XP", top: "XM" }[d.face];
+    push(mprMacro(MPR_ID.hdrill, "BohrHoriz", [
+      ["XA", f1(xa)], ["YA", f1(ya)], ["ZA", f1(d.zc)], ["BM", bm], ["TI", f1(d.z)], ["DU", f1(d.d)],
+      ["AN", "1"], ["MI", "0"], ["AB", "32"], ["KM", txt(`${d.kind} edge ${d.face}`)], ["KO", "00"],
     ]));
   }
 
@@ -453,6 +475,12 @@ function buildBpp(o) {
   // Vertical bores
   for (const d of o.drills) {
     push(`@ BV, ${q(d.kind)}, "", SIDE=0, CRN="1", X=${f1(d.x)}, Y=${f1(d.y)}, DP=${f1(d.z)}, DIA=${f1(d.d)}`);
+  }
+
+  // Horizontal bores into the edges: SIDE 1 = front edge (Y=0), 2 = right (X=LPX), 3 = back (Y=LPY), 4 = left (X=0)
+  for (const d of o.hdrills) {
+    const side = { bottom: 1, right: 2, top: 3, left: 4 }[d.face];
+    push(`@ BH, ${q(d.kind)}, "", SIDE=${side}, CRN="1", X=${f1(d.x)}, Y=${f1(d.y)}, Z=${f1(d.zc)}, DP=${f1(d.z)}, DIA=${f1(d.d)}`);
   }
 
   // Grooves: centre-line pass with a tool as wide as the groove

@@ -258,7 +258,10 @@ function drawSvg(list) {
     else h += cellArt(kk, n, x + 1, y + 1, w - 2, hh - 2, c, k);
     const icon = kk === "device" ? DEV_ICON[n.dev || (n.tv ? "tv" : "other")] : kk === "kitchen" ? kitInfo(n.kit)[1] : KIND_ICON[kk];
     const big = w > 70 && hh > 34 && (kk !== "empty" || on), inv = kk === "device" ? "inv" : "";
-    if (big) h += `<text x="${x + w / 2}" y="${y + hh / 2 - 2}" class="wclab ${inv}" text-anchor="middle">${icon} ${kk === "device" ? WC_DEVICES[n.dev || (n.tv ? "tv" : "other")][0] : kk === "kitchen" ? kitInfo(n.kit)[2] : WC_KINDS[kk]}${n.glass ? " · زجاج" : ""}</text><text x="${x + w / 2}" y="${y + hh / 2 + 14}" class="wclab sm ${inv}" text-anchor="middle">${f1(c.x1 - c.x0)}×${f1(c.z1 - c.z0)}</text>`;
+    let lab = `${kk === "device" ? WC_DEVICES[n.dev || (n.tv ? "tv" : "other")][0] : kk === "kitchen" ? kitInfo(n.kit)[2] : WC_KINDS[kk]}${n.glass ? " · زجاج" : ""}`;
+    if (lab.length * 7.4 + 24 > w) lab = lab.replace(/ \(.*\)/, ""); // a narrow cell: the short name, else the icon alone
+    if (lab.length * 7.4 + 24 > w) lab = "";
+    if (big) h += `<text x="${x + w / 2}" y="${y + hh / 2 - 2}" class="wclab ${inv}" text-anchor="middle">${icon} ${lab}</text><text x="${x + w / 2}" y="${y + hh / 2 + 14}" class="wclab sm ${inv}" text-anchor="middle">${f1(c.x1 - c.x0)}×${f1(c.z1 - c.z0)}</text>`;
     else if (w > 26 && hh > 18 && (kk !== "empty" || on)) h += `<text x="${x + w / 2}" y="${y + hh / 2 + 5}" class="wclab ${inv}" text-anchor="middle">${icon}</text>`;
     if (on && multiOn) h += `<circle cx="${x + 14}" cy="${y + 14}" r="9" class="wctick"/><text x="${x + 14}" y="${y + 18}" text-anchor="middle" class="wctickt">✓</text>`;
     h += `</g>`;

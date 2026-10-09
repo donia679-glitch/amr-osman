@@ -37,7 +37,7 @@ import * as DG from "./draw/geom.js";
 
 const APP_URL = "https://claude.ai/artifact/EP8c8LmBNS8d3EqLcDioXi";
 const APP_VERSION = "1.0";
-const RELEASE = "v119"; // bumped with every shipped version (the developer notes carry it)
+const RELEASE = "v120"; // bumped with every shipped version (the developer notes carry it)
 // the NOVERA mark — the same one as the website (two cream panels, the brass profile between them, the brass base line)
 const MARK_SVG = '<svg viewBox="0 0 40 40" aria-hidden="true"><rect width="40" height="40" rx="3" fill="#0f2e1c"/><rect x="9" y="9" width="7" height="22" fill="#e9d9b0"/><rect x="24" y="9" width="7" height="22" fill="#e9d9b0"/><path d="M16 9h3l5 22h-3z" fill="#b98d34"/><rect x="6" y="33" width="28" height="2" fill="#b98d34"/></svg>';
 /** the App Store build (inside the iOS app): no links to the online version, no plugin / other-brand wording */
@@ -1663,6 +1663,10 @@ $("#libBtn").addEventListener("click", () => { state.libOpen = !state.libOpen; r
       ui.room3d = true; ui.planSel = { kind: hit.kind, id: hit.id };
       renderProps(); renderChips();
       if (matchMedia("(max-width: 640px), (max-height: 520px)").matches && ui.sheet !== "full") { ui.sheet = "half"; document.body.dataset.sheet = "half"; }
+    } else if (!hit && !ui.multi && !ui.alignPick && (state.whole || state.project.room) && (state.sel || ui.planSel)) {
+      // v120 (Amr #13): a tap on empty space lets go of the unit, so the next tap picks cleanly
+      state.sel = null; ui.planSel = null; ui.room3d = false; ui.wcTap = null;
+      save(); renderStrip(); renderChips(); renderProps(); renderErrs(); renderMatp?.(); view.update();
     }
   };
   host.addEventListener("pointerup", end);
@@ -2326,7 +2330,6 @@ function renderLib() {
     <input id="libq" class="libq" type="search" placeholder="🔍 دوّر: تسريحة، تموين، حوض، دولاب…" aria-label="دوّر في المكتبة" value="${esc(ui.libQ || "")}">
     <button class="card cutcard" data-studio-new="1"><span class="sw" style="font-size:26px">✏️</span><b>ورشة الرسم — صمّم حاجتك من الصفر</b><small>رسم 3D حر: خطوط ومستطيلات ودواير وأقواس، اسحبها ألواح، فرّغ وقص واحفر، ولف وانسخ — وكل لوح يطلع في القص والـCNC بشكله.</small></button>
     <button class="card cutcard" data-scrap-lib="1"><span class="sw" style="font-size:26px">♻️</span><b>أعمل إيه من الفضلات؟</b><small>اختار البواقي من المخزن أو اكتب مقاساتها، والبرنامج يرشّحلك وحدات صغيرة تطلع منها بالكامل.</small></button>
-    <button class="card cutcard" data-zero-lib="1"><span class="sw" style="font-size:26px">♻️</span><b>صفر هدر — مطبخ من الألواح اللي عندك</b><small>قول عندك لوح أو اتنين من كل خامة، والبرنامج يصمّم مطبخ كامل أو وحدات مقاساتها متظبطة بحيث القطع تاكل الألواح بالكامل.</small></button>
     <button class="card cutcard" data-pieces="1"><span class="sw" style="font-size:26px">✂</span><b>قطع حرة — كت ليست بمقاساتك</b><small>اكتب مقاسات القطع (أو الزقها من Excel) ويطلعلك خطة القص والملصقات بالباركود من غير تصميم.</small></button>
 `;
   h += myLibHtml();
@@ -2334,7 +2337,7 @@ function renderLib() {
   h += `<h3>✨ تصميمات ذكية جاهزة — كذا وحدة مع بعض</h3><div class="cards smart">`;
   for (const [key, S] of Object.entries(More.SMART)) h += `<button class="card" data-smart="${key}">${TH("s:" + key)}<b>${esc(S.label)}</b><small>${esc(S.desc)}</small><em class="cnt">${S.items.length} وحدات · ${esc(AK_TIERS[S.tier]?.label || "")}</em></button>`;
   h += `</div>`;
-  h += zwLibHtml();
+  // v120: the «صفر هدر» library section is gone from the library (Amr #5: it broke the library's layout)
   const kg = {};
   for (const [key, s] of Object.entries(KU.KITCHEN)) (kg[kitchenGroup({ ...s, key })] ??= []).push([key, s]);
   for (const g of ["🔌 أجهزة وتجاويف (تلاجة · فرن · ميكروويف · غسالة)", "مطابخ — سفلي", "مطابخ — علوي", "مطابخ — طويل", "مطابخ — زوايا", "سحّاب (جرّار)", "مطابخ — ترولي ومنظمات", "مطابخ — إكسسوارات", "دواليب غرف النوم", ...Object.keys(kg)].filter((g, i, a) => kg[g] && a.indexOf(g) === i)) {
@@ -2662,17 +2665,21 @@ function planChips() {
   const room = state.project.room, sel = ui.planSel, inDesign = ui.planIn === "design";
   let h = `<button class="chip tog on" data-plan>${ICON.cube}3D</button>`;
   if (ui.planView === "elev") return h + `<button class="chip" data-elevback>رجوع للمسقط</button>`;
+  if (ui.planTool !== "draw" && room) h += `<button class="chip tog" data-planexp>⬇ صدّر المسقط</button>`;
   if (ui.planTool === "draw") {
     const n = ui.draft?.length || 0;
-    h += `<span class="chip hintchip">دوس على الأرض عشان تحط كل ركن — بيمسك على 5 سم وعلى الزوايا القايمة</span>`;
-    if (n >= 2) h += `<button class="chip tog on" data-drawdone>خلّص</button>`;
+    h += `<span class="chip hintchip">دوس على البداية وبعدين النهاية — كل حيطة بتتحفظ أول ما تحط آخرها (بيمسك على 5 سم وعلى الزوايا القايمة)</span>`;
+    if (n >= 2) h += `<button class="chip tog on" data-drawdone>✓ خلّص</button>`;
     if (n >= 3) h += `<button class="chip tog" data-drawclose>اقفل الأوضة</button>`;
-    if (n) h += `<button class="chip tog" data-drawundo>رجّع نقطة</button>`;
-    return h + `<button class="chip tog" data-drawcancel>إلغاء</button>`;
+    if (n) h += `<button class="chip tog" data-drawundo>↶ رجّع آخر نقطة</button>`;
+    return h + `<button class="chip tog" data-drawcancel>✕ إلغاء الرسم كله</button>`;
   }
   // v117: in the room step the plan builds the room; opened from the design step it is a way of arranging the units
   if (!inDesign || !room) h += `<button class="chip" data-roompop>أوضة جاهزة بالمقاسات</button><button class="chip" data-draw>ارسم حيطان</button><button class="chip" data-wallstudio>🧱 ارسمها 3D في ورشة الرسم</button>`;
-  if (sel?.kind === "wall") h += `<button class="chip tog gold" data-kwnew>🧱 صمّم الحيطة دي (مطبخ · دواليب · أي حاجة)</button><button class="chip tog gold" data-wcnew>🧩 قسّم الحيطة دي</button><button class="chip tog" data-addop="door">+ باب</button><button class="chip tog" data-addop="window">+ شباك</button><button class="chip tog" data-mepop>+ كهربا / سباكة / غاز</button><button class="chip tog" data-elev>واجهة الحيطة</button>`;
+  if (sel?.kind !== "wall") ui.wallMulti = null;
+  const wm = ui.wallMulti;
+  if (sel?.kind === "wall") h += `<button class="chip tog ${wm ? "on" : ""}" data-wallmulti>${wm ? `☑ ${wm.length} حيطان — دوس على حيطة تزوّدها أو تشيلها` : "☑ أكتر من حيطة"}</button>`;
+  if (sel?.kind === "wall" && !(wm?.length > 1)) h += `<button class="chip tog gold" data-kwnew>🧱 صمّم الحيطة دي (مطبخ · دواليب · أي حاجة)</button><button class="chip tog gold" data-wcnew>🧩 قسّم الحيطة دي</button><button class="chip tog" data-addop="door">+ باب</button><button class="chip tog" data-addop="window">+ شباك</button><button class="chip tog" data-mepop>+ كهربا / سباكة / غاز</button><button class="chip tog" data-elev>واجهة الحيطة</button>`;
   if (room && !inDesign) h += `<button class="chip tog" data-addcol>+ عمود</button>`;
   if (state.project.units.length) { const rw = ui.planRows || "all"; h += `<span class="chip seg3" role="group" aria-label="الصف اللي ظاهر">${[["all", "الكل"], ["lower", "السفلي"], ["upper", "العلوي"]].map(([k, l]) => `<button data-prows="${k}" class="${rw === k ? "on" : ""}">${l}</button>`).join("")}</span>`; }
   if (state.project.units.some((x) => x.pos)) h += `<button class="chip tog" data-autolay>رصّ تلقائي</button>`;
@@ -2690,6 +2697,7 @@ function renderChips() {
   if (u.kind === "kitchen") {
     if (u.kw && state.project.kwalls?.[u.kw]) h += `<button class="chip tog gold" data-kwopen>🧱 الحيطة كلها</button>`;
     if (u.wcOf && state.project.units.some((q) => q.id === u.wcOf)) h += `<button class="chip tog gold" data-wcback>🧩 قسّم الحيطة</button>`;
+    if (state.project.room && rowOf(u, r) !== "lower") h += `<button class="chip tog" data-ceilup>⏫ علوي فوقها لحد السقف</button>`;
     for (const [path, label] of KU.dimsFor(p).slice(0, 3)) h += stepChip(path, label, n1(+p[path] || 0));
     if (p.unit_category === "washer_gap") { h += cycleChip("washer_gap_side", "جنب يمسك الرأس", "K_GAP_SIDE", p.washer_gap_side || "none") + cycleChip("top_style", "الرأس", "K_TOP", p.top_style) + togChip("include_assembly_holes", "أليتا", p.include_assembly_holes); el.innerHTML = `<div class="cbody">${h}</div>`; return; }
     if (p.unit_category === "cooker_gap") { h += cycleChip("washer_gap_side", "جنب تقفيلة", "K_GAP_SIDE", p.washer_gap_side || "none") + stepChip("cooker_base_height", "القعدة", n1(+p.cooker_base_height || 0), 1); el.innerHTML = `<div class="cbody">${h}</div>`; return; }
@@ -2800,16 +2808,19 @@ $("#chips").addEventListener("click", async (e) => {
   }
   if (b.hasAttribute("data-checks")) { ui.pop = "checks"; renderPop(); return; }
   if (b.hasAttribute("data-wallstudio")) { openStudio(null, { tool: "wall" }); return; }
-  if (b.hasAttribute("data-draw")) { ui.planTool = "draw"; const r = state.project.room; ui.draft = r && !r.closed ? [r.pts[r.pts.length - 1]] : []; renderChips(); renderProps(); plan.render(); return; }
+  if (b.hasAttribute("data-draw")) { delete ui.drawBase; ui.planTool = "draw"; const r = state.project.room; ui.draft = r && !r.closed ? [r.pts[r.pts.length - 1]] : []; renderChips(); renderProps(); plan.render(); return; }
   if (b.hasAttribute("data-drawdone")) { finishDraw(false); return; }
   if (b.hasAttribute("data-drawclose")) { finishDraw(true); return; }
-  if (b.hasAttribute("data-drawundo")) { ui.draft?.pop(); renderChips(); renderProps(); plan.render(); return; }
-  if (b.hasAttribute("data-drawcancel")) { ui.planTool = "select"; ui.draft = null; plan.hover = null; renderChips(); renderProps(); plan.render(); return; }
+  if (b.hasAttribute("data-drawundo")) { ui.draft?.pop(); if (ui.drawBase !== undefined) { if (ui.drawBase) state.project.room = clone(ui.drawBase); else delete state.project.room; if ((ui.draft?.length || 0) >= 2) buildFromDraft(ui.draft, false); save(); } renderChips(); renderProps(); plan.render(); view.update?.(); return; }
+  if (b.hasAttribute("data-drawcancel")) { if (ui.drawBase !== undefined) { if (ui.drawBase) state.project.room = clone(ui.drawBase); else delete state.project.room; save(); } delete ui.drawBase; ui.planTool = "select"; ui.draft = null; render(true); plan.hover = null; renderChips(); renderProps(); plan.render(); return; }
   if (b.hasAttribute("data-planfit")) { plan.vb = null; plan.render(); return; }
   if (b.hasAttribute("data-kwnew")) { openKitWall(roomSegs(state.project).find((g) => g.id === ui.planSel?.id)); return; }
+  if (b.hasAttribute("data-wallmulti")) { ui.wallMulti = ui.wallMulti ? null : ui.planSel?.kind === "wall" ? [ui.planSel.id] : null; renderChips(); renderProps(); plan.render(); return; }
+  if (b.hasAttribute("data-planexp")) { ui.pop = "export"; ui.expFilter = "plan"; renderPop(); return; }
   if (b.hasAttribute("data-wcnew")) { const seg = roomSegs(state.project).find((g) => g.id === ui.planSel?.id); if (seg) newWallComp(seg); return; }
   if (b.hasAttribute("data-wcopen") && u) { openWallComp(u); return; }
   if (b.hasAttribute("data-wcback") && u) { const w = state.project.units.find((q) => q.id === u.wcOf); if (w) { state.sel = w.id; openWallComp(w); } return; }
+  if (b.hasAttribute("data-ceilup") && u) { ceilUp(u); return; }
   if (b.hasAttribute("data-kwopen") && u) { openKitWall(roomSegs(state.project).find((g) => g.id === u.kw)); return; }
   if (b.hasAttribute("data-kwnew")) { openKitWall(null); return; }
   if (d.prows) { ui.planRows = d.prows; renderChips(); plan.render(); return; }
@@ -2938,6 +2949,17 @@ function roomProps() {
   const room = state.project.room, sel = ui.planSel;
   const segs = Room.segments(room);
   const rf = (k, label, v, step = 1) => `<label class="f"><span>${esc(label)}</span><input type="text" inputmode="decimal" data-numf step="${step}" data-rw="${k}" value="${v ?? ""}"></label>`;
+  if (sel.kind === "wall" && ui.wallMulti?.length > 1) {
+    // v120 (Amr #9): several walls at once — thickness, height, finish, flip, delete
+    const ws = ui.wallMulti.map((id) => segs.find((g) => g.id === id)).filter(Boolean);
+    const same = (k) => (ws.every((g) => g.wall[k] === ws[0].wall[k]) ? ws[0].wall[k] : "");
+    const mf = (k, label, v) => `<label class="f"><span>${esc(label)}</span><input type="text" inputmode="decimal" data-numf data-rwmn="${k}" value="${v ?? ""}" placeholder="مختلف"></label>`;
+    return `<div class="ph"><h2 class="uname">${ws.length} حيطان مختارة</h2><div class="pa"><button data-rwmdel class="danger" title="امسحهم كلهم" aria-label="امسحهم كلهم">${ICON.trash}</button></div></div>
+      <p class="tplname">الحيطان ${ws.map((g) => segs.indexOf(g) + 1).join(" · ")} — أي حاجة تغيّرها هنا بتتطبّق عليهم كلهم</p>
+      <details open><summary>المقاسات</summary><div class="grid2">${mf("t", "السمك", same("t"))}${mf("h", "الارتفاع", same("h"))}</div>
+      <div class="grid2"><button class="add" data-rwmflip>اقلبهم ناحية الأوضة</button><button class="add" data-wallmulti>✕ خلّص الاختيار</button></div></details>
+      <details open><summary>اللون والتشطيب</summary>${finishEditor(ws[0].wall, "rwm", "#f3f1ea")}</details>`;
+  }
   if (sel.kind === "wall") {
     const k = segs.findIndex((g) => g.id === sel.id), sg = segs[k];
     if (!sg) return "";
@@ -3046,7 +3068,7 @@ function renderProps0() {
   if ((ui.planOn || ui.room3d) && state.project.room && ["wall", "open", "pt", "col"].includes(ui.planSel?.kind)) { el.innerHTML = roomProps(); return; }
   if (ui.planOn && state.project.room && !ui.planSel) { el.innerHTML = roomOverview(); return; }
   if (ui.planOn && !state.project.room) { el.innerHTML = roomStartHtml(); return; }
-  if (!u) { el.innerHTML = `<div class="emptyp"><h2>ابدأ بوحدة</h2><p class="hint">افتح المكتبة واختار تصميم جاهز أو قالب فاضي.</p></div>`; return; }
+  if (!u) { el.innerHTML = state.project.units.length ? `<div class="emptyp"><h2>مفيش وحدة مختارة</h2><p class="hint">دوس على أي وحدة في الـ3D أو في الشريط اللي تحت عشان تعدّلها.</p></div>` : `<div class="emptyp"><h2>ابدأ بوحدة</h2><p class="hint">افتح المكتبة واختار تصميم جاهز أو قالب فاضي.</p></div>`; return; }
   const r = R(u);
   const p = r.params;
   const multiN = ui.multi?.size > 1 && ui.multi.has(u.id) ? targetUnits().filter((x) => x.kind === u.kind).length : 0;
@@ -3210,12 +3232,18 @@ function wallHoles(u) {
   if (seg) {
     const fromA = Room.runStart(seg).S === seg.A;
     for (const o of (room.openings || []).filter((x) => x.wall === seg.id)) { const a = fromA ? o.at : seg.L - o.at - o.w; holes.push({ x0: a - L.s, x1: a + o.w - L.s, z0: o.kind === "door" ? 0 : +o.sill || 0, z1: (o.kind === "door" ? 0 : +o.sill || 0) + +o.h, kind: o.kind, id: o.id }); }
-    for (const p of (room.points || []).filter((x) => x.wall === seg.id)) { const a = fromA ? p.at : seg.L - p.at; holes.push({ x0: a - L.s - 4, x1: a - L.s + 4, z0: p.z - 4, z1: p.z + 4, kind: "pt", label: (Room.MEP_KINDS[p.kind] || Room.MEP_KINDS.socket)[3] }); }
+    for (const p of (room.points || []).filter((x) => x.wall === seg.id)) { const a = fromA ? p.at : seg.L - p.at; holes.push({ x0: a - L.s - 4, x1: a - L.s + 4, z0: p.z - 4, z1: p.z + 4, kind: "pt", mep: p.kind, label: (Room.MEP_KINDS[p.kind] || Room.MEP_KINDS.socket)[3] }); }
   }
   return { L, seg, holes };
 }
 function openWallComp(u, fresh = false, pname = null) {
   let applied = false;
+  // v120: a kitchen cell whose unit was deleted by hand becomes empty (it used to come back on «خلصت»)
+  {
+    const has = new Set(state.project.units.map((q) => q.id));
+    const walk = (n) => { if (!n) return; if (n.dir) n.parts?.forEach((q) => walk(q.node)); else if (n.kind === "kitchen" && n.kuid && !has.has(n.kuid)) { for (const k of Object.keys(n)) delete n[k]; n.kind = "empty"; } };
+    walk(u.params?.wc?.root);
+  }
   // v118: opened from a tap on the 3D → start on the cell that piece belongs to
   let startPath = null;
   if (pname) {
@@ -3242,7 +3270,31 @@ function openWallComp(u, fresh = false, pname = null) {
 function segHoles(seg) {
   const room = state.project.room, holes = [], fromA = Room.runStart(seg).S === seg.A;
   for (const o of (room?.openings || []).filter((x) => x.wall === seg.id)) { const a = fromA ? o.at : seg.L - o.at - o.w; const z0 = o.kind === "door" ? 0 : +o.sill || 0; holes.push({ x0: a, x1: a + o.w, z0, z1: z0 + +o.h, kind: o.kind, id: o.id }); }
+  // v120: the services on it too — the kitchen proposal puts the sink / washer / cooker / fridge on them
+  for (const p of (room?.points || []).filter((x) => x.wall === seg.id)) { const a = fromA ? p.at : seg.L - p.at; holes.push({ x0: a - 4, x1: a + 4, z0: p.z - 4, z1: p.z + 4, kind: "pt", mep: p.kind, label: (Room.MEP_KINDS[p.kind] || Room.MEP_KINDS.socket)[3] }); }
   return holes;
+}
+/** v120 (Amr #12): a wall unit over this wall / tall unit, from its top up to the ceiling */
+function ceilUp(u) {
+  pinOthers(null); // every unit keeps its place (and gets a pos to copy)
+  const P = state.project, p = R(u).params || {}, up = rowOf(u, R(u)) === "upper";
+  const top = up ? (+p.wall_mount_height || 140) + (+p.height || 70) : +p.height || 220;
+  const seg = u.pos?.wall && P.room ? Room.segments(P.room).find((g) => g.id === u.pos.wall) : null;
+  const ceil = +(seg?.h || seg?.wall?.h) || 270, gap = Math.round((ceil - top) * 10) / 10;
+  if (gap < 15) { alertBar(`المسافة لحد السقف ${n1(Math.max(0, gap))} سم بس — مفيش مكان لوحدة`); return; }
+  const over = P.units.find((q) => q.id !== u.id && q.kind === "kitchen" && q.pos?.wall && q.pos.wall === u.pos?.wall && Math.abs((q.pos.s ?? -99) - (u.pos.s ?? -1)) < 1 && +(R(q).params?.wall_mount_height) >= top - 1);
+  if (over) { state.sel = over.id; save(); render(true); alertBar("فيه وحدة فوقها خلاص — اتختارت"); return; }
+  // a unit of a «حيطة بحيطة» wall: add the row in its model so the wall editor keeps it
+  const K = u.kw && P.kwalls?.[u.kw], col = K?.cols?.find((c) => Object.values(c.ids || {}).includes(u.id));
+  if (col && seg) { col.top = "k_wall2"; kwApply(seg, K); state.sel = col.ids.top || state.sel; save(); render(true); alertBar(`⏫ اتحطت علوية ${n1(gap)} سم فوقها لحد السقف`); return; }
+  const n = libUnit({ kitchen: "k_wall2" });
+  n.params.width = +p.width || 60; n.params.height = gap; n.params.wall_mount_height = Math.round(top * 10) / 10; n.params.door_bottom_extension = 0;
+  for (const [k, lib] of Object.entries(u.libs || {})) if (k !== "countertop") n.libs[k] = lib;
+  for (const k of ["door_color", "kud_handles"]) if (u.params?.[k] != null) n.params[k] = clone(u.params[k]);
+  n.name = `علوية لحد السقف ${n1(+p.width || 60)}`;
+  if (u.pos) n.pos = clone(u.pos);
+  P.units.push(n); state.sel = n.id; save(); render(true);
+  alertBar(`⏫ اتحطت علوية ${n1(gap)} سم فوقها لحد السقف`);
 }
 /** v118: «🍳 مطبخ الحيطة» — compose a kitchen wall column by column; the result is real kitchen units on that wall */
 function openKitWall(seg) {
@@ -3258,13 +3310,25 @@ function openKitWall(seg) {
   const holes = segHoles(seg);
   P.kwalls ??= {};
   let K = P.kwalls[seg.id];
-  if (!K?.cols?.length) {
-    const w = libUnit({ kitchen: "k_wall2" }).params, t = libUnit({ kitchen: "k_pantry60" }).params, pr = KWall.proposeKitchen(seg.L, holes);
-    K = { s0: pr.s0, cols: pr.cols, wallZ: +w.wall_mount_height || 140, wallH: +w.height || 70, tallH: +t.height || 220 };
+  // v120: units deleted by hand leave the wall too (they used to come back the next time it opened)
+  if (K?.cols?.length) {
+    const has = new Set(P.units.map((q) => q.id));
+    K.cols = K.cols.filter((c) => {
+      const ids = Object.entries(c.ids || {});
+      if (!ids.length) return true;
+      let gone = 0;
+      for (const [row, id] of ids) if (!has.has(id)) { gone++; delete c.ids[row]; if (row === "tall") c.tall = ""; else c[row] = ""; }
+      return true; // the column stays (empty) so the units after it keep their places
+    });
   }
+  if (!K?.cols?.length) {
+    // a new wall: the editor asks first what it is (kitchen / dressing / living room / bedroom / free) and lays it out for that
+    const w = libUnit({ kitchen: "k_wall2" }).params, t = libUnit({ kitchen: "k_pantry60" }).params;
+    K = { s0: 3, cols: [], wallZ: +w.wall_mount_height || 140, wallH: +w.height || 70, tallH: +t.height || 220, ...(K?.type ? { type: K.type } : {}) };
+  } else if (!K.type) K.type = "kitchen"; // walls made before v120 were kitchens
   KWall.open(K, {
     holes, wallLen: Math.round(seg.L * 10) / 10, wallH: Math.round(seg.h || 270),
-    catalog: kwCatalog(), info: kwInfo, kitRow: kwKitRow,
+    catalog: kwCatalog(), info: kwInfo, kitRow: kwKitRow, bedId: Object.keys(PRESETS).find((k) => PRESETS[k].params?.template === "bed") || "",
     numAsk, alertBar, esc,
     apply: (K2) => kwApply(seg, K2),
     closed: () => render(true),
@@ -3276,21 +3340,48 @@ function kwCatalog() {
   if (kwCat) return kwCat;
   const IC = { "غرف النوم": "🛏", "الريسبشن": "📺", "مكتبات": "📚", "الحمام": "🛁", "الترابيزات": "🪑", "ترابيزات كتل": "🧱" };
   const kRow = (v) => (v.params.unit_type === "wall" ? "⬆" : v.params.unit_type === "tall" || ["fridge", "wardrobe", "bedroom_wardrobe"].includes(v.params.unit_category) ? "▮" : "⬇");
-  const tabs = [{ id: "kall", label: "🍳 كل المطبخ", items: Object.entries(KU.KITCHEN).filter(([, v]) => v.params && v.params.element_mode !== "accessory" && !/corner/.test(v.params.unit_category || "")).map(([k, v]) => [k, kRow(v), v.label, +v.params.width || null, +v.params.height || null]) }];
-  tabs.push({ id: "dress", label: "👔 دريسنج", items: Object.entries(DRESSING).map(([k, v]) => [`d:${k}`, "👔", v.label, +v.params?.width || null, +v.params?.height || null]) });
+  const WI = (k) => [`wc:${k}`, WCI[k].icon, WCI[k].name, WCI[k].w || null, WCI[k].h || null];
+  const tabs = [
+    { id: "t:dressing", label: "👔 أجزاء الدولاب", types: ["dressing", "bedroom"], items: ["wardrobe1", "wardrobe2", "drawers_shelves", "shelves", "shoes", "doors", "sliding", "vitrine"].map(WI) },
+    { id: "t:living", label: "📺 أجزاء الصالة", types: ["living"], items: ["low", "doors_low", "tvspace", "shelves_led", "shelf", "solid", "vitrine", "shelves"].map(WI) },
+    { id: "t:bedroom", label: "🛏 أجزاء النوم", types: ["bedroom"], items: [...["night", "dresser", "shelf", "wardrobe1", "wardrobe2"].map(WI), ...Object.entries(PRESETS).filter(([, v]) => ["bed", "nightstand"].includes(v.params?.template)).map(([k, v]) => [`p:${k}`, v.params.template === "bed" ? "🛏" : "🗄", v.label, null, null])] },
+  ];
+  tabs.push({ id: "kall", label: "🍳 كل المطبخ", types: ["kitchen", "free"], items: Object.entries(KU.KITCHEN).filter(([, v]) => v.params && v.params.element_mode !== "accessory" && !/corner/.test(v.params.unit_category || "")).map(([k, v]) => [k, kRow(v), v.label, +v.params.width || null, +v.params.height || null]) });
+  tabs.push({ id: "dress", label: "👔 دريسنج جاهز", types: ["dressing", "bedroom", "free"], items: Object.entries(DRESSING).map(([k, v]) => [`d:${k}`, "👔", v.label, +v.params?.width || null, +v.params?.height || null]) });
   const groups = {};
   for (const [k, v] of Object.entries(PRESETS)) (groups[v.group || "تانية"] ??= []).push([`p:${k}`, IC[v.group] || "🗄", v.label, +v.params?.width || null, +v.params?.height || null]);
-  for (const [g, items] of Object.entries(groups)) tabs.push({ id: `g:${g}`, label: `${IC[g] || "🗄"} ${g}`, items });
+  const GT = { "غرف النوم": ["bedroom", "dressing", "free"], "الريسبشن": ["living", "free"], "مكتبات": ["living", "free"], "الترابيزات": ["living", "free"], "ترابيزات كتل": ["living", "free"] };
+  for (const [g, items] of Object.entries(groups)) tabs.push({ id: `g:${g}`, label: `${IC[g] || "🗄"} ${g}`, types: GT[g] || ["free"], items });
   tabs.push({ id: "free", label: "🧩 حر", items: [["wc", "🧩", "تقسيم حر (قسّمها براحتك)", null, null], ["", "⬚", "فاضي", null, null]] });
   kwMap = new Map(tabs.flatMap((t) => t.items.map((it) => [it[0], it])));
   return (kwCat = tabs);
 }
+/** v120: ready parts made as small divided units («قسّم الحيطة» inside), each fitted to its cell */
+const WCI = {
+  wardrobe1: { icon: "👔", name: "شماعة طويلة", w: 90, depth: 60, root: { kind: "wardrobe", rods: 1 } },
+  wardrobe2: { icon: "👔", name: "شماعتين فوق بعض", w: 90, depth: 60, root: { kind: "wardrobe", rods: 2 } },
+  drawers_shelves: { icon: "🗃", name: "أدراج + أرفف", w: 70, depth: 55, root: { dir: "h", parts: [{ size: null, node: { kind: "open" } }, { size: 70, node: { kind: "drawers", count: 3 } }] } },
+  shelves: { icon: "📚", name: "أرفف مفتوحة", w: 60, depth: 40, root: { kind: "open" } },
+  shoes: { icon: "👟", name: "جزامة بضلف", w: 60, depth: 35, root: { kind: "doors", shelves: 6 } },
+  doors: { icon: "🚪", name: "ضلف وأرفف", w: 80, depth: 55, root: { kind: "doors" } },
+  sliding: { icon: "↔", name: "ضلف جرار", w: 150, depth: 60, root: { kind: "sliding" } },
+  vitrine: { icon: "🪟", name: "فاترينة زجاج", w: 60, depth: 40, root: { kind: "doors", glass: true, shelves: 3 } },
+  low: { icon: "🗄", name: "وحدة أرضي أدراج", w: 180, h: 45, depth: 45, root: { kind: "drawers", count: 2 } },
+  doors_low: { icon: "🚪", name: "وحدة أرضي ضلف", w: 120, h: 60, depth: 45, root: { kind: "doors", shelves: 1 } },
+  tvspace: { icon: "📺", name: "مكان الشاشة (فاضي)", h: 100, depth: 10, root: { kind: "device", dev: "tv" } },
+  shelves_led: { icon: "💡", name: "مكتبة بليد", w: 60, depth: 35, root: { kind: "open", led: true } },
+  shelf: { icon: "▬", name: "رف / بوكس معلّق", h: 30, depth: 25, root: { kind: "open", shelves: 0 } },
+  solid: { icon: "▮", name: "تكسية مصمتة", depth: 30, root: { kind: "solid" } },
+  night: { icon: "🗄", name: "كومودينو", w: 50, h: 50, depth: 40, root: { kind: "drawers", count: 2 } },
+  dresser: { icon: "🗄", name: "تسريحة / شيفونيرة", w: 100, h: 80, depth: 45, root: { kind: "drawers", count: 4 } },
+};
 function kwInfo(id) { kwCatalog(); return kwMap.get(id) || null; }
 function kwKitRow(id) { const v = KU.KITCHEN[id]; if (!v) return null; return v.params.unit_type === "wall" ? "wall" : v.params.unit_type === "tall" || ["fridge", "wardrobe", "bedroom_wardrobe"].includes(v.params.unit_category) ? "tall" : "base"; }
 function kwMake(id, w) {
   if (id.startsWith("d:")) return libUnit({ dress: id.slice(2) });
   if (id.startsWith("p:")) return libUnit({ preset: id.slice(2) });
   if (id === "wc") return { id: uid(), kind: "panel", name: "تقسيم حر", params: { template: "wall_comp", width: w, height: 100, handle: "push", wc: { max_board: 240, depth: 35, root: { kind: "open" } } } };
+  if (id.startsWith("wc:") && WCI[id.slice(3)]) { const x = WCI[id.slice(3)]; return { id: uid(), kind: "panel", name: x.name, params: { template: "wall_comp", width: w, height: x.h || 100, handle: "bar", wc: { max_board: 240, depth: x.depth || 40, root: clone(x.root) } } }; }
   return libUnit({ kitchen: id }, { width: w });
 }
 /** make / update the kitchen units of a composed wall (units whose kind didn't change keep all their own settings) */
@@ -3305,8 +3396,8 @@ function kwApply(seg, K) {
   let x = +K.s0 || 0, made = 0;
   for (const c of K.cols) {
     c.ids = c.ids || {};
-    const slots = c.tall ? [["tall", c.tall]] : [["base", c.base], ["wall", c.wall]];
-    for (const row of ["base", "wall", "tall"]) if (!slots.some(([r, k]) => r === row && k)) delete c.ids[row];
+    const slots = (c.tall ? [["tall", c.tall]] : [["base", c.base], ["wall", c.wall]]).concat(c.top ? [["top", c.top]] : []);
+    for (const row of ["base", "wall", "tall", "top"]) if (!slots.some(([r, k]) => r === row && k)) delete c.ids[row];
     for (const [row, kid] of slots) {
       const kit = !!KU.KITCHEN[kid];
       if (!kid || !(kit || kwInfo(kid))) continue;
@@ -3336,14 +3427,21 @@ function kwApply(seg, K) {
           u.params.wall_mount_height = Math.round((hOv != null || std || c.wz != null ? wz : wz + +K.wallH - ph) * 10) / 10; // tops line up
         }
         if (row === "tall") u.params.height = hOv != null ? +hOv : +K.tallH;
+        if (row === "top") { // v120: the second row up to the ceiling — sits on the unit under it, its doors don't drop over that one
+          u.params.height = KWall.cellHeight(K, c, "top", null, (r, id) => kwInfo(id));
+          u.params.wall_mount_height = Math.round(KWall.topZ0(K, c, (r, id) => kwInfo(id)) * 10) / 10;
+          u.params.door_bottom_extension = 0;
+        }
         if (row === "base" && hOv != null) u.params.height = Math.max(30, +hOv - 14); // the carcass under the counter + plinth
       } else {
         // any other unit: as wide as the column, as tall as its cell, a wall-row one hung at the cell's bottom
-        const hh = KWall.cellHeight(K, c, row, kwInfo(kid));
+        const hh = KWall.cellHeight(K, c, row, kwInfo(kid), (r, id) => kwInfo(id));
         u.params = expanded(u);
         u.params.width = +c.w;
         u.params.height = Math.round(hh * 10) / 10;
-        if (row === "wall" && wz > 0.5) u.lift = Math.round(wz * 10) / 10; else delete u.lift;
+        if (row === "wall" && wz > 0.5) u.lift = Math.round(wz * 10) / 10;
+        else if (row === "top") u.lift = Math.round(KWall.topZ0(K, c, (r, id) => kwInfo(id)) * 10) / 10;
+        else delete u.lift;
       }
       // the name follows the width while it is still the automatic one
       if (!u.kwName || u.name === u.kwName) {
@@ -3857,6 +3955,16 @@ props.addEventListener("change", (e) => {
   }
   const room = state.project.room;
   const fd = t.dataset;
+  if (room && fd.rwmn && ui.wallMulti) {
+    const v = toNum(t.value);
+    if (v > 0) for (const sg of Room.segments(room)) if (ui.wallMulti.includes(sg.id)) room.walls[sg.i][fd.rwmn] = v;
+    save(); renderProps(); view.update(); plan.render(); return;
+  }
+  if (room && fd.rwm && ui.wallMulti) {
+    const val = t.type === "checkbox" ? t.checked : t.type === "number" ? +t.value : t.value;
+    for (const sg of Room.segments(room)) if (ui.wallMulti.includes(sg.id)) room.walls[sg.i][fd.rwm] = fd.rwm === "size" ? toNum(val) || 60 : val;
+    save(); renderProps(); view.update(); plan.render(); return;
+  }
   if (room && (fd.rwf || fd.rwb || fd.rall || fd.rfl)) {
     const segs = Room.segments(room);
     const sg = ui.planSel?.kind === "wall" ? segs.find((g) => g.id === ui.planSel.id) : null;
@@ -3967,7 +4075,7 @@ props.addEventListener("click", (e) => {
   if (!b) return;
   const k = b.dataset.rstart;
   if (k === "pop") { ui.pop = "room"; renderPop(); }
-  else if (k === "draw") { ui.planTool = "draw"; ui.draft = []; renderChips(); renderProps(); plan.render(); }
+  else if (k === "draw") { delete ui.drawBase; ui.planTool = "draw"; ui.draft = []; renderChips(); renderProps(); plan.render(); }
   else if (k === "studio") openStudio(null, { tool: "wall" });
   else if (k === "skip") { ui.planOn = false; state.whole = true; state.libOpen = true; save(); render(true); }
 });
@@ -4034,7 +4142,9 @@ props.addEventListener("click", (e) => {
     const pts = (ui.draft ??= []);
     const q = Room.nextPoint(pts, L, A, +rb.dataset.drawturn);
     if (pts.length >= 3 && Math.hypot(q[0] - pts[0][0], q[1] - pts[0][1]) < 1) { finishDraw(true); return; }
+    if (!pts.length) ui.drawBase = state.project.room ? clone(state.project.room) : null;
     pts.push(q);
+    applyDraft();
     plan.vb = null; plan.fitPts = pts;
     renderChips(); renderProps(); plan.render();
     return;
@@ -4044,11 +4154,12 @@ props.addEventListener("click", (e) => {
     if (L <= 0) return;
     ui.drawLen = L;
     const pts = (ui.draft ??= []);
-    if (!pts.length) pts.push([0, 0]);
+    if (!pts.length) { ui.drawBase = state.project.room ? clone(state.project.room) : null; pts.push([0, 0]); }
     const a = (+rb.dataset.drawdir * Math.PI) / 180, p0 = pts[pts.length - 1];
     const q = [Math.round((p0[0] + Math.cos(a) * L) * 10) / 10, Math.round((p0[1] + Math.sin(a) * L) * 10) / 10];
     if (pts.length >= 3 && Math.hypot(q[0] - pts[0][0], q[1] - pts[0][1]) < 1) { finishDraw(true); return; }
     pts.push(q);
+    applyDraft();
     plan.vb = null; plan.fitPts = pts;
     renderChips(); renderProps(); plan.render();
     return;
@@ -4069,9 +4180,22 @@ props.addEventListener("click", (e) => {
     }
     const segsNow = Room.segments(room);
     const sgNow = ui.planSel?.kind === "wall" ? segsNow.find((g) => g.id === ui.planSel.id) : null;
-    const colKey = Object.keys(d).find((k) => /^(rwf|rwb|rall|rfl)col$/.test(k));
+    if (rb.hasAttribute("data-wallmulti")) { ui.wallMulti = null; renderChips(); renderProps(); plan.render(); return; }
+    if (rb.hasAttribute("data-rwmflip") && ui.wallMulti) {
+      for (const sg of segsNow) if (ui.wallMulti.includes(sg.id)) room.walls[sg.i].flip = !room.walls[sg.i].flip;
+      save(); renderProps(); view.update(); plan.render(); return;
+    }
+    if (rb.hasAttribute("data-rwmdel") && ui.wallMulti) {
+      if (d.armed !== "1") { d.armed = "1"; rb.classList.add("armed"); rb.textContent = "أكّد"; return; }
+      const idx = [...ui.wallMulti];
+      for (const id of idx) { if (room.pts.length < 2) break; const i = room.walls.findIndex((w) => w.id === id); if (i >= 0) Room.removeWall(room, i); }
+      if (room.pts.length < 2) delete state.project.room;
+      ui.wallMulti = null; ui.planSel = null; save(); render(true); alertBar(`🗑 اتمسحت ${idx.length} حيطان.`); return;
+    }
+    const colKey = Object.keys(d).find((k) => /^(rwf|rwb|rall|rfl|rwm)col$/.test(k));
     if (colKey) {
       const pre = colKey.replace(/col$/, ""), c = d[colKey];
+      if (pre === "rwm") { for (const sg of segsNow) if (ui.wallMulti?.includes(sg.id)) Object.assign(room.walls[sg.i], { finish: "paint", color: c }); save(); renderProps(); view.update(); plan.render(); return; }
       if (pre === "rwf" && sgNow) Object.assign(room.walls[sgNow.i], { finish: "paint", color: c });
       else if (pre === "rwb" && sgNow) room.walls[sgNow.i].band = { ...(room.walls[sgNow.i].band || {}), finish: "paint", color: c };
       else if (pre === "rall") { room.wallAll = { ...(room.wallAll || {}), finish: "paint", color: c }; for (const w of room.walls) Object.assign(w, { finish: "paint", color: c }); alertBar("🎨 اتدهنت كل الحيطان."); }
@@ -5374,7 +5498,9 @@ function renderPop0() {
   else if (ui.pop === "export") {
     h = `<div class="popbox" role="dialog" aria-label="تصدير"><div class="libhead"><h2>تصدير — ${esc(state.project.name)}</h2><button class="x" data-close aria-label="قفل">×</button></div>
       <p class="hint">كل ملف بيتعمل على الجهاز وتقدر تبعته لأي حد (واتساب، إيميل، Files). أرقام القطع واحدة في كل الملفات.</p><div class="explist">`;
-    for (const [id, title, desc] of EXPORTS) h += `<button class="mrow" data-exp="${id}"><span><b>${esc(title)}</b><small class="wrap">${esc(desc)}</small></span><em class="expst" data-st="${id}"></em></button>`;
+    const onlyPlan = ui.expFilter === "plan"; ui.expFilter = null;
+    if (onlyPlan) h += `<p class="hint">📐 المسقط لوحده — اختار اللي يظهر فيه:</p>`;
+    for (const [id, title, desc] of onlyPlan ? EXPORTS.filter((x) => /^plan|^drawings$/.test(x[0])) : EXPORTS) h += `<button class="mrow" data-exp="${id}"><span><b>${esc(title)}</b><small class="wrap">${esc(desc)}</small></span><em class="expst" data-st="${id}"></em></button>`;
     h += `</div><div class="grid2"><label class="f"><span>مقاس الملصقات</span><select id="labelFmt2"><option value="a4" ${state.labelFmt === "a4" ? "selected" : ""}>A4 — 21 ملصق في الورقة</option><option value="roll" ${state.labelFmt === "roll" ? "selected" : ""}>رول 60×40 مم</option></select></label>
       <label class="f"><span>فتح نسخة مشروع</span><input type="file" id="impFile" accept=".json,application/json"></label></div></div>`;
   }
@@ -6056,7 +6182,7 @@ const plan = {
     if (room) for (const g of Room.wallGeom(room)) {
       const sg = g.seg;
       const poly = Room.piecePoly(g, 0, sg.L);
-      const on = sel?.kind === "wall" && sel.id === sg.id;
+      const on = sel?.kind === "wall" && (sel.id === sg.id || ui.wallMulti?.includes(sg.id));
       h += `<polygon points="${poly.map((p) => p.join(",")).join(" ")}" class="pwall ${on ? "on" : ""}" data-wall="${sg.id}"/>`;
       // interior dimension along the wall
       const mid = [sg.A[0] + sg.d[0] * sg.L / 2 - sg.n[0] * (sg.t + fs * 1.3), sg.A[1] + sg.d[1] * sg.L / 2 - sg.n[1] * (sg.t + fs * 1.3)];
@@ -6200,6 +6326,9 @@ const plan = {
         }
       }
       for (const p of pts) h += `<circle cx="${p[0]}" cy="${p[1]}" r="${fs * 0.45}" class="phandle"/>`;
+      // the corners a new point snaps onto (the first corner of this drawing closes the room)
+      for (const p of state.project.room?.pts || []) h += `<circle cx="${p[0]}" cy="${p[1]}" r="${fs * 0.9}" class="psnap"/>`;
+      if (pts.length >= 3) h += `<circle cx="${pts[0][0]}" cy="${pts[0][1]}" r="${fs * 1.1}" class="psnap close"/>`;
     } else if (room) {
       room.pts.forEach((p, i) => { h += `<circle cx="${p[0]}" cy="${p[1]}" r="${fs * 0.55}" class="phandle" data-pt="${i}"/>`; });
     }
@@ -6279,10 +6408,19 @@ const plan = {
     const p = plan.toCm(e);
     if (ui.planTool === "draw") {
       const pts = (ui.draft ??= []);
-      const q = Room.snapDraw(pts[pts.length - 1], p, 5, ui.drawSnap ?? 45);
-      if (pts.length >= 3 && Math.hypot(q[0] - pts[0][0], q[1] - pts[0][1]) < plan.vb.w / 60) { finishDraw(true); return; }
+      // v120: a point tapped near a corner that already exists lands exactly on it (Amr: «النقط مش بتقفل لما بحطها على بعض»)
+      const tol = plan.vb.w / 35, near = (a, b) => !!a && !!b && Math.hypot(a[0] - b[0], a[1] - b[1]) < tol;
+      const base = ui.drawBase === undefined ? state.project.room : ui.drawBase;
+      if (pts.length >= 3 && near(p, pts[0])) { finishDraw(true); return; } // back on the first corner of this drawing → closed room
+      const openB = base && !base.closed && (base.pts?.length || 0) >= 2;
+      if (openB && pts.length >= 2 && near(pts[0], base.pts[base.pts.length - 1]) && near(p, base.pts[0])) { closeDrawnRoom(); return; } // a continued room closes on its own start
+      let q = null;
+      for (const c of [...(base?.pts || []), ...pts.slice(0, -1)]) if (near(p, c)) { q = [c[0], c[1]]; break; }
+      if (!q) q = Room.snapDraw(pts[pts.length - 1], p, 5, ui.drawSnap ?? 45);
       if (pts.length && Math.hypot(q[0] - pts[pts.length - 1][0], q[1] - pts[pts.length - 1][1]) < 1) return;
+      if (!pts.length) ui.drawBase = state.project.room ? clone(state.project.room) : null;
       pts.push(q);
+      applyDraft();
       renderChips(); renderProps(); plan.render();
       return;
     }
@@ -6303,6 +6441,11 @@ const plan = {
       plan.act = { kind: "unit", u, box, rot: L.rot, off: [c[0] - p[0], c[1] - p[1]], row: rowOf(u, R(u)), segs: roomSegs(state.project), pose: L,
         others: projectItems(state.project).filter((it) => it.id !== u.id).map((it) => ({ box: it.box, row: it.row, pose: projectPoses(state.project).get(it.id) })).filter((o) => o.pose) };
       after(true);
+    } else if (d.wall && ui.wallMulti) {
+      const m = ui.wallMulti, i = m.indexOf(d.wall);
+      if (i >= 0) { if (m.length > 1) m.splice(i, 1); } else m.push(d.wall);
+      ui.planSel = { kind: "wall", id: m[m.length - 1] };
+      plan.act = { kind: "pan", c0: [e.clientX, e.clientY], vb: { ...plan.vb } }; after(true); return;
     } else if (d.wall) {
       const segs = Room.segments(room());
       const sg = segs.find((g) => g.id === d.wall);
@@ -6450,12 +6593,38 @@ function planDimEdit(el) {
     numAsk(el, k === "pa" ? "من أول الحيطة" : "لآخر الحيطة", val, (v) => { pt.at = Math.max(0, Math.min(sg.L, k === "pa" ? v : sg.L - v)); done(); }, { min: 0 });
   }
 }
+/** v120: every wall is kept the moment its end is tapped (Amr: «لازم أكمل بعده علشان يرسم الضلع… المفروض يحتفظ بالبداية والنهاية»):
+ *  the room is rebuilt from the room as it was before this drawing + the points tapped so far */
+function applyDraft(close = false) {
+  const pts = ui.draft || [];
+  if (ui.drawBase === undefined) ui.drawBase = state.project.room ? clone(state.project.room) : null;
+  if (pts.length < 2) return;
+  if (ui.drawBase) state.project.room = clone(ui.drawBase); else delete state.project.room;
+  buildFromDraft(pts, close);
+  save();
+}
+/** the open room being continued closes on its first corner: one more wall from the last corner back to the start */
+function closeDrawnRoom() {
+  const r = state.project.room;
+  if (r && !r.closed && r.pts.length >= 3) { r.closed = true; while (r.walls.length < r.pts.length) r.walls.push(Room.newWallMeta()); }
+  ui.planTool = "select"; ui.draft = null; plan.hover = null; delete ui.drawBase;
+  plan.vb = null; save(); render(true);
+  alertBar("✓ الأوضة اتقفلت");
+}
 function finishDraw(close) {
   const pts = ui.draft || [];
   ui.planTool = "select";
   ui.draft = null;
   plan.hover = null;
-  if (pts.length >= 2) {
+  if (ui.drawBase !== undefined && pts.length >= 2) { if (ui.drawBase) state.project.room = clone(ui.drawBase); else delete state.project.room; }
+  delete ui.drawBase;
+  if (pts.length >= 2) buildFromDraft(pts, close);
+  plan.vb = null;
+  save();
+  render(true);
+}
+function buildFromDraft(pts, close) {
+  {
     const cur = state.project.room;
     if (cur && !cur.closed && !close && cur.pts.length && Math.hypot(pts[0][0] - cur.pts[cur.pts.length - 1][0], pts[0][1] - cur.pts[cur.pts.length - 1][1]) < 1) {
       // continuing the open chain
@@ -6468,9 +6637,6 @@ function finishDraw(close) {
       state.whole = true;
     }
   }
-  plan.vb = null;
-  save();
-  render(true);
 }
 
 // ------------------------------------------------------------------ 3D view
@@ -8486,7 +8652,7 @@ function designChecks(project = state.project) {
   swingChecks(items, add, room, label);
   // overlaps (same height band)
   // the real height band of a wall unit (a ceiling unit sits above the wall unit under it — that is no clash)
-  const band = (it) => { const lf = +it.u?.lift || 0; if (lf > 0.5 && it.u?.kind !== "kitchen") { const hh = +R(it.u).params?.height || 60; return [lf + 0.5, lf + hh - 0.5]; } if (it.row === "upper") { const q = R(it.u).params || {}, z0 = +q.wall_mount_height || 140, lp = q.led_panel_below === true || q.led_panel_below === "true" ? +q.panel_thickness || 1.8 : 0; return [z0 - lp + 0.5, z0 + (+q.height || 70) - 0.5]; } return it.row === "lower" ? [0, 90] : it.row === "free" ? [0, 80] : [0, 240]; };
+  const band = (it) => { const lf = +it.u?.lift || 0; if (lf > 0.5 && it.u?.kind !== "kitchen") { const hh = +R(it.u).params?.height || 60; return [lf + 0.5, lf + hh - 0.5]; } if (it.row === "upper") { const q = R(it.u).params || {}, z0 = +q.wall_mount_height || 140, lp = q.led_panel_below === true || q.led_panel_below === "true" ? +q.panel_thickness || 1.8 : 0; return [z0 - lp + 0.5, z0 + (+q.height || 70) - 0.5]; } return it.row === "lower" ? [0, 90] : it.row === "free" ? [0, 80] : [0, Math.max(90, +R(it.u).params?.height || 240) - 0.5]; }; // a tall unit: its real height (a ceiling unit over it is no clash)
   for (let i = 0; i < items.length; i++) for (let j = i + 1; j < items.length; j++) {
     const A = items[i], B = items[j], [a0, a1] = band(A), [b0, b1] = band(B);
     if (A.u?.wcOf === B.id || B.u?.wcOf === A.id) continue; // v119: a kitchen cell of a divided wall stands inside it on purpose
@@ -8551,6 +8717,23 @@ function designChecks(project = state.project) {
         add("n", `${label(it)}: سيب تهوية 6 سم على الأقل حوالين التلاجة.`, it.id);
       }
       if ((p.unit_category === "washing_machine" || p.unit_category === "washer_gap") && (!near(it, ["washer_cold", "cold"]) || !near(it, ["washer_drain", "drain"]))) add("w", `${label(it)}: الغسالة محتاجة تغذية على 90 وصرف على 70.`, it.id);
+    }
+    // v120 (Amr #11): the other way round — a service point with nothing that uses it, on a wall that has kitchen units
+    {
+      const kit = items.filter((it) => it.u.kind === "kitchen" && it.row !== "upper");
+      const ctrOf = (it) => Room.centerOf(it.pose, it.box);
+      const yes = (v) => v === true || v === "true";
+      const by = (p, test, d) => kit.some((it) => it.pose.wall === p.wall && test(R(it.u).params || {}, it) && Math.hypot(p.w.x - ctrOf(it)[0], p.w.z - ctrOf(it)[1]) < d);
+      const seen = new Set();
+      for (const p of pts) {
+        if (!kit.some((it) => it.pose.wall === p.wall)) continue;
+        const wn = (segs.find((g) => g.id === p.wall)?.i ?? 0) + 1;
+        let msg = null;
+        if (KWall.MEP_FOR.washer.includes(p.kind) && !by(p, (q) => q.unit_category === "washer_gap" || q.unit_category === "washing_machine", 90)) msg = `على حيطة ${wn} فيه ${Room.MEP_KINDS[p.kind][0]} ومفيش مكان غسالة عندها — حط «فتحة غسالة 60» قدامها (أو «✨ اقترح مطبخ» بيحطها لوحده).`;
+        else if ((p.kind === "drain" || p.kind === "floor_drain") && !by(p, (q) => yes(q.include_sink_cutout), 90)) msg = `على حيطة ${wn} فيه صرف ومفيش حوض عنده — الحوض المفروض يبقى على الصرف.`;
+        else if (p.kind === "gas" && !by(p, (q, it) => q.unit_category === "cooker_gap" || /بوتجاز|مسطح|hob|cooker/i.test(`${q.unit_label || ""} ${it.u.name || ""}`), 100)) msg = `على حيطة ${wn} فيه مخرج غاز ومفيش بوتجاز عنده.`;
+        if (msg && !seen.has(msg)) { seen.add(msg); add("w", msg, null); }
+      }
     }
     // washer gap: a side panel where the slot is at the end of a run, and the washer must fit under the head
     const range = (it, sg) => { const fp = Room.footprint(it.pose, it.box).map((q) => (q[0] - sg.A[0]) * sg.d[0] + (q[1] - sg.A[1]) * sg.d[1]); return [Math.min(...fp), Math.max(...fp)]; };
@@ -9495,6 +9678,65 @@ async function exportDrawingsPdf() {
   }
   return pdfOut(pages, "المساقط والواجهات", true);
 }
+/** v120: the floor plan alone, to the walls' sizes — walls only / + services (electric · water · gas) / + units / everything (Amr #10) */
+function planPrintSvg(mode) {
+  const savedVb = plan.vb, oldHost = plan.host, fitHost = { clientWidth: 1414, clientHeight: 880, hidden: false, getBoundingClientRect: () => ({ top: 0, bottom: 880, left: 0, right: 1414, width: 1414, height: 880 }) };
+  const chips = $("#chips"), chHid = chips ? chips.hidden : null;
+  if (chips) chips.hidden = true; // the floating buttons take no room on paper
+  let svg;
+  try { plan.vb = null; plan.host = () => fitHost; plan.fit(); plan.printing = true; svg = plan.svg(); }
+  finally { if (chips) chips.hidden = chHid; plan.printing = false; plan.host = oldHost; plan.vb = savedVb; }
+  const doc = new DOMParser().parseFromString(/xmlns=/.test(svg.slice(0, 200)) ? svg : svg.replace("<svg ", '<svg xmlns="http://www.w3.org/2000/svg" '), "image/svg+xml");
+  const drop = (sel) => doc.querySelectorAll(sel).forEach((n) => n.remove());
+  if (mode === "walls" || mode === "mep") drop(".punit, .pghost, .prot, .prot-l, .pchain, .pdimbtn, .pfront, .pdim.gap");
+  if (mode === "walls" || mode === "units") drop(".pmep, .plight");
+  drop(".phandle, .phint, .pwstart");
+  return new XMLSerializer().serializeToString(doc.documentElement);
+}
+async function exportPlanPdf(mode) {
+  const room = state.project.room;
+  if (!room) throw new Error("ارسم الحيطان الأول");
+  const style = `<style>${PLAN_PRINT_CSS}</style>`;
+  const T = { walls: "المسقط الأفقي — الحيطان", mep: "المسقط الأفقي — الحيطان والمرافق", units: "المسقط الأفقي — الحيطان والوحدات", all: "المسقط الأفقي — كامل" }[mode];
+  const pages = [{ title: T, svg: style + nest(planPrintSvg(mode), 20, 80, 1374, 880) }];
+  if (mode === "mep" || mode === "all") {
+    const mr = mepRows();
+    for (const l of room.lights || []) mr.push([mr.length, l.kind === "pendant" ? "نجفة" : "سبوت سقف", "إضاءة", "السقف", `س ${n1(l.x)} · ص ${n1(l.z)}`, l.kind === "pendant" ? "معلّقة 80 سم تحت السقف" : "في السقف"]);
+    if (mr.length > 1) {
+      let t = `<text x="1384" y="110" font-size="22" font-weight="700" text-anchor="end">جدول نقط الكهربا والسباكة والغاز</text>`;
+      mr.forEach((r, i) => { t += `<text x="1384" y="${150 + i * 24}" font-size="${i ? 15 : 14}" ${i ? "" : 'font-weight="700"'} text-anchor="end">${r.map((c) => esc(String(c))).join("   ·   ")}</text>`; });
+      pages.push({ title: "جدول المرافق", svg: t });
+    }
+  }
+  return pdfOut(pages, T, true);
+}
+/** the plan for AutoCAD: walls, openings, wall lengths, services and units each on its own layer (turn off what you don't need) */
+async function exportPlanDxf() {
+  const room = state.project.room;
+  if (!room) throw new Error("ارسم الحيطان الأول");
+  const d = new Exp.Dxf();
+  for (const geo of Room.wallGeom(room)) d.poly(Room.piecePoly(geo, 0, geo.seg.L).map(([x, z]) => [x, -z]), "WALLS");
+  for (const sg of Room.segments(room)) {
+    const m = [(sg.A[0] + sg.B[0]) / 2 + sg.n[0] * 25, (sg.A[1] + sg.B[1]) / 2 + sg.n[1] * 25];
+    d.text(m[0], -m[1], 8, `${n1(sg.L)}`, "DIMS");
+    for (const o of (room.openings || []).filter((x) => x.wall === sg.id)) {
+      const a = [sg.A[0] + sg.d[0] * o.at, sg.A[1] + sg.d[1] * o.at], b = [a[0] + sg.d[0] * o.w, a[1] + sg.d[1] * o.w];
+      d.poly([[a[0], -a[1]], [b[0], -b[1]]], o.kind === "door" ? "DOORS" : "WINDOWS");
+      d.text((a[0] + b[0]) / 2, -(a[1] + b[1]) / 2 - 12, 6, `${o.kind === "door" ? "باب" : "شباك"} ${n1(o.w)}`, o.kind === "door" ? "DOORS" : "WINDOWS");
+    }
+  }
+  for (const p of room.points || []) { const w = Room.pointWorld(room, p); if (!w) continue; d.circle(w.x, -w.z, 4, "MEP"); d.text(w.x + 6, -w.z, 5, `${(Room.MEP_KINDS[p.kind] || Room.MEP_KINDS.socket)[3] || p.kind} ↑${n1(p.z)}`, "MEP"); }
+  const poses = projectPoses(state.project);
+  for (const it of projectItems(state.project)) {
+    const L = poses.get(it.id);
+    if (!L) continue;
+    const u = state.project.units.find((x) => x.id === it.id);
+    d.poly(Room.footprint(L, it.box).map(([x, z]) => [x, -z]), it.row === "upper" ? "UNITS-WALL" : "UNITS");
+    const c = Room.centerOf(L, it.box);
+    d.text(c[0] - 10, -c[1], 6, unitCode(u), it.row === "upper" ? "UNITS-WALL" : "UNITS");
+  }
+  return Exp.deliver(cloud.downloads, `${fileBase()} — المسقط.dxf`, d.toString());
+}
 const PLAN_PRINT_CSS = `
 .pfloor{fill:#fff}.pwall{fill:#5e6259;stroke:#3a3d36;stroke-width:.6}.popen{fill:#fff;stroke:#3a3d36;stroke-width:.6}.pdoor{fill:none;stroke:#777;stroke-width:.8;stroke-dasharray:3 2}
 .pwin{stroke:#4d8fb8;stroke-width:2.2}.pdim{font-weight:600;fill:#111}.pdim.gap{fill:#777;font-weight:400}.punit polygon{stroke:#2f4a36;stroke-width:.8}.punit.upper polygon{fill-opacity:.55;stroke-dasharray:4 3}
@@ -9553,7 +9795,7 @@ function cncOps(pc) {
   const mm = (v) => Math.round(v * 100) / 10;
   const u = state.project.units[pc.unitIdx], p = R(u).params || {};
   const W = mm(lb.w), H = mm(lb.h), T = mm(lb.t);
-  const op = { key: pc.key, unit: pc.unit, name: pt.name, mat: pc.mname, W, H, T, outline: null, cutouts: [], pockets: [], drills: [], grooves: [], note: [pt.note, ...(pt.checks || [])].filter(Boolean).join(" | "), banded: lb.banded || {}, bandAll: !!pt.band_all_sides, grain: !!pc.grain, grainAxis: pc.grain || null };
+  const op = { key: pc.key, unit: pc.unit, name: pt.name, mat: pc.mname, W, H, T, outline: null, cutouts: [], pockets: [], drills: [], hdrills: [], grooves: [], note: [pt.note, ...(pt.checks || [])].filter(Boolean).join(" | "), banded: lb.banded || {}, bandAll: !!pt.band_all_sides, grain: !!pc.grain, grainAxis: pc.grain || null };
   if (pt.cnc?.outline?.length) {
     const P = (l) => l.map(([x, y]) => [mm(x), mm(y)]);
     op.outline = P(pt.cnc.outline);
@@ -9564,6 +9806,16 @@ function cncOps(pc) {
   const AN = alitaNums(u), zMax = Math.max(1, T - 2);
   for (const ho of pt.holes || []) {
     const dia = mm(ho.d || (ho.kind === "cam" ? AN.cd : ho.kind === "pin" ? 0.5 : AN.d));
+    // v120: a hole sitting ON an edge of the board is an edge (horizontal) bore into the board's end — the minifix bolt / dowel —
+    // not a face drill (Amr: «تصدير للماكينات… بدون أماكن الأليتا»: they came out as half-holes on the outline)
+    if (ho.kind !== "cam" && ho.kind !== "pin") {
+      const eg = ho.w <= 0.002 ? "left" : ho.w >= 0.998 ? "right" : ho.h <= 0.002 ? "bottom" : ho.h >= 0.998 ? "top" : null;
+      if (eg) {
+        const along = eg === "left" || eg === "right" ? ho.h * H : ho.w * W;
+        op.hdrills.push({ face: eg, x: eg === "left" ? 0 : eg === "right" ? W : Math.round(along * 10) / 10, y: eg === "bottom" ? 0 : eg === "top" ? H : Math.round(along * 10) / 10, zc: Math.round((T / 2) * 10) / 10, d: dia, z: mm(AN.ed), kind: ho.kind || "sys" });
+        continue;
+      }
+    }
     const z0 = ho.kind === "cam" ? mm(AN.cdep) : ho.kind === "pin" || dia <= 5 ? 10 : mm(AN.fd);
     const z = Math.min(zMax, Math.max(1, z0));
     op.drills.push({ x: Math.round(ho.w * W * 10) / 10, y: Math.round(ho.h * H * 10) / 10, d: dia, z, kind: ho.kind || "sys" });
@@ -9605,18 +9857,24 @@ async function exportCnc() {
     } else d.rect(0, 0, W, H, "OUTLINE");
     for (const pk of op.pockets) { const lay = `POCKET_${pk.face === "back" ? "BACK" : "FRONT"}_Z${pk.z}`; if (pk.loop) d.poly(pk.loop, lay); else d.rect(...pk.rect, lay); }
     for (const dr of op.drills) d.circle(dr.x, dr.y, dr.d / 2, `DRILL_V_D${dr.d}_Z${dr.z}`);
+    // edge bores: a line from the edge inward as deep as the bore, on a layer that names the edge, the diameter, the depth and the height
+    for (const hd of op.hdrills) {
+      const dir = { left: [1, 0], right: [-1, 0], bottom: [0, 1], top: [0, -1] }[hd.face], lay = `DRILL_H_${hd.face.toUpperCase()}_D${hd.d}_Z${hd.z}_H${hd.zc}`;
+      d.poly([[hd.x, hd.y], [hd.x + dir[0] * hd.z, hd.y + dir[1] * hd.z]], lay);
+      d.circle(hd.x + dir[0] * hd.z, hd.y + dir[1] * hd.z, hd.d / 2, lay);
+    }
     for (const g of op.grooves) d.rect(g.x, g.y, g.w, g.h, `GROOVE_W${Math.round(Math.min(g.w, g.h) * 10) / 10}_Z${g.z}`);
     d.text(4, H + 6, 8, `${pc.key}  ${op.name}  ${W}x${H}x${T}`, "TEXT");
     if (/تفريغة|قصة ركن|اتقصّت/.test(op.note)) d.text(4, -12, 6, "CUT-OUT: see label / شوف الملصق", "TEXT");
     const safe = (t) => String(t).replace(/[\\/:*?"<>|]+/g, " ").trim();
     files.push({ name: `${safe(pc.mname)} ${T}mm/${safe(pc.key)}.dxf`, data: d.toString() });
-    rows.push([pc.key, pc.unit, op.name, pc.mname, W, H, T, op.drills.filter((x) => x.kind !== "cup").length, op.drills.filter((x) => x.kind === "cup").length, op.grooves.length + op.pockets.length + op.cutouts.length, op.note]);
+    rows.push([pc.key, pc.unit, op.name, pc.mname, W, H, T, op.drills.filter((x) => x.kind !== "cup").length + op.hdrills.length, op.drills.filter((x) => x.kind === "cup").length, op.grooves.length + op.pockets.length + op.cutouts.length, op.note]);
   }
   if (!files.length) throw new Error("مفيش قطع خشب في المشروع");
   files.push({ name: "عمليات CNC.csv", data: Exp.csv(rows) });
   files.push({ name: "اقراني.txt", data: "NOVERA Studio — ملفات CNC\r\n\r\nكل قطعة في ملف DXF لوحدها بالمليمتر، مقسومة فولدرات حسب الخامة والسمك.\r\n" +
     "الطبقات (Layers):\r\n  OUTLINE  حدود القطعة (العرض اللي في الملصق على X والطول على Y)\r\n  DRILL_V_D8_Z12  خرم رأسي قطره 8 وعمقه 12 مم (الرقمين في اسم الطبقة)\r\n" +
-    "  DRILL_V_D35_Z13  كبة مفصلة\r\n  GROOVE_W7_Z8  مفحار عرضه 7 وعمقه 8 مم\r\n  POCKET_BACK_Z12  حفر مقبض بلت إن من ضهر الوش (العمق في الاسم بالمم)\r\n  POCKET_FRONT_Zn / CUTOUT  حفر وتفريغ من ورشة الرسم\r\n  TEXT  رقم القطعة واسمها\r\n" });
+    "  DRILL_V_D35_Z13  كبة مفصلة\r\n  DRILL_H_LEFT_D8_Z32_H9  خرم أفقي في حرف القطعة (LEFT/RIGHT/TOP/BOTTOM) قطره 8 وعمقه 32 على ارتفاع 9 مم من الوش — مسمار الأليتا / الدويل\r\n  GROOVE_W7_Z8  مفحار عرضه 7 وعمقه 8 مم\r\n  POCKET_BACK_Z12  حفر مقبض بلت إن من ضهر الوش (العمق في الاسم بالمم)\r\n  POCKET_FRONT_Zn / CUTOUT  حفر وتفريغ من ورشة الرسم\r\n  TEXT  رقم القطعة واسمها\r\n" });
   return Exp.deliver(cloud.downloads, `${fileBase()} — CNC.zip`, Exp.zip(files));
 }
 async function exportImage() {
@@ -10058,11 +10316,16 @@ function autoKitchen(room, chain, tier) {
       const c = clone(cu); c.id = uid(); c.pos = { ...pose }; delete c.pos.corner; units.push(c);
     }
   }
-  // the sink first: under a window when there is one, else a third of the way along the longest wall
+  // v120 (Amr #11): the services decide first — the sink on its drain / water, the hob on the gas, a washer slot on the washer's drain / feed
+  const mepX = (r, what) => { const ks = KWall.MEP_FOR[what]; const xs = (room.points || []).filter((p) => p.wall === r.seg.id && ks.includes(p.kind)).map((p) => +p.at); return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null; };
+  const inFree = (r, x, w) => { const sp = r.free.find(([a, b]) => x + w / 2 >= a && x + w / 2 <= b && b - a >= w); return sp ? Math.max(sp[0], Math.min(sp[1] - w, x)) : null; };
+  // the sink first: on its water when the room has it, else under a window, else a third of the way along the longest wall
   const sinkW = T.sink;
-  let sinkRun = runs.find((r) => r.bl.windows.some((o) => r.free.some(([a, b]) => o.at + o.w / 2 - sinkW / 2 >= a && o.at + o.w / 2 + sinkW / 2 <= b))) || null;
-  let sinkA;
-  if (sinkRun) { const o = sinkRun.bl.windows.find((w) => sinkRun.free.some(([a, b]) => w.at + w.w / 2 - sinkW / 2 >= a && w.at + w.w / 2 + sinkW / 2 <= b)); sinkA = o.at + o.w / 2 - sinkW / 2; }
+  let sinkRun = null, sinkA;
+  for (const r of runs) { const x = mepX(r, "sink"); const a = x == null ? null : inFree(r, x - sinkW / 2, sinkW); if (a != null) { sinkRun = r; sinkA = a; break; } }
+  if (!sinkRun) sinkRun = runs.find((r) => r.bl.windows.some((o) => r.free.some(([a, b]) => o.at + o.w / 2 - sinkW / 2 >= a && o.at + o.w / 2 + sinkW / 2 <= b))) || null;
+  if (sinkA != null) { /* on the services */ }
+  else if (sinkRun) { const o = sinkRun.bl.windows.find((w) => sinkRun.free.some(([a, b]) => w.at + w.w / 2 - sinkW / 2 >= a && w.at + w.w / 2 + sinkW / 2 <= b)); sinkA = o.at + o.w / 2 - sinkW / 2; }
   else {
     sinkRun = runs.reduce((a, b) => (b.free.reduce((s, [x, y]) => s + y - x, 0) > a.free.reduce((s, [x, y]) => s + y - x, 0) ? b : a));
     const big = sinkRun.free.reduce((a, b) => (b[1] - b[0] > a[1] - a[0] ? b : a), sinkRun.free[0] || [0, 0]);
@@ -10109,7 +10372,8 @@ function autoKitchen(room, chain, tier) {
   // triangle (sink – hob – fridge) is closest to ~5.5 m
   const frC = endRun.tall.length ? at(endRun.seg, (endRun.tall[0][0] + endRun.tall[0][1]) / 2) : null;
   let hob = null, bestS = Infinity;
-  for (const r of runs) for (const [a, b] of r.free) {
+  for (const r of runs) { const x = mepX(r, "cooker"); const a = x == null ? null : inFree(r, x - hobW / 2, hobW); if (a != null) { hob = { r, a: Math.round(a * 2) / 2 }; bestS = -1; break; } }
+  if (!hob) for (const r of runs) for (const [a, b] of r.free) {
     const lo = a + 30, hi = b - 30 - hobW;
     if (hi < lo) continue;
     const xs = [lo, hi, (lo + hi) / 2, ...Array.from({ length: 5 }, (_, i) => lo + ((hi - lo) * (i + 1)) / 6)];
@@ -10126,6 +10390,16 @@ function autoKitchen(room, chain, tier) {
   if (hob) {
     pin(kitchenUnit(tier, { ...More.KITCHEN.k_hob90.params, width: hobW, unit_label: "بوتجاز" }, `وحدة بوتجاز ${hobW}`), hob.r.seg, hob.a, hobW);
     hob.r.free = minus([hob.r.lo, hob.r.hi], [...hob.r.bl.all, ...hob.r.tall, ...(hob.r === sinkRun ? [[sinkA, sinkA + sinkW]] : []), [hob.a, hob.a + hobW]]);
+    hob.r.used = [...(hob.r.used || []), [hob.a, hob.a + hobW]];
+  }
+  // a washer slot where the washer's drain / feed is
+  for (const r of runs) {
+    const x = mepX(r, "washer"); if (x == null) continue;
+    const a = inFree(r, x - 30, 60); if (a == null) continue;
+    const wa = Math.round(a * 2) / 2;
+    pin(kitchenUnit(tier, { ...KU.KITCHEN.k_washer_gap.params, width: 60 }, "مكان غسالة 60"), r.seg, wa, 60);
+    r.free = minus(r.free.length ? [r.lo, r.hi] : [0, 0], [...r.bl.all, ...r.tall, ...(r.used || []), ...(r === sinkRun ? [[sinkA, sinkA + sinkW]] : []), [wa, wa + 60]]);
+    r.used = [...(r.used || []), [wa, wa + 60]];
   }
   // fill the rest of the base row
   for (const r of runs) for (const [a, b] of r.free) {
@@ -12288,6 +12562,7 @@ async function zwLibPump() {
 }
 /** repaint only the library cards (no full renderLib → no flicker) */
 function zwLibPaint(msg) {
+  if (!document.querySelector("#lib .zwlib")) return; // the section is not shown (v120)
   const L = zwLibStore();
   const missing = ZW_LIB.filter((sp) => !L.st.items[sp.id]).length;
   const hb = $("#lib [data-zwcompute]"); if (hb) { hb.hidden = !missing && !L.want; hb.disabled = !!L.want; hb.textContent = L.want ? `⏳ بيحسب… (فاضل ${missing}) — اضغط للإيقاف` : `🧮 احسب الـ${missing} تصميم الناقصين بمقاسات ألواحي (حوالي ${Math.ceil(missing * 10 / 60)} دقايق)`; }
@@ -12333,6 +12608,11 @@ const EXPORTS = [
   ["unitdwg", "رسومات التصنيع لكل وحدة PDF", "ورقة لكل وحدة للورشة: الواجهة بأرقام القطع، المسقط والقطاع بالمقاسات، جدول القطع بالخامة والشريط، والهاردوير.", () => exportUnitDrawings()],
   ["asmpdf", "كتيب التجميع بالصور PDF", "لكل وحدة: صورة 3D لكل خطوة تجميع (القاعدة، الأجناب، الظهر، الأرفف، الأدراج، الضلف) مع القطع والهاردوير بتاعة الخطوة — للفني في الورشة أو عند العميل.", () => exportAsmBooklet()],
   ["purchase", "قايمة الطلبيات PDF", "كل اللي تشتريه للمشروع: ألواح بالعدد، شريط بالمتر، هاردوير، رخام وزجاج، أجهزة — مقسّمة بالمورّد وبخانة ✓.", exportPurchasePdf],
+  ["planw", "المسقط: الحيطان بس PDF", "المسقط الأفقي بالحيطان والفتحات ومقاساتها — من غير وحدات (للمقاول / النقاش).", () => exportPlanPdf("walls")],
+  ["planm", "المسقط: الحيطان + المرافق PDF", "الحيطان ونقط الكهربا والسباكة والغاز وجدولها — للكهربائي والسباك.", () => exportPlanPdf("mep")],
+  ["planu", "المسقط: الحيطان + الوحدات PDF", "الحيطان والوحدات بأكوادها في مكانها — للتركيب.", () => exportPlanPdf("units")],
+  ["plana", "المسقط كامل PDF", "الحيطان والوحدات والمرافق في صفحة واحدة + جدول المرافق.", () => exportPlanPdf("all")],
+  ["plandxf", "المسقط DXF (أوتوكاد)", "الحيطان والأبواب والشبابيك والمقاسات والمرافق والوحدات — كل حاجة على طبقة لوحدها.", exportPlanDxf],
   ["drawings", "المساقط والواجهات PDF", "المسقط الأفقي بالمقاسات، وواجهة كل حيطة بالوحدات والشبابيك ونقط الكهربا، وجدول النقط.", exportDrawingsPdf],
   ["asm", "ملخص الوحدات ودليل التجميع PDF", "لكل وحدة: صفحة ملخص (مقاسات، خامات، هاردوير، وزن) وصفحة لكل خطوة تجميع بصورة وأرقام القطع.", () => exportAssemblyPdf()],
   ["cnc", "ملفات CNC بالتخريم (DXF لكل قطعة)", "كل قطعة في ملف بالمليمتر: الحدود، والأخرام والكبب والمفاحير على طبقات باسم القطر والعمق — بتتفتح في برامج المكن (woodWOP · bSolid · Alphacam · الراوتر الصيني) + جدول العمليات.", exportCnc],
@@ -12700,4 +12980,4 @@ function cmdOpen() {
 function cmdClose() { const b = $("#cmdBox"); if (b) { b.hidden = true; b.innerHTML = ""; } }
 addEventListener("keydown", (e) => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); if ($("#cmdBox") && !$("#cmdBox").hidden) cmdClose(); else cmdOpen(); } });
 
-if (DEV) window.__dbg = { cmdItems: () => cmdItems(), exportLabelsPdf, exportCutPdf, quoteCalc, quickEstimate, purchaseData, takeStock, targetUnits, toggleMulti, multiToggle, showHome, openProject, exportCnc, ergoData, exportAR, alitaJoints, stepJointsHtml, exportAsmBooklet, view, plan, R, render: (x) => render(x), ak: (t) => kitchenProposals(t), applyK: (u) => applyKitchen(u, null), checks: () => designChecks(), merge: (a, b) => mergeInto(a, b), get ui() { return ui; }, layout: asmLayout, libUnit, libSet, thumbs, openStudio: (u, x) => openStudio(u, x), exportUnitDrawings, exportPurchasePdf, exportPurchaseXlsx, renderPop, libAdd, exportQuotePdf, exportAsmBooklet, presentOn, presentOff, renderPresent, exportMachines, speakRun, applyLighting, setParams, cmdOpen, elev: (u) => unitElevSvg(u), cutReady, get cutData() { return cutData; }, projectPieces: () => projectPieces(state.project), workerOn, workerOff, renderWorker, zwLibPump, zwSolve, zwLibStore, zwLibPaint, ZW_LIB, get state() { return state; } };
+if (DEV) window.__dbg = { exportPlanPdf: (m) => exportPlanPdf(m), planPrintSvg: (m) => planPrintSvg(m), cmdItems: () => cmdItems(), cncOps: (pc) => cncOps(pc), cncPieces: () => cncPieces(), exportLabelsPdf, exportCutPdf, quoteCalc, quickEstimate, purchaseData, takeStock, targetUnits, toggleMulti, multiToggle, showHome, openProject, exportCnc, ergoData, exportAR, alitaJoints, stepJointsHtml, exportAsmBooklet, view, plan, R, render: (x) => render(x), ak: (t) => kitchenProposals(t), applyK: (u) => applyKitchen(u, null), checks: () => designChecks(), merge: (a, b) => mergeInto(a, b), get ui() { return ui; }, layout: asmLayout, libUnit, libSet, thumbs, openStudio: (u, x) => openStudio(u, x), exportUnitDrawings, exportPurchasePdf, exportPurchaseXlsx, renderPop, libAdd, exportQuotePdf, exportAsmBooklet, presentOn, presentOff, renderPresent, exportMachines, speakRun, applyLighting, setParams, cmdOpen, elev: (u) => unitElevSvg(u), cutReady, get cutData() { return cutData; }, projectPieces: () => projectPieces(state.project), workerOn, workerOff, renderWorker, zwLibPump, zwSolve, zwLibStore, zwLibPaint, ZW_LIB, get state() { return state; } };

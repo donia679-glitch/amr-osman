@@ -117,6 +117,7 @@ async function onChange(e) {
     r.readAsDataURL(f);
   }
 }
+let adding = false;
 async function onClick(e) {
   const t = e.target.closest("[data-dc],[data-dcdel]");
   if (!t) return;
@@ -130,6 +131,10 @@ async function onClick(e) {
   if (a === "add") {
     const ta = el.querySelector("#dcText"), text = ta.value.trim();
     if (!text && !att) { ctx.alertBar("اكتب الملاحظة الأول"); return; }
+    // v120: a double tap (or the same text sent twice by mistake) must not make two notes (Amr's #7 / #8 came twice)
+    const last = S.notes[S.notes.length - 1];
+    if (adding || (last && text && last.text === text && Date.now() - last.at < 60000)) { ctx.alertBar("الملاحظة دي اتضافت خلاص"); return; }
+    adding = true; setTimeout(() => { adding = false; }, 1500);
     const n = { id: uid(), at: Date.now(), text: text || "(صورة)", ctx: ctx.context?.() || {}, status: "wait", proj: !!S.withProj };
     if (att) { await IDB.put(n.id, att); n.img = true; }
     if (n.proj) { try { await IDB.put(n.id + "-p", ctx.project?.() || null); } catch { n.proj = false; } }
