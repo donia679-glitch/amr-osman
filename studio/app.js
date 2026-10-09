@@ -37,7 +37,7 @@ import * as DG from "./draw/geom.js";
 
 const APP_URL = "https://claude.ai/artifact/EP8c8LmBNS8d3EqLcDioXi";
 const APP_VERSION = "1.0";
-const RELEASE = "v120"; // bumped with every shipped version (the developer notes carry it)
+const RELEASE = "v121"; // bumped with every shipped version (the developer notes carry it)
 // the NOVERA mark — the same one as the website (two cream panels, the brass profile between them, the brass base line)
 const MARK_SVG = '<svg viewBox="0 0 40 40" aria-hidden="true"><rect width="40" height="40" rx="3" fill="#0f2e1c"/><rect x="9" y="9" width="7" height="22" fill="#e9d9b0"/><rect x="24" y="9" width="7" height="22" fill="#e9d9b0"/><path d="M16 9h3l5 22h-3z" fill="#b98d34"/><rect x="6" y="33" width="28" height="2" fill="#b98d34"/></svg>';
 /** the App Store build (inside the iOS app): no links to the online version, no plugin / other-brand wording */
@@ -1661,7 +1661,8 @@ $("#libBtn").addEventListener("click", () => { state.libOpen = !state.libOpen; r
     } else if (hit && state.project.room) {
       // a wall, an electrical/plumbing point or a column: its settings open on the side, like in the plan
       ui.room3d = true; ui.planSel = { kind: hit.kind, id: hit.id };
-      renderProps(); renderChips();
+      if (hit.kind === "wall" && state.sel) { state.sel = null; renderStrip(); } // one thing picked at a time: the wall
+      renderProps(); renderChips(); view.update();
       if (matchMedia("(max-width: 640px), (max-height: 520px)").matches && ui.sheet !== "full") { ui.sheet = "half"; document.body.dataset.sheet = "half"; }
     } else if (!hit && !ui.multi && !ui.alignPick && (state.whole || state.project.room) && (state.sel || ui.planSel)) {
       // v120 (Amr #13): a tap on empty space lets go of the unit, so the next tap picks cleanly
@@ -2690,6 +2691,11 @@ function renderChips() {
   const u = selUnit();
   const el = $("#chips");
   if (ui.planOn) { el.innerHTML = `<div class="cbody">${planChips()}</div>`; return; }
+  // v121: a wall picked in the 3D gets its own buttons (like in the plan)
+  if (ui.room3d && ui.planSel?.kind === "wall" && state.project.room) {
+    const k = Room.segments(state.project.room).findIndex((g) => g.id === ui.planSel.id);
+    if (k >= 0) { el.innerHTML = `<div class="cbody"><span class="chip on">🧱 حيطة ${k + 1}</span><button class="chip tog gold" data-kwnew>🧱 صمّم الحيطة دي (مطبخ · دواليب · أي حاجة)</button><button class="chip tog gold" data-wcnew>🧩 قسّم الحيطة دي</button><button class="chip tog" data-wall3d="plan">📐 شوفها في المسقط</button><button class="chip tog" data-wall3d="elev">واجهة الحيطة</button><button class="chip tog" data-wall3d="x">✕</button></div>`; return; }
+  }
   if (!u) { el.innerHTML = `<div class="cbody"><button class="chip tog" data-plan>المسقط والحيطان</button><button class="chip tog" data-roompop>📐 أوضة بالمقاسات · 📷 مسح</button><button class="chip tog gold" data-autok>✨ صمملي المطبخ</button>${state.project.room ? `<button class="chip tog gold" data-kwnew>🧱 حيطة بحيطة</button>` : ""}<button class="chip tog" data-speak>🗣 اوصفلي</button>${state.project.variants?.length > 1 ? `<button class="chip tog" data-varpop>🗂 النسخ</button>` : ""}</div>`; return; }
   const r = R(u);
   const p = r.params;
@@ -2794,6 +2800,11 @@ $("#chips").addEventListener("click", async (e) => {
   if (b.hasAttribute("data-gotocut")) { state.tab = "cut"; save(); render(true); return; }
   if (b.hasAttribute("data-multi")) { toggleMulti(); return; }
   if (b.hasAttribute("data-alignpop")) { ui.pop = "align"; renderPop(); return; }
+  if (b.dataset.wall3d) {
+    const how = b.dataset.wall3d;
+    if (how === "x") { ui.planSel = null; ui.room3d = false; renderChips(); renderProps(); view.update(); return; }
+    ui.planOn = true; ui.planIn = "design"; ui.planView = how === "elev" ? "elev" : "plan"; ui.planTool = "select"; plan.vb = null; ui.room3d = false; render(true); return;
+  }
   if (b.hasAttribute("data-plan")) { ui.planOn = !ui.planOn; if (ui.planOn) ui.planIn = state.project.room ? "design" : "room"; ui.planView = "plan"; ui.planTool = "select"; plan.vb = null; if (!ui.planOn) { state.whole = state.whole || !!state.project.room; } render(true); return; }
   if (b.hasAttribute("data-roompop")) { ui.pop = "room"; renderPop(); return; }
   if (b.hasAttribute("data-autok")) { ui.pop = "auto"; renderPop(); return; }
@@ -6859,11 +6870,11 @@ const view = {
   buildRoom(g, room, dark) {
     const THREE = this.three;
     this.walls = [];
-    const capMat = new THREE.MeshStandardMaterial({ color: dark ? 0x222924 : 0xb9b6ac, roughness: 0.95 });
+    const capMat = new THREE.MeshStandardMaterial({ color: dark ? 0x8f8c84 : 0xb9b6ac, roughness: 0.95 });
     for (const geo of Room.wallGeom(room)) {
       const seg = geo.seg;
       const wg = new THREE.Group();
-      const fin = Mat.finishMaterial(THREE, seg.wall, dark ? "#3a423c" : "#f3f1ea");
+      const fin = Mat.finishMaterial(THREE, seg.wall, "#f3f1ea") /* v121 (Amr): white walls by default in the dark theme too */;
       for (const sp of Room.wallSpans(seg, room.openings || [])) {
         const poly = Room.piecePoly(geo, sp.a, sp.b);
         const shape = new THREE.Shape(poly.map(([x, z]) => new THREE.Vector2(x, -z)));
@@ -7232,6 +7243,19 @@ const view = {
         e.position.copy(mb.getCenter(new THREE.Vector3()));
         g.add(e);
         (this.selGlass ??= []).push(e);
+      }
+    }
+    // v121 (Amr): a wall picked in the 3D gets a gold outline like a unit, so you see which wall you are on
+    if (ui.room3d && ui.planSel?.kind === "wall") {
+      const wg = (this.walls || []).find((w) => w.userData.wallId === ui.planSel.id);
+      const wb = wg && new THREE.Box3().setFromObject(wg);
+      if (wb && !wb.isEmpty()) {
+        const ws = wb.getSize(new THREE.Vector3()).addScalar(3), wc = wb.getCenter(new THREE.Vector3());
+        const gm = new THREE.Mesh(new THREE.BoxGeometry(ws.x, ws.y, ws.z), new THREE.MeshBasicMaterial({ color: 0xd9a63a, transparent: true, opacity: 0.22, depthWrite: false }));
+        const ge = new THREE.LineSegments(new THREE.EdgesGeometry(gm.geometry), new THREE.LineBasicMaterial({ color: 0xd9a63a }));
+        gm.position.copy(wc); ge.position.copy(wc); gm.renderOrder = ge.renderOrder = 5;
+        g.add(gm, ge);
+        (this.selGlass ??= []).push(gm, ge);
       }
     }
     this.setOpen(!!ui.open, false);

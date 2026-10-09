@@ -87,10 +87,18 @@ export function proposeKitchen(L, holes) {
   const pg = mepAt(holes, "cooker", run) ?? mepAt(holes, "hood", run);
   if (pg != null) put(60, pg - 30, { base: "k_cooker_gap", wall: "k_wall_hood_in" }, mepAt(holes, "cooker", run) != null ? "البوتجاز عند مخرج الغاز" : "البوتجاز تحت مخرج الشفاط");
   // pieces must not overlap: keep their order, push to the right, then back from the end if they ran out of the wall
-  fixed.sort((p, q) => p.x0 - q.x0);
-  for (let i = 1; i < fixed.length; i++) fixed[i].x0 = Math.max(fixed[i].x0, fixed[i - 1].x0 + fixed[i - 1].w);
-  for (let i = fixed.length - 1; i >= 0; i--) { const lim = i === fixed.length - 1 ? run[1] : fixed[i + 1].x0; if (fixed[i].x0 + fixed[i].w > lim) fixed[i].x0 = lim - fixed[i].w; }
-  if (fixed[0] && fixed[0].x0 < run[0]) return proposeKitchen(L, holes.filter((o) => o.kind !== "pt")); // too much for this wall: the plain layout
+  const settle = () => {
+    fixed.sort((p, q) => p.x0 - q.x0);
+    for (let i = 1; i < fixed.length; i++) fixed[i].x0 = Math.max(fixed[i].x0, fixed[i - 1].x0 + fixed[i - 1].w);
+    for (let i = fixed.length - 1; i >= 0; i--) { const lim = i === fixed.length - 1 ? run[1] : fixed[i + 1].x0; if (fixed[i].x0 + fixed[i].w > lim) fixed[i].x0 = lim - fixed[i].w; }
+    return !fixed[0] || fixed[0].x0 >= run[0] - 0.01;
+  };
+  if (!settle()) {
+    // too much for this wall: first without the service points, then without the fridge, then plain base units
+    if (holes.some((o) => o.kind === "pt")) return proposeKitchen(L, holes.filter((o) => o.kind !== "pt"));
+    for (let i = fixed.length - 1; i >= 0; i--) if (fixed[i].c.tall) fixed.splice(i, 1);
+    if (!settle()) { fixed.length = 0; used.length = 0; }
+  }
   // no cooker point: the cooker in the longest free stretch, ~60 cm of counter away from the sink
   if (pg == null) {
     const gaps = [];
@@ -123,7 +131,9 @@ export function proposeKitchen(L, holes) {
       // a sliver: slide a piece that isn't tied to a service into it, else widen a neighbour (never the fridge)
       if (next && !next.hard) { next.x0 -= w; return; }
       const prev = slots[slots.length - 1];
-      if (prev && !prev.tall) prev.w += w; else if (next) { next.x0 -= w; next.w += w; } else slots.push({ w, base: "k_base2", wall: "k_wall2" });
+      if (!next && w < 8) return; // a few cm left at the end of the wall stay empty
+      const appl = (q) => !q || q.tall || /gap/.test(q.base || ""); // never widen a fridge / washer / cooker slot
+      if (!appl(prev)) prev.w += w; else if (next && !appl(next.c)) { next.x0 -= w; next.w += w; } else slots.push({ w, base: "k_base2", wall: "k_wall2" });
       return;
     }
     // drawers on both sides of the cooker (pots and pans), plain doors elsewhere
