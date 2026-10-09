@@ -2,7 +2,7 @@
 // corners, accessories) and lib/corner_glass_display_unit_builder.rb.
 import { COLORS, FRONT_THICKNESS_CM, recessFor } from "./config.js";
 import { addColoredMarkerFace, adjustForFinish, assignLayer, bandAllSideEdges, bandEdge, bandEdges, createAngledPanel, createBox, createFlatSlab, createHoleMarker, createHoleMarkerY, getOrCreateNamedMaterial, hexToRgb, tagDoorHinge, NO_BAND, } from "./helpers.js";
-import { argError, hingeCountIn, hingeCupPositionsAlong, hingeRatiosFor, materialLabelName, TAGS } from "./carcass.js";
+import { argError, hingeCountIn, hingeCupPositionsAlong, hingeEndIn, hingeRatiosFor, materialLabelName, TAGS } from "./carcass.js";
 import { fs } from "./rb.js";
 import { rround } from "../core/rubyMath.js";
 import { clamp, strip, toF, toI, toS, truthy } from "./rb.js";
@@ -142,7 +142,7 @@ class PlainBuilder {
         if (!(len > 2 * edge))
             return;
         const ux = free.x - hinge.x, uy = free.y - hinge.y, ul = Math.hypot(ux, uy) || 1;
-        const zs = hingeCupPositionsAlong(z0, z1, edge, count).filter((cz) => cz > z0 && cz < z1);
+        const zs = hingeCupPositionsAlong(z0, z1, hingeEndIn(p, len), count).filter((cz) => cz > z0 && cz < z1);
         door.setAttribute("KUD", "hinge_cup_ratios", zs.map((cz) => fs(rround((cz - z0) / len, 4))).join(","));
         const cx = hinge.x + (ux / ul) * edge, cy = hinge.y + (uy / ul) * edge;
         for (const cz of zs) {
@@ -420,8 +420,8 @@ export class LShapeCornerUnitBuilder extends PlainBuilder {
         const [hexInner, hexShelves, back1, back2] = this.footprints(leg1, leg2, cd, t, bt, bro, notch);
         this.buildLeg1EndAndBack(leg1G.entities, leg1, cd, t, bt, bg, bro, z0, h);
         this.buildLeg2EndAndBack(leg2G.entities, leg2, cd, t, bt, bg, bro, z0, h);
-        this.buildSharedSlab(shared.entities, "قاعدة", hexInner, z0, z0 + t, leg1, leg2, t);
-        this.buildSharedSlab(shared.entities, "رأس", hexInner, h - t, h, leg1, leg2, t);
+        this.buildSharedSlab(shared.entities, "قاعدة", hexInner, z0, z0 + t, leg1, leg2, t, cd, notch);
+        this.buildSharedSlab(shared.entities, "رأس", hexInner, h - t, h, leg1, leg2, t, cd, notch);
         if (truthy(p["include_shelves"]))
             this.buildShelves(shared.entities, leg1G.entities, leg2G.entities, hexShelves, leg1, leg2, cd, t, z0, h, back1, back2);
         this.buildDoorA(leg1G.entities, leg1, cd, t, z0, h);
@@ -469,10 +469,30 @@ export class LShapeCornerUnitBuilder extends PlainBuilder {
         }
         return [hexInner, hexShelves, back1, back2];
     }
-    buildSharedSlab(e, name, hex, zlo, zhi, leg1, leg2, t) {
+    buildSharedSlab(e, name, hex, zlo, zhi, leg1, leg2, t, cd = 0, notch = 0) {
         createFlatSlab(this.ctx, e, name, hex, zlo, zhi, this.carcassMaterial());
-        // v110 (v101 rule): the backs stand on it and the end sides close it — its wall edges and its front (inner L) edges are free → banded
-        this.label(name, leg1 - t, leg2 - t, t, { banded: this.allBands(), material: materialLabelName(this.carcassMaterial()) });
+        // NOVERA (v101 rule): the backs stand on it, so its two wall edges are free → banded (bottom = along leg 1, left = along leg 2);
+        // its two short ends meet the end sides → joints, bare; the two inner (front) edges of the L are banded too — they are not
+        // edges of the cut rectangle, so they ride in band_len + the note
+        const W = leg1 - t, H = leg2 - t, a = W - cd, b = H - cd;
+        const eb = this.edgeBandingEnabled();
+        const lshape = cd > 0 && a > 0.01 && b > 0.01;
+        const o = { banded: lshape ? this.bands("bottom", "left") : this.allBands(), material: materialLabelName(this.carcassMaterial()) };
+        if (lshape) {
+            o.band_len = eb ? rround((W + H + a + b) / cm(1.0), 1) : 0;
+            o.note = this.lNote(a, b, cd, cd, notch, eb);
+        }
+        this.label(name, W, H, t, o);
+    }
+    /** the cut-list note of an L slab cut from its rectangle: the piece taken out of the corner away from the wall + the banding */
+    lNote(a, b, armA, armB, notch, eb) {
+        const c = (v) => fs(rround(v / cm(1.0), 1));
+        const parts = [`تفريغ L: يتشال مستطيل ‎${c(a)}×${c(b)} من الركن اللي قدام (بعيد عن الحيطة) — يفضل ${c(armA)} عرض الرجل الأولى و ${c(armB)} عرض الرجل التانية`];
+        if (notch > 0)
+            parts.push(`شطف ركن الحيطة ${c(notch)} سم`);
+        if (eb)
+            parts.push(`شريط على الحرفين الداخليين للـL (${c(a)} + ${c(b)})`);
+        return parts.join(" · ");
     }
     buildLeg1EndAndBack(e, leg1, cd, t, bt, bg, bro, z0, h) {
         const endA = createBox(this.ctx, e, "جنب الرجل الأولى", leg1 - t, 0, z0, leg1, cd, h, this.carcassMaterial());
@@ -581,7 +601,15 @@ export class LShapeCornerUnitBuilder extends PlainBuilder {
                 const name = `رف ${i + 1}`;
                 createFlatSlab(this.ctx, shared, name, hexShelves, sz - t / 2.0, sz + t / 2.0, cm0);
                 // v189: the shelf starts behind the two backs (back2, back1), so it is that much smaller than the base
-                this.label(name, leg1 - t - back2, leg2 - t - back1, t, { banded: this.bands("bottom", "right"), material: cname }); // v110: its two front edges
+                // NOVERA: the rectangle's four edges all meet a back or an end side (joints); only the two inner edges of the L are free → band_len + note
+                const W = leg1 - t - back2, H = leg2 - t - back1, a = leg1 - t - cd, b = leg2 - t - cd;
+                const lshape = a > 0.01 && b > 0.01;
+                const o = { banded: lshape ? { ...NO_BAND } : this.bands("bottom", "right"), material: cname };
+                if (lshape) {
+                    o.band_len = this.edgeBandingEnabled() ? rround((a + b) / cm(1.0), 1) : 0;
+                    o.note = this.lNote(a, b, cd - back1, cd - back2, 0, this.edgeBandingEnabled());
+                }
+                this.label(name, W, H, t, o);
             }
         }
     }

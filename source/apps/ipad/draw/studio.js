@@ -13,6 +13,27 @@ const wallSwatches = (cur, attr) => `<div class="dspaints">${WALL_PAINTS.map((c)
 const MATS = { carcass: "الهيكل", front: "الضلف والواجهة", shelf: "الأرفف", accent: "الخامة المميزة", back: "الظهر" };
 const MCOL = { carcass: "#d9cfbf", front: "#b98a5a", shelf: "#e6dccb", accent: "#5f7464", back: "#efe7da" };
 const AX = [[1, 0, 0], [0, 1, 0], [0, 0, 1]], AXC = ["#e0413a", "#2f9e44", "#2f6fdf"], AXN = ["الأحمر", "الأخضر", "الأزرق"];
+// one naming for the three directions everywhere in the panel: the letter in its axis colour + what it means
+const AXW = ["العرض", "العمق", "الارتفاع"];
+const axTag = (i) => `<i class="dsax ax${i}" data-noi18n>${"XYZ"[i]}</i>`;
+/** a world direction → its axis, sign and the word for it (لليمين/للشمال · لورا/لقدام · لفوق/لتحت) */
+function dirInfo(v) {
+  const i = [0, 1, 2].reduce((a, k) => (Math.abs(v[k]) > Math.abs(v[a]) ? k : a), 0), sg = Math.sign(v[i]) || 1;
+  return { i, sg, word: [["للشمال", "لليمين"], ["لقدام", "لورا"], ["لتحت", "لفوق"]][i][sg > 0 ? 1 : 0] };
+}
+/** the arrow that points the way a world direction runs on the screen right now (changes when the camera turns) */
+function scrArrow(v) {
+  if (!ren || !cam) return "";
+  cam.updateMatrixWorld();
+  const c = ctl ? W3(ctl.target) : [0, 0, 0], a = scr(c), b = scr(G.add(c, G.mul(G.norm(v), Math.max(1, camDistAt(c) / 8))));
+  const dx = b[0] - a[0], dy = a[1] - b[1];
+  if (Math.hypot(dx, dy) < 4) return dy >= 0 ? "⊙" : "⊗";
+  const k = Math.round(Math.atan2(dy, dx) / (Math.PI / 4));
+  return ["→", "↗", "↑", "↖", "←", "↙", "↓", "↘"][(k + 8) % 8];
+}
+/** a direction button's face: arrow as on the screen · word · axis */
+const dirFace = (v) => { const d = dirInfo(v); return `<i class="dsarr" data-vd="${v.join(",")}" data-noi18n>${scrArrow(v)}</i> ${d.word} <small class="dsax ax${d.i}" dir="ltr" data-noi18n>${d.sg > 0 ? "+" : "−"}${"XYZ"[d.i]}</small>`; };
+function updArrows() { el?.querySelectorAll("#dsSide [data-vd]").forEach((x) => { const t = scrArrow(x.dataset.vd.split(",").map(Number)); if (x.textContent !== t) x.textContent = t; }); }
 const TOOLS = [
   ["نظر", [["select", "⬚", "اختيار"], ["orbit", "⟳", "لف الكاميرا"], ["pan", "✋", "زحّك الكاميرا"]]],
   ["رسم", [["line", "╱", "خط"], ["rect", "▭", "مستطيل"], ["circle", "◯", "دايرة"], ["polygon", "⬡", "مضلّع"], ["arc", "◠", "قوس"]]],
@@ -143,10 +164,71 @@ export function open(model, opts = {}) {
   rebuild();
   // the first opening: the orbit controls load a moment later — the view waits for them (else their own default view wins)
   const nonEmpty = !!(M.solids.length || M.sketches.length || M.room?.pts?.length);
-  const fit = () => { if (opts.tool === "wall") { setView("top", nonEmpty ? undefined : 700); if (nonEmpty) zoomExtents(); } else if (nonEmpty) { if (!camSet) setView("iso"); zoomExtents(); } else setView("iso", 160); camSet = true; };
+  const fit = () => { if (opts.tool === "wall") { setView("top", nonEmpty ? undefined : 700); if (nonEmpty) zoomExtents(); } else if (nonEmpty) { if (!camSet) setView("iso"); zoomExtents(); } else setView("iso"); camSet = true; };
   if (ctl) fit(); else pendingView = fit;
   renderUI();
   loop();
+  // work drawn here and never saved (the app was closed / reloaded before ✓): bring it back or offer it
+  el.querySelector(".dsdraftask")?.remove(); ui.draftAsk = null;
+  const all = draftsRead(), dk = typeof opts.resume === "string" && all[opts.resume] ? opts.resume : draftId(opts.target), d = dk && all[dk];
+  if (d && opts.resume) { ui.draftAsk = dk; draftUse(); }
+  else if (d) {
+    ui.draftAsk = dk;
+    const p = document.createElement("div"); p.className = "dsleave dsdraftask";
+    p.innerHTML = `<div class="dsleavebox"><b>في رسمة متسابتش — تكمّلها؟</b><p>${esc(d.name || "")} · ${esc(new Date(d.at).toLocaleString("ar-EG", { dateStyle: "short", timeStyle: "short" }))}</p>
+      <div class="dsbtns"><button class="dsb primary" data-ds="draftgo">✏️ كمّلها</button><button class="dsb danger" data-ds="draftdrop">امسحها وابدأ من الأول</button></div></div>`;
+    el.appendChild(p);
+  }
+}
+// ---- drafts: the drawing is kept in this device's storage while you work, until ✓ or ✕
+const DRAFTS = "novera-studio-drafts";
+function draftsRead() { try { const o = JSON.parse(localStorage.getItem(DRAFTS) || "{}"); return o && typeof o === "object" && !Array.isArray(o) ? o : {}; } catch { return {}; } }
+function draftsWrite(o) { try { if (Object.keys(o).length) localStorage.setItem(DRAFTS, JSON.stringify(o)); else localStorage.removeItem(DRAFTS); return true; } catch { return false; } }
+const draftId = (t) => (t && t.pid ? `${t.pid}|${t.uid || "new"}` : null);
+let draftT = 0;
+function draftSave() { if (!alive || ui.draftAsk) return; clearTimeout(draftT); draftT = setTimeout(() => { draftT = 0; draftNow(); }, 700); }
+function draftNow() {
+  const t = ctx.target, id = draftId(t);
+  if (!id || !alive || ui.draftAsk) return;
+  const o = draftsRead(), json = JSON.stringify(M);
+  if (json === startJSON && mname === (ctx.name || mname)) { if (o[id]) { delete o[id]; draftsWrite(o); } return; }
+  if (json.length > 1.5e6) return; // too big for the browser's storage — never let it push other data out
+  o[id] = { at: Date.now(), pid: t.pid, uid: t.uid || null, tool: t.tool || "", name: mname, M: json };
+  for (const k of Object.keys(o).sort((a, b) => o[b].at - o[a].at).slice(3)) delete o[k]; // the 3 newest
+  if (!draftsWrite(o)) { for (const k of Object.keys(o)) if (k !== id) delete o[k]; draftsWrite(o); }
+}
+function draftClear() {
+  clearTimeout(draftT);
+  const o = draftsRead(); let ch = false;
+  for (const k of [draftId(ctx.target), ui.draftAsk]) if (k && o[k]) { delete o[k]; ch = true; }
+  if (ch) draftsWrite(o);
+}
+function draftUse() {
+  const o = draftsRead(), k = ui.draftAsk, d = k && o[k];
+  el.querySelector(".dsdraftask")?.remove(); ui.draftAsk = null;
+  if (!d) return;
+  try { M = normalize(JSON.parse(d.M)); } catch { return; }
+  if (d.name) mname = d.name;
+  // kept under the drawing's own key from now on
+  if (k !== draftId(ctx.target)) { delete o[k]; draftsWrite(o); }
+  hist.u = [startJSON]; hist.r = []; ui.sel.clear(); ui.st = null; ui.cab = null;
+  rebuild(); renderUI(); zoomExtents();
+  setMsg("رجعت الرسمة اللي ما اتحفظتش ✓ — دوس «✓ خلصت» عشان تتحفظ في المشروع");
+}
+/** at app start: a drawing left unsaved → a small bar offers to go back to it (onResume gets the draft) */
+export function draftOffer(onResume) {
+  const o = draftsRead(), k = Object.keys(o).sort((a, b) => o[b].at - o[a].at)[0], d = k && o[k];
+  if (!d || isOpen() || document.querySelector(".dsdraftbar")) return;
+  const bar = document.createElement("div"); bar.className = "dsdraftbar"; bar.setAttribute("role", "alert");
+  bar.innerHTML = `<span>✏️ في رسمة متسابتش في ورشة الرسم${d.name ? ` «<b data-noi18n>${esc(d.name)}</b>»` : ""} — تكمّلها؟</span><button class="primary" data-dg>كمّلها</button><button class="ghost2" data-dx>امسحها</button>`;
+  bar.addEventListener("click", (e) => {
+    const b = e.target.closest("button"); if (!b) return;
+    bar.remove();
+    if (b.hasAttribute("data-dg")) onResume?.({ ...d, key: k });
+    else { const x = draftsRead(); delete x[k]; draftsWrite(x); }
+  });
+  document.body.appendChild(bar);
+  setTimeout(() => bar.remove(), 30000);
 }
 let pendingView = null, camSet = false;
 export function close() {
@@ -156,7 +238,7 @@ export function close() {
   cancelAnimationFrame(raf);
 }
 export const isOpen = () => !!el && !el.hidden;
-if (typeof window !== "undefined" && location.protocol === "http:" && /^(localhost|127\.0\.0\.1)$/.test(location.hostname)) window.__ds = { cabAdd, cabRegen, curCab, Cab, M: () => M, ui, scr: (P) => scr(P), setTool: (t) => setTool(t), G, pick: (x, y) => { const h = pickAny(x, y); return h && { ref: h.ref, kind: h.face?.kind, sid: h.sid }; }, click: (x, y) => TOOL[ui.tool]?.click?.([x, y]), pickEdge, pickVertex, rebuild: () => { rebuild(); renderUI(); } };
+if (typeof window !== "undefined" && location.protocol === "http:" && /^(localhost|127\.0\.0\.1)$/.test(location.hostname)) window.__ds = { scene: () => scene, cam: () => cam, ctl: () => ctl, cabAdd, cabRegen, curCab, Cab, M: () => M, ui, scr: (P) => scr(P), setTool: (t) => setTool(t), G, pick: (x, y) => { const h = pickAny(x, y); return h && { ref: h.ref, kind: h.face?.kind, sid: h.sid }; }, click: (x, y) => TOOL[ui.tool]?.click?.([x, y]), pickEdge, pickVertex, rebuild: () => { rebuild(); renderUI(); } };
 function normalize(m) {
   for (const k of ["solids", "sketches", "paths", "sweeps", "guides", "dims", "texts", "groups", "cabs"]) if (!Array.isArray(m[k])) m[k] = [];
   for (const s of m.solids) { s.id ||= uid(); s.holes ||= []; s.pockets ||= []; s.mat ||= "carcass"; s.name ||= "لوح"; s.outer = G.ccw(s.outer); }
@@ -210,15 +292,23 @@ function build() {
   world = new THREE.Group(); scene.add(world);
   solidsG = new THREE.Group(); sketchG = new THREE.Group(); extraG = new THREE.Group(); overG = new THREE.Group(); roomG = new THREE.Group();
   world.add(solidsG, sketchG, extraG, roomG); scene.add(overG);
-  grid = new THREE.GridHelper(1000, 100, 0xc9ccc3, 0xe2e4dd); grid.material.transparent = true; grid.material.opacity = 0.45; grid.material.depthWrite = false; grid.renderOrder = -1; scene.add(grid);
-  const axl = (d, c) => { const g = new THREE.BufferGeometry().setFromPoints([T3([0, 0, 0]), T3(G.mul(d, 600))]); return new THREE.Line(g, new THREE.LineBasicMaterial({ color: c })); };
-  scene.add(axl([1, 0, 0], AXC[0]), axl([0, 1, 0], AXC[1]), axl([0, 0, 1], AXC[2]));
+  // the floor: a 10 cm grid over 6 m and a 1 m grid further out (both readable on the light and the dark stage),
+  // the three axes drawn thick from the origin (faint on their negative side) and a dot on the origin itself
+  const dark = scene.background.getHSL({}).l < 0.45;
+  grid = new THREE.Group(); grid.renderOrder = -1;
+  for (const [size, n, c, op] of [[600, 60, dark ? 0x3d433c : 0xd2d5cc, 0.8], [2000, 20, dark ? 0x5c6359 : 0xb3b8ab, 0.9]]) {
+    const gh = new THREE.GridHelper(size, n, c, c); gh.material.transparent = true; gh.material.opacity = op; gh.material.depthWrite = false; gh.renderOrder = -1; grid.add(gh);
+  }
+  scene.add(grid);
+  for (let i = 0; i < 3; i++) { scene.add(fatLine([[0, 0, 0], G.mul(AX[i], 600)], AXC[i], 2, false, { order: 1 })); scene.add(fatLine([[0, 0, 0], G.mul(AX[i], -300)], AXC[i], 1.5, false, { order: 1, opacity: 0.35 })); }
+  { const cv = document.createElement("canvas"); cv.width = cv.height = 64; const g = cv.getContext("2d"); g.fillStyle = "#ffffff"; g.beginPath(); g.arc(32, 32, 24, 0, 7); g.fill(); g.lineWidth = 9; g.strokeStyle = "#1d211c"; g.stroke();
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(cv), sizeAttenuation: false, depthTest: false, transparent: true })); sp.scale.set(0.024, 0.024, 1); sp.renderOrder = 7; scene.add(sp); }
   import("three/addons/controls/OrbitControls.js").then(({ OrbitControls }) => {
     ctl = new OrbitControls(cam, ren.domElement);
     ctl.enableDamping = false; ctl.screenSpacePanning = true; ctl.zoomToCursor = true;
-    ctl.addEventListener("change", () => { wallFade(); need(); });
+    ctl.addEventListener("change", () => { wallFade(); need(); clearTimeout(updArrows.t); updArrows.t = setTimeout(updArrows, 120); });
     applyControls();
-    if (pendingView) { const f = pendingView; pendingView = null; f(); } else setView("iso", 160);
+    if (pendingView) { const f = pendingView; pendingView = null; f(); } else setView("iso");
   });
   // our own pointer handling runs first (capture on the view) so the tool decides before the orbit does
   view.addEventListener("pointerdown", onDown, true);
@@ -242,6 +332,10 @@ function build() {
   el.querySelector("#dsVcb").addEventListener("blur", (e) => { delete e.target.dataset.typed; setTimeout(() => { if (document.activeElement !== e.target && ui.dimEdit != null) { ui.dimEdit = null; vcbSet("", "المقاس"); need(); } }, 400); });
   el.querySelector("#dsVcb").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); vcbEnter(); } else if (e.key === "Escape") { cancelStep(); } });
   window.addEventListener("resize", () => { if (alive) resize(); });
+  // leaving the app (reload, switching apps on the iPad): the last change goes into the draft right away
+  const flush = () => { if (alive && draftT) { clearTimeout(draftT); draftT = 0; draftNow(); } };
+  window.addEventListener("pagehide", flush);
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") flush(); });
   window.addEventListener("keydown", (e) => {
     if (!alive || e.target.closest?.("input,select,textarea")) return;
     const k = e.key.toLowerCase();
@@ -292,7 +386,8 @@ function applyControls() {
 function modelBox() {
   const b = new THREE.Box3();
   for (const o of [solidsG, sketchG, extraG, roomG]) b.expandByObject(o);
-  if (b.isEmpty()) b.set(new THREE.Vector3(-30, 0, -60), new THREE.Vector3(90, 15, 20));
+  // nothing drawn yet: a 2 m piece of floor in front of the origin, at a person's scale (the origin near the front-left)
+  if (b.isEmpty()) b.set(new THREE.Vector3(-20, 0, -170), new THREE.Vector3(200, 100, 20));
   return b;
 }
 function setView(kind, distHint) {
@@ -387,6 +482,7 @@ function selected(ref) {
   return false;
 }
 function rebuild() {
+  draftSave();
   clear(solidsG); clear(sketchG); clear(extraG); clear(roomG); objs.clear();
   buildRoom();
   cabGhosts();
@@ -2371,6 +2467,7 @@ function renderUI() {
   const nm = el.querySelector("#dsName"); if (document.activeElement !== nm) nm.value = mname;
   el.classList.toggle("noside", !ui.panel);
   el.querySelector("#dsSide").innerHTML = sideHtml();
+  updArrows();
 }
 const PLANES = [["auto", "🖐 تلقائي (الوش اللي تحت صباعك)"], ["ground", "▭ نايم على الأرض"], ["front", "▯ واقف — وشه لقدام"], ["side", "◫ واقف — وشه للجنب"]];
 function planeName(pl) { const n = G.norm(G.nOf(pl)); return Math.abs(n[2]) > 0.9 ? "نايم" : Math.abs(n[1]) > 0.9 ? "واقف وشه لقدام" : Math.abs(n[0]) > 0.9 ? "واقف وشه للجنب" : "مايل"; }
@@ -2378,11 +2475,12 @@ function planeName(pl) { const n = G.norm(G.nOf(pl)); return Math.abs(n[2]) > 0.
 function drawHtml() {
   if (ui.face2d || !DRAWTOOLS_WALL.includes(ui.tool)) return "";
   const st = ui.st, vert = st ? Math.abs(G.norm(G.nOf(st.plane))[2]) < 0.5 : ui.plane === "front" || ui.plane === "side";
+  const rpl = st?.plane || basePlane(null), pu = G.norm(rpl.u), pv = G.norm(rpl.v);
   let h = `<div class="dsbox dsdraw"><b>📐 بترسم على إيه؟</b><div class="dsseg dsplanes">${PLANES.map(([k, l]) => `<button class="dsb ${ui.plane === k ? "on" : ""}" data-plane="${k}">${l}</button>`).join("")}</div>
     <p class="hint">«واقف» = الشكل بيطلع رأسي (زي جنب أو ظهر بين دولابين) · «نايم» = على الأرض زي رف. ارسم من ركن الدولاب: المغناطيس بيمسك الركن.</p>`;
   if (ui.tool === "rect") h += `<div class="dsrow"><b>⬜ مستطيل بالمقاس</b><small class="hint">${st ? "✅ الركن الأول اتحدد" : "دوس الركن الأول في الرسم الأول (أو ابدأ من نقطة الأصل)"}</small></div>
     <div class="dsgrid"><label><span>العرض</span><input type="text" inputmode="decimal" data-numf id="dsRw" value="${ui.rw ?? 60}"></label><label><span>${vert ? "الارتفاع" : "الطول"}</span><input type="text" inputmode="decimal" data-numf id="dsRh" value="${ui.rh ?? 40}"></label></div>
-    <div class="dsrow"><span>اتجاهه من الركن</span><span class="dsgrp"><button class="dsb ${ui.rdir[0] > 0 ? "on" : ""}" data-rdir="0">→ يمين</button><button class="dsb ${ui.rdir[0] < 0 ? "on" : ""}" data-rdir="1">← شمال</button><button class="dsb ${ui.rdir[1] > 0 ? "on" : ""}" data-rdir="2">${vert ? "↑ فوق" : "↑ لورا"}</button><button class="dsb ${ui.rdir[1] < 0 ? "on" : ""}" data-rdir="3">${vert ? "↓ تحت" : "↓ لقدام"}</button></span></div>
+    <div class="dsrow"><span>اتجاهه من الركن</span></div><div class="dsdirs">${[[pu, 1, 0], [pu, -1, 1], [pv, 1, 2], [pv, -1, 3]].map(([v, sg, k]) => `<button class="dsb ${(k < 2 ? ui.rdir[0] : ui.rdir[1]) === sg ? "on" : ""}" data-rdir="${k}">${dirFace(G.mul(v, sg))}</button>`).join("")}</div>
     <button class="dsb primary" data-ds="rectgo">⬜ ارسم بالمقاس ده</button>
     <p class="hint">أو بعد الركن الأول اكتب تحت «العرض,الطول» (مثلاً 60,72) واضغط ↵.</p>`;
   return h + `</div>`;
@@ -2393,8 +2491,8 @@ function moveByHtml() {
   const busy = ui.tool === "move" && ui.st;
   return `<div class="dsbox dsmv"><b>↔ حرّك بمقاس</b><small class="hint">${busy ? "القطعة ماسكها — اكتب المسافة ودوس الاتجاه" : ui.sel.size ? `${ui.sel.size} مختار — اكتب المسافة ودوس الاتجاه` : "اختار القطعة الأول (أو دوس عليها بأداة التحريك)"}</small>
     <div class="dsgrid"><label><span>المسافة (سم)</span><input type="text" inputmode="decimal" data-numf id="dsMvD" value="${f1(ui.mvD)}"></label></div>
-    <div class="dsgrp dsmvbtns"><button class="dsb ax0" data-mv="0,1">+X ←</button><button class="dsb ax0" data-mv="0,-1">−X →</button><button class="dsb ax1" data-mv="1,1">+Y لورا</button><button class="dsb ax1" data-mv="1,-1">−Y لقدام</button><button class="dsb ax2" data-mv="2,1">+Z فوق</button><button class="dsb ax2" data-mv="2,-1">−Z تحت</button></div>
-    <p class="hint">X = العرض (أحمر) · Y = العمق (أخضر) · Z = الارتفاع (أزرق). علّم «نسخة» فوق تعمل نسخة على المسافة دي بدل ما تحرّك. وفي أداة التحريك: امسك القطعة واكتب الرقم تحت ↵ يحرّكها على المسافة دي في اتجاه صباعك.</p></div>`;
+    <div class="dsdirs dsmvbtns">${[0, 1, 2].flatMap((i) => [1, -1].map((sg) => `<button class="dsb ax${i}" data-mv="${i},${sg}">${dirFace(G.mul(AX[i], sg))}</button>`)).join("")}</div>
+    <p class="hint">${axTag(0)} = العرض (أحمر) · ${axTag(1)} = العمق (أخضر) · ${axTag(2)} = الارتفاع (أزرق) — السهم بيوريك الاتجاه في الرسم دلوقتي. علّم «نسخة» فوق تعمل نسخة على المسافة دي بدل ما تحرّك. وفي أداة التحريك: امسك القطعة واكتب الرقم تحت ↵ يحرّكها على المسافة دي في اتجاه صباعك.</p></div>`;
 }
 function rectGo() {
   const w = +el.querySelector("#dsRw").value, hh = +el.querySelector("#dsRh").value;
@@ -2422,34 +2520,18 @@ function sideHtml() {
   let h = "";
   if (ui.face2d) h += `<div class="dsbox on2d"><b>✏️ بترسم شكل القطعة 2D</b><p class="hint">ارسم خطوط وأقواس ودواير على وشها، وبعدين بـ«سحب/زق» زق الشكل لجوه: تفريغ أو قصة من الحرف أو حفر. «تدوير ركن» و«شطف ركن» على أركانها.</p><button class="dsb" data-ds="exit2d">↩ رجوع للـ3D</button></div>`;
   const refs = selRefs(), solids = refs.filter((r) => r[0] === "s").map(ent).filter(Boolean);
-  h += faceHtml();
-  if (curCab()) h += cabHtml();
-  if (ui.tool === "tape") h += `<div class="dsbox"><b>📏 شريط القياس</b><p class="hint">دوس نقطتين: بيقيس المسافة بينهم (والفرق في العرض والطول والارتفاع) من غير ما يرسم حاجة.</p><label class="dschk"><input type="checkbox" data-ds="tapeguide" ${ui.tapeGuide ? "checked" : ""}> سيب خط مساعد مكان القياس</label></div>`;
-  if (ui.tool === "paint" && M.room?.pts?.length) h += `<div class="dsbox"><b>🎨 لون دهان الحيطان</b><p class="hint">دوس على أي حيطة تتدهن باللون ده (ويظهر في التصميم والريندر). للألواح: اختار الخامة تحت ودوس على اللوح.</p>${wallSwatches(ui.wallPaint || "#e9e2d0", "wpaint")}</div>`;
-  h += roomHtml();
-  const pal = Object.keys(MATS).map((k) => `<button class="dsmat ${ui.mat === k ? "on" : ""}" data-mat="${k}" title="${esc(matName(k))}"><i style="background:${matColor(k)}"></i><span>${esc(matName(k))}</span></button>`).join("");
-  h += edgeHtml() + vertexHtml();
-  h += drawHtml() + moveByHtml();
-  const PM = [["solid", "⬚ لوح"], ["face", "🟨 وش"], ["edge", "— حرف"], ["vertex", "• ركن"]];
-  h += `<div class="dsbox"><div class="dsrow"><b>بتختار إيه؟</b></div><div class="dsseg">${PM.map(([k, l]) => `<button class="dsb ${(ui.pickMode || "solid") === k ? "on" : ""}" data-pmode="${k}">${l}</button>`).join("")}</div>
-    <p class="hint">لوح = القطعة كلها · وش = وش واحد (إزاحة / سحب) · حرف = ضلع واحد تحرّكه أو تكتب طوله · ركن = نقطة واحدة تحرّكها أو تمسحها.</p></div>`;
-  h += `<div class="dsbox"><div class="dsrow"><b>الاختيار</b><label class="dschk"><input type="checkbox" data-ds="addsel" ${ui.addSel ? "checked" : ""}> + اختيار متعدد</label></div>
-    <div class="dsrow"><label class="dschk"><input type="checkbox" data-ds="copy" ${ui.copy ? "checked" : ""}> نسخة (مع التحريك واللف)</label></div>
-    <div class="dsrow"><label class="dschk"><input type="checkbox" data-ds="boxsel" ${ui.boxSel ? "checked" : ""}> ⬚ اختيار بالسحب (مربع)</label></div>
-    <div class="dsbtns"><button class="dsb" data-ds="selall">الكل</button><button class="dsb" data-ds="selnone">ولا حاجة</button><button class="dsb" data-ds="selmat" ${ui.sel.size ? "" : "disabled"}>نفس الخامة</button><button class="dsb" data-ds="selinv">اعكس الاختيار</button>
-      <button class="dsb" data-ds="copyc" ${ui.sel.size ? "" : "disabled"}>📋 نسخ</button><button class="dsb" data-ds="paste" ${ui.clip ? "" : "disabled"}>لزق</button><button class="dsb" data-ds="pastein" ${ui.clip ? "" : "disabled"}>لزق في نفس المكان</button></div></div>`;
+  // the picked piece's own box (its sizes) comes first — before the tools' boxes
   if (refs.length === 1 && solids.length === 1) {
     const s = solids[0], bs = G.boardSize(s), bx = G.solidBox(s);
     h += `<div class="dsbox"><input class="dsin" data-sp="name" value="${esc(s.name)}" aria-label="اسم اللوح">
       <div class="dsrow"><span>المقاس</span><b dir="ltr">${f1(bs.w)} × ${f1(bs.h)} × ${f1(s.depth)}</b></div>
       ${G.isBoard(s) ? "" : `<p class="hint">ده مجسّم مش لوح (سمكه أكتر من 6 سم) — بيظهر في الرسم بس ومش بيدخل القص.</p><button class="dsb primary" data-ds="towall">🧱 حوّله حيطة</button>`}
       <div class="dsgrid">
-        <label><span>السمك</span><input type="text" inputmode="decimal" data-numf data-sp="depth" value="${f1(s.depth)}"></label>
-        <label><span>س</span><input type="text" inputmode="decimal" data-numf data-sp="x" value="${f1(bx.x0)}"></label>
-        <label><span>ص</span><input type="text" inputmode="decimal" data-numf data-sp="y" value="${f1(bx.y0)}"></label>
-        <label><span>ع</span><input type="text" inputmode="decimal" data-numf data-sp="z" value="${f1(bx.z0)}"></label>
         ${G.plainRect(s) ? `<label><span>الطول</span><input type="text" inputmode="decimal" data-numf data-sp="w" value="${f1(G.bbox2(s.outer)[2] - G.bbox2(s.outer)[0])}"></label><label><span>العرض</span><input type="text" inputmode="decimal" data-numf data-sp="h" value="${f1(G.bbox2(s.outer)[3] - G.bbox2(s.outer)[1])}"></label>` : ""}
+        <label><span>السمك</span><input type="text" inputmode="decimal" data-numf data-sp="depth" value="${f1(s.depth)}"></label>
       </div>
+      <small class="hint">مكانه (أقرب ركن لنقطة الأصل):</small>
+      <div class="dsgrid dsxyz">${["x", "y", "z"].map((k, i) => `<label><span>${axTag(i)} ${AXW[i]}</span><input type="text" inputmode="decimal" data-numf data-sp="${k}" value="${f1([bx.x0, bx.y0, bx.z0][i])}"></label>`).join("")}</div>
       <label class="dsf"><span>الخامة</span><select data-sp="mat">${Object.keys(MATS).map((k) => `<option value="${k}" ${s.mat === k ? "selected" : ""}>${esc(matName(k))}</option>`).join("")}</select></label>
       <label class="dsf"><span>🎨 خامة بعينها للوح ده</span>${libSelect(s.lib || "")}</label>
       <div class="dsrow"><label class="dschk"><input type="checkbox" data-sp="band" ${s.band !== false ? "checked" : ""}> شريط حرف على كل الحروف</label></div>
@@ -2469,6 +2551,22 @@ function sideHtml() {
     const pa = ent(refs[0]);
     if (pa) h += `<div class="dsbox"><b>خط في الفراغ (مسار)</b><div class="dsrow"><span>الطول</span><b>${f1(G.pathLength(pa.pts, pa.closed))} سم</b></div><p class="hint">استعمله مسار لـ«اتبعني» (بروفايل، كرنيشة، مقبض).</p></div>`;
   }
+  h += faceHtml();
+  if (curCab()) h += cabHtml();
+  if (ui.tool === "tape") h += `<div class="dsbox"><b>📏 شريط القياس</b><p class="hint">دوس نقطتين: بيقيس المسافة بينهم (والفرق في العرض والطول والارتفاع) من غير ما يرسم حاجة.</p><label class="dschk"><input type="checkbox" data-ds="tapeguide" ${ui.tapeGuide ? "checked" : ""}> سيب خط مساعد مكان القياس</label></div>`;
+  if (ui.tool === "paint" && M.room?.pts?.length) h += `<div class="dsbox"><b>🎨 لون دهان الحيطان</b><p class="hint">دوس على أي حيطة تتدهن باللون ده (ويظهر في التصميم والريندر). للألواح: اختار الخامة تحت ودوس على اللوح.</p>${wallSwatches(ui.wallPaint || "#e9e2d0", "wpaint")}</div>`;
+  h += roomHtml();
+  const pal = Object.keys(MATS).map((k) => `<button class="dsmat ${ui.mat === k ? "on" : ""}" data-mat="${k}" title="${esc(matName(k))}"><i style="background:${matColor(k)}"></i><span>${esc(matName(k))}</span></button>`).join("");
+  h += edgeHtml() + vertexHtml();
+  h += drawHtml() + moveByHtml();
+  const PM = [["solid", "⬚ لوح"], ["face", "🟨 وش"], ["edge", "— حرف"], ["vertex", "• ركن"]];
+  h += `<div class="dsbox"><div class="dsrow"><b>بتختار إيه؟</b></div><div class="dsseg">${PM.map(([k, l]) => `<button class="dsb ${(ui.pickMode || "solid") === k ? "on" : ""}" data-pmode="${k}">${l}</button>`).join("")}</div>
+    <p class="hint">لوح = القطعة كلها · وش = وش واحد (إزاحة / سحب) · حرف = ضلع واحد تحرّكه أو تكتب طوله · ركن = نقطة واحدة تحرّكها أو تمسحها.</p></div>`;
+  h += `<div class="dsbox"><div class="dsrow"><b>الاختيار</b><label class="dschk"><input type="checkbox" data-ds="addsel" ${ui.addSel ? "checked" : ""}> + اختيار متعدد</label></div>
+    <div class="dsrow"><label class="dschk"><input type="checkbox" data-ds="copy" ${ui.copy ? "checked" : ""}> نسخة (مع التحريك واللف)</label></div>
+    <div class="dsrow"><label class="dschk"><input type="checkbox" data-ds="boxsel" ${ui.boxSel ? "checked" : ""}> ⬚ اختيار بالسحب (مربع)</label></div>
+    <div class="dsbtns"><button class="dsb" data-ds="selall">الكل</button><button class="dsb" data-ds="selnone">ولا حاجة</button><button class="dsb" data-ds="selmat" ${ui.sel.size ? "" : "disabled"}>نفس الخامة</button><button class="dsb" data-ds="selinv">اعكس الاختيار</button>
+      <button class="dsb" data-ds="copyc" ${ui.sel.size ? "" : "disabled"}>📋 نسخ</button><button class="dsb" data-ds="paste" ${ui.clip ? "" : "disabled"}>لزق</button><button class="dsb" data-ds="pastein" ${ui.clip ? "" : "disabled"}>لزق في نفس المكان</button></div></div>`;
   if (ui.sel.size) {
     const grp = [...ui.sel].find((r) => r.startsWith("G:")), g = grp && M.groups.find((x) => "G:" + x.id === grp);
     h += `<div class="dsbox">${g ? `<input class="dsin" data-gp="${g.id}" value="${esc(g.name)}" aria-label="اسم المجموعة">` : ""}<div class="dsrow"><span>${refs.length} حاجة مختارة</span></div>
@@ -2546,9 +2644,11 @@ function onClick(e) {
     case "done": if (!M.solids.length && !M.sweeps.length && M.sketches.some((k) => k.closed)) flatSheet(); else finishDone(); break;
     case "flatmake": el.querySelector(".dsleave")?.remove(); flatMake(); finishDone(); break;
     case "flatdone": el.querySelector(".dsleave")?.remove(); finishDone(); break;
-    case "cancel": if (!changed()) { ctx.onCancel?.(); close(); } else leaveSheet(); break;
+    case "cancel": if (!changed()) { if (!ui.draftAsk) draftClear(); ctx.onCancel?.(); close(); } else leaveSheet(); break;
     case "leavesave": el.querySelector(".dsleave")?.remove(); finishDone(); break;
-    case "leavedrop": el.querySelector(".dsleave")?.remove(); ctx.onCancel?.(); close(); break;
+    case "leavedrop": el.querySelector(".dsleave")?.remove(); draftClear(); ctx.onCancel?.(); close(); break;
+    case "draftgo": draftUse(); break;
+    case "draftdrop": el.querySelector(".dsdraftask")?.remove(); ui.draftAsk = null; draftClear(); break;
     case "leaveback": el.querySelector(".dsleave")?.remove(); break;
     case "undo": undo(); break;
     case "redo": redo(); break;
@@ -2611,6 +2711,7 @@ function leaveSheet() {
   el.appendChild(p);
 }
 function finishDone() {
+  draftClear();
   const m = G.clone(M), room = m.room || null; delete m.room;
   ctx.onDone?.(m, mname, { room, roomChanged: JSON.stringify(room) !== startRoom });
   close();
@@ -2638,7 +2739,7 @@ function onChange(e) {
   if (t.dataset.ds === "tapeguide") { ui.tapeGuide = t.checked; return; }
   if (t.dataset.ds === "addsel") { ui.addSel = t.checked; return; }
   if (t.dataset.ds === "copy") { ui.copy = t.checked; return; }
-  if (t.id === "dsName") { mname = t.value.trim() || mname; return; }
+  if (t.id === "dsName") { mname = t.value.trim() || mname; draftSave(); return; }
   if (d.gp) { edit(() => { const g = M.groups.find((x) => x.id === d.gp); if (g) g.name = t.value.trim() || g.name; }); return; }
   if (d.wp) { const w = ent(selRefs()[0]); if (w) edit(() => { w[d.wp] = t.value; }); return; }
   if (d.sp) {
@@ -2918,7 +3019,7 @@ function moreSelHtml(solids) {
   let h = `<details class="dssub"><summary>▦ مصفوفة (نسخ منتظمة)</summary>
     <div class="dsgrid"><label><span>العدد</span><input type="text" inputmode="decimal" data-numf id="arN" value="${a.n}"></label><label><span>المسافة بين كل نسخة</span><input type="text" inputmode="decimal" data-numf id="arD" value="${a.d}"></label><label><span>الاتجاه</span>${axSel("arAx", a.ax)}</label></div>
     <div class="dsbtns"><button class="dsb" data-ds="arr">▦ اعمل المصفوفة</button></div>
-    <div class="dsgrid"><label><span>عدد دائري</span><input type="text" inputmode="decimal" data-numf id="prN" value="${a.pn}"></label><label><span>الزاوية الكلية°</span><input type="text" inputmode="decimal" data-numf id="prA" value="${a.pa}"></label><label><span>المركز س,ص</span><input type="text" id="prC" value="${a.px},${a.py}"></label></div>
+    <div class="dsgrid"><label><span>عدد دائري</span><input type="text" inputmode="decimal" data-numf id="prN" value="${a.pn}"></label><label><span>الزاوية الكلية°</span><input type="text" inputmode="decimal" data-numf id="prA" value="${a.pa}"></label><label><span>المركز X,Y</span><input type="text" id="prC" value="${a.px},${a.py}"></label></div>
     <div class="dsbtns"><button class="dsb" data-ds="parr">◌ مصفوفة دائرية</button></div></details>`;
   if (selRefs().length > 1) h += `<details class="dssub"><summary>⇹ رصّ ووزّع</summary><div class="dsrow"><span>على</span>${axSel("dsAlAx", ui.alignAx)}</div>
     <div class="dsbtns"><button class="dsb" data-align="min">⇤ أول</button><button class="dsb" data-align="mid">⇹ النص</button><button class="dsb" data-align="max">⇥ آخر</button><button class="dsb" data-align="dist">↔ وزّع بالتساوي</button><button class="dsb" data-align="stack">▤ ورا بعض لازقين</button></div></details>`;
@@ -3558,6 +3659,7 @@ function roomAction(kind) {
   if (kind === "clear") { edit(() => { M.room = null; ui.rsel = null; }); setMsg("اتمسحت الحيطان — ↶ لو عايز ترجّعها"); return; }
   if (kind === "rect") {
     const w = +String(el.querySelector("#rqW")?.value).replace(/[^\d.]/g, "") || 400, d = +String(el.querySelector("#rqD")?.value).replace(/[^\d.]/g, "") || 350;
+    const bad = Room.presetCheck?.("rect", { w, d }); if (bad) { setMsg(bad); return; }
     edit(() => { M.room = { ...Room.presetRoom("rect", { w, d, t: ui.wallT, h: ui.wallH }), points: [], columns: [] }; });
     zoomExtents(); return;
   }

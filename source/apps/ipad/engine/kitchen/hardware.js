@@ -16,6 +16,34 @@ export function explicitHingeCount(params) {
 export function hingesForDoor(lenCm, params) {
     return explicitHingeCount(params) || hingeCount(lenCm);
 }
+/** NOVERA concealed soft-close tandem runners come in 30 / 35 / 40 / 45 / 50 / 55 cm — the longest that fits the box */
+export const RUNNER_LENGTHS = [30, 35, 40, 45, 50, 55];
+export function runnerLength(depthCm) {
+    return [...RUNNER_LENGTHS].reverse().find((L) => L <= depthCm + 0.5) ?? RUNNER_LENGTHS[0];
+}
+/** the hardware line of a runner pair (same wording as the dressing engine's bom) */
+export function runnerName(L) {
+    return `مجرى درج ${L} سم (زوج)`;
+}
+export const RUNNER_RE = /^مجرى درج (\d+) سم \(زوج\)$/;
+/** a drawer group's box depth: its deepest side board («… جنب …») */
+function drawerBoxDepthCm(e) {
+    let best = 0;
+    try {
+        for (const c of e.definition.entities.list)
+            if ((c instanceof Group || c instanceof ComponentInstance) && /جنب/.test(c.name) && c.name !== e.name)
+                best = Math.max(best, localDimensionsCm(c).depth);
+    }
+    catch (_e) { }
+    return best;
+}
+/** no box built (drawer boxes off): the box the unit would take — drawer_box_depth, else the inside depth less 8 cm */
+function fallbackBoxDepth(params) {
+    const p = params ?? {};
+    const bd = Number(p["drawer_box_depth"]) || 0;
+    const inside = (Number(p["depth"]) || 58) - 8;
+    return bd > 0 ? Math.min(bd, inside) : inside;
+}
 export function emptyStats() {
     return { doors: 0, hinges: 0, lift_arms: 0, drawers: 0, assembly_sets: 0, shelves: 0, dividers: 0, legs: 0, wall_hangers: 0 };
 }
@@ -42,6 +70,10 @@ export function scanEntities(ctx, entities, stats, params = null) {
             }
             else if (e.getAttribute("KUD", "is_drawer", false)) {
                 stats.drawers += 1;
+                // NOVERA: the runner pair is bought by length — the longest standard one that fits the box (30–55)
+                const L = runnerLength(drawerBoxDepthCm(e) || fallbackBoxDepth(params));
+                stats.runners = stats.runners ?? {};
+                stats.runners[L] = (stats.runners[L] ?? 0) + 1;
             }
             const name = e.name;
             if (name.includes("ثقب تجميع"))
@@ -100,7 +132,11 @@ export function hardwareRows(stats) {
     };
     add("hinges", "مفصلات");
     add("lift_arms", "ذراع رفع قلاب (طقم)");
-    add("drawers", "أزواج سكك أدراج");
+    if (stats.drawers > 0) {
+        const per = stats.runners ?? { [runnerLength(45)]: stats.drawers };
+        for (const L of Object.keys(per).map(Number).sort((a, b) => a - b))
+            rows.push({ label: runnerName(L), qty: per[L] });
+    }
     add("assembly_sets", "أطقم أليتا/كام لوك");
     add("shelves", "أطقم فرشات رف");
     add("legs", "أرجل وحدات سفلية");

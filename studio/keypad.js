@@ -122,6 +122,8 @@ function commit(t = cur) {
   // overwrite every multi-selected unit with it)
   const changed = dirty || (t === cur && t.value !== startVal);
   if (!changed) return;
+  // v124: «60+7.5» typed with the + / − keys is worked out before the app gets it
+  if (/^-?\d*\.?\d+([+\-]\d*\.?\d+)+$/.test(String(t.value))) { const m = String(t.value).match(/-?\d*\.?\d+|[+\-]\d*\.?\d+/g) || []; t.value = String(Math.round(m.reduce((a, x) => a + parseFloat(x), 0) * 100) / 100); if (t === cur) sync(); }
   if (dirty && !live(t)) t.dispatchEvent(new Event("input", { bubbles: true }));
   dirty = false;
   if (t === cur) startVal = t.value;
@@ -194,6 +196,8 @@ function press(k, b) {
     let v = String(cur.value ?? ""); if (fresh) { v = ""; fresh = false; }
     put(k === "minus" ? (v.startsWith("-") ? v : "-" + v) : v.replace(/^-/, "")); return;
   }
+  // v124: after typing a number, + / − write an addition («60+7.5» = 67.5); on a number not touched yet they step it by 1
+  if ((k === "plus" || k === "minus") && !fresh && dirty && /\d$/.test(String(cur.value ?? ""))) { put(String(cur.value) + (k === "plus" ? "+" : "-")); return; }
   if (k === "plus" || k === "minus") { step(k === "plus" ? 1 : -1); return; }
   if (k === "neg") { let v = String(cur.value ?? ""); if (fresh) { v = ""; fresh = false; } put(v.startsWith("-") ? v.slice(1) : "-" + v); return; }
   if (k === "," || k === "x" || k === "/" || k === "s") { let v = String(cur.value ?? ""); if (fresh && k !== ",") { v = ""; } fresh = false; put(v + k); return; }

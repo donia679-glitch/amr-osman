@@ -39,6 +39,7 @@ export const DEFAULTS = {
     "ptrap_width": 15.0,
     "ptrap_x_offset": 20.0,
     "ptrap_depth": 10.0,
+    "ptrap_back_height": 15.0, // NOVERA: the back panel's notch over the P-trap opening, cm above the bottom board
     "countertop_thickness": 3.8,
     "include_sink_cutout": false,
     "sink_cutout_width": 50.0,
@@ -127,6 +128,9 @@ export const DEFAULTS = {
     "wardrobe_zone3_count": 2,
     "wardrobe_zone3_positions": "",
     "wardrobe_column_count": 1,
+    "wardrobe_col1_width": 0.0, // NOVERA: inside width of each column (cm); 0 = shares the rest equally
+    "wardrobe_col2_width": 0.0,
+    "wardrobe_col3_width": 0.0,
     "wardrobe_col2_zone_count": 1,
     "wardrobe_col2_zone1_type": "shelves_double",
     "wardrobe_col2_zone1_height": 90.0,
@@ -171,6 +175,11 @@ export const DEFAULTS = {
     "led_panel_below": false,
     "led_panel_setback": 0.0,
     "led_panel_front_color": true,
+    // v124 (Amr): what separates the wall units from the units up to the ceiling — board | recess | profile | shelf
+    "led_sep_type": "board",
+    "led_sep_height": 6.0,
+    "led_sep_setback": 5.0,
+    "led_sep_projection": 3.0,
     "led_marker_offset": 3.0,
     "led_marker_width": 1.5,
     "include_drawer_boxes": false,
@@ -227,7 +236,8 @@ export const DEFAULTS = {
     "include_assembly_holes": false,
     "include_hinge_cups": false,
     "hinge_cup_diameter": 3.5,
-    "hinge_cup_edge_distance": 2.2,
+    "hinge_cup_edge_distance": 2.2, // cup centre from the door's hinge EDGE
+    "hinge_cup_end_distance": 10.0, // NOVERA: first / last cup centre from the door's top / bottom END (short doors clamp, carcass hingeEndIn)
     "hinge_cup_count": "", // NOVERA: empty = by the door length (the shared hinge rule), a number = the user's own count
     "assembly_hole_diameter": 0.8,
     "assembly_edge_distance": 1.0,

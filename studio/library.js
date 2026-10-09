@@ -10,8 +10,8 @@ const ACC = (type, label, desc, o) => ({ label, desc, group: "مطابخ — إ�
 export const KITCHEN = {
   // v190: sliding (جرّار) fronts
   k_slide_base100: { label: "سفلية سحّاب 100", desc: "ضلفتين جرّار على سكتين، رف.", group: "سحّاب (جرّار)", params: { width: 100, door_type: "sliding", sliding_panel_count: 2, shelf_count: 1 } },
-  k_slide_wall120: { label: "علوية سحّاب 120", desc: "ضلفتين جرّار علوية، رفين.", group: "سحّاب (جرّار)", params: { unit_type: "wall", width: 120, height: 70, depth: 32, include_toe_kick: false, door_type: "sliding", sliding_panel_count: 2, shelf_count: 2 } },
-  k_slide_tall150: { label: "دولاب تخزين سحّاب 150", desc: "طويل 220 بـ3 ألواح جرّار.", group: "سحّاب (جرّار)", params: { unit_type: "tall", width: 150, height: 220, depth: 58, door_type: "sliding", sliding_panel_count: 3, shelf_count: 4 } },
+  k_slide_wall120: { label: "علوية سحّاب 120", desc: "ضلفتين جرّار علوية.", group: "سحّاب (جرّار)", params: { unit_type: "wall", width: 120, height: 70, depth: 32, include_toe_kick: false, door_type: "sliding", sliding_panel_count: 2, shelf_count: 2 } },
+  k_slide_tall150: { label: "دولاب تخزين سحّاب 150", desc: "طويل بـ3 ألواح جرّار.", group: "سحّاب (جرّار)", params: { unit_type: "tall", width: 150, height: 220, depth: 58, door_type: "sliding", sliding_panel_count: 3, shelf_count: 4 } },
   k_slide_dressing160: { label: "دولاب دريسنج سحّاب 160", desc: "أدراج تحت وشماعة فوق، ضلفتين جرّار.", group: "سحّاب (جرّار)", params: { unit_category: "wardrobe", unit_type: "tall", width: 160, height: 240, depth: 62, door_style: "sliding", sliding_panel_count: 2, wardrobe_zone_count: 2, wardrobe_zone1_type: "drawers", wardrobe_zone1_height: 70, wardrobe_zone1_count: 3, wardrobe_zone2_type: "rail_open" } },
   k_slide_bed240: { label: "دولاب نوم سحّاب 240", desc: "4 ألواح جرّار، شماعات وأرفف.", group: "سحّاب (جرّار)", params: { unit_category: "bedroom_wardrobe", unit_type: "tall", width: 240, height: 260, depth: 64, door_style: "sliding", sliding_panel_count: 4, wardrobe_column_count: 2, wardrobe_zone_count: 2, wardrobe_zone1_type: "shelves_open", wardrobe_zone1_height: 110, wardrobe_zone1_count: 3, wardrobe_zone2_type: "rail_open", wardrobe_col2_zone_count: 1, wardrobe_col2_zone1_type: "rail_open" } },
   // base
@@ -26,8 +26,8 @@ export const KITCHEN = {
   k_base_open30: { label: "رفوف مفتوحة سفلية 30", desc: "نهاية كونتر برفين مفتوحين.", group: "مطابخ — سفلي", params: { unit_category: "open_shelf", width: 30, shelf_count: 2 } },
   k_base_led_drawers: { label: "3 أدراج بليد تحت 60", desc: "أدراج بصناديق وليد في السكلو.", group: "مطابخ — سفلي", params: { door_type: "drawers", drawer_count: 3, include_drawer_boxes: true, include_shelves: false, include_led_marker: true } },
   // wall
-  k_wall1_40: { label: "علوية ضلفة 40", desc: "ضلفة واحدة ورفين.", group: "مطابخ — علوي", params: { ...W, width: 40, door_type: "single", shelf_count: 2 } },
-  k_wall_hood90: { label: "علوية فوق الشفاط 90", desc: "قلاب دبل، ارتفاع 50.", group: "مطابخ — علوي", params: { ...W, width: 90, height: 50, wall_mount_height: 160, door_type: "flip_up_double", include_shelves: false } }, // top in line with the 70 cm wall units (140 + 70)
+  k_wall1_40: { label: "علوية ضلفة 40", desc: "ضلفة واحدة ورف.", group: "مطابخ — علوي", params: { ...W, width: 40, door_type: "single", shelf_count: 2 } },
+  k_wall_hood90: { label: "علوية فوق الشفاط 90", desc: "قلاب دبل فوق الشفاط، قمتها مع باقي العلوي.", group: "مطابخ — علوي", params: { ...W, width: 90, height: 65, wall_mount_height: 160, door_type: "flip_up_double", include_shelves: false } }, // top in line with the 70 cm wall units (140 + 70)
   k_wall_tall80: { label: "علوية عالية لحد السقف 80", desc: "ارتفاع 90، 3 أرفف.", group: "مطابخ — علوي", params: { ...W, width: 80, height: 90, shelf_count: 3 } },
   k_wall_flip_dbl: { label: "علوية قلاب دبل 80", desc: "ضلفتين قلاب جنب بعض، كل واحدة بذراع رفع.", group: "مطابخ — علوي", params: { ...W, width: 80, height: 80, door_type: "flip_up_double", include_shelves: false } },
   k_wall_glass1: { label: "علوية ضلفة زجاج 40", desc: "زجاج بفريم ألومنيوم.", group: "مطابخ — علوي", params: { ...W, width: 40, door_type: "single_glass_metal", shelf_count: 2 } },
@@ -36,7 +36,7 @@ export const KITCHEN = {
   k_wall_open60: { label: "رفوف مفتوحة علوية 60", desc: "رفين مفتوحين للبهارات والديكور.", group: "مطابخ — علوي", params: { ...W, unit_category: "open_shelf", width: 60, shelf_count: 2 } },
   k_wall_led: { label: "علوية ضلفتين بليد تحت 80", desc: "ليد تحت الوحدة على الكونتر.", group: "مطابخ — علوي", params: { ...W, width: 80, shelf_count: 2, include_led_marker: true } },
   // tall
-  k_pantry60: { label: "دولاب تموين 60", desc: "طويل 220، ضلفتين و5 أرفف.", group: "مطابخ — طويل", params: { ...T, width: 60, door_type: "double", shelf_count: 5 } },
+  k_pantry60: { label: "دولاب تموين 60", desc: "طويل، ضلفتين و5 أرفف.", group: "مطابخ — طويل", params: { ...T, width: 60, door_type: "double", shelf_count: 5 } },
   k_pantry40: { label: "دولاب تموين 40", desc: "ضلفة واحدة و5 أرفف.", group: "مطابخ — طويل", params: { ...T, width: 40, door_type: "single", shelf_count: 5 } },
   k_pantry_drawers: { label: "تموين: أدراج تحت وأرفف فوق", desc: "3 أدراج تحت، وضلفتين بأرفف فوق.", group: "مطابخ — طويل", params: { ...T, unit_category: "wardrobe", width: 60, wardrobe_zone_count: 2, wardrobe_zone1_type: "drawers", wardrobe_zone1_height: 75, wardrobe_zone1_count: 3, wardrobe_zone2_type: "shelves_double", wardrobe_zone2_count: 4 } },
   k_oven_only: { label: "عمود فرن بس", desc: "أدراج تحت، فرن، وضلف فوق.", group: "مطابخ — طويل", params: { ...T, unit_category: "oven", include_microwave: false, oven_bottom_front_type: "drawers", drawer_count: 2, oven_cavity_bottom_offset: 70 } },
@@ -85,7 +85,7 @@ export const KITCHEN = {
   k_x_garage90: { label: "جراج أجهزة على الكونتر 90", desc: "وحدة قاعدة على الكونتر بقلاب: الكاتل والتوستر والخلاط مستخبيين.", group: "مطابخ — علوي", params: { ...W, width: 90, height: 50, depth: 40, wall_mount_height: 86, door_type: "flip_up", include_shelves: false, include_led_marker: true, unit_label: "جراج أجهزة" } },
   k_x_coffee90: { label: "عمود ركن قهوة 90", desc: "3 أدراج تحت، نيش مفتوح لماكينة القهوة، وضلفتين فوق.", group: "مطابخ — طويل", params: { ...T, unit_category: "wardrobe", width: 90, wardrobe_zone_count: 3, wardrobe_zone1_type: "drawers", wardrobe_zone1_height: 85, wardrobe_zone1_count: 3, wardrobe_zone2_type: "shelves_open", wardrobe_zone2_height: 55, wardrobe_zone2_count: 0, wardrobe_zone3_type: "shelves_double", wardrobe_zone3_count: 2 } },
   k_x_pantry90_cols: { label: "تموين 90 عمودين", desc: "عمود أرفف بضلفتين، وعمود 4 أدراج تحت وأرفف فوق.", group: "مطابخ — طويل", params: { ...T, unit_category: "wardrobe", width: 90, wardrobe_column_count: 2, wardrobe_zone_count: 1, wardrobe_zone1_type: "shelves_double", wardrobe_zone1_count: 5, wardrobe_col2_zone_count: 2, wardrobe_col2_zone1_type: "drawers", wardrobe_col2_zone1_height: 90, wardrobe_col2_zone1_count: 4, wardrobe_col2_zone2_type: "shelves_double", wardrobe_col2_zone2_count: 3 } },
-  k_x_corner_pantry100: { label: "تموين ركنة L طويل 100×100", desc: "دولاب زاوية لحد 220 بأرفف L متصلة — بيستغل الركنة كلها.", group: "مطابخ — زوايا", params: { unit_category: "corner", corner_style: "l_shape", ...T, corner_leg1_length: 100, corner_leg2_length: 100, shelf_count: 5 } },
+  k_x_corner_pantry100: { label: "تموين ركنة L طويل 100×100", desc: "دولاب زاوية طويل بأرفف L متصلة — بيستغل الركنة كلها.", group: "مطابخ — زوايا", params: { unit_category: "corner", corner_style: "l_shape", ...T, corner_leg1_length: 100, corner_leg2_length: 100, shelf_count: 5 } },
   k_x_corner_vitrine_tall: { label: "فاترينة ركنة طويلة 90×90", desc: "عمود زجاج في الركنة لحد 200: ضلفة قدام وضلفة جنب بفريم، وأرفف للعرض.", group: "مطابخ — زوايا", params: { unit_category: "corner_glass_display", unit_type: "tall", height: 200, corner_depth: 40, corner_leg1_length: 90, corner_leg2_length: 90 } },
   k_x_corner_notch90: { label: "زاوية L 90 بقصة عمود", desc: "الركنة مقصوصة 15 سم حوالين العمود اللي في الحيطة.", group: "مطابخ — زوايا", params: { unit_category: "corner", corner_style: "l_shape", corner_notch_size: 15 } },
   k_x_spice15: { label: "بول أوت بهارات 15", desc: "ضيق جنب البوتجاز: 4 صواني بحافة على لوح رأسي.", group: "مطابخ — ترولي ومنظمات", params: { unit_category: "pullout", width: 15, include_shelves: false, include_drawer_boxes: true, pullout_tray_count: 4, pullout_tray_lip: 6, drawer_runner: "bottom", drawer_box_side_clearance: 0.6 } },
@@ -362,7 +362,7 @@ export const SMART = {
     { k: "k_spices40", at: 0 }, { k: "k_drawer_doors", at: 40 },
     { k: "k_wall_glass1", at: 0 }, { k: "k_wall_open60", at: 40, p: { width: 40, include_led_marker: true } }, { k: "k_wall_glass1", at: 80 },
   ] },
-  s_tall_wall: { label: "حيطة أجهزة: تلاجة + فرن + تموين", desc: "تجويف تلاجة · عمود فرن وميكروويف · تموين 60 · كارجو 30 — كلهم 220.", tier: "std", items: [
+  s_tall_wall: { label: "حيطة أجهزة: تلاجة + فرن + تموين", desc: "تجويف تلاجة · عمود فرن وميكروويف · تموين 60 · كارجو 30 — كلهم على خط العلوي.", tier: "std", items: [
     { k: "k_fridge", at: 0, p: { width: 70 } }, { k: "k_oven", at: 70, p: { width: 60 } }, { k: "k_pantry60", at: 130 }, { k: "k_cargo30", at: 190 },
   ] },
   s_oven_micro: { label: "عمودين فرن وميكروويف + كارجو", desc: "عمود فرن · عمود ميكروويف وتخزين · ترولي طويل 40.", tier: "std", items: [
@@ -379,7 +379,7 @@ export const SMART = {
     { k: "k_x_sink_kick80", at: 0 }, { k: "k_x_spice15", at: 80 }, { k: "k_hob90", at: 95 }, { k: "k_drawers2_80", at: 185, p: { width: 85 } }, { k: "k_base_tray30", at: 270 },
     { k: "k_plates80", at: 0 }, { k: "k_wall_open60", at: 80, p: { width: 15 } }, { k: "k_wall_hood90", at: 95 }, { k: "k_x_garage90", at: 185, p: { width: 85 } }, { k: "k_x_wall_vitrine80", at: 185, p: { width: 85 } }, { k: "k_wall1_40", at: 270, p: { width: 30 } },
   ] },
-  s_x_coffee_pantry210: { label: "حيطة قهوة وتموين 210", desc: "عمود ركن قهوة · تموين عمودين أدراج وأرفف · كارجو 30 — كلهم 220.", tier: "lux", items: [
+  s_x_coffee_pantry210: { label: "حيطة قهوة وتموين 210", desc: "عمود ركن قهوة · تموين عمودين أدراج وأرفف · كارجو 30 — كلهم على خط العلوي.", tier: "lux", items: [
     { k: "k_x_coffee90", at: 0 }, { k: "k_x_pantry90_cols", at: 90 }, { k: "k_cargo30", at: 180 },
   ] },
   s_x_sink_zone200: { label: "منطقة حوض 200 بدرج وزرة", desc: "حوض بدرج وزرة · سلة زبالة سحب · أدراج متقسمة — وفوق: مصفاة وعلوية بنيش ليد.", tier: "std", items: [

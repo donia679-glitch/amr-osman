@@ -7,10 +7,25 @@ export const WALL_T = 12;
 export const WALL_H = 280;
 
 // ------------------------------------------------------------------ presets
-/** interior dimensions → a room (clockwise on screen, so the interior is on each wall's right) */
+/** sizes a preset room can't be built with (a cut-out as big as the room, a negative or tiny wall) → the reason
+ *  to show («المقاس ده مينفعش: …»), else "" */
+export function presetCheck(kind, d = {}) {
+  const P = PRESETS[kind] || PRESETS.rect, lab = (k) => P.fields.find((f) => f[0] === k)?.[1] || k;
+  const v = (k, def) => (d[k] == null || d[k] === "" ? def : +d[k]);
+  for (const [k, , def] of P.fields) { const x = v(k, def); if (!Number.isFinite(x) || x < 50) return `المقاس ده مينفعش: «${lab(k)}» لازم يكون 50 سم أو أكتر.`; }
+  if (kind === "lroom") {
+    const W = v("w", 500), D = v("d", 450), W2 = v("w2", 250), D2 = v("d2", 250);
+    if (W2 > W - 20) return `المقاس ده مينفعش: «${lab("w2")}» (${W2}) لازم يكون أقل من «${lab("w")}» (${W}) بـ 20 سم على الأقل.`;
+    if (D2 > D - 20) return `المقاس ده مينفعش: «${lab("d2")}» (${D2}) لازم يكون أقل من «${lab("d")}» (${D}) بـ 20 سم على الأقل.`;
+  }
+  return "";
+}
+/** interior dimensions → a room (clockwise on screen, so the interior is on each wall's right).
+ *  Sizes are kept buildable: walls at least 50, the L's cut-out inside the room (check presetCheck first to tell the user). */
 export function presetRoom(kind, d = {}) {
   const t = +d.t || WALL_T, h = +d.h || WALL_H;
-  const W = +d.w || 400, D = +d.d || 300, W2 = +d.w2 || 200, D2 = +d.d2 || 150;
+  const pos = (x, def) => (Number.isFinite(+x) && +x > 0 ? Math.max(50, +x) : def);
+  const W = pos(d.w, 400), D = pos(d.d, 300), W2 = Math.min(pos(d.w2, 200), W - 20), D2 = Math.min(pos(d.d2, 150), D - 20);
   let pts, closed = true;
   if (kind === "line") { pts = [[0, 0], [W, 0]]; closed = false; }
   else if (kind === "corner") { pts = [[0, D], [0, 0], [W, 0]]; closed = false; }
@@ -220,6 +235,17 @@ export function arrange(room, items) {
       const pose = poseOnWall(byId.get(p.wall), +p.s || 0, it.box);
       out.set(it.id, pose);
       block(p.wall, it.row, pose.s, pose.s + it.box.x1 - it.box.x0);
+      // v124: a unit pinned on one wall near a corner also takes its place on the wall that meets it (a fridge / tall unit
+      // in the corner of wall 2 — the next unit added on wall 3 must not land inside it)
+      const fp = footprint(pose, it.box);
+      for (const seg of segs) {
+        if (seg.id === p.wall) continue;
+        const { S, e } = runStart(seg);
+        const off = fp.map((q) => dot(sub(q, seg.A), seg.n)), along = fp.map((q) => dot(sub(q, S), e));
+        if (Math.min(...off) > 25 || Math.max(...off) < -1) continue;
+        const a = Math.max(0, Math.min(...along)), b = Math.min(seg.L, Math.max(...along));
+        if (b - a > 1) block(seg.id, it.row === "free" ? "lower" : it.row, a, b);
+      }
     } else if (p.x != null) {
       const pose = { x: +p.x, z: +p.z, rot: +p.rot || 0, wall: null };
       out.set(it.id, pose);

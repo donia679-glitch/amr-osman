@@ -236,11 +236,53 @@ export class TemplateBuilder {
         }
         if (!this.d.parts.length)
             return;
+        this.freeHardware();
         const pts = this.d.parts;
         const span = (a) => Math.max(...pts.map((pt) => pt.box[`${a}1`])) - Math.min(...pts.map((pt) => pt.box[`${a}0`]));
         this.p.width = rround(span("x"), 2);
         this.p.depth = rround(span("y"), 2);
         this.p.height = rround(span("z"), 2);
+    }
+    /** NOVERA: a cabinet drawn in the studio (template "free") — its doors (role door with a hinge side) get soft-close 35 mm
+     *  hinges by their height (a flap by its width + a lift arm), its drawers (groups «…:drawer N») a concealed tandem runner pair
+     *  as long as the box allows (30–55) — counted for the summary too (it only knew door / drawer groups) */
+    freeHardware() {
+        const parts = this.d.parts;
+        const isDrw = (g) => /:drawer \d+$/.test(String(g ?? ""));
+        let doors = 0;
+        for (const pt of parts) {
+            if (pt.role !== "door" || !pt.door_label || isDrw(pt.group))
+                continue;
+            const side = pt.door_label.hinge_side;
+            if (!["left", "right", "top"].includes(side))
+                continue;
+            const flip = side === "top";
+            const len = flip ? pt.box.x1 - pt.box.x0 : pt.box.z1 - pt.box.z0;
+            doors += 1;
+            const pos = this.hingePositions(len);
+            const n = pos ? pos.length : Catalog.hingeCount(len);
+            if (pos && !(pt.door_label.hinge_ratios ?? []).length)
+                pt.door_label = { ...pt.door_label, hinge_ratios: pos.map((p) => rround(p / len, 4)) };
+            inc(this.d.hardware, flip ? "مفصلة قلاب" : "مفصلة سوفت كلوز 35 مم", n);
+            if (flip)
+                inc(this.d.hardware, "ذراع رفع قلاب (طقم)", 1);
+        }
+        const groups = new Map();
+        for (const pt of parts)
+            if (isDrw(pt.group))
+                groups.set(pt.group, [...(groups.get(pt.group) ?? []), pt]);
+        for (const [, list] of groups) {
+            const box = list.filter((pt) => pt.role !== "door");
+            const ys = (box.length ? box : list).flatMap((pt) => [pt.box.y0, pt.box.y1]);
+            const depth = Math.max(...ys) - Math.min(...ys);
+            const slide = [55, 50, 45, 40, 35, 30].find((L) => L <= depth + 0.5);
+            if (!slide) {
+                this.d.warnings.push(`${list[0].name}: الدرج عمقه ${fmt(depth)} سم — أقصر مجرى 30 سم.`);
+                continue;
+            }
+            inc(this.d.hardware, `مجرى تاندم مخفي سوفت كلوز ${slide} سم (زوج)`, 1);
+        }
+        this.d.free_counts = { doors, drawers: groups.size };
     }
     // ================================================================ fronts
     buildFronts(inner, fz0, fz1) {

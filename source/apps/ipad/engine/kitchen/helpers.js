@@ -33,6 +33,7 @@ export class LabelData {
             assembly_holes: o.assembly_holes ?? [],
             material: o.material ?? null,
             note: o.note ?? null,
+            band_len: o.band_len ?? null, // NOVERA: banding length (cm) when the piece is not a plain rectangle (an L slab)
         });
     }
     last(unitId, name) {
@@ -130,6 +131,11 @@ export function dedupePolygonPoints(points) {
 export function createFlatSlab(ctx, parent, name, pointsXy, z0, z1, color = null) {
     const pts = dedupePolygonPoints(pointsXy.map((p) => new Point3d(p.x, p.y, z0)));
     return extrude(ctx, parent, name, pts, "z", z1 - z0, color);
+}
+/** a board standing in an x-z plane: its outline [[x, z]…] at y0, extruded along y to y1 (a back panel with a notch) */
+export function createSlabAlongY(ctx, parent, name, y0, y1, xz, color = null) {
+    const pts = dedupePolygonPoints(xz.map(([x, z]) => new Point3d(x, y0, z)));
+    return extrude(ctx, parent, name, pts, "y", y1 - y0, color);
 }
 export function createSlabAlongX(ctx, parent, name, x0, x1, yz, color = null) {
     const pts = dedupePolygonPoints(yz.map(([y, z]) => new Point3d(x0, y, z)));

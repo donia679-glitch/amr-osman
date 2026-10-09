@@ -4,7 +4,7 @@ import { rround } from "../core/rubyMath.js";
 import * as Catalog from "../handles/catalog.js";
 import { recessFor } from "./config.js";
 import { COLORS as KCOLORS } from "./config.js";
-import { assignLayer, createBox, createFlatSlab, createHoleMarkerY, createSlabAlongX, NO_BAND } from "./helpers.js";
+import { assignLayer, createBox, createFlatSlab, createHoleMarker, createHoleMarkerY, createSlabAlongX, NO_BAND } from "./helpers.js";
 import { TAGS } from "./carcass.js";
 import { fs, toF, toS } from "./rb.js";
 import { BoundingBox, cm, Point3d, Transformation, Vector3d } from "./su/geom.js";
@@ -85,9 +85,25 @@ function collectFronts(entities, tr, out) {
             continue;
         const t = tr.mul(e.transformation);
         if (attr(e, "is_door", false)) {
-            if (!(toF(attr(e, "normal_y", 0)) < -0.5))
+            // NOVERA: a corner door facing along another axis (the L corner's two doors face +y / +x) is handled in a frame turned
+            // so that it faces −y like every other front (`rot`); angled (diagonal) doors still get none
+            const nw = tr.applyVector([toF(attr(e, "normal_x", 0)), toF(attr(e, "normal_y", 0)), toF(attr(e, "normal_z", 0))]);
+            const nl = Math.hypot(nw.x, nw.y, nw.z) || 1;
+            let V = null;
+            if (!(nw.y / nl < -0.5)) {
+                if (!(Math.abs(nw.x / nl) > 0.9 || nw.y / nl > 0.9))
+                    continue;
+                V = Transformation.rotation([0, 0, 0], [0, 0, 1], -Math.PI / 2 - Math.atan2(nw.y, nw.x));
+            }
+            const ct = V ? V.mul(tr) : tr;
+            const hp = ct.applyPoint([toF(attr(e, "hinge_x", 0)), toF(attr(e, "hinge_y", 0)), 0]), fp = ct.applyPoint([toF(attr(e, "free_x", 0)), toF(attr(e, "free_y", 0)), 0]);
+            const hinge = Math.abs(toF(attr(e, "axis_x", 0))) > 0.5 ? "top" : (V ? hp.x < fp.x : toF(attr(e, "hinge_x", 0)) < toF(attr(e, "free_x", 0))) ? "left" : "right";
+            const t0 = t;
+            if (V) {
+                const tt = V.mul(t0);
+                out.push({ kind: "door", hinge, piece: e, piece_tr: tt, holder: e, holder_tr: tt, framed: false, frameW: 0, name: e.name, parent_ents: entities, rot: true });
                 continue;
-            const hinge = Math.abs(toF(attr(e, "axis_x", 0))) > 0.5 ? "top" : toF(attr(e, "hinge_x", 0)) < toF(attr(e, "free_x", 0)) ? "left" : "right";
+            }
             const framed = e.name.includes("زجاج") || e.definition.entities.list.some((c) => isInst(c) && attr(c, "is_cut_piece", false));
             // v113: a framed door's handle sits on the middle of its upright / rail — the frame member's width
             let frameW = 0;
@@ -243,11 +259,12 @@ export function applyHandles(ctx, group, params, appDefault = null) {
         f.clipX = clipX;
     }
     // v107: only the fronts in the door plane get a handle — an inner drawer's own front («وش داخلي») hides behind the main front
-    const planeY = Math.min(...fronts0.map((f) => f.box.y0));
-    const fronts = fronts0.filter((f) => f.box.y0 <= planeY + 0.5);
-    const solids = cfg0?.type === "gola" ? leafSolids(group.entities, new Transformation(), [], fronts) : [];
+    const planeY = Math.min(...fronts0.filter((f) => !f.rot).map((f) => f.box.y0));
+    const fronts = fronts0.filter((f) => f.rot || f.box.y0 <= planeY + 0.5);
+    const straight = fronts0.filter((f) => !f.rot);
+    const solids = cfg0?.type === "gola" ? leafSolids(group.entities, new Transformation(), [], straight) : [];
     // v113: a front with a board standing right in front of it (a drawer behind a sliding door, a filler) gets no handle that sticks out
-    const blockers = leafSolids(group.entities, new Transformation(), [], fronts0);
+    const blockers = leafSolids(group.entities, new Transformation(), [], straight);
     const blockedBy = (f) => blockers.find((sd) => sd.owner !== f && sd.y1 <= f.box.y0 + 0.05 && sd.y1 > f.box.y0 - 8.0 &&
         Math.min(sd.x1, f.box.x1) - Math.max(sd.x0, f.box.x0) > 2.0 && Math.min(sd.z1, f.box.z1) - Math.max(sd.z0, f.box.z0) > 2.0);
     // the carcass sides as built (a blind-corner box is wider than its «width» parameter)
@@ -270,7 +287,10 @@ export function applyHandles(ctx, group, params, appDefault = null) {
         if (!isKick && !unitOn)
             continue;
         const b = f.box;
-        const hidden = blockedBy(f);
+        // NOVERA: a corner door (turned frame) gets only a handle that sticks out — bar / knob on its free edge; never a built-in profile
+        if (f.rot && !(!isKick && ["bar", "knob"].includes(cfg?.type)))
+            continue;
+        const hidden = f.rot ? null : blockedBy(f);
         if (hidden && ["bar", "knob", "edge_pull", "profile"].includes((isKick && kcfg ? kcfg : cfg)?.type)) {
             warnings.push(`${f.name}: ورا «${hidden.name}» — اتعمل من غير مقبض بارز (قصّة إيد أو Push).`);
             continue;
@@ -280,11 +300,11 @@ export function applyHandles(ctx, group, params, appDefault = null) {
         const xa = b.x0 + 1.0, xb = b.x1 - 1.0;
         const xo = (o) => Math.min(o.x1, xb) - Math.max(o.x0, xa) > 0.5;
         let next = null;
-        for (const o of fronts)
-            if (o !== f && o.holder.name !== KICK_DRAWER && xo(o.box) && o.box.z0 >= b.z1 - 0.01 && (!next || o.box.z0 < next.box.z0))
+        for (const o of f.rot ? [] : fronts)
+            if (o !== f && !o.rot && o.holder.name !== KICK_DRAWER && xo(o.box) && o.box.z0 >= b.z1 - 0.01 && (!next || o.box.z0 < next.box.z0))
                 next = o;
         let ceil = null;
-        for (const sd of solids)
+        for (const sd of f.rot ? [] : solids)
             if (sd.owner !== f && xo(sd) && sd.z0 >= b.z1 - 0.01 && Math.min(sd.y1, b.y1 + 2.5) - Math.max(sd.y0, b.y1) > 0.1 && (ceil === null || sd.z0 < ceil))
                 ceil = sd.z0;
         const boxTop = Math.max(-Infinity, ...solids.filter((sd) => sd.owner === f).map((sd) => sd.z1));
@@ -301,7 +321,9 @@ export function applyHandles(ctx, group, params, appDefault = null) {
             ceil: limit === null ? null : limit - b.z0, next_z0: next && !underBoard ? next.box.z0 - b.z0 : null,
             box_top: Number.isFinite(boxTop) ? boxTop - b.z0 : null, next_box_z0: next && !underBoard && Number.isFinite(nextBox) ? nextBox - b.z0 : null,
         };
-        const plan = Catalog.compute(front, isKick && kcfg ? kcfg : cfg);
+        // a corner door's free edge meets the other door's face in the inside corner — keep its handle ≥ 6 cm off that edge so the two never touch
+        const fcfg = isKick && kcfg ? kcfg : f.rot ? { ...cfg, edge_offset: Math.max(toF(cfg.edge_offset) || 0, 6.0) } : cfg;
+        const plan = Catalog.compute(front, fcfg);
         for (const w of plan.warnings)
             warnings.push(`${f.name}: ${w}`);
         for (const [k, v] of Object.entries(plan.hardware))
@@ -395,6 +417,12 @@ function moveHingeMarkers(f, r, db) {
         c.transformBang(Transformation.translation(new Vector3d(0, 0, d)));
     }
 }
+/** a cylinder along the front's normal (the frame's y) in the holder's own coordinates — along x for a corner door facing ±x */
+function cylN(ctx, ents, htr, name, q, r, len, color) {
+    const d = htr.inverse().applyVector([0, 1, 0]);
+    const l = Math.hypot(d.x, d.y, d.z) || 1;
+    return Math.abs(d.x / l) > 0.9 ? createHoleMarker(ctx, ents, name, q.x, q.y, q.z, r, len, color) : createHoleMarkerY(ctx, ents, name, q.x, q.y, q.z, r, len, color);
+}
 const NAMES = { handle: "مقبض", profile: "بروفايل مقبض", gola: "بروفايل مقبض بلت إن", routed: "حفر مقبض", wood_strip: "مقبض خشب" };
 function local(tr, x, y, z) {
     return tr.inverse().applyPoint(new Point3d(cm(x), cm(y), cm(z)));
@@ -441,12 +469,17 @@ function draw(ctx, group, f, plan) {
                     const pr = v.proj, r = 0.6;
                     for (const [px, pz] of v.pts) {
                         const q = L(px, -pr / 2.0, pz);
-                        made.push(createHoleMarkerY(ctx, ents, `${nm} - رجل`, q.x, q.y, q.z, cm(0.45), cm(pr), color));
+                        made.push(cylN(ctx, ents, htr, `${nm} - رجل`, q, cm(0.45), cm(pr), color));
                     }
                     if (v.vertical) {
                         const a = L(0, 0, v.cz - v.len / 2.0), c = L(0, 0, v.cz + v.len / 2.0);
                         const xy = circ(12, r).map(([dx, dy]) => { const q = L(v.cx + dx, -pr + r + dy, 0); return { x: q.x, y: q.y }; });
                         made.push(createFlatSlab(ctx, ents, nm, xy, Math.min(a.z, c.z), Math.max(a.z, c.z), color));
+                    }
+                    else if (f.rot) {
+                        // a corner door: the front's x is not the holder's x — a square rod of the same size
+                        const a = L(v.cx - v.len / 2.0, -pr, v.cz - r), c = L(v.cx + v.len / 2.0, -pr + 2 * r, v.cz + r);
+                        made.push(createBox(ctx, ents, nm, Math.min(a.x, c.x), Math.min(a.y, c.y), Math.min(a.z, c.z), Math.max(a.x, c.x), Math.max(a.y, c.y), Math.max(a.z, c.z), color));
                     }
                     else {
                         const a = L(v.cx - v.len / 2.0, 0, 0), c = L(v.cx + v.len / 2.0, 0, 0);
@@ -458,8 +491,8 @@ function draw(ctx, group, f, plan) {
                     const pr = v.proj, head = Math.min(1.6, pr * 0.6);
                     const [px, pz] = v.pts[0];
                     const h = L(px, -pr + head / 2.0, pz), st = L(px, -(pr - head) / 2.0, pz);
-                    made.push(createHoleMarkerY(ctx, ents, nm, h.x, h.y, h.z, cm(1.3), cm(head), color));
-                    made.push(createHoleMarkerY(ctx, ents, `${nm} - رجل`, st.x, st.y, st.z, cm(0.5), cm(pr - head), color));
+                    made.push(cylN(ctx, ents, htr, nm, h, cm(1.3), cm(head), color));
+                    made.push(cylN(ctx, ents, htr, `${nm} - رجل`, st, cm(0.5), cm(pr - head), color));
                 }
                 for (const inst of made) {
                     inst.setAttribute("KUD", "is_cut_piece", false);
@@ -490,7 +523,7 @@ function draw(ctx, group, f, plan) {
             const depth = h.face === "through" ? t : Math.max(toF(h.depth), 0.3);
             const cy = h.face === "back" ? fy + t - depth / 2.0 : fy + t / 2.0;
             const c = local(f.holder_tr, b.x0 + h.x, cy, b.z0 + h.z);
-            const m = createHoleMarkerY(ctx, f.holder.definition.entities, "خرم مقبض", c.x, c.y, c.z, cm(h.d / 2.0), cm(depth + 0.02), KCOLORS.assembly);
+            const m = cylN(ctx, f.holder.definition.entities, f.holder_tr, "خرم مقبض", c, cm(h.d / 2.0), cm(depth + 0.02), KCOLORS.assembly);
             m.setAttribute("KUD", "handle_part", true);
             assignLayer(ctx, m, TAGS.assembly);
         }

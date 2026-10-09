@@ -4,7 +4,7 @@
 import { COLORS, DEFAULTS } from "./config.js";
 import { adjustForFinish, Ctx, hexToRgb } from "./helpers.js";
 import { buildUnit, errorText } from "./index.js";
-import { hardwareRows, scanHardware } from "./hardware.js";
+import { hardwareRows, RUNNER_RE, scanHardware } from "./hardware.js";
 import { strip, toS } from "./rb.js";
 import { cm, Transformation } from "./su/geom.js";
 import { ComponentInstance, Entities, Face, Group } from "./su/model.js";
@@ -157,6 +157,7 @@ export function computeKitchen(input, opts = {}) {
             door_label: pc.hinge_ratios.length ? { hinge_ratios: pc.hinge_ratios, hinge_side: pc.hinge_side } : null,
             checks: pc.note ? [pc.note] : [],
             material_name: pc.material,
+            ...(pc.band_len != null ? { band_len: pc.band_len } : {}),
         });
     });
     const stats = scanHardware(ctx, g);
@@ -170,14 +171,23 @@ export function computeKitchen(input, opts = {}) {
     // NOVERA v56: a wooden pull-out runs on two pairs of full-extension runners (top + bottom), not one
     if (String(params["unit_category"]) === "pullout" && stats.drawers > 0) {
         const L = Math.min(55, Math.max(30, Math.round((Number(params["depth"]) || 58) - 8)));
-        delete res.hardware["أزواج سكك أدراج"];
+        for (const k of Object.keys(res.hardware))
+            if (RUNNER_RE.test(k))
+                delete res.hardware[k];
         // v110: the trays really built (a short unit drops some) — runners at the first and the last one
         const trays = pieces.filter((pc) => /^صينية بول أوت \d+ - قاعدة$/.test(pc.name)).length;
         res.hardware[`مجاري فول إكستنشن ${L} سم للبول أوت (زوج)`] = Math.min(2, Math.max(1, trays));
     }
     if (String(params["drawer_turbo"]) === "true" || params["drawer_turbo"] === true) {
-        const n = res.hardware["أزواج سكك أدراج"];
-        if (n) { delete res.hardware["أزواج سكك أدراج"]; res.hardware["أزواج سكك أدراج جانبية فول إكستنشن (تيربو خشب)"] = n; }
+        // wooden turbo drawers run on side full-extension runners — same lengths, its own line
+        for (const k of Object.keys(res.hardware)) {
+            const m = RUNNER_RE.exec(k);
+            if (!m)
+                continue;
+            const nk = `مجرى درج جانبي فول إكستنشن ${m[1]} سم (زوج) — تيربو خشب`;
+            res.hardware[nk] = (res.hardware[nk] ?? 0) + res.hardware[k];
+            delete res.hardware[k];
+        }
     }
     return res;
 }

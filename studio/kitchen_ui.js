@@ -8,7 +8,7 @@ export const K_CATS = {
   wardrobe: "دولاب دريسنج (مطبخ)", bedroom_wardrobe: "دولاب غرفة نوم", washing_machine: "وحدة غسالة", washer_gap: "فتحة غسالة (رأس بس)", cooker_gap: "فتحة بوتجاز عادي (قعدة بتهوية)", pullout: "بول أوت خشب (سحّاب بأرفف)", fridge: "تجويف ثلاجة",
 };
 export const K_GAP_SIDE = { none: "بدون — بين وحدتين", left: "جنب شمال (الفتحة آخر الصف من الشمال)", right: "جنب يمين (الفتحة آخر الصف من اليمين)", both: "جنبين" };
-export const K_TYPES = { base: "سفلية", wall: "حائط", tall: "دولاب طويل" };
+export const K_TYPES = { base: "سفلية", wall: "علوية (على الحيطة)", tall: "دولاب طويل" };
 export const K_DOORS = {
   single: "ضلفة واحدة", double: "ضلفتين", drawer_top_two_doors_bottom: "درج + ضلفتين", drawers: "أدراج",
   flip_up: "قلاب", flip_up_double: "قلاب ضلفتين", single_glass: "زجاج (إطار خشب)", double_glass: "ضلفتين زجاج (خشب)",
@@ -103,6 +103,7 @@ export function extraFields(p) {
     for (let c = 1; c <= cols; c++) {
       const pre = c === 1 ? "" : `col${c}_`;
       const tag = cols > 1 ? `عمود ${c} · ` : "";
+      if (cols > 1) f.push([`wardrobe_col${c}_width`, `عرض العمود ${c} (0 = بالتساوي)`, "num"]);
       f.push([`wardrobe_${pre}zone_count`, `${tag}عدد المناطق`, "int"]);
       const n = Math.max(1, Math.min(3, +p[`wardrobe_${pre}zone_count`] || 1));
       for (let i = 1; i <= n; i++) {
@@ -125,27 +126,27 @@ export function extraFields(p) {
 
 const B = (o) => ({ ...o });
 export const KITCHEN = {
-  k_base2: { label: "سفلية ضلفتين 60", desc: "60×72 سم، رفين، سكلو وكونتر.", params: B({ shelf_count: 2 }) },
+  k_base2: { label: "سفلية ضلفتين 60", desc: "ضلفتين ورف، سكلو وكونتر.", params: B({ shelf_count: 2 }) },
   k_base_drawers: { label: "سفلية 3 أدراج", desc: "أدراج بصناديق ومجاري، 60 سم.", params: B({ door_type: "drawers", drawer_count: 3, include_drawer_boxes: true, include_shelves: false }) },
   k_base_kick_drawer: { label: "سفلية ضلفتين + درج وزرة", desc: "60 سم، درج واطي مكان السكلو (سكلو 12 سم).", params: B({ shelf_count: 1, toe_kick_height: 12, toe_kick_drawer: true, include_drawer_boxes: true }) },
   k_drawer_doors: { label: "درج + ضلفتين 80", desc: "درج علوي وضلفتين تحت.", params: B({ width: 80, door_type: "drawer_top_two_doors_bottom", drawer_count: 1, shelf_count: 1 }) },
   k_sink: { label: "وحدة حوض 80", desc: "فتحة حوض في الكونتر وفتحة سيفون في القاعدة.", params: B({ width: 80, include_sink_cutout: true, include_ptrap_opening: true, include_shelves: false }) },
-  k_wall2: { label: "علوية ضلفتين 80", desc: "حائط 70 سم، عمق 32، رفين.", params: B({ unit_type: "wall", width: 80, height: 70, depth: 32, include_toe_kick: false, shelf_count: 2 }) },
+  k_wall2: { label: "علوية ضلفتين 80", desc: "علوية بضلفتين ورف.", params: B({ unit_type: "wall", width: 80, height: 70, depth: 32, include_toe_kick: false, shelf_count: 2 }) },
   k_wall_flip: { label: "علوية قلاب 60", desc: "ضلفة بتفتح لفوق، 40 سم.", params: B({ unit_type: "wall", width: 60, height: 40, depth: 32, include_toe_kick: false, door_type: "flip_up", include_shelves: false }) },
   k_wall_glass: { label: "علوية زجاج بفريم معدن", desc: "ضلفتين زجاج شفاف بفريم ألومنيوم.", params: B({ unit_type: "wall", width: 80, height: 70, depth: 32, include_toe_kick: false, door_type: "double_glass_metal", shelf_count: 2 }) },
-  k_oven: { label: "دولاب فرن + ميكروويف", desc: "طويل 220 سم: أدراج، فرن، ميكروويف، ضلف فوق.", params: B({ unit_category: "oven", unit_type: "tall", height: 220, include_microwave: true, oven_bottom_front_type: "drawers", drawer_count: 2, oven_cavity_bottom_offset: 52, microwave_cavity_bottom_offset: 116 }) },
+  k_oven: { label: "دولاب فرن + ميكروويف", desc: "عمود طويل لحد خط العلوي: أدراج، فرن، ميكروويف، ضلف فوق.", params: B({ unit_category: "oven", unit_type: "tall", height: 220, include_microwave: true, oven_bottom_front_type: "drawers", drawer_count: 2, oven_cavity_bottom_offset: 52, microwave_cavity_bottom_offset: 116 }) },
   k_fridge: { label: "تجويف ثلاجة", desc: "جنبين طوال حوالين الثلاجة ووحدة فوقها.", params: B({ unit_category: "fridge", unit_type: "tall", height: 220, depth: 60 }) },
   k_washer_gap: { label: "فتحة غسالة 60", desc: "مكان الغسالة فاضي: رأس بس بيتربط في الوحدات اللي جنبها، وجنب لو في آخر الصف. الكونتر بيكمل فوقها.", params: B({ unit_category: "washer_gap", width: 60, include_toe_kick: false, include_shelves: false, door_type: "none", washer_cavity_height: 85 }) },
   k_cooker_gap: { label: "فتحة بوتجاز عادي 60", desc: "البوتجاز العادي بيقف في فتحة: قعدة 10 سم بشقوق تهوية وفتحات في الوزرة — من غير رأس ولا كونتر.", params: B({ unit_category: "cooker_gap", width: 60, include_toe_kick: false, include_shelves: false, door_type: "none", cooker_base_height: 10 }) },
   k_cooker_gap90: { label: "فتحة بوتجاز عادي 90", desc: "نفس الفتحة لبوتجاز 90 (5 شعلات).", params: B({ unit_category: "cooker_gap", width: 90, include_toe_kick: false, include_shelves: false, door_type: "none", cooker_base_height: 10 }) },
-  k_wall_hood_in: { label: "علوية بشفاط مدمج 60", desc: "علوية 60×70: الجلسة مرفوعة 18 سم وجسم الشفاط (تليسكوبي) تحتها، وفتحة مجرى 15 سم.", params: B({ unit_type: "wall", width: 60, height: 70, depth: 32, include_toe_kick: false, shelf_count: 1, include_hood: true, hood_height: 18, hood_duct_diameter: 15, unit_label: "شفاط" }) },
-  k_wall_hood_in90: { label: "علوية بشفاط مدمج 90", desc: "علوية 90×70 بشفاط تليسكوبي مدمج تحت الجلسة.", params: B({ unit_type: "wall", width: 90, height: 70, depth: 32, include_toe_kick: false, shelf_count: 1, include_hood: true, hood_height: 18, hood_duct_diameter: 15, unit_label: "شفاط" }) },
+  k_wall_hood_in: { label: "علوية بشفاط مدمج 60", desc: "علوية 60: الجلسة مرفوعة 18 سم وجسم الشفاط (تليسكوبي) تحتها، وفتحة مجرى 15 سم.", params: B({ unit_type: "wall", width: 60, height: 70, depth: 32, include_toe_kick: false, shelf_count: 1, include_hood: true, hood_height: 18, hood_duct_diameter: 15, unit_label: "شفاط" }) },
+  k_wall_hood_in90: { label: "علوية بشفاط مدمج 90", desc: "علوية 90 بشفاط تليسكوبي مدمج تحت الجلسة.", params: B({ unit_type: "wall", width: 90, height: 70, depth: 32, include_toe_kick: false, shelf_count: 1, include_hood: true, hood_height: 18, hood_duct_diameter: 15, unit_label: "شفاط" }) },
   k_pullout20: { label: "بول أوت خشب 20", desc: "سحّاب ضيق 20 سم: وش واحد + لوح رأسي واحد (ضهر) معلّق فيه صواني بحافة من جنب واحد، على زوجين مجاري (الصينية الأولى والأخيرة) — من غير ميكانيزم معدن.", params: B({ unit_category: "pullout", width: 20, include_shelves: false, include_drawer_boxes: true, pullout_tray_count: 3, drawer_runner: "side" }) },
   k_pullout30: { label: "بول أوت خشب 30", desc: "سحّاب 30 سم: ضهر رأسي وصواني خشب بحافة معلّقة فيه.", params: B({ unit_category: "pullout", width: 30, include_shelves: false, include_drawer_boxes: true, pullout_tray_count: 3, drawer_runner: "side" }) },
   k_pullout_tall: { label: "بول أوت طويل 40 (تموين)", desc: "دولاب طويل 200 سم: ضهر رأسي بارتفاع الدولاب و5 صواني بحافة.", params: B({ unit_category: "pullout", unit_type: "tall", width: 40, height: 200, include_shelves: false, include_drawer_boxes: true, pullout_tray_count: 5, drawer_runner: "side" }) },
   k_turbo_drawers: { label: "سفلية درجين تيربو خشب 60", desc: "درجين عميقين بصناديق خشب جوانبها عالية (زي التيربو) وفي كل درج درج داخلي مخفي — على مجاري جانبية.", params: B({ door_type: "drawers", drawer_count: 2, include_drawer_boxes: true, include_shelves: false, drawer_turbo: true, drawer_inner_1: true, drawer_inner_2: true, drawer_runner: "side" }) },
   k_washer: { label: "وحدة غسالة", desc: "تجويف غسالة بفيلرات ووحدة فوقها.", params: B({ unit_category: "washing_machine", unit_type: "tall", height: 200 }) },
-  k_bedroom_wr: { label: "دولاب غرفة نوم 120", desc: "طويل 220 سم، شماعة فوق وأرفف تحت، ضلفتين.", params: B({ unit_category: "bedroom_wardrobe", unit_type: "tall", width: 120, height: 220, depth: 60, wardrobe_zone_count: 2, wardrobe_zone1_type: "shelves_double", wardrobe_zone1_height: 90, wardrobe_zone1_count: 2, wardrobe_zone2_type: "rail_double" }) },
+  k_bedroom_wr: { label: "دولاب غرفة نوم 120", desc: "طويل، شماعة فوق وأرفف تحت، ضلفتين.", params: B({ unit_category: "bedroom_wardrobe", unit_type: "tall", width: 120, height: 220, depth: 60, wardrobe_zone_count: 2, wardrobe_zone1_type: "shelves_double", wardrobe_zone1_height: 90, wardrobe_zone1_count: 2, wardrobe_zone2_type: "rail_double" }) },
   k_bedroom_slide: { label: "دولاب نوم سحّاب 180", desc: "3 ألواح سحّاب، شماعة وأرفف.", params: B({ unit_category: "bedroom_wardrobe", unit_type: "tall", width: 180, height: 240, depth: 62, door_style: "sliding", sliding_panel_count: 3, wardrobe_zone_count: 2, wardrobe_zone1_type: "shelves_open", wardrobe_zone1_height: 100, wardrobe_zone1_count: 3, wardrobe_zone2_type: "rail_open" }) },
   k_corner_l: { label: "زاوية L 90×90", desc: "رجلين وضلفتين، رف L متصل.", params: B({ unit_category: "corner", corner_style: "l_shape" }) },
   k_corner_diag: { label: "زاوية قطرية 90×90", desc: "ضلفة قطرية 45°.", params: B({ unit_category: "corner", corner_style: "diagonal" }) },

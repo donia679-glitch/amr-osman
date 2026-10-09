@@ -83,14 +83,32 @@ export class WardrobeUnitBuilder extends StandardUnitBuilder {
         if (n === 1)
             return [[o.x0, o.x1, ""]];
         const dt = this.panelT();
-        const colW = (o.x1 - o.x0 - dt * (n - 1)) / n;
+        const room = o.x1 - o.x0 - dt * (n - 1);
+        const colW = room / n;
         if (colW <= 0)
             return [[o.x0, o.x1, ""]];
+        // NOVERA: each column can have its own width (wardrobe_colN_width, cm inside); 0 = shares what is left equally.
+        // Typed widths that don't leave ≥ 10 cm for every auto column (or don't add up when all are typed) fall back to equal columns.
+        const typed = [];
+        for (let i = 0; i < n; i++) {
+            const v = toF(this.p[`wardrobe_col${i + 1}_width`]);
+            typed.push(v > 0 ? cm(v) : null);
+        }
+        const autoN = typed.filter((v) => v === null).length;
+        const fixed = typed.reduce((a, v) => a + (v ?? 0), 0);
+        let widths = typed.map((v) => v ?? (autoN ? (room - fixed) / autoN : 0));
+        const bad = autoN ? (room - fixed) / autoN < cm(10.0) : Math.abs(fixed - room) > cm(0.5);
+        if (fixed > 0 && bad) {
+            this.ctx.puts(`[KitchenUnitDesigner] ⚠ عروض الأعمدة (${typed.map((v) => (v === null ? "تلقائي" : rround(v / cm(1.0), 1))).join(" + ")} سم) مش على قد الدولاب (جوّاه ${rround(room / cm(1.0), 1)} سم من غير القواطيع) — اتقسم بالتساوي.`);
+            widths = typed.map(() => colW);
+        }
+        else if (!autoN && fixed > 0)
+            widths = widths.map((w) => (w * room) / fixed); // within half a cm: scaled to fit exactly
         const cols = [];
         let x = o.x0;
         for (let i = 0; i < n; i++) {
             const prefix = i === 0 ? "" : `col${i + 1}_`;
-            const x1 = x + colW;
+            const x1 = x + widths[i];
             cols.push([x, x1, prefix]);
             x = x1 + dt;
         }

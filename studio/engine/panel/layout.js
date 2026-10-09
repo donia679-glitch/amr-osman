@@ -141,8 +141,9 @@ function summary(design, params, names) {
         outer: { width: params.width, height: params.height, depth: params.depth },
         environment: params.environment,
         piece_count: cut.length,
-        door_count: design.groups.filter((g) => g.kind === "door").length,
-        drawer_count: design.groups.filter((g) => g.kind === "drawer").length,
+        // + the doors / drawers of a studio cabinet (template "free": parts, no groups — templates.js freeHardware)
+        door_count: design.groups.filter((g) => g.kind === "door").length + (design.free_counts?.doors ?? 0),
+        drawer_count: design.groups.filter((g) => g.kind === "drawer").length + (design.free_counts?.drawers ?? 0),
         banding_m: design.bandingMeters(),
         materials: mats,
         cut_list: cut.map((pt) => {

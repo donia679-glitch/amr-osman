@@ -38,7 +38,7 @@ import * as DG from "./draw/geom.js";
 
 const APP_URL = "https://claude.ai/artifact/EP8c8LmBNS8d3EqLcDioXi";
 const APP_VERSION = "1.0";
-const RELEASE = "v123"; // bumped with every shipped version (the developer notes carry it)
+const RELEASE = "v124"; // bumped with every shipped version (the developer notes carry it)
 // the NOVERA mark — the same one as the website (two cream panels, the brass profile between them, the brass base line)
 const MARK_SVG = '<svg viewBox="0 0 40 40" aria-hidden="true"><rect width="40" height="40" rx="3" fill="#0f2e1c"/><rect x="9" y="9" width="7" height="22" fill="#e9d9b0"/><rect x="24" y="9" width="7" height="22" fill="#e9d9b0"/><path d="M16 9h3l5 22h-3z" fill="#b98d34"/><rect x="6" y="33" width="28" height="2" fill="#b98d34"/></svg>';
 /** the App Store build (inside the iOS app): no links to the online version, no plugin / other-brand wording */
@@ -151,7 +151,7 @@ const SAMPLE = () => ({
     { id: uid(), kind: "panel", name: "وحدة شاشة", params: { preset: "tv_float_slats" } },
   ],
 });
-const defaults = () => ({ project: SAMPLE(), sel: null, tab: "design", xray: false, libOpen: false, cutOpts: { sheetW: 244, sheetH: 122, kerf: 0.4, trim: 1 }, labelFmt: "a4" });
+const defaults = () => ({ project: SAMPLE(), sel: null, tab: "design", xray: false, libOpen: false, cutOpts: { sheetW: 244, sheetH: 122, kerf: 0.3, trim: 1 }, labelFmt: "a4" });
 let state = loadLocal() || defaults();
 state.myMats ??= [];
 state.myUnits ??= [];
@@ -171,6 +171,7 @@ function loadLocal() {
 const cloud = { db: null, user: null, me: null, comments: null, downloads: null, saveT: 0, saving: false, dirty: false };
 function persist() {
   histTrack();
+  try { if (ui.mode === "owner" && state.tab === "design" && stepNow() === "room") renderSteps(); } catch { /* */ } // v124: «N حيطان · N فتحات» follows room edits
   try { localStorage.setItem(STORE, JSON.stringify(state)); } catch { /* storage unavailable */ }
   if (ui.mode === "owner" && state.project) Lib.put(state.project).then(() => { ui.savedAt = Date.now(); }).catch(() => {});
   if (!cloud.db || !cloud.me || ui.mode !== "owner") {
@@ -273,7 +274,12 @@ function R(u) {
   const key = u.kind + JSON.stringify(u.params) + JSON.stringify(u.libs || {}) + (u.org || "") + (u.orgOpts ? JSON.stringify(u.orgOpts) : "") + (u.extra?.length ? JSON.stringify(u.extra) : "") + (u.matOv ? JSON.stringify(u.matOv) : "") + (u.acc?.length ? "|A" + JSON.stringify(u.acc) : "") + (u.mech ? "|M" + JSON.stringify(u.mech) : "") + `|L${+u.lift || 0}|B${u.bandAll === true ? 1 : 0}`;
   if (cache.has(key)) return cache.get(key);
   if (cache.size > 80) cache.delete(cache.keys().next().value);
-  let out = u.kind === "dressing" ? adaptDressing(u) : u.kind === "kitchen" ? adaptKitchen(u) : u.kind === "pieces" ? adaptPieces(u) : u.params?.model ? adaptModel(u) : adaptPanel(u);
+  // v124: a push / electric opening (Tip-On, Servo) means no handles at all — built without them (the unit's own handle setting is kept)
+  const noH = !!u.mech?.open && u.kind !== "pieces" && !u.params?.model;
+  const HK = u.kind === "kitchen" ? ["kud_handles", "door_handle_recess"] : u.kind === "dressing" ? ["handles"] : ["handle"];
+  const uu = !noH ? u : { ...u, params: { ...(u.params || {}), ...(u.kind === "kitchen" ? { kud_handles: { ...(u.params?.kud_handles || {}), type: "none" }, door_handle_recess: 0 } : u.kind === "dressing" ? { handles: { ...(u.params?.handles || {}), type: "none" } } : { handle: "none" }) } };
+  let out = uu.kind === "dressing" ? adaptDressing(uu) : uu.kind === "kitchen" ? adaptKitchen(uu) : uu.kind === "pieces" ? adaptPieces(uu) : uu.params?.model ? adaptModel(uu) : adaptPanel(uu);
+  if (noH && out.params) { const q = { ...out.params }; for (const k of HK) { if (u.params?.[k] === undefined) delete q[k]; else q[k] = clone(u.params[k]); } out = { ...out, params: q }; }
   if (out.ok && (u.kind === "dressing" || u.kind === "panel") && Obs.any(u.params)) {
     const ob = Obs.applyParts(out, u.params, out.partMover || []);
     if (ob) out = { ...out, parts: ob.parts, partMover: out.partMover ? ob.partMover : undefined, warnings: [...(out.warnings || []), ...ob.warnings], obstacles: true,
@@ -882,19 +888,20 @@ function addCeilingUnit(u) {
   const P = R(u).params || u.params, poses = projectPoses(state.project), L = poses.get(u.id);
   const seg = L?.wall ? Room.segments(state.project.room || { pts: [] }).find((g) => g.id === L.wall) : null;
   const ceil = seg?.h || state.project.room?.walls?.[0]?.h || Room.WALL_H;
-  const t = +P.panel_thickness || 1.8, gap = 1; // 1 cm under the ceiling (uneven ceilings, fitting)
+  seedDefaults();
+  const sepType = userDefs().k.led_sep_type || "board", t = ledSepH({ ...P, led_sep_type: sepType }), gap = 1; // 1 cm under the ceiling (uneven ceilings, fitting); v124: the separator the user picks
   const z0 = (+u.lift || 0) + (+P.wall_mount_height || 140) + (+P.height || 70) + t; // a raised unit (lift) ends higher
   const h = Math.round((ceil - gap - z0) * 10) / 10;
   if (h < 20) { alertBar(`مفيش مكان فوقها: السقف ${n1(ceil)} سم والوحدة طالعة لحد ${n1(z0 - t)} سم`); return; }
   const c = clone(u);
   c.id = uid(); delete c.code; delete c.lift; c.name = `علوية سقف فوق ${u.code || u.name}`; // its mount height already includes the lift
-  c.params = { ...c.params, unit_type: "wall", wall_mount_height: Math.round(z0 * 10) / 10, height: h, led_panel_below: true, shelf_count: h > 45 ? 1 : 0, include_shelves: h > 45, include_led_marker: false };
+  c.params = { ...c.params, unit_type: "wall", wall_mount_height: Math.round(z0 * 10) / 10, height: h, led_panel_below: true, led_sep_type: sepType, shelf_count: h > 45 ? 1 : 0, include_shelves: h > 45, include_led_marker: false };
   if (L?.wall) { u.pos = { wall: L.wall, s: Math.round(L.s * 10) / 10 }; c.pos = { ...u.pos }; }
   else if (L) { u.pos = { x: L.x, z: L.z, rot: L.rot }; c.pos = { ...u.pos }; }
   state.project.units.splice(state.project.units.indexOf(u) + 1, 0, c);
   ensureCodes(state.project); state.sel = c.id; state.whole = true;
   save(); render(true);
-  alertBar(`اتعملت ${c.name}: ارتفاع ${n1(h)} سم لحد السقف (${n1(ceil)})، وتحتها لوح ليد ${n1(t)} سم`);
+  alertBar(`اتعملت ${c.name}: ارتفاع ${n1(h)} سم لحد السقف (${n1(ceil)})، وتحتها ${LED_SEP[sepType]} ${n1(t)} سم — غيّر نوع الفاصل من «الوحدة»`);
 }
 /** a stored (Arabic) text shown inside an input: translated in English mode (input values aren't translated by the page layer) */
 const trv = (v) => (I18n.isEn() ? I18n.tr(v) : v);
@@ -989,12 +996,15 @@ function modelProps(u, r) {
     <div class="btnrow"><button class="primary" data-studio>✏️ افتح في ورشة الرسم</button></div></details>`;
 }
 function openStudio(u, extra = {}) {
-  const libs = (k) => panelLib(R(u).params || {}, k);
+  let cols = {};
+  try { cols = { ...adaptPanel({ params: { template: "free", materials: u?.params?.materials || {} } }).colors, ...(u ? R(u).colors : {}) }; } catch { /* the studio's own colours */ }
   Studio.open(u?.params?.model || null, {
     name: u?.name || I18n.tr("تصميم حر"),
     room: state.project.room || null,
     tool: extra.tool,
-    matColor: (k) => { const l = u && libs(k); return l && Catalog.LIB[l] ? Catalog.LIB[l][2] : null; },
+    target: { pid: state.project.id, uid: u?.id || null, tool: extra.tool || "" }, resume: extra.resume, // unsaved-drawing drafts
+    // the same colours the unit shows in the project (its own materials, else the panel defaults)
+    matColor: (k) => (cols[k] || null),
     matName: (k) => PANEL_MATS[k] || k,
     libs: () => [...Object.entries(Catalog.LIB).filter(([k]) => !STONE(k)).map(([k, v]) => [k, v[0], v[2]]), ...Mat.all().map((m) => [m.id, m.name, m.color || "#ccc"])],
     onDone: (model, name, x = {}) => {
@@ -1016,6 +1026,16 @@ function openStudio(u, extra = {}) {
         return { o, cnt };
       };
       const { o: ov } = ovOf(model.solids);
+      if (extra.fromUnit && u && !state.project.units.includes(u)) {
+        if (empty) { alertBar("ورشة الرسم اتقفلت من غير ألواح — الوحدة زي ما هي"); return; }
+        const P = state.project, i = P.units.indexOf(extra.fromUnit);
+        u.params = { ...u.params, model, template: "free" }; u.name = name || u.name;
+        if (Object.keys(ov).length) u.matOv = ov;
+        if (i >= 0) { if (extra.fromUnit.code) u.code = extra.fromUnit.code; P.units.splice(i, 1, u); } else P.units.push(u);
+        state.sel = u.id; state.libOpen = false; save(); render(true);
+        alertBar("اتحفظت ✓ — الوحدة بقت رسم حر مكانها (↶ تراجع لو عايز الأصل)");
+        return;
+      }
       if (u && state.project.units.includes(u)) {
         const prevSolids = u.params?.model?.solids || [];
         const { o: prevOv } = ovOf(prevSolids);
@@ -1051,15 +1071,24 @@ function openStudio(u, extra = {}) {
 function unitToModel(u) {
   const r = R(u);
   const m = Studio.newModel();
-  const src = r.meshes ? r.meshes.filter((x) => x.box && x.mat !== "hole" && !/handle|hinge|leg|rail|led/i.test(x.mat || "")).map((x) => ({ name: x.name, box: x.box, material: /Front/.test(x.layer || "") ? "front" : x.mat === "countertop" ? "accent" : "carcass" }))
+  const src = r.meshes ? r.meshes.filter((x) => x.box && x.mat !== "hole" && !/handle|hinge|leg|rail|led/i.test(x.mat || "")).map((x) => ({ name: x.name, box: x.box, material: /Front/.test(x.layer || "") ? "front" : x.mat === "countertop" ? "accent" : "carcass", k0: x.mat }))
     : (r.parts || []).filter((pt) => pt.cut_piece && pt.box && pt.role !== "hole");
+  const libOf = (pt) => { try { return r.libOf?.(pt.k0 || pt.material) || null; } catch { return null; } }, votes = {};
   for (const pt of src) {
     const b = pt.box, d = [b.x1 - b.x0, b.y1 - b.y0, b.z1 - b.z0], ax = d.indexOf(Math.min(...d));
     const pl = ax === 2 ? { o: [b.x0, b.y0, b.z0], u: [1, 0, 0], v: [0, 1, 0] } : ax === 0 ? { o: [b.x0, b.y0, b.z0], u: [0, 1, 0], v: [0, 0, 1] } : { o: [b.x0, b.y1, b.z0], u: [1, 0, 0], v: [0, 0, 1] };
     const [w, h] = ax === 2 ? [d[0], d[1]] : ax === 0 ? [d[1], d[2]] : [d[0], d[2]];
     const mat = ["carcass", "front", "shelf", "accent", "back"].includes(pt.material) ? pt.material : /door|front/.test(pt.material) ? "front" : pt.material === "back" ? "back" : "carcass";
-    m.solids.push({ id: Math.random().toString(36).slice(2, 9), name: pt.name, mat, plane: pl, outer: DG.rect(0, 0, w, h), holes: [], pockets: [], depth: Math.round(d[ax] * 100) / 100 });
+    const lib = libOf(pt);
+    m.solids.push({ id: Math.random().toString(36).slice(2, 9), name: pt.name, mat, plane: pl, outer: DG.rect(0, 0, w, h), holes: [], pockets: [], depth: Math.round(d[ax] * 100) / 100, ...(lib ? { lib } : {}) });
+    if (lib) { const v = (votes[mat] ||= {}); v[lib] = (v[lib] || 0) + 1; }
   }
+  // the drawing keeps the unit's real materials: each role gets the material most of its pieces had,
+  // a piece in another material keeps its own (→ that piece's material on the new unit)
+  const mats = {};
+  for (const [role, v] of Object.entries(votes)) mats[role] = { lib: Object.entries(v).sort((a, b) => b[1] - a[1])[0][0] };
+  for (const sd of m.solids) if (sd.lib && mats[sd.mat]?.lib === sd.lib) delete sd.lib;
+  Object.defineProperty(m, "mats", { value: mats, enumerable: false });
   return m;
 }
 function piecesProps(u) {
@@ -1160,7 +1189,11 @@ function adaptKitchen(u) {
   const kind = p.unit_category === "corner" ? `زاوية ${KU.K_CORNER[p.corner_style] || ""}` : KU.K_CATS[p.unit_category] || "وحدة مطبخ";
   const hw = { ...(r.hardware || {}) };
   for (const [k, q] of Object.entries(orgHardware(u) || {})) hw[k] = (hw[k] || 0) + q;
-  if (p.unit_type === "wall" && (p.led_panel_below === true || p.led_panel_below === "true")) { const k = "شريط ليد (متر)"; hw[k] = Math.round(((hw[k] || 0) + (+p.width || 0) / 100) * 100) / 100; }
+  if (p.unit_type === "wall" && (p.led_panel_below === true || p.led_panel_below === "true")) {
+    const m = (+p.width || 0) / 100, add = (k) => { hw[k] = Math.round(((hw[k] || 0) + m) * 100) / 100; };
+    add("شريط ليد (متر)");
+    if (["recess", "profile"].includes(p.led_sep_type)) add("بروفايل ليد ألومنيوم بغطا (متر)"); // v124
+  }
   doorSwing(r, p);
   let meshes = r.meshes, parts = r.parts, warnings = r.warnings;
   if (Obs.any(u.params)) {
@@ -1216,9 +1249,21 @@ function doorSwing(r, p) {
 function dimsText(u, r) {
   const p = r.params;
   if (u.kind === "kitchen") return KU.dimsFor(p).slice(0, 3).map(([k]) => n1(+p[k] || 0)).join(" × ");
+  if (!(+p.width > 0) || !(+p.height > 0)) {
+    // v124: free drawings / pieces carry no width — measure their boards (was «NaN × NaN × NaN»)
+    const bs = (r.parts || []).filter((x) => x.box).map((x) => x.box);
+    if (!bs.length) return "—";
+    const ex = (a, b) => Math.max(...bs.map((x) => x[b])) - Math.min(...bs.map((x) => x[a]));
+    return `${n1(ex("x0", "x1"))} × ${n1(ex("z0", "z1"))} × ${n1(ex("y0", "y1"))}`;
+  }
   return `${n1(p.width)} × ${n1(p.height)} × ${n1(p.depth)}`;
 }
 
+/** v124: Arabic counting — وحدة واحدة / وحدتين / 3 وحدات / 11 وحدة */
+/** v124: the separator under a ceiling unit (what it hangs on over the wall unit under it) — its height in cm */
+const LED_SEP = { board: "لوح ليد بلون الضلف", recess: "شريط خشب غاطس + بروفايل ليد", profile: "بروفايل ليد ألومنيوم بس", shelf: "رف بارز لقدام وتحته ليد" };
+const ledSepH = (p) => { const k = p?.led_sep_type || "board", t = +p?.panel_thickness || 1.8; return k === "recess" ? Math.max(t * 2 + 1, +p.led_sep_height || 6) : k === "profile" ? 2 : t; };
+const unitsTxt = (n) => (n === 1 ? "وحدة واحدة" : n === 2 ? "وحدتين" : n >= 3 && n <= 10 ? `${n} وحدات` : `${n} وحدة`);
 const selUnit = () => state.project.units.find((u) => u.id === state.sel) || null;
 function expanded(u) {
   const p = clone(R(u).params || {}); delete p.preset;
@@ -1230,7 +1275,30 @@ function setParams(u, mutate) {
   // several units ticked: the same change goes to every one of the same kind (width, material, handle, plinth …)
   const all = ui.multi?.size > 1 && ui.multi.has(u.id) ? targetUnits().filter((x) => x.kind === u.kind) : [u];
   if (!all.includes(u)) all.unshift(u);
-  for (const x of all) { const p = expanded(x); mutate(p); x.params = p; }
+  for (const x of all) {
+    const p = expanded(x), ut0 = p.unit_type, w0 = +p.width, nm0 = x.name, p0 = { ...p };
+    mutate(p);
+    // v124: a kitchen unit moved to another row (base ↔ wall ↔ tall) takes that row's sizes and build, and its name follows
+    if (x.kind === "kitchen" && ut0 && p.unit_type && p.unit_type !== ut0) {
+      seedDefaults();
+      const D0 = userDefs(), ut = p.unit_type, dims = { ...DEF_DIMS[ut], ...(D0.dims?.[ut] || {}) };
+      for (const k of ["height", "depth", "wall_mount_height"]) if (dims[k] != null) p[k] = +dims[k]; else if (k === "wall_mount_height") delete p[k];
+      p.include_toe_kick = ut !== "wall";
+      if (ut === "wall") { p.top_style = "solid"; p.door_handle_recess = 0; }
+      applyTypeDefaults(p, {}, { force: true });
+      const RN = { base: "سفلية", wall: "علوية", tall: "طويلة" }, from = RN[ut0], to = RN[ut];
+      if (from && to && x.name?.includes(from)) x.name = x.name.replace(from, to);
+    }
+    // v124: a name that carries the width follows it («سفلية ضلفتين 60» → 70)
+    if (x.kind !== "pieces" && w0 > 0 && +p.width > 0 && +p.width !== w0 && x.name) { const re = new RegExp(`(^|\\D)${String(w0).replace(".", "\\.")}(?!\\d)`); if (re.test(x.name)) x.name = x.name.replace(re, `$1${n1(+p.width)}`); }
+    // v124: a taller / shorter separator under a ceiling unit — its top stays, the unit gets shorter / taller
+    if (x.kind === "kitchen" && p.unit_type === "wall") {
+      const was = { ...p0 }, h0 = (was.led_panel_below === true || was.led_panel_below === "true") ? ledSepH(was) : 0, h1 = (p.led_panel_below === true || p.led_panel_below === "true") ? ledSepH(p) : 0;
+      if (Math.abs(h1 - h0) > 0.05 && (+p.wall_mount_height || 0) > 0 && +p.wall_mount_height === +was.wall_mount_height && +p.height === +was.height && /سقف/.test(x.name || "") ) { p.wall_mount_height = Math.round((+p.wall_mount_height + h1 - h0) * 10) / 10; p.height = Math.max(20, Math.round((+p.height - (h1 - h0)) * 10) / 10); }
+    }
+    if (x.name !== nm0 && x.kwName === nm0) x.kwName = x.name;
+    x.params = p;
+  }
   save(); render();
   wasteHint();
 }
@@ -1247,6 +1315,7 @@ function wasteBaseline() {
 function wasteHint() {
   const u = selUnit();
   if (!u || ui.wasteBase?.id !== u.id || ui.wasteBase.sheets == null || state.tab !== "design") return;
+  if (!R(u).ok) return; // v124: a unit with errors builds nothing — no «saved N boards» for it
   clearTimeout(wasteT);
   wasteT = setTimeout(() => runCut(() => {
     const now = sheetsNow(), base = ui.wasteBase?.sheets;
@@ -1257,7 +1326,7 @@ function wasteHint() {
     el.className = `wastehint ${d < 0 ? "good" : d > 0 ? "bad" : ""}`;
     el.innerHTML = d === 0 ? `🪵 ${now} لوح — زي ما هو` : d < 0 ? `🪵 ${base} → <b>${now}</b> لوح — وفّرت ${-d} ✓` : `🪵 ${base} → <b>${now}</b> لوح — زاد ${d} ⚠`;
     el.hidden = false;
-    clearTimeout(el._t); el._t = setTimeout(() => { el.hidden = true; }, 6000);
+    clearTimeout(el._t); el._t = setTimeout(() => { el.hidden = true; }, d === 0 ? 2500 : 4500);
   }), 700);
 }
 const getPath = (p, path) => path.split(".").reduce((a, k) => (a == null ? a : a[k]), p);
@@ -1307,6 +1376,7 @@ app.innerHTML = `
           <button data-vz="0.8" aria-label="قرّب">+</button><button data-vz="1.25" aria-label="بعّد">−</button>
           <button data-vr="-25" aria-label="لف الكاميرا شمال">⟲</button><button data-vr="25" aria-label="لف الكاميرا يمين">⟳</button>
           <button data-vp="fit" aria-label="شوف الكل">⤢</button>
+          <button data-vframe title="قرّب على الوحدة المختارة" aria-label="قرّب على الوحدة المختارة">🎯</button>
         </div>
         <div class="vcube" role="toolbar" aria-label="المناظير والمساقط">
           <button data-vp="home" class="vhome" title="رجّع الكاميرا للوضع الأساسي">🏠<small>الأساسي</small></button>
@@ -1401,7 +1471,7 @@ function stepStatus(k) {
   const p = state.project;
   if (k === "qcut") { const t = qcutTotals(qcutUnit(false)?.params.pieces || []); return t.n ? `${t.n} قطعة` : "لسه"; }
   if (k === "room") return p.room?.pts?.length ? `${Room.segments(p.room).length} حيطان · ${(p.room.openings || []).length} فتحات` : "لسه";
-  if (k === "design") return p.units.length ? `${p.units.length} وحدة${p.units.some((u) => !R(u).ok) ? " · فيها أخطاء" : ""}` : "لسه";
+  if (k === "design") return p.units.length ? `${unitsTxt(p.units.length)}${p.units.some((u) => !R(u).ok) ? " · فيها أخطاء" : ""}` : "لسه";
   if (k === "mats") { const n = p.units.filter((u) => Object.keys(u.libs || {}).length).length; return n ? `${n} من ${p.units.length} بخامات` : "افتراضي"; }
   if (k === "cut") return cutData?.results ? `${Object.values(cutData.results).reduce((a, r) => a + r.sheets.length, 0)} لوح` : p.units.length ? "اضغط تتحسب" : "لسه";
   if (k === "parts") { const n = projectPieces(p).length; return n ? `${n} قطعة` : "لسه"; }
@@ -1441,11 +1511,12 @@ $("#steps").addEventListener("click", (e) => {
     scrollTo("#props", "الخامات");
     if (state.project.units.length) alertBar("اختار وحدة ودوس على أي خامة تغيّرها — وتقدر تطبّقها على كل الوحدات من نفس المكان.");
   }
-  else if (k === "price") { state.tab = "shop"; scrollTo("#v-shop", "الأسعار"); }
-  else if (k === "client") { state.tab = "shop"; scrollTo("#v-shop", "العميل"); }
+  // v124: each step lands on its own section, below the sticky shortcut bar (shopJumpNow survives the 2nd draw after the cut plan)
+  else if (k === "price") { state.tab = "shop"; ui.jump = "shPrice"; }
+  else if (k === "client") { state.tab = "shop"; ui.jump = "shClient"; }
   else if (k === "cut") state.tab = "cut";
   else if (k === "parts") state.tab = "parts";
-  else { state.tab = "shop"; scrollTo("#v-shop", "الورشة"); }
+  else { state.tab = "shop"; ui.jump = "shWork"; }
   save(); render(true);
 });
 $("#libBtn").addEventListener("click", () => { state.libOpen = !state.libOpen; render(); });
@@ -1470,7 +1541,7 @@ $("#libBtn").addEventListener("click", () => { state.libOpen = !state.libOpen; r
   // ---- drag a drawn/merged piece with the finger (along its thickness, or the axis picked)
   let xdrag = null;
   host.addEventListener("pointerdown", (e) => {
-    if (!ui.xmove || ui.mode !== "owner" || !view.ready || !e.isPrimary || e.target.closest(".vctl, .movebar")) return;
+    if (!ui.xmove || ui.mode !== "owner" || !view.ready || !e.isPrimary || e.target.closest(VIEW_OVERLAYS)) return;
     const T = view.three, rc = view.ren.domElement.getBoundingClientRect(), ray = new T.Raycaster();
     ray.setFromCamera(new T.Vector2(((e.clientX - rc.left) / rc.width) * 2 - 1, -((e.clientY - rc.top) / rc.height) * 2 + 1), view.cam);
     const h = ray.intersectObjects(view.pickables || [], true).find((x) => x.object.isMesh && x.object.visible);
@@ -1552,11 +1623,15 @@ $("#libBtn").addEventListener("click", () => { state.libOpen = !state.libOpen; r
     const scr = (x, y, z) => { const q = new T.Vector3(x, y, z).project(view.cam); return [rc.left + ((q.x + 1) / 2) * rc.width, rc.top + ((1 - q.y) / 2) * rc.height, q.z]; };
     const fp = Room.footprint(d.start, d.box);
     let best = null;
+    // v124: on a small unit far away the dots would cover the whole unit — the grab radius shrinks with its size on screen
+    const sp = []; for (let i = 0; i < 4; i++) for (const y of [wb.min.y, wb.max.y]) sp.push(scr(fp[i][0], y, fp[i][1]));
+    const ext = Math.max(...sp.map((q) => q[0])) - Math.min(...sp.map((q) => q[0])) + Math.max(...sp.map((q) => q[1])) - Math.min(...sp.map((q) => q[1]));
+    const rad = Math.min(e.pointerType === "mouse" ? 18 : 30, Math.max(12, ext * 0.12));
     for (let i = 0; i < 4; i++) for (const y of [wb.min.y, wb.max.y]) {
       const [sx, sy, sz] = scr(fp[i][0], y, fp[i][1]);
       if (sz > 1) continue;
       const dd = Math.hypot(sx - e.clientX, sy - e.clientY);
-      if (dd < (e.pointerType === "mouse" ? 18 : 30) && (!best || dd < best.dd)) best = { i, y, dd };
+      if (dd < rad && (!best || dd < best.dd)) best = { i, y, dd };
     }
     if (!best) return null;
     // the places a corner can land on: the other units' corners, the room's corners and its columns
@@ -1588,6 +1663,7 @@ $("#libBtn").addEventListener("click", () => { state.libOpen = !state.libOpen; r
     const sp = Room.snapPose(drag.segs, drag.box, Room.centerOf(free, drag.box), drag.rot, drag.others, drag.row);
     const c2 = Room.footprint(sp, drag.box)[g.i];
     const pose = !snapped ? sp : Math.hypot(c2[0] - tgt[0], c2[1] - tgt[1]) < 1 ? sp : free;
+    if (poseOutside(state.project.room, pose, drag.box)) return null; // v124: a corner snap never puts the unit through a wall / out of the room
     view.snapMark(snapped ? [snapped[0], g.y, snapped[1]] : null);
     return pose;
   };
@@ -1603,7 +1679,7 @@ $("#libBtn").addEventListener("click", () => { state.libOpen = !state.libOpen; r
     if (view.ready && !(view.final?.active && view.final.locked !== false)) view.ctl.enabled = true;
   };
   host.addEventListener("pointerdown", (e) => {
-    if (e.target.closest(".vctl, .movebar") || view.final?.active) return;
+    if (e.target.closest(VIEW_OVERLAYS) || view.final?.active) return;
     if (drag && e.pointerId !== drag.pid) cancelDrag(); // a second finger means zoom / turn, never "move further"
     if (!drag && !ptDrag) view.ctl.enabled = true;
     down = [e.clientX, e.clientY];
@@ -1701,7 +1777,7 @@ $("#libBtn").addEventListener("click", () => { state.libOpen = !state.libOpen; r
       view.ctl.enabled = true;
       down = null;
       save();
-      renderChips(); renderProps();
+      renderChips(); renderProps(); renderErrs();
       view.update();
       return;
     }
@@ -1772,6 +1848,7 @@ $("#libBtn").addEventListener("click", () => { state.libOpen = !state.libOpen; r
   addEventListener("blur", dropAll);
   document.addEventListener("visibilitychange", () => { if (document.hidden) dropAll(); });
 }
+const VIEW_OVERLAYS = ".vctl, .movebar, .vcube, .dimtags .dtag, .dimtags .dhandle, .selbar, .errbadge, button, input, select, textarea"; // v124: taps on the buttons / tags drawn over the 3D never reach the scene (no drag, no deselect)
 document.querySelector("#view3d .vctl").addEventListener("pointerdown", (e) => e.stopPropagation());
 document.querySelector("#view3d .vcube").addEventListener("pointerdown", (e) => e.stopPropagation());
 document.querySelector("#view3d .vcube").addEventListener("click", (e) => { const b = e.target.closest("button[data-vp]"); if (b && view.ready) view.preset(b.dataset.vp); });
@@ -1782,6 +1859,17 @@ document.querySelector("#view3d .vctl").addEventListener("click", (e) => {
   if (b?.hasAttribute("data-vnudge")) { if (!selUnit()) { alertBar("اختار وحدة الأول"); return; } ui.nudgeOpen = !ui.nudgeOpen; ui.matpOpen = false; if (ui.nudgeOpen && !state.whole && (state.project.units.length > 1 || state.project.room)) { state.whole = true; save(); render(true); } renderMatp(); return; }
   if (b?.dataset.vmode) { if (b.dataset.vmode === "scene") sceneMode(); else { ui.moveMode = true; renderMoveBar(); renderChips(); if (view.ready) view.update(); if (!state.sel) alertBar("اختار وحدة الأول (دوس عليها) وبعدين اسحبها."); } return; }
   if (!b || !view.ready) return;
+  if (b.hasAttribute("data-vframe")) {
+    // v124: frame the picked unit (zoom / fit used to work on the whole room only)
+    const ug = (view.pickables || []).find((o) => o.userData.unitId === state.sel);
+    if (!ug) { alertBar("اختار وحدة الأول"); return; }
+    const T = view.three, box = new T.Box3();
+    ug.updateMatrixWorld(true);
+    ug.traverse((o) => { if (o.isMesh && o.visible && o.geometry) { o.geometry.computeBoundingBox?.(); const bb = o.geometry.boundingBox; if (bb) box.union(bb.clone().applyMatrix4(o.matrixWorld)); } });
+    if (box.isEmpty()) return;
+    view.fitTight(view.cam.aspect, 0.45, box); view.clearOfChips?.(); view.dirty = true;
+    return;
+  }
   if (b.dataset.vz) view.zoom(+b.dataset.vz);
   else if (b.dataset.vr) view.orbit(+b.dataset.vr);
   else if (b.dataset.vp) view.preset(b.dataset.vp);
@@ -1892,10 +1980,13 @@ function nudgeHtml(u) {
   const btn = (k, l, t) => `<button class="ndb" data-nd="${k}" title="${t}">${l}</button>`;
   return `<div class="sph"><b>↔ حرّك «${esc(u.name)}» بمقاس</b><button class="x" data-mclose aria-label="قفل">×</button></div>
     <label class="f"><span>المسافة (سم)</span><input id="nudgeD" type="text" inputmode="decimal" data-numf value="${n1(d)}"></label>
-    ${onWall ? `<small class="hint">الوحدة على الحيطة ${roomSegs(state.project).findIndex((g) => g.id === L.wall) + 1} · من أولها ${n1(L.s)} سم</small>
-    <div class="ndgrid"><span></span>${btn("up", "⬆ فوق", "ارفعها من الأرض")}<span></span>${btn("-s", "⇦ لورا على الحيطة", "ناحية أول الحيطة")}${btn("out", "⇩ بعيد عن الحيطة", "تبعد عن الحيطة وتقف حرة")}${btn("+s", "⇨ لقدام على الحيطة", "ناحية آخر الحيطة")}<span></span>${btn("down", "⬇ تحت", "نزّلها")}<span></span></div>`
-    : `<small class="hint">الوحدة واقفة حرة (مش على حيطة) — الاتجاهات بالنسبة لوشها.</small>
-    <div class="ndgrid"><span></span>${btn("fwd", "⬆ لقدام", "في اتجاه وشها")}<span></span>${btn("left", "⇦ شمال", "")}${btn("back", "⬇ لورا", "عكس وشها")}${btn("right", "⇨ يمين", "")}${btn("up", "⬆ فوق", "ارفعها من الأرض")}${btn("snap", "🧲 الزق في أقرب حيطة", "ترجع تقعد على الحيطة")}${btn("down", "⬇ تحت", "نزّلها")}</div>`}
+    ${onWall ? `<small class="hint">الوحدة على الحيطة ${roomSegs(state.project).findIndex((g) => g.id === L.wall) + 1} · من أولها ${n1(L.s)} سم</small>` : `<small class="hint">الوحدة واقفة حرة (مش على حيطة) — الاتجاهات بالنسبة لوشها.</small>`}
+    <div class="ndrows">
+      <span class="ndl">على الجنب</span><div>${onWall ? btn("-s", "⇦ ناحية أول الحيطة", "ناحية أول الحيطة") + btn("+s", "ناحية آخرها ⇨", "ناحية آخر الحيطة") : btn("left", "⇦ شمال", "") + btn("right", "يمين ⇨", "")}</div>
+      <span class="ndl">لقدام / لورا</span><div>${onWall ? btn("out", "↧ بعّدها عن الحيطة", "تبعد عن الحيطة وتقف حرة") + `<button class="ndb" disabled>✓ لازقة في الحيطة</button>` : btn("fwd", "↧ لقدام", "في اتجاه وشها") + btn("back", "↥ لورا", "عكس وشها")}</div>
+      <span class="ndl">الارتفاع</span><div>${btn("up", "⤒ ارفعها", "ارفعها من الأرض")}${btn("down", "⤓ نزّلها", "نزّلها")}</div>
+      ${onWall ? "" : `<span class="ndl"></span><div>${btn("snap", "🧲 الزق في أقرب حيطة", "ترجع تقعد على الحيطة")}</div>`}
+    </div>
     <p class="hint">كل ضغطة = المسافة اللي فوق. «من الأرض» دلوقتي: ${n1(+u.lift || 0)} سم.</p>`;
 }
 function nudgeUnit(u, dir, dist) {
@@ -2234,7 +2325,8 @@ function homeFilterQ() {
   if (!list) return;
   let n = 0;
   const cards = list.querySelectorAll(".hcard");
-  for (const c of cards) { const on = !q || (c.dataset.hname || "").includes(q); c.style.display = on ? "" : "none"; if (on) n++; }
+  const nq = normAr(q); // v124: «نسخه» finds «نسخة», أ/ا, ى/ي
+  for (const c of cards) { const on = !q || normAr(c.dataset.hname || "").includes(nq); c.style.display = on ? "" : "none"; if (on) n++; }
   let h = list.querySelector(".hnoq");
   if (cards.length && !n) { if (!h) { h = document.createElement("p"); h.className = "hint hnoq"; h.textContent = I18n.isEn() ? I18n.tr("مفيش مشاريع بالبحث ده.") : "مفيش مشاريع بالبحث ده."; list.appendChild(h); } h.style.display = ""; }
   else if (h) h.style.display = "none";
@@ -2287,7 +2379,10 @@ function filterLib() {
   const q = (ui.libQ || "").trim().replace(/[أإآ]/g, "ا").replace(/ة/g, "ه").replace(/ى/g, "ي");
   const norm = (t) => t.replace(/[أإآ]/g, "ا").replace(/ة/g, "ه").replace(/ى/g, "ي");
   const lib = $("#lib");
-  for (const c of lib.querySelectorAll(".card, .tpl")) c.hidden = !!q && !q.split(/\s+/).every((w) => norm(c.textContent).includes(w));
+  // v124: carpenters' words for the same thing («تلفزيون» = شاشة, «دولاب هدوم» = دولاب نوم / دريسنج …)
+  const SYN = [["تلفزيون", "شاشه", "تي في", "tv"], ["هدوم", "نوم", "دريسنج", "شماعه"], ["جزامه", "احذيه", "جزم"], ["مكتبه", "ارفف"], ["ترابيزه", "طاوله", "سفره"], ["حوض", "مغسله"], ["بوتجاز", "مسطح", "شفاط"], ["تلاجه", "ثلاجه"], ["كومودينو", "كمودينو"], ["دولاب", "خزانه"], ["ركنه", "كورنر", "ركن"]];
+  const alts = (w) => { const g = SYN.find((x) => x.some((y) => w.includes(y) || y.includes(w) && w.length >= 3)); return g ? [w, ...g] : [w]; };
+  for (const c of lib.querySelectorAll(".card, .tpl")) { const t = norm(c.textContent); c.hidden = !!q && !q.split(/\s+/).every((w) => alts(w).some((a) => t.includes(a))); }
   for (const h3 of lib.querySelectorAll("h3")) {
     const box = h3.nextElementSibling;
     const any = box && [...box.children].some((c) => !c.hidden);
@@ -2493,6 +2588,8 @@ function libUnit(ds, over = null) {
   } else if (ds.dress) {
     const s = DRESSING[ds.dress];
     u = s ? { id: uid(), kind: "dressing", name: s.label, params: clone(s.params), libs: clone(s.libs || {}) } : { id: uid(), kind: "dressing", name: "دريسنج", params: {} };
+    // v124: NOVERA dressing depth (55) where the preset kept the old standard 58
+    seedDefaults(); const dd = +userDefs().dressDepth; if (dd > 0 && (u.params.depth == null || +u.params.depth === 58)) u.params.depth = dd;
   } else if (ds.pieces) u = { id: uid(), kind: "pieces", name: "قطع حرة", params: { pieces: [{ ...PIECE_DEF(), name: "قطعة 1" }] } };
   else if (Decor.EXTRA_PRESETS[ds.preset]) { const x = Decor.EXTRA_PRESETS[ds.preset]; u = { id: uid(), kind: "panel", name: x.label, params: clone(x.params), fabric: clone(x.fabric || {}) }; }
   else if (ds.preset) u = { id: uid(), kind: "panel", name: PRESETS[ds.preset].label, params: { preset: ds.preset } };
@@ -2737,7 +2834,7 @@ const stepChip = (path, label, val, d = 5) => `<span class="chip step"><button d
 const cycleChip = (path, label, table, v) => `<button class="chip" data-cyc="${path}" data-table="${table}">${esc(label)}: <b>${esc(short(TABLES[table][v] ?? String(v)))}</b>${ICON.cycle}</button>`;
 const togChip = (path, label, v) => `<button class="chip tog ${v ? "on" : ""}" data-toggle="${path}">${esc(label)}</button>`;
 const TABLES = { D_STYLES: D.DOOR_STYLES, D_LAYOUT: D.DOOR_LAYOUTS, D_HANDLES: D.HANDLE_TYPES, D_CONTENT: D.CONTENTS, D_DOORS: D.DOORS, D_CONSTR: D.CONSTRUCTIONS,
-  K_DOORS: KU.K_DOORS, K_POS: KU.K_POS, K_HANDLES: KU.K_HANDLES, K_GAP_SIDE: KU.K_GAP_SIDE, K_TOP: KU.K_TOP };
+  K_DOORS: KU.K_DOORS, K_POS: KU.K_POS, K_HANDLES: KU.K_HANDLES, K_GAP_SIDE: KU.K_GAP_SIDE, K_TOP: KU.K_TOP, K_ZONE: KU.K_ZONE_TYPES, K_WR_STYLE: { hinged: "مفصلي", sliding: "سحّاب" } };
 
 function planChips() {
   const room = state.project.room, sel = ui.planSel, inDesign = ui.planIn === "design";
@@ -2762,7 +2859,7 @@ function planChips() {
   if (state.project.units.length) { const rw = ui.planRows || "all"; h += `<span class="chip seg3" role="group" aria-label="الصف اللي ظاهر">${[["all", "الكل"], ["lower", "السفلي"], ["upper", "العلوي"]].map(([k, l]) => `<button data-prows="${k}" class="${rw === k ? "on" : ""}">${l}</button>`).join("")}</span>`; }
   if (state.project.units.some((x) => x.pos)) h += `<button class="chip tog" data-autolay>رصّ تلقائي</button>`;
   { const n = designChecks().filter((c) => c.level !== "n").length; h += `<button class="chip tog ${n ? "warnchip" : ""}" data-checks>فحص التصميم${n ? ` (${n})` : " ✓"}</button>`; }
-  return h + `<button class="chip tog" data-planfit>ملء الشاشة</button>`;
+  return h + `<button class="chip tog" data-planfit>⤢ ظبّط على الشاشة</button>`;
 }
 function renderChips() {
   const u = selUnit();
@@ -2785,8 +2882,19 @@ function renderChips() {
     if (p.unit_category === "washer_gap") { h += cycleChip("washer_gap_side", "جنب يمسك الرأس", "K_GAP_SIDE", p.washer_gap_side || "none") + cycleChip("top_style", "الرأس", "K_TOP", p.top_style) + togChip("include_assembly_holes", "أليتا", p.include_assembly_holes); el.innerHTML = `<div class="cbody">${h}</div>`; return; }
     if (p.unit_category === "cooker_gap") { h += cycleChip("washer_gap_side", "جنب تقفيلة", "K_GAP_SIDE", p.washer_gap_side || "none") + stepChip("cooker_base_height", "القعدة", n1(+p.cooker_base_height || 0), 1); el.innerHTML = `<div class="cbody">${h}</div>`; return; }
     if (p.unit_type === "wall" && !["open_shelf", "corner_glass_display", "corner"].includes(p.unit_category)) h += togChip("include_hood", "شفاط مدمج", p.include_hood) + (p.include_hood ? stepChip("hood_height", "فراغ الشفاط", n1(+p.hood_height || 18), 1) : "");
+    if (p.unit_category === "bedroom_wardrobe") {
+      // v124: a bedroom wardrobe is built from its columns / zones — the generic door / shelf chips did nothing on it
+      const nc = Math.max(1, Math.min(3, +p.wardrobe_column_count || 1));
+      h += stepChip("wardrobe_column_count", "أعمدة", nc, 1) + cycleChip("door_style", "الضلف", "K_WR_STYLE", p.door_style || "hinged");
+      for (let c = 1; c <= nc; c++) {
+        const pre = c === 1 ? "" : `col${c}_`, nz = Math.max(1, +p[`wardrobe_${pre}zone_count`] || 1);
+        for (let z = 1; z <= nz; z++) h += cycleChip(`wardrobe_${pre}zone${z}_type`, `ع${c} · منطقة ${z}`, "K_ZONE", p[`wardrobe_${pre}zone${z}_type`] || "shelves_double");
+      }
+      h += cycleChip("kud_handles.type", "المقبض", "K_HANDLES", p.kud_handles?.type || "none") + togChip("include_toe_kick", "سكلو", p.include_toe_kick) + togChip("include_assembly_holes", "أليتا", p.include_assembly_holes);
+      el.innerHTML = `<div class="cbody">${h}</div>`; return;
+    }
     if (p.unit_category === "pullout") h += stepChip("pullout_tray_count", "صواني", p.pullout_tray_count ?? 3, 1);
-    else h += cycleChip("door_type", "الضلف", "K_DOORS", p.door_type);
+    else if (!["corner", "corner_glass_display", "oven", "fridge", "washing_machine"].includes(p.unit_category)) h += cycleChip("door_type", "الضلف", "K_DOORS", p.door_type); // v124: those build their own fronts
     if (p.door_type === "drawers" || p.door_type === "drawer_top_two_doors_bottom") h += stepChip("drawer_count", "أدراج", p.drawer_count, 1);
     if (p.include_drawer_boxes && (p.door_type === "drawers" || p.door_type === "drawer_top_two_doors_bottom")) h += togChip("drawer_turbo", "تيربو خشب", p.drawer_turbo);
     if (p.include_shelves) h += stepChip("shelf_count", "أرفف", p.shelf_count, 1);
@@ -2797,13 +2905,14 @@ function renderChips() {
   } else if (u.kind === "dressing") {
     h += stepChip("width", "العرض", n1(p.width)) + stepChip("height", "الارتفاع", n1(p.height));
     h += `<span class="chip step"><button data-dsec="-1" aria-label="قسم أقل">${ICON.minus}</button><span>أقسام <b>${p.sections?.length ?? 0}</b></span><button data-dsec="1" aria-label="قسم أكتر">${ICON.plus}</button></span>`;
-    h += cycleChip("doors.style", "الضلف", "D_STYLES", p.doors?.style);
+    h += cycleChip("doors.layout", "توزيع الضلف", "D_LAYOUT", p.doors?.layout || "per_section") + cycleChip("doors.style", "الضلف", "D_STYLES", p.doors?.style);
     h += cycleChip("handles.type", "المقبض", "D_HANDLES", p.handles?.type);
     h += togChip("plinth.enabled", "سكلو", p.plinth?.enabled);
     (p.sections || []).forEach((s, si) => {
       const big = s.compartments.reduce((a, c) => (c.height === "auto" ? c : a), s.compartments[s.compartments.length - 1]);
       const ci = s.compartments.indexOf(big);
-      h += `<span class="chip zone"><span class="zl">قسم ${si + 1}</span><button data-dcc="${si}.${ci}">${esc(short(D.CONTENTS[big.content]))}${ICON.cycle}</button><button data-dcd="${si}.${ci}">${esc(short(D.DOORS[big.door]))}${ICON.cycle}</button></span>`;
+      const perSec = (p.doors?.layout || "per_section") === "per_section"; // v124: with doors over the whole front the per-section door did nothing
+      h += `<span class="chip zone"><span class="zl">قسم ${si + 1}</span><button data-dcc="${si}.${ci}">${esc(short(D.CONTENTS[big.content]))}${ICON.cycle}</button>${perSec ? `<button data-dcd="${si}.${ci}">${esc(short(D.DOORS[big.door]))}${ICON.cycle}</button>` : ""}</span>`;
     });
   } else if (u.kind === "pieces") {
     h += `<span class="chip"><b>${r.pieces || 0}</b> قطعة · <b>${r.banding || 0}</b> م شريط</span><button class="chip tog" data-gotocut>✂ خطة القص والملصقات</button>`;
@@ -3167,8 +3276,10 @@ function renderProps0() {
   if (ui.asm?.id === u.id) { el.innerHTML = asmProps(u); return; }
   if (r.ok && wholeView()) {
     // v117: where the unit stands, as numbers you can type (before: a ± chip of 5 cm on another tab)
-    const ws = wallSpan(state.project, u.id);
-    h += `<div class="grid2 posrow">${ws ? `<label class="f"><span>↔ من أول الحيطة ${ws.index} (سم)</span><input type="text" inputmode="decimal" data-numf data-upos="s" value="${n1(ws.s)}"></label>
+    const ws = state.project.room ? wallSpan(state.project, u.id) : null; // v124: no room → no imaginary «wall 1 · 2820 free»
+    const segsW = state.project.room ? roomSegs(state.project) : [];
+    const wallSel = segsW.length ? `<label class="f"><span>🧱 على أنهي حيطة</span><select data-uwall><option value="">${ws ? "" : "واقفة حرة"}</option>${segsW.map((g, i) => `<option value="${g.id}" ${ws?.seg.id === g.id ? "selected" : ""}>حيطة ${i + 1} (${n1(g.L)} سم)</option>`).join("")}</select></label>` : "";
+    h += `<div class="grid2 posrow">${wallSel}${ws ? `<label class="f"><span>↔ من أول الحيطة ${ws.index} (سم)</span><input type="text" inputmode="decimal" data-numf data-upos="s" value="${n1(ws.s)}"></label>
       <label class="f"><span>⇥ الفاضي اللي بعدها (سم)</span><input type="text" inputmode="decimal" data-numf data-upos="gr" value="${n1(ws.rightStart - ws.e)}"></label>` : ""}
       <label class="f"><span>↕ رفع الوحدة من الأرض (سم)</span><input type="text" inputmode="decimal" data-numf step="1" min="0" data-ulift value="${+u.lift || 0}"></label></div>
     <p class="hint">${ws ? `على الحيطة ${ws.index} — السهم الأبيض في المسقط بيوري أولها. ` : ""}الرفع زيادة على ارتفاعها العادي (وحدة على قاعدة أو رف معلّق).</p>`;
@@ -3341,9 +3452,11 @@ function openWallComp(u, fresh = false, pname = null) {
     if (m && cells[+m[1]]) startPath = cells[+m[1]].path;
   }
   const { L, seg, holes } = wallHoles(u);
+  // v124: units of the next walls / already on this one that stand in its way (not its own kitchen cells)
+  if (seg && L) for (const b of unitBlocks(seg, (q) => q.id === u.id || q.wcOf === u.id)) { const x0 = b.x0 - L.s, x1 = b.x1 - L.s; if (x1 > 0.5 && x0 < (+R(u).params?.width || 0) - 0.5) holes.push({ ...b, x0, x1 }); }
   const O = matOvOptions(u, R(u));
   WComp.open(u, {
-    holes, startPath,
+    holes, startPath, kdef: kdefNow(),
     wallLen: seg ? Math.round((seg.L - (L.s || 0)) * 10) / 10 : null, wallH: seg ? Math.round(seg.h || 260) : null,
     libs: { own: O.own, mine: O.mine, cat: O.cat, name: libDisplay, color: libColorOf },
     params: (x) => R(x).params,
@@ -3356,6 +3469,29 @@ function openWallComp(u, fresh = false, pname = null) {
   });
 }
 /** the doors / windows of a wall in its own frame (x from where its units start, as you face it) */
+/** v124: units already standing on / against this wall that a wall editor must not cover (its own units skipped),
+ * in the wall's run frame (x = pose.s), with the height they take */
+function unitBlocks(seg, skip = () => false) {
+  const P = state.project, poses = projectPoses(P), items = projectItems(P).filter((it) => !skip(P.units.find((q) => q.id === it.id) || {}));
+  const zOf = (it) => {
+    const u = P.units.find((q) => q.id === it.id), p = R(u).params || {}, lf = +u.lift || 0;
+    if (it.row === "upper") { const z0 = +p.wall_mount_height || 145; return [z0, z0 + (+p.height || 80)]; }
+    if (it.row === "lower") return [lf, lf + (+p.height || 88) + (u.kind === "kitchen" ? +p.countertop_thickness || 2 : 0)];
+    return [lf, lf + (+p.height || 200)];
+  };
+  const out = [];
+  for (const it of items) {
+    const L = poses.get(it.id);
+    if (L?.wall !== seg.id) continue;
+    const [z0, z1] = zOf(it), u = P.units.find((q) => q.id === it.id);
+    out.push({ kind: "unit", x0: L.s, x1: L.s + it.box.x1 - it.box.x0, z0, z1, row: it.row, label: unitCode(u) });
+  }
+  for (const [a, b, o] of crossSpans(seg, items.map((it) => ({ ...it, pose: poses.get(it.id) })))) {
+    const [z0, z1] = zOf(o), u = P.units.find((q) => q.id === o.id);
+    out.push({ kind: "unit", x0: a, x1: b, z0, z1, row: o.row, label: unitCode(u) });
+  }
+  return out;
+}
 function segHoles(seg) {
   const room = state.project.room, holes = [], fromA = Room.runStart(seg).S === seg.A;
   for (const o of (room?.openings || []).filter((x) => x.wall === seg.id)) { const a = fromA ? o.at : seg.L - o.at - o.w; const z0 = o.kind === "door" ? 0 : +o.sill || 0; holes.push({ x0: a, x1: a + o.w, z0, z1: z0 + +o.h, kind: o.kind, id: o.id }); }
@@ -3396,9 +3532,25 @@ function openKitWall(seg) {
     alertBar(`🍳 على حيطة ${segs.indexOf(seg) + 1} — لو عايز حيطة تانية اختارها من المسقط`);
   }
   seg = Room.segments(P.room).find((g) => g.id === seg.id) || seg;
-  const holes = segHoles(seg);
   P.kwalls ??= {};
   let K = P.kwalls[seg.id];
+  // v124: units that are already on this wall (auto kitchen, library, a corner unit or fridge from the next wall) — the editor
+  // draws them, keeps the proposal clear of them, and asks first when the wall has some of its own
+  const mine = new Set((K?.cols || []).flatMap((c) => Object.values(c.ids || {})));
+  const blocks = unitBlocks(seg, (q) => mine.has(q.id) || q.kw === seg.id);
+  const onIt = blocks.filter((b) => P.units.some((q) => q.pos?.wall === seg.id && unitCode(q) === b.label));
+  if (!K?.cols?.length && onIt.length && !openKitWall.asked) {
+    const n = Room.segments(P.room).findIndex((g) => g.id === seg.id) + 1;
+    const ids = P.units.filter((q) => q.pos?.wall === seg.id && q.kw !== seg.id && onIt.some((b) => b.label === unitCode(q))).map((q) => q.id);
+    sureAsk(`حيطة ${n} عليها وحدات`, `<p>على الحيطة دي ${onIt.length} وحدة اتحطت قبل كده (${onIt.map((b) => esc(b.label)).join("، ")}).</p><p class="hint">«حيطة بحيطة» يقدر يصمّم في الفاضي حواليهم (هتظهر مخططة ومش هيحط حاجة مكانها)، أو تمسحهم وتصمّم الحيطة كلها من الأول.</p><div class="btnrow"><button class="ghost2 danger" data-sure="wipe">🧹 امسحهم وصمّم الحيطة من الأول</button></div>`, "صمّم حواليهم", "رجوع").then((v) => {
+      if (!v) return;
+      if (v === "wipe") { P.units = P.units.filter((q) => !ids.includes(q.id)); if (ids.includes(state.sel)) state.sel = null; save(); }
+      openKitWall.asked = true;
+      try { openKitWall(seg); } finally { openKitWall.asked = false; }
+    });
+    return;
+  }
+  const holes = segHoles(seg).concat(unitBlocks(seg, (q) => mine.has(q.id) || q.kw === seg.id));
   // v120: units deleted by hand leave the wall too (they used to come back the next time it opened)
   if (K?.cols?.length) {
     const has = new Set(P.units.map((q) => q.id));
@@ -3412,11 +3564,11 @@ function openKitWall(seg) {
   }
   if (!K?.cols?.length) {
     // a new wall: the editor asks first what it is (kitchen / dressing / living room / bedroom / free) and lays it out for that
-    const w = libUnit({ kitchen: "k_wall2" }).params, t = libUnit({ kitchen: "k_pantry60" }).params;
-    K = { s0: 3, cols: [], wallZ: +w.wall_mount_height || 140, wallH: +w.height || 70, tallH: +t.height || 220, ...(K?.type ? { type: K.type } : {}) };
+    const kd = kdefNow();
+    K = { s0: 3, cols: [], wallZ: kd.wallZ, wallH: kd.wallH, tallH: kd.tallH, ...(K?.type ? { type: K.type } : {}) };
   } else if (!K.type) K.type = "kitchen"; // walls made before v120 were kitchens
   KWall.open(K, {
-    holes, wallLen: Math.round(seg.L * 10) / 10, wallH: Math.round(seg.h || 270),
+    holes, kdef: kdefNow(), wallLen: Math.round(seg.L * 10) / 10, wallH: Math.round(seg.h || 270),
     catalog: kwCatalog(), info: kwInfo, kitRow: kwKitRow, bedId: Object.keys(PRESETS).find((k) => PRESETS[k].params?.template === "bed") || "",
     numAsk, alertBar, esc,
     apply: (K2) => kwApply(seg, K2),
@@ -3509,6 +3661,7 @@ function kwApply(seg, K) {
       if (kit) {
         const sp = KU.KITCHEN[kid].params || {};
         u.params.width = +c.w;
+        if (u.params.unit_category === "fridge") u.params.fridge_cavity_width = Math.max(50, +c.w - 2 * (+u.params.panel_thickness || 1.8)); // v124: the cavity fills its column
         if (row === "wall") {
           const ph = +sp.height || 70, std = !sp.height || Math.abs(ph - 70) < 0.5;
           const hh = hOv != null ? +hOv : std ? +K.wallH : ph;
@@ -3521,7 +3674,7 @@ function kwApply(seg, K) {
           u.params.wall_mount_height = Math.round(KWall.topZ0(K, c, (r, id) => kwInfo(id)) * 10) / 10;
           u.params.door_bottom_extension = 0;
         }
-        if (row === "base" && hOv != null) u.params.height = Math.max(30, +hOv - 14); // the carcass under the counter + plinth
+        if (row === "base" && hOv != null) u.params.height = Math.max(30, +hOv - (+u.params.countertop_thickness || 2)); // v124: the cell = counter top; the unit's height holds the plinth
       } else {
         // any other unit: as wide as the column, as tall as its cell, a wall-row one hung at the cell's bottom
         const hh = KWall.cellHeight(K, c, row, kwInfo(kid), (r, id) => kwInfo(id));
@@ -3588,7 +3741,7 @@ function wcSyncKitchen(u) {
     k.params.width = w;
     if (row === "wall") { k.params.height = Math.max(30, Math.min(130, h)); k.params.wall_mount_height = Math.round(c.z0 * 10) / 10; delete k.lift; }
     else if (row === "tall") { k.params.height = Math.max(120, Math.min(300, h)); if (c.z0 > 0.5) k.lift = Math.round(c.z0 * 10) / 10; else delete k.lift; }
-    else if (c.z0 > 0.5) k.lift = Math.round(c.z0 * 10) / 10; else delete k.lift;
+    else { k.params.height = Math.max(30, Math.min(120, Math.round((h - (+k.params.countertop_thickness || 2)) * 10) / 10)); if (c.z0 > 0.5) k.lift = Math.round(c.z0 * 10) / 10; else delete k.lift; } // v124: the base cell = up to the counter top
     const lab = KU.KITCHEN[kid].label;
     if (!k.kwName || k.name === k.kwName) { k.name = /\d+(\.\d+)?$/.test(lab) ? lab.replace(/\d+(\.\d+)?$/, String(w)) : `${lab} ${w}`; k.kwName = k.name; }
     k.pos = { wall: L.wall, s: Math.round(((L.s || 0) + c.x0) * 10) / 10 };
@@ -3680,18 +3833,30 @@ const DEF_KEYS = [ // construction settings a new kitchen unit takes (the unit's
   ["countertop_thickness", "سمك الكونتر (سم)", "n"], ["door_position", "تركيب الضلف", "s", { overlay: "خارجية (أوفرلاي)", inset: "داخلية (إنسيت)" }],
   ["door_gap_overlay", "خلوص الضلف الخارجية (سم)", "n"], ["door_gap_inset", "خلوص الضلف الداخلية (سم)", "n"], ["drawer_gap", "الفاصل بين الأدراج (سم)", "n"],
   ["door_handle_recess", "خلوص المقبض البلت إن (سم)", "n"], ["toe_kick_height", "ارتفاع السكلو (سم)", "n"], ["toe_kick_setback", "رجوع السكلو (سم)", "n"],
-  ["toe_kick_style", "شكل السكلو", "s", { apron: "وزرة قطعة واحدة", segments: "قطع منفصلة" }], ["drawer_box_depth", "عمق صناديق الأدراج (سم)", "n"],
+  ["toe_kick_style", "شكل السكلو", "s", { apron: "وزرة قطعة واحدة", segments: "قطع منفصلة" }], ["led_sep_type", "الفاصل تحت الوحدة اللي لحد السقف", "s", LED_SEP], ["drawer_box_depth", "عمق صناديق الأدراج (سم)", "n"],
   ["include_edge_banding", "شريط حواف", "b"], ["include_assembly_holes", "أليتا (كام لوك)", "b"], ["include_hinge_cups", "كبب المفصلات", "b"], ["include_drawer_boxes", "صناديق الأدراج", "b"],
 ];
 const userDefs = () => { const D = (state.defaults ??= { k: {}, dims: {}, handle: "", room: {} }); D.by ??= { base: {}, wall: {}, tall: {} }; D.rules ??= {}; return D; };
 /** NOVERA's own factory standards — the starting defaults on a fresh install (and the «معايير NOVERA» button) */
 const NOVERA_DEFAULTS = {
-  k: { back_rear_offset: 1.8, door_position: "overlay", include_assembly_holes: true, include_hinge_cups: true, include_drawer_boxes: true },
+  k: { back_rear_offset: 1.8, door_position: "overlay", include_assembly_holes: true, include_hinge_cups: true, include_drawer_boxes: true, countertop_thickness: 2 },
+  // v124 (Amr): base carcass 78 + plinth 10 (+ 2 cm counter = 90) · wall units 80 × 35 hung at 145 · tall units up to the wall units' top (225)
+  dims: { base: { height: 88 }, wall: { height: 80, depth: 35, wall_mount_height: 145 }, tall: { height: 225 } },
+  dressDepth: 55, kerf: 0.3,
   by: { base: { top_style: "rails", top_rail_front_inset: 2.5, door_handle_recess: 4 }, wall: { door_bottom_extension: 2 }, tall: {} },
   rules: { shelves: { base: 1, wall: 1, tall: 4 }, drawerBoxLikeCarcass: true, runner: "bottom", runnerClr: { bottom: 0.6, side: 2.6 } },
 };
 function seedDefaults() {
   const D0 = userDefs();
+  if (!D0.seeded124) {
+    // v124: NOVERA's sizes (Amr confirmed) — only where the user never typed his own
+    D0.dims ??= {};
+    for (const [t, o] of Object.entries(NOVERA_DEFAULTS.dims)) { D0.dims[t] ??= {}; for (const [k, v] of Object.entries(o)) if (D0.dims[t][k] == null || D0.dims[t][k] === "") D0.dims[t][k] = v; }
+    if (D0.k.countertop_thickness == null || D0.k.countertop_thickness === "") D0.k.countertop_thickness = NOVERA_DEFAULTS.k.countertop_thickness;
+    if (D0.dressDepth == null) D0.dressDepth = NOVERA_DEFAULTS.dressDepth;
+    if (state.cutOpts && (state.cutOpts.kerf == null || +state.cutOpts.kerf === 0.4)) state.cutOpts.kerf = NOVERA_DEFAULTS.kerf;
+    D0.seeded124 = true;
+  }
   if (D0.seeded) return;
   for (const [k, v] of Object.entries(NOVERA_DEFAULTS.k)) if (D0.k[k] === undefined || D0.k[k] === "") D0.k[k] = v;
   for (const t of ["base", "wall", "tall"]) D0.by[t] = { ...NOVERA_DEFAULTS.by[t], ...(D0.by[t] || {}) };
@@ -3714,6 +3879,13 @@ function applyTypeDefaults(out, params, { force = false } = {}) {
   return out;
 }
 /** a new kitchen unit's params with the user's defaults under the preset (dims only where the preset kept the standard) */
+/** v124: the kitchen heights every wall editor uses (from the defaults ⚙ — NOVERA: counter 90, wall units 145 → 225) */
+function kdefNow() {
+  seedDefaults();
+  const D0 = userDefs(), d = D0.dims || {}, ct = +D0.k.countertop_thickness || 2;
+  const baseH = +d.base?.height || 88, wallZ = +d.wall?.wall_mount_height || 145, wallH = +d.wall?.height || 80;
+  return { baseTop: baseH + ct, wallZ, wallH, tallH: +d.tall?.height || wallZ + wallH, ct };
+}
 function withDefaults(params) {
   seedDefaults();
   const D0 = userDefs(), out = { ...D0.k, ...params };
@@ -3729,9 +3901,9 @@ function defaultsPop() {
   let h = `<div class="popbox defbox" role="dialog" aria-label="الإعدادات الافتراضية"><div class="libhead"><h2>⚙ الإعدادات الافتراضية</h2><button class="x" data-close aria-label="قفل">×</button></div>
     <p class="hint">اللي تكتبه هنا بيبقى البداية لأي وحدة أو أوضة أو عرض سعر جديد — مش هتحتاج تدخله كل مرة. الخانة الفاضية = إعداد البرنامج العادي (الرقم الباهت).</p>
     <details open><summary>🍳 مقاسات وحدات المطبخ</summary><div class="grid3">
-      ${nf("dims.base.height", "ارتفاع السفلي", D0.dims.base?.height, 72)}${nf("dims.base.depth", "عمق السفلي", D0.dims.base?.depth, 58)}<span></span>
-      ${nf("dims.wall.height", "ارتفاع العلوي", D0.dims.wall?.height, 70)}${nf("dims.wall.depth", "عمق العلوي", D0.dims.wall?.depth, 32)}${nf("dims.wall.wall_mount_height", "تعليق العلوي من الأرض", D0.dims.wall?.wall_mount_height, 140)}
-      ${nf("dims.tall.height", "ارتفاع الطويل", D0.dims.tall?.height, 220)}${nf("dims.tall.depth", "عمق الطويل", D0.dims.tall?.depth, 58)}</div></details>
+      ${nf("dims.base.height", "ارتفاع السفلي بالسكلو (من غير الكونتر)", D0.dims.base?.height, 88)}${nf("dims.base.depth", "عمق السفلي", D0.dims.base?.depth, 58)}<span></span>
+      ${nf("dims.wall.height", "ارتفاع العلوي", D0.dims.wall?.height, 80)}${nf("dims.wall.depth", "عمق العلوي", D0.dims.wall?.depth, 35)}${nf("dims.wall.wall_mount_height", "تعليق العلوي من الأرض", D0.dims.wall?.wall_mount_height, 145)}
+      ${nf("dims.tall.height", "ارتفاع الطويل", D0.dims.tall?.height, 225)}${nf("dims.tall.depth", "عمق الطويل", D0.dims.tall?.depth, 58)}</div></details>
     <details open><summary>🔩 التصنيع والتجميع</summary><div class="grid2">${DEF_KEYS.filter((x) => x[2] !== "b").map(([k, l, t, ch]) => t === "s"
       ? `<label class="f"><span>${esc(l)}</span><select data-def="k.${k}"><option value="">— زي البرنامج —</option>${Object.entries(ch).map(([v, lb]) => `<option value="${v}" ${dv(k) === v ? "selected" : ""}>${esc(lb)}</option>`).join("")}</select></label>`
       : nf(`k.${k}`, l, dv(k), DEF_PH[k] ?? "")).join("")}
@@ -3761,7 +3933,7 @@ function defaultsPop() {
       ${nf("price.validity", "صلاحية عرض السعر (يوم)", P.validity)}<label class="f"><span>مدة التنفيذ</span><input data-deft="price.delivery" value="${esc(trv(P.delivery || ""))}"></label>
       <label class="f full"><span>الضمان</span><input data-deft="price.warranty" value="${esc(trv(P.warranty || ""))}"></label><label class="f full"><span>شروط ثابتة في كل عرض سعر</span><input data-deft="price.notes" value="${esc(P.notes || "")}"></label></div>
       <p class="hint">أسعار كل خامة وكل بند هاردوير بتتظبط من «الورشة والعميل» وبتفضل محفوظة لكل المشاريع.</p></details>
-    <details><summary>✂ القص والملصقات</summary><div class="grid2">${nf("cut.sheetW", "طول اللوح", o.sheetW, 244)}${nf("cut.sheetH", "عرض اللوح", o.sheetH, 122)}${nf("cut.kerf", "سلاح المنشار", o.kerf, 0.4)}${nf("cut.trim", "تشذيب الحرف", o.trim, 1)}${nf("cut.leftMin", "أقل باقي يتحسب", o.leftMin, 30)}
+    <details><summary>✂ القص والملصقات</summary><div class="grid2">${nf("cut.sheetW", "طول اللوح", o.sheetW, 244)}${nf("cut.sheetH", "عرض اللوح", o.sheetH, 122)}${nf("cut.kerf", "سلاح المنشار", o.kerf, 0.3)}${nf("cut.trim", "تشذيب الحرف", o.trim, 1)}${nf("cut.leftMin", "أقل باقي يتحسب", o.leftMin, 30)}
       <label class="f"><span>مقاس الملصقات</span><select data-def="labelFmt"><option value="a4" ${state.labelFmt !== "roll" ? "selected" : ""}>A4 — 21 ملصق</option><option value="roll" ${state.labelFmt === "roll" ? "selected" : ""}>رول 60×40 مم</option></select></label></div></details>
     <p class="hint">الإعدادات دي محفوظة على الجهاز${cloud.db && cloud.me ? " ومع حسابك (بتوصل لأي جهاز تفتح منه)" : ""}، ومش بتغيّر المشاريع القديمة غير لو دوست «طبّقها».</p></div>`;
   return h;
@@ -3819,10 +3991,14 @@ function kitchenProps(p) {
   let h = `<details open><summary>الوحدة</summary><div class="grid2">${selF("unit_category", "النوع", KU.K_CATS, p.unit_category)}${selF("unit_type", "المكان", KU.K_TYPES, p.unit_type)}</div>
     <div class="grid2">${textF("unit_label", "اسم/تعليق للوحدة (بيظهر في الملصقات)", p.unit_label)}</div>
     <div class="grid3">${dims.map(([k, l]) => numF(k, l, p[k])).join("")}</div>
+    ${p.unit_type !== "wall" && p.include_toe_kick !== false && p.include_toe_kick !== "false" ? `<p class="hint">الارتفاع من الأرض بالسكلو: هيكل ${n1((+p.height || 0) - (+p.toe_kick_height || 10))} + سكلو ${n1(+p.toe_kick_height || 10)}${p.unit_type === "base" ? ` — سطح الكونتر على ${n1((+p.height || 0) + (+p.countertop_thickness || 0))} سم` : ""}.</p>` : ""}
     ${p.unit_type === "wall" ? `<div class="grid2">${numF("wall_mount_height", "التعليق من الأرض", p.wall_mount_height)}</div>
-      <div class="bools">${boolF("led_panel_below", "لوح ليد تحت الوحدة", p.led_panel_below)}${p.led_panel_below ? boolF("led_panel_front_color", "اللوح بلون الضلف", p.led_panel_front_color !== false) : ""}</div>
-      <div class="btnrow"><button class="ghost2" data-ceilunit>⬆ ضيف وحدة فوقها لحد السقف (بلوح ليد)</button></div>
-      <p class="hint">بتتحط فوق الوحدة دي بنفس العرض والمكان، ارتفاعها لحد السقف، وتحتها لوح ليد بلون الضلف ومجرى الليد قريب من الحرف الأمامي. شريط الليد بيتحسب في الهاردوير.</p>` : ""}</details>`;
+      <div class="bools">${boolF("led_panel_below", "فاصل ليد تحت الوحدة (لوحدة لحد السقف)", p.led_panel_below)}</div>
+      ${p.led_panel_below ? `<div class="grid2">${selF("led_sep_type", "نوع الفاصل", LED_SEP, p.led_sep_type || "board")}${p.led_sep_type === "recess" ? numF("led_sep_height", "ارتفاع الفاصل", p.led_sep_height ?? 6, 0.5) + numF("led_sep_setback", "غاطس لورا من وش الضلف", p.led_sep_setback ?? 5, 0.5) : p.led_sep_type === "shelf" ? numF("led_sep_projection", "بارز لقدام", p.led_sep_projection ?? 3, 0.5) : ""}</div>
+        <div class="bools">${(p.led_sep_type || "board") !== "profile" ? boolF("led_panel_front_color", "الخشب بلون الضلف", p.led_panel_front_color !== false) : ""}</div>
+        <p class="hint">${{ board: "لوح بسمك الخشب بين الصفين، وشه مع وش الضلف، ومجرى الليد تحته قريب من الحرف.", recess: "قاعدة على الوحدة اللي تحت + شريط راجع لورا (ضل غاطس) + ظهر، والليد في بروفايل تحت الوحدة اللي فوق ورا الشريط — زي مطابخ NOVERA.", profile: "من غير خشب: بروفايل ألومنيوم 2 سم بالليد بين الصفين على طول الواجهة.", shelf: "رف بسمك الخشب طالع لقدام عن وش الضلف، والليد تحته بينوّر الضلف اللي تحت." }[p.led_sep_type || "board"]} الليد والبروفايل بيتحسبوا في الهاردوير.</p>` : ""}
+      <div class="btnrow"><button class="ghost2" data-ceilunit>⬆ ضيف وحدة فوقها لحد السقف (بفاصل ليد)</button></div>
+      <p class="hint">بتتحط فوق الوحدة دي بنفس العرض والمكان وارتفاعها لحد السقف، وتحتها الفاصل اللي تختاره (لوح ليد، شريط غاطس، بروفايل، أو رف بارز).</p>` : ""}</details>`;
   h += kickDrawerSection(p);
   const extra = KU.extraFields(p);
   if (extra.length) {
@@ -3887,7 +4063,7 @@ function kitchenProps(p) {
       ${numF("assembly_cam_depth", "عمق قفل الكام", p.assembly_cam_depth, 0.1)}</div><p class="hint">الأخرام بتبان في العرض لما تشغّل "شفاف".</p><details class="elevbox"><summary>🔩 شرح مصور لخرم الأليتا بالمقاسات دي</summary>${alitaGuideHtml({ params: p })}</details></details>`;
   }
   if (p.include_hinge_cups) {
-    h += `<details><summary>كبب المفصلات</summary><div class="grid2">${numF("hinge_cup_diameter", "قطر الكبة", p.hinge_cup_diameter, 0.1)}${numF("hinge_cup_edge_distance", "البعد عن الحرف", p.hinge_cup_edge_distance, 0.1)}${numF("hinge_cup_count", "عدد الكبب (فاضي = حسب طول الضلفة)", p.hinge_cup_count, 1)}</div></details>`;
+    h += `<details><summary>كبب المفصلات</summary><div class="grid2">${numF("hinge_cup_diameter", "قطر الكبة", p.hinge_cup_diameter, 0.1)}${numF("hinge_cup_edge_distance", "مركز الكبة من حرف الضلفة", p.hinge_cup_edge_distance, 0.1)}${numF("hinge_cup_end_distance", "أول وآخر كبة من طرف الضلفة", p.hinge_cup_end_distance ?? 10, 0.5)}${numF("hinge_cup_count", "عدد الكبب (فاضي = حسب طول الضلفة)", p.hinge_cup_count, 1)}</div></details>`;
   }
   if (p.include_led_marker) h += `<details><summary>مجرى الليد</summary><div class="grid2">${numF("led_marker_offset", "البعد عن الحرف الأمامي", p.led_marker_offset, 0.1)}${numF("led_marker_width", "عرض المجرى", p.led_marker_width, 0.1)}</div></details>`;
   if (p.include_drawer_boxes) {
@@ -4082,7 +4258,7 @@ props.addEventListener("change", (e) => {
       const k = segs.findIndex((g) => g.id === ui.planSel.id), sg = segs[k];
       const v = +t.value;
       if (t.dataset.rw === "L") Room.setWallLength(room, sg.i, v);
-      else if (t.dataset.rw === "ang") Room.setCornerAngle(room, sg.i, toNum(t.value));
+      else if (t.dataset.rw === "ang") { Room.setCornerAngle(room, sg.i, toNum(t.value)); plan.vb = null; } // v124: the room changes shape — fit it again
       else if (v > 0) room.walls[sg.i][t.dataset.rw] = v;
     } else if (t.hasAttribute("data-rwflip")) { const sg = segs.find((g) => g.id === ui.planSel.id); room.walls[sg.i].flip = t.checked; }
     else {
@@ -4124,6 +4300,24 @@ props.addEventListener("change", (e) => {
     return;
   }
   if (d.ulift !== undefined) { u.lift = Math.max(0, toNum(t.value)); save(); renderChips(); view.update(); if (ui.planOn) plan.render(); return; }
+  if (d.uwall !== undefined) {
+    // v124: send the unit to another wall by number — it takes the first free place there
+    if (!t.value) return;
+    pinOthers(u.id);
+    u.pos = { wall: t.value, s: 0 };
+    const items = projectItems(state.project), it = items.find((x) => x.id === u.id), poses = projectPoses(state.project);
+    const seg = roomSegs(state.project).find((g) => g.id === t.value);
+    if (it && seg) {
+      const w = it.box.x1 - it.box.x0, occ = [];
+      for (const o of items) { const P = poses.get(o.id); if (o.id !== u.id && P?.wall === seg.id && sameBand(o.row, it.row)) occ.push([P.s, P.s + o.box.x1 - o.box.x0]); }
+      for (const [a, b] of crossSpans(seg, items.filter((o) => o.id !== u.id).map((o) => ({ ...o, pose: poses.get(o.id) })), it.row)) occ.push([a, b]);
+      occ.sort((a, b) => a[0] - b[0]);
+      let sv = 0; for (const [a, b] of occ) if (a < sv + w - 0.5 && b > sv + 0.5) sv = b;
+      u.pos = { wall: seg.id, s: Math.round(Math.min(Math.max(0, seg.L - w), sv) * 10) / 10 };
+      if (sv + w > seg.L + 0.5) alertBar(`حيطة ${seg.i + 1} مليانة — الوحدة اتحطت في آخرها، شوف التداخل`);
+    }
+    save(); renderChips(); renderProps(); view.update(); if (ui.planOn) plan.render(); return;
+  }
   if (d.upos) {
     const ws = wallSpan(state.project, u.id); if (!ws) return;
     const v = Math.max(0, toNum(t.value)), s = d.upos === "s" ? v : ws.rightStart - v - ws.w;
@@ -4172,7 +4366,7 @@ props.addEventListener("click", (e) => {
 });
 props.addEventListener("input", (e) => {
   if (e.target.id !== "unitName") return;
-  selUnit().name = e.target.value;
+  selUnit().name = e.target.value; selUnit().nameByUser = true;
   save();
   renderStrip();
 });
@@ -4265,7 +4459,7 @@ props.addEventListener("click", (e) => {
     const d = rb.dataset;
     if (d.rwang) {
       const sg = Room.segments(room).find((g) => g.id === ui.planSel?.id);
-      if (sg && Room.setCornerAngle(room, sg.i, +d.rwang)) { save(); renderProps(); plan.render(); view.update(); }
+      if (sg && Room.setCornerAngle(room, sg.i, +d.rwang)) { plan.vb = null; save(); renderProps(); plan.render(); view.update(); } // v124: refit
       return;
     }
     if (rb.hasAttribute("data-rwdel")) {
@@ -4464,8 +4658,9 @@ props.addEventListener("click", (e) => {
   else if (d.mat) { ui.matPick = d.mat; ui.pop = "mat"; renderPop(); }
   else if (b.hasAttribute("data-studio")) openStudio(u);
   else if (b.hasAttribute("data-tostudio")) {
-    const nu = { id: uid(), kind: "panel", name: u.name + " (رسم حر)", params: { template: "free", model: unitToModel(u), materials: {} }, ...(u.pos ? { pos: clone(u.pos) } : {}) };
-    state.project.units.push(nu); state.sel = nu.id; save(); render(true); openStudio(nu);
+    // v124: the copy only joins the project on ✓ — and then it takes the unit's place (✕ leaves nothing behind)
+    const mdl = unitToModel(u), nu = { id: uid(), kind: "panel", name: u.name + " (رسم حر)", params: { template: "free", model: mdl, materials: { ...mdl.mats } }, ...(u.pos ? { pos: clone(u.pos) } : {}), ...(u.lift ? { lift: u.lift } : {}) };
+    openStudio(nu, { fromUnit: u });
   }
 });
 
@@ -4597,10 +4792,18 @@ function alignUnit(u, o, mode) {
   if (!Lu || !Lo) return;
   const bu = localBox(R(u)), bo = localBox(R(o));
   const wu = bu.x1 - bu.x0, wo = bo.x1 - bo.x0;
-  if (Lu.wall && Lu.wall === Lo.wall) {
+  if (Lo.wall && (Lu.wall === Lo.wall || mode !== "center")) { // v124: lining up with a unit on another wall moves it onto that wall
     pinOthers(u.id);
     const sv = mode === "start" ? Lo.s : mode === "end" ? Lo.s + wo - wu : mode === "before" ? Lo.s - wu : mode === "after" ? Lo.s + wo : Lo.s + (wo - wu) / 2;
-    u.pos = { wall: Lu.wall, s: Math.max(0, Math.round(sv * 10) / 10) };
+    u.pos = { wall: Lo.wall, s: Math.max(0, Math.round(sv * 10) / 10) };
+    return;
+  }
+  if (mode !== "center") {
+    // v124: a free-standing target — same rotation, backs on one line, beside / flush with it
+    const ex = Room.axisX(Lo.rot), ez = Room.axisZ(Lo.rot);
+    const want = mode === "start" ? bo.x0 : mode === "end" ? bo.x1 - wu : mode === "before" ? bo.x0 - wu : bo.x1;
+    const a = want - bu.x0, b = bu.y1 - bo.y1;
+    u.pos = { x: Math.round((Lo.x + ex[0] * a + ez[0] * b) * 10) / 10, z: Math.round((Lo.z + ex[1] * a + ez[1] * b) * 10) / 10, rot: Lo.rot };
     return;
   }
   const ax = Room.axisX(Lo.rot), cu = Room.centerOf(Lu, bu), co = Room.centerOf(Lo, bo);
@@ -4763,12 +4966,12 @@ function accProps(u, r) {
   for (const it of list) {
     const opts = Object.entries(it.def.opts || {});
     h += `<div class="accrow ${it.ok ? "" : "bad"}"><div class="acch"><span class="acci">${it.def.icon}</span><b>${esc(it.def.label)}</b><span class="accera">${Acc.ERA[it.def.era] || ""}</span><button class="x" data-accdel="${it.i}" aria-label="شيل">×</button></div>
-      <small>${it.ok ? "" : "⚠ "}الخانة ${it.c.n} (${n1(it.c.w)}×${n1(it.c.h)}×${n1(it.c.d)})${it.ok ? "" : " — " + esc(Acc.fits(it.def, it.c).why)}</small>
+      <small>${it.ok ? "" : "⚠ "}${accCavName(it.c)} (${n1(it.c.w)}×${n1(it.c.h)}×${n1(it.c.d)})${it.ok ? "" : " — " + esc(Acc.fits(it.def, it.c).why)}</small>
       ${cavs.length > 1 ? `<label class="f"><span>الخانة</span><select data-accat="${it.i}">${cavs.map((c) => `<option value="${c.key}" ${c.key === it.c.key ? "selected" : ""}>${c.n} — ${n1(c.w)}×${n1(c.h)}×${n1(c.d)}${Acc.fits(it.def, c).ok ? "" : " (مش مناسبة)"}</option>`).join("")}</select></label>` : ""}
       ${opts.map(([k, o]) => `<div class="dglass"><span>${esc(o.label)}</span><div class="chips2">${o.ch.map(([v, t]) => `<button class="chip tog ${String(it.o[k]) === String(v) ? "on" : ""}" data-accopt="${it.i}|${k}|${v}">${esc(t)}</button>`).join("")}</div></div>`).join("")}</div>`;
   }
   // unit-wide mechanisms: only the ones this unit has something for
-  const has = { open: a.doors + a.flaps + a.drawers > 0, hinge: a.doors + a.flaps > 0, drawer: a.drawers > 0, flap: a.flaps > 0, slide: a.sliders > 0 || a.doors > 0 };
+  const has = { open: a.doors + a.flaps + a.drawers > 0, hinge: a.doors + a.flaps > 0, drawer: a.drawers > 0, flap: a.flaps > 0, slide: a.sliders > 0 }; // v124: sliding systems only on units with sliding doors
   h += `<h4>⚙ ميكانيزمات الوحدة</h4>`;
   for (const [cat, C] of Object.entries(Acc.MECH)) {
     if (!has[cat]) continue;
@@ -4791,19 +4994,18 @@ function accPop() {
   for (const [id, d] of Object.entries(Acc.ACC)) {
     if (d.g !== grp) continue;
     const pool = sel ? [sel] : cavs;
-    const okc = pool.find((c) => Acc.fits(d, c).ok);
+    const okc = accPick(r, d, cavs, sel);
     const why = okc ? "" : pool.length ? Acc.fits(d, pool.reduce((a, c) => (c.w * c.h * c.d > a.w * a.h * a.d ? c : a))).why : "مفيش خانات";
-    h += `<button class="acccard ${okc ? "" : "no"}" data-accadd="${id}"><span class="acci">${d.icon}</span><b>${esc(d.label)}</b><span class="accera">${Acc.ERA[d.era] || ""}</span><small>${esc(d.desc)}</small><em>${okc ? `✓ ${sel ? "بيركب هنا" : `بيركب في الخانة ${okc.n}`}` : `✕ ${esc(why)}`}</em></button>`;
+    h += `<button class="acccard ${okc ? "" : "no"}" data-accadd="${id}"><span class="acci">${d.icon}</span><b>${esc(d.label)}</b><span class="accera">${Acc.ERA[d.era] || ""}</span><small>${esc(d.desc)}</small><em>${okc ? `✓ ${sel ? "بيركب هنا" : `بيركب في ${accCavName(okc)}`}` : `✕ ${esc(why)}`}</em></button>`;
   }
   return h + `</div></div>`;
 }
-function accAdd(u, id) {
-  const r = R(u), cavs = accCavs(u, r), d = Acc.ACC[id];
-  const sel = cavs.find((c) => c.key === ui.accCav);
+/** v124: the cavity an accessory will go in (the same choice for the card «✓ …» and for adding it) */
+const accCavName = (c) => (c.col ? "العمود كله (مكان الأرفف)" : `الخانة ${c.n}`);
+function accPick(r, d, cavs, sel) {
   const usedKeys = new Set((r.accPlan?.list || []).filter((it) => it.def.mv !== "door").map((it) => it.c.key));
   const cand = (sel ? [sel] : cavs).filter((c) => Acc.fits(d, c).ok);
-  if (!cand.length) { alertBar(`${d.label}: مفيش خانة مناسبة — ${sel ? Acc.fits(d, sel).why : "شوف المقاسات المطلوبة"}`); return; }
-  // the free cavity that fits closest (least wasted volume), unless one was picked
+  if (!cand.length) return null;
   let c = sel;
   if (!c) {
     // a free cavity first; door racks want the whole door (the biggest), the rest the smallest cavity they fit in
@@ -4813,10 +5015,17 @@ function accAdd(u, id) {
     const pool = free.length ? free : cand, vol = (x) => x.w * x.h * x.d;
     c = [...pool].sort((a, b) => (d.mv === "door" || d.clear && d.need?.h?.[0] >= 80 ? vol(b) - vol(a) : vol(a) - vol(b)))[0];
   }
+  return c;
+}
+function accAdd(u, id) {
+  const r = R(u), cavs = accCavs(u, r), d = Acc.ACC[id];
+  const sel = cavs.find((c) => c.key === ui.accCav);
+  const c = accPick(r, d, cavs, sel);
+  if (!c) { alertBar(`${d.label}: مفيش خانة مناسبة — ${sel ? Acc.fits(d, sel).why : "شوف المقاسات المطلوبة"}`); return; }
   u.acc = [...(u.acc || []), { id, at: c.key, o: {} }];
   ui.accCav = c.key; ui.accOpen = true; ui.pop = null;
   save(); render(); renderPop();
-  alertBar(`🧰 ${d.label} اتحط في الخانة ${c.n} — افتح الضلف (⇄) عشان تشوفه بيتحرك`);
+  alertBar(`🧰 ${d.label} اتحط في ${accCavName(c)}${d.clear && !c.drawers ? " (الأرفف السايبة اللي هناك اتشالت)" : ""} — افتح الضلف (⇄) عشان تشوفه بيتحرك`);
 }
 function organizerField(u, r) {
   const p = r.params || {};
@@ -5187,16 +5396,16 @@ function applyLibTo(u, key, lib) {
   } else setParams(u, (p) => { p.materials ??= {}; p.materials[key] = lib ? { lib } : {}; });
 }
 // ---- the settings panel: "basic" shows only what most units need, search finds any field
-const BASIC_SECTIONS = ["✏️ ورشة الرسم", "درج الوزرة", "الحيطة الجاية بالمقاس", "الرسم بالقلم", "الأبواب والشبابيك", "المكان", "المقاسات", "المقاسات والنظام", "الوحدة", "الواجهة", "من جوه", "الخامات", "الأقسام (من الشمال لليمين)", "الواجهة (من تحت لفوق)", "الألواح", "اللون والتشطيب", "🧩 التقسيمات الداخلية", "🧰 الإكسسوارات والميكانيزمات", "الأوضة", "كل الحيطان", "🎨 خامة لكل قطعة"];
+const BASIC_SECTIONS = ["✏️ ورشة الرسم", "درج الوزرة", "الحيطة الجاية بالمقاس", "الرسم بالقلم", "الأبواب والشبابيك", "المكان", "المقاسات", "المقاسات والنظام", "الوحدة", "الواجهة", "من جوه", "الخامات", "الأقسام (من الشمال لليمين)", "الواجهة (من تحت لفوق)", "الألواح", "اللون والتشطيب", "🧩 التقسيمات الداخلية", "🧰 الإكسسوارات والميكانيزمات", "الأوضة", "كل الحيطان", "🎨 خامة لكل قطعة", "📺 وحدة الشاشة", "🗄", "▮ الوحدة المصمتة", "⬜ التجاويف الديكور"]; // v124: the TV wall editor shows in «أساسي» too
 /** the sections the workshop cares about: construction, joints, hinges, grooves, banding, drawers, assembly sizes, summary */
 const SHOP_SECTIONS = /التصنيع والتجميع|الهيكل والتجميع|الأليتا|كبب المفصلات|مفحار|الأورزة|درج الوزرة|صناديق الأدراج|الأدراج بالتفصيل|مقاسات التركيب|ملخص الوحدة|تفاصيل الضلف|المقاسات|القطع|الجهاز اللي هيتركب|مجرى الليد/;
 const normAr = (t) => String(t || "").toLowerCase().replace(/[أإآ]/g, "ا").replace(/ة/g, "ه").replace(/ى/g, "ي").replace(/[ًٌٍَُِّْـ]/g, "");
 function propsMode(el) {
-  if (!el || !selUnit() || el.querySelector(".emptyp")) return;
+  if (!el || !selUnit() || el.querySelector(".emptyp") || !el.querySelector("#unitName")) return; // v124: not over a wall / door / room panel
   const adv = !!state.propsAdv, shop = state.propsAdv === "shop";
   const bar = document.createElement("div");
   bar.className = "propsbar";
-  bar.innerHTML = `<input id="propQ" type="search" placeholder="🔍 دوّر في الإعدادات: مفصلة، سكلو، ليد…" aria-label="دوّر في الإعدادات" value="${esc(ui.propQ || "")}">
+  bar.innerHTML = `<input id="propQ" type="search" placeholder="🔍 دوّر: مفصلة، سكلو…" aria-label="دوّر في الإعدادات" value="${esc(ui.propQ || "")}">
     <div class="seg"><button data-padv="0" class="${adv ? "" : "on"}">أساسي</button><button data-padv="shop" class="${shop ? "on" : ""}">🏭 للورشة</button><button data-padv="1" class="${adv && !shop ? "on" : ""}">كل الإعدادات</button></div>`;
   const head = el.querySelector(".stats") || el.querySelector(".tplname");
   (head ? head.after(bar) : el.prepend(bar));
@@ -5366,7 +5575,20 @@ function rotateUnit(u, deg) {
 }
 function dupUnits(u) {
   const many = ui.multi?.size > 1 && ui.multi.has(u.id) ? targetUnits() : [u];
-  const made = many.map((x) => { const c = { ...clone(x), id: uid(), name: x.name + " (نسخة)" }; delete c.code; delete c.pos; return c; });
+  const made = many.map((x) => { const c = { ...clone(x), id: uid(), name: x.name + " (نسخة)" }; delete c.code; delete c.pos; delete c.kw; delete c.kwKind; delete c.kwName; delete c.wcOf; return c; });
+  // v124: one copy goes right next to its original (after it on the wall, else before it), not to the first free place in the room
+  if (made.length === 1 && state.project.room) {
+    const ws = wallSpan(state.project, u.id);
+    if (ws) {
+      pinOthers(null);
+      if (ws.rightStart - ws.e >= ws.w - 0.5) made[0].pos = { wall: ws.L.wall, s: Math.round(ws.e * 10) / 10 };
+      else if (ws.s - ws.leftEnd >= ws.w - 0.5) made[0].pos = { wall: ws.L.wall, s: Math.round((ws.s - ws.w) * 10) / 10 };
+      else alertBar("مفيش مكان جنبها على الحيطة — النسخة اتحطت في أول مكان فاضي");
+    } else {
+      const L = projectPoses(state.project).get(u.id), box = localBox(R(u));
+      if (L && !L.wall) { pinOthers(null); const ex = Room.axisX(L.rot || 0), w = box.x1 - box.x0; made[0].pos = { x: Math.round((L.x + ex[0] * w) * 10) / 10, z: Math.round((L.z + ex[1] * w) * 10) / 10, rot: L.rot || 0 }; }
+    }
+  }
   state.project.units.splice(state.project.units.indexOf(u) + 1, 0, ...made);
   ensureCodes(state.project);
   if (many.length > 1) ui.multi = new Set(made.map((x) => x.id));
@@ -5392,9 +5614,22 @@ function dragTag(e, pose, box, others, row) {
   if (seg) {
     const w = box.x1 - box.x0, s = tidyPose(pose, box, others).s, en = s + w;
     let a = 0, b = seg.L;
-    for (const o of others || []) { if (o.pose?.wall !== pose.wall || !sameBand(o.row, row)) continue; const os = o.pose.s, oe = os + (o.box.x1 - o.box.x0); if (oe <= s + 0.6) a = Math.max(a, oe); if (os >= en - 0.6) b = Math.min(b, os); }
-    const k = roomSegs(state.project).indexOf(seg) + 1;
+    let hitU = null;
+    for (const o of others || []) { if (o.pose?.wall !== pose.wall || !sameBand(o.row, row)) continue; const os = o.pose.s, oe = os + (o.box.x1 - o.box.x0); if (oe <= s + 0.6) a = Math.max(a, oe); else if (os >= en - 0.6) b = Math.min(b, os); else hitU = o; }
+    for (const [ca, cb, o] of crossSpans(seg, others || [], row)) { if (cb <= s + 0.6) a = Math.max(a, cb); else if (ca >= en - 0.6) b = Math.min(b, ca); else hitU = hitU || o; }
+    const k = roomSegs(state.project).findIndex((g) => g.id === pose.wall) + 1;
     t = `حيطة ${k} · ⇤ ${n1(Math.max(0, s - a))}   |   ${n1(Math.max(0, b - en))} ⇥`;
+    // v124: say it while dragging — not only in the checks afterwards
+    const { S, e: ed } = Room.runStart(seg), fromA = S === seg.A;
+    const warn = [];
+    for (const op of state.project.room?.openings || []) {
+      if (op.wall !== pose.wall) continue;
+      const oa = fromA ? op.at : seg.L - op.at - op.w, ob = oa + op.w;
+      if (oa < en - 1 && ob > s + 1) { if (op.kind === "door") warn.push("قدام باب"); else if (row !== "lower") warn.push("قدام شباك"); }
+    }
+    if (hitU) warn.push("داخلة في وحدة");
+    if (warn.length) t += `  ⚠ ${[...new Set(warn)].join(" · ")}`;
+    el.classList.toggle("warn", warn.length > 0);
   }
   el.textContent = t;
   el.style.left = Math.min(innerWidth - 20, e.clientX) + "px"; el.style.top = Math.max(70, e.clientY - 70) + "px";
@@ -5443,6 +5678,8 @@ const dimTags = {
     const scr = (x, y, z) => { const q = g.localToWorld(new T.Vector3(x, z, -y)).project(v.cam); return q.z > 1 ? null : [rc.left - hr.left + (q.x + 1) / 2 * rc.width, rc.top - hr.top + (1 - q.y) / 2 * rc.height]; };
     const xm = (b.x0 + b.x1) / 2, ym = (b.y0 + b.y1) / 2, zm = (z0 + z1) / 2;
     const pts = [scr(xm, b.y0, z1 + 4), scr(b.x0 - 5, b.y0, zm), scr(b.x1 + 3, ym, z1 + 2)];
+    // v124: on a small unit the tags sat on each other — push the later one clear
+    for (let i = 1; i < pts.length; i++) for (let j = 0; j < i; j++) { const a = pts[j], q = pts[i]; if (a && q && Math.abs(a[0] - q[0]) < 78 && Math.abs(a[1] - q[1]) < 42) pts[i] = [q[0] + (q[0] >= a[0] ? 1 : -1) * (78 - Math.abs(a[0] - q[0])), q[1]]; }
     const hd = scr(b.x1, b.y0, zm), hd0 = scr(b.x0, b.y0, zm);
     const p = r.params || {};
     const key = JSON.stringify([u.id, pts.map((x) => x && x.map(Math.round)), d.map(([k]) => p[k])]);
@@ -5483,7 +5720,7 @@ const dimTags = {
     const tag = this.el.querySelector(`[data-dk="${k}"]`);
     let w = w0;
     const mv = (ev) => {
-      w = Math.max(10, Math.round(w0 + ((ev.clientX - x0) * dir[0] + (ev.clientY - y0) * dir[1]) / ppc));
+      w = Math.max(20, Math.min(400, Math.round(w0 + ((ev.clientX - x0) * dir[0] + (ev.clientY - y0) * dir[1]) / ppc))); // v124: a real unit width
       if (tag) tag.firstChild.textContent = n1(w);
       hdl.style.transform = `translate(calc(-50% + ${(w - w0) * ppc * dir[0]}px), calc(-50% + ${(w - w0) * ppc * dir[1]}px))`;
     };
@@ -5656,7 +5893,7 @@ function renderPop0() {
       ${it("present", "🖥", "وضع العرض للعميل", "شاشة نظيفة: الريندر، الألوان البديلة، السعر، والاعتماد بالتوقيع")}
       ${it("worker", "👷", "وضع العمال", "تصفح مصوّر بالأرقام بس: الوحدات، القطع بمقاساتها، الهاردوير، خطوات التجميع وارتفاعات التركيب — مع قراءة بالصوت")}
       <h3>الإعدادات</h3>${it("brand", "🏷", "هوية المصنع", "اللوجو والاسم والتليفون والشروط على كل الأوراق")}${it("defaults", "⚙", "الإعدادات الافتراضية", "مقاسات الوحدات، التصنيع، التسعير، القص — مرة واحدة لكل المشاريع")}${it("look", "🎨", "الألوان والمظهر والكيبورد", "فاتح/غامق، لون التطبيق، كيبورد الأرقام")}
-      <h3>مساعدة</h3>${it("lang", "🌐", I18n.lang === "en" ? "اللغة: عربي" : "Language: English", I18n.lang === "en" ? "التطبيق كله بالعربي" : "Switch the whole app to English")}${it("tour", "🧭", "الجولة التعريفية", "شرح سريع لكل جزء في الشاشة")}${it("about", "ⓘ", "عن التطبيق", "الإصدار والتواصل")}</div>`;
+      <h3>مساعدة</h3>${it("lang", "🌐", I18n.lang === "en" ? "Language: English" : "اللغة: عربي", I18n.lang === "en" ? "Tap to switch the whole app to Arabic · عربي" : "دوس عشان التطبيق كله يبقى إنجليزي · English").replace('class="mitem"', 'class="mitem" data-noi18n')}${it("tour", "🧭", "الجولة التعريفية", "شرح سريع لكل جزء في الشاشة")}${it("about", "ⓘ", "عن التطبيق", "الإصدار والتواصل")}</div>`;
   }
   else if (ui.pop === "ar") {
     const f = ui.arFile || {};
@@ -5915,7 +6152,7 @@ $("#pop").addEventListener("click", async (e) => {
     if (b.hasAttribute("data-vcompare")) {
       b.disabled = true; b.textContent = "بيجهّز الصور…";
       const shots = await variantShots();
-      $("#vcomp").innerHTML = `<div class="vcomp">${shots.map((x) => `<figure><img src="${x.img}" alt=""><figcaption><b>${esc(x.v.name)}</b><span>${priceText(x.q)}</span><small>${x.q.units} وحدة · ${x.q.pieces} قطعة</small>${x.v.id === state.project.variant ? "" : `<button class="ghost2" data-vopen="${x.v.id}">افتح</button>`}</figcaption></figure>`).join("")}</div>`;
+      $("#vcomp").innerHTML = `<div class="vcomp">${shots.map((x) => `<figure><img src="${x.img}" alt=""><figcaption><b>${esc(x.v.name)}</b><span>${priceText(x.q)}</span><small>${unitsTxt(x.q.units)} · ${x.q.pieces} قطعة</small>${x.v.id === state.project.variant ? "" : `<button class="ghost2" data-vopen="${x.v.id}">افتح</button>`}</figcaption></figure>`).join("")}</div>`;
       b.disabled = false; b.textContent = "قارن بالصور";
       return;
     }
@@ -5946,8 +6183,12 @@ $("#pop").addEventListener("click", async (e) => {
   }
   if (ui.pop === "align" && d.al) {
     const o = state.project.units.find((x) => x.id === d.al);
+    const before = targetUnits().map((x) => [x, clone(x.pos)]);
     for (const x of targetUnits()) if (x.id !== o.id) alignUnit(x, o, d.am);
-    ui.pop = null; renderPop(); save(); renderChips(); view.update(); if (ui.planOn) plan.render();
+    // v124: never line a unit up into a wall / out of the room
+    const P2 = projectPoses(state.project), bad = targetUnits().filter((x) => x.id !== o.id && poseOutside(state.project.room, P2.get(x.id), localBox(R(x))));
+    if (bad.length) { for (const [x, pos] of before) { if (pos) x.pos = pos; else delete x.pos; } alertBar("مفيش مكان هناك — كده الوحدة هتدخل في الحيطة / تطلع برّه الأوضة"); }
+    ui.pop = null; renderPop(); save(); renderChips(); renderProps(); renderErrs(); view.update(); if (ui.planOn) plan.render();
     return;
   }
   if (ui.pop === "mat" && (d.finpre || b.hasAttribute("data-finreset") || b.hasAttribute("data-finall"))) {
@@ -5998,6 +6239,8 @@ $("#pop").addEventListener("click", async (e) => {
     const D0 = userDefs();
     Object.assign(D0.k, NOVERA_DEFAULTS.k);
     for (const t of ["base", "wall", "tall"]) Object.assign(D0.by[t], NOVERA_DEFAULTS.by[t]);
+    D0.dims ??= {}; for (const [t, o] of Object.entries(NOVERA_DEFAULTS.dims)) D0.dims[t] = { ...(D0.dims[t] || {}), ...o };
+    D0.dressDepth = NOVERA_DEFAULTS.dressDepth; if (state.cutOpts) state.cutOpts.kerf = NOVERA_DEFAULTS.kerf;
     D0.rules = { ...D0.rules, ...clone(NOVERA_DEFAULTS.rules) };
     D0.seeded = true; state.settingsAt = new Date().toISOString();
     save(); settingsPush(); renderPop(); alertBar("🏭 اتحطت معايير NOVERA كإعدادات افتراضية — أي وحدة جديدة هتاخدها."); return;
@@ -6044,6 +6287,7 @@ $("#pop").addEventListener("click", async (e) => {
     if (d.rk) { grab(); ui.roomKind = d.rk; renderPop(); return; }
     if (b.hasAttribute("data-mkroom")) {
       grab();
+      { const bad = Room.presetCheck?.(ui.roomKind || "rect", ui.roomDims); if (bad) { alertBar(bad); return; } }
       state.project.room = Room.presetRoom(ui.roomKind || "rect", ui.roomDims);
       for (const u of state.project.units) delete u.pos;
       state.whole = true; ui.planSel = null; plan.vb = null; ui.pop = null;
@@ -6174,7 +6418,7 @@ async function showHome() {
       <button class="htile" data-hstock><b>📦 المخزن</b><small>كل خامة بألواحها وبواقيها بالمقاسات، والهاردوير</small></button>
       <button class="htile" data-hdev><b>💬 كلّم المطوّر</b><small>ابعت أي مشكلة أو فكرة بصورة — بتتجمع وتتبعت مرة واحدة والرد بيوصلك هنا</small></button>
     </div>
-    <button class="hcont" data-hlast><span>↩</span><span><b>كمّل «${esc(state.project.name)}»</b><small>${state.project.units.length} وحدة · آخر حاجة كنت شغال عليها</small></span></button>
+    <button class="hcont" data-hlast><span>↩</span><span><b>كمّل «${esc(state.project.name)}»</b><small>${unitsTxt(state.project.units.length)} · آخر حاجة كنت شغال عليها</small></span></button>
     ${homeDash(list)}
     ${ui.lost?.length ? `<div class="hlost"><b>⚠️ في ${ui.lost.length} مشروع كان على الجهاز ومش لاقيه دلوقتي:</b> ${ui.lost.map((x) => esc(x.name)).join(" · ")}<br><small>غالباً النظام مسح تخزين التطبيق (مساحة قليلة، أو التطبيق اتنزّل من جديد). جرّب الاسترجاع — ومن النسخة دي كل مشروع بيتحفظ كمان كملف في «الملفات».</small><div><button class="sm" data-hrecover>🛟 استرجاع</button><button class="sm" data-hlostok>تمام، فاهم</button></div></div>` : ""}
     <div class="hprojhead"><h3 class="hsec">مشاريعي</h3><input id="homeQ" class="libq" placeholder="🔍 دوّر باسم المشروع" value="${esc(ui.homeQ || "")}">
@@ -6182,7 +6426,7 @@ async function showHome() {
     <div class="homelist">${shown.map((x) => `<div class="hcard ${x.id === state.project.id ? "cur" : ""}" data-hname="${esc(String(x.name ?? ""))}"${q && !String(x.name).includes(q) ? ' style="display:none"' : ""}><button class="hopen" data-hopen="${x.id}"><b>${esc(x.name)}</b>
       ${x.srv === "measured" && !x.stages?.design?.done ? `<span class="hstage svwait">📐 اترفع — مستني تصميم</span>` : x.srv === "measuring" ? `<span class="hstage">📐 الرفع لسه شغال</span>` : x.stages && Object.values(x.stages).some((v) => v?.done) ? `<span class="hstage">🧭 ${esc(stageNow({ stages: x.stages }).cur)}</span>` : ""}
       ${x.stages ? pulseStrip(x) : ""}
-      <small>${x.units != null ? `${x.units} وحدة · ` : ""}${x.variants > 1 ? `${x.variants} نسخ · ` : ""}${x.total ? `${money(x.total)} ج · ` : ""}${when(x.updatedAt)}${x.where === "cloud" ? " · أونلاين" : x.where === "both" ? " · على الجهاز وأونلاين" : ""}</small></button>
+      <small>${x.units != null ? `${unitsTxt(x.units)} · ` : ""}${x.variants > 1 ? `${x.variants} نسخ · ` : ""}${x.total ? `${money(x.total)} ج · ` : ""}${when(x.updatedAt)}${x.where === "cloud" ? " · أونلاين" : x.where === "both" ? " · على الجهاز وأونلاين" : ""}</small></button>
       ${x.srv ? `<button class="hdel sm" data-hsv="${x.id}" title="شاشة الرفع" aria-label="شاشة الرفع">📐</button>` : ""}<button class="hdel sm" data-hdup="${x.id}" title="اعمل نسخة من المشروع" aria-label="نسخة من ${esc(x.name)}">⧉</button><button class="hdel danger sm" data-hdel="${x.id}" aria-label="امسح ${esc(x.name)}">${ICON.trash}</button></div>`).join("") || `<p class="hint">${f !== "all" ? "مفيش مشاريع بالبحث ده." : "مفيش مشاريع لسه — ابدأ مشروع جديد."}</p>`}</div>
     <h3 class="hsec">أدوات</h3>
     <div class="homeacts"><label class="ghost2 filebtn">📂 افتح ملف مشروع<input type="file" id="homeImp" accept=".json,application/json" hidden></label><button class="ghost2" data-hrecover>🛟 استرجاع مشروع</button><button class="ghost2" data-hdefs>⚙ الإعدادات الافتراضية</button><button class="ghost2" data-hbrand>🏷 هوية المصنع</button><button class="ghost2" data-hlook>🎨 المظهر والكيبورد</button><button class="ghost2" data-habout>ⓘ عن التطبيق</button><button class="ghost2" data-hlang data-noi18n>🌐 ${I18n.lang === "en" ? "عربي" : "English"}</button></div>
@@ -6203,11 +6447,21 @@ async function refreshProjects() {
 function renderErrs() {
   const u = selUnit();
   const el = $("#errs");
-  if (!u) { el.hidden = true; return; }
+  // v124: the project's own clashes (units inside each other / in front of a door / in a wall) show on the 3D screen too
+  let dc = [];
+  try { if (wholeView() && ui.mode === "owner" && state.tab === "design") dc = designChecks().filter((c) => c.level === "e"); } catch { dc = []; }
+  if (!u) {
+    el.hidden = !dc.length;
+    if (el.hidden) return;
+    const open = ui.errsOpen === "proj";
+    el.innerHTML = (open ? dc.slice(0, 8).map((c) => `<p class="e">${esc(c.text)}</p>`).join("") : "") + `<button class="errbadge bad" data-errtog>⛔ ${dc.length} ${dc.length > 1 ? "مشاكل في التصميم" : "مشكلة في التصميم"}<span>${open ? "▾ اقفل" : "▸ اعرض"}</span></button>`;
+    return;
+  }
   const r = R(u);
   // v117: one small badge in the corner instead of a strip over the tools; tap it to read them (English engine prefixes in Arabic)
   const ar = (t) => String(t).replace(/^Handles:\s*/, "المقابض: ").replace(/^Carcass:\s*/, "الهيكل: ").replace(/^Drawers?:\s*/, "الأدراج: ");
   const errs = [...(r.ok ? [] : r.errors), ...r.checks.filter((c) => c.level === "error").map((c) => c.text)].map(ar);
+  for (const c of dc) if (c.unitId === u.id && !errs.some((t) => c.text.includes(t))) errs.push(c.text); // v124: no double listing of the engine's own errors
   const warns = (r.ok ? r.warnings : []).map(ar);
   el.hidden = !(errs.length + warns.length);
   if (el.hidden) return;
@@ -6215,7 +6469,7 @@ function renderErrs() {
   const badge = `<button class="errbadge ${errs.length ? "bad" : ""}" data-errtog>${errs.length ? `⛔ ${errs.length} ${errs.length > 1 ? "أخطاء" : "خطأ"}` : ""}${errs.length && warns.length ? " · " : ""}${warns.length ? `⚠ ${warns.length} ${warns.length > 1 ? "ملاحظات" : "ملاحظة"}` : ""}<span>${open ? "▾ اقفل" : "▸ اعرض"}</span></button>`;
   el.innerHTML = (open ? errs.map((t) => `<p class="e">${esc(t)}</p>`).join("") + warns.slice(0, 6).map((t) => `<p class="w">${esc(t)}</p>`).join("") : "") + badge;
 }
-$("#errs").addEventListener("click", (e) => { if (!e.target.closest("[data-errtog]")) return; const u = selUnit(); ui.errsOpen = ui.errsOpen === u?.id ? null : u?.id; renderErrs(); });
+$("#errs").addEventListener("click", (e) => { if (!e.target.closest("[data-errtog]")) return; const u = selUnit(), k = u?.id || "proj"; ui.errsOpen = ui.errsOpen === k ? null : k; renderErrs(); });
 $("#errs").addEventListener("pointerdown", (e) => e.stopPropagation());
 
 // ------------------------------------------------------------------ project layout (all units on the walls)
@@ -6276,6 +6530,38 @@ const ROW_FILL = { lower: "#cfe3d3", upper: "#e9ddb8", tall: "#b9cdbf", free: "#
 /** two rows that can bump into each other on a wall (a tall unit meets both the lower and the upper row) */
 const sameBand = (a, b) => a === b || a === "tall" || b === "tall";
 /** v117: a unit standing on a wall and its neighbours there — what the live dimension chain shows and edits */
+/** v124: units that are not on this wall but stand against it (a fridge / corner unit / free unit in its corner), as
+ * [a, b] spans along the wall in the same measure as pose.s */
+/** v124: a posed unit that goes into a wall or stands outside a closed room ("wall" / "out"), else false */
+function poseOutside(room, pose, box) {
+  if (!room?.pts?.length || !pose) return false;
+  const segs = Room.segments(room), fp = Room.footprint(pose, box), c = Room.centerOf(pose, box);
+  for (const q of fp) for (const sg of segs) {
+    const off = (q[0] - sg.A[0]) * sg.n[0] + (q[1] - sg.A[1]) * sg.n[1], al = (q[0] - sg.A[0]) * sg.d[0] + (q[1] - sg.A[1]) * sg.d[1];
+    if (off < -2 && off > -((+sg.t || 12) + 3) && al > 2 && al < sg.L - 2) return "wall";
+  }
+  if (room.closed && room.pts.length > 2) {
+    const pip = ([x, y]) => { let ins = false; const P = room.pts; for (let i = 0, j = P.length - 1; i < P.length; j = i++) { const [xi, yi] = P[i], [xj, yj] = P[j]; if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) ins = !ins; } return ins; };
+    const inset = (q) => { const dx = c[0] - q[0], dy = c[1] - q[1], L = Math.hypot(dx, dy) || 1; return [q[0] + dx / L * 2, q[1] + dy / L * 2]; };
+    if (!pip(c) || fp.some((q) => !pip(inset(q)))) return "out";
+  }
+  return false;
+}
+function crossSpans(seg, list, row) {
+  const out = [];
+  if (!seg) return out;
+  const { S, e } = Room.runStart(seg);
+  for (const o of list) {
+    if (!o.pose || o.pose.wall === seg.id || (row && !sameBand(o.row, row))) continue;
+    const fp = Room.footprint(o.pose, o.box);
+    const off = fp.map((q) => (q[0] - seg.A[0]) * seg.n[0] + (q[1] - seg.A[1]) * seg.n[1]);
+    if (Math.min(...off) > 25 || Math.max(...off) < -1) continue;
+    const al = fp.map((q) => (q[0] - S[0]) * e[0] + (q[1] - S[1]) * e[1]);
+    const a = Math.max(0, Math.min(...al)), b = Math.min(seg.L, Math.max(...al));
+    if (b - a > 1) out.push([a, b, o]);
+  }
+  return out;
+}
 function wallSpan(project, id) {
   const poses = projectPoses(project), L = poses.get(id);
   if (!L?.wall) return null;
@@ -6291,6 +6577,10 @@ function wallSpan(project, id) {
     const os = P.s, oe = P.s + (o.box.x1 - o.box.x0);
     if (oe <= s + 0.6) leftEnd = Math.max(leftEnd, oe);
     if (os >= e - 0.6) rightStart = Math.min(rightStart, os);
+  }
+  for (const [a, b] of crossSpans(seg, items.filter((o) => o.id !== id).map((o) => ({ ...o, pose: poses.get(o.id) })), it.row)) {
+    if (b <= s + 0.6) leftEnd = Math.max(leftEnd, b);
+    if (a >= e - 0.6) rightStart = Math.min(rightStart, a);
   }
   return { seg, L, it, w, s, e, leftEnd, rightStart, depth: it.box.y1 - it.box.y0, index: segs.indexOf(seg) + 1 };
 }
@@ -6360,12 +6650,15 @@ const plan = {
       const sg = g.seg;
       const poly = Room.piecePoly(g, 0, sg.L);
       const on = sel?.kind === "wall" && (sel.id === sg.id || ui.wallMulti?.includes(sg.id));
+      // v124: a finger a few px off a thin wall still picks it (invisible wide stroke under the wall)
+      if (!plan.printing) { const c0 = [sg.A[0] - sg.n[0] * sg.t / 2, sg.A[1] - sg.n[1] * sg.t / 2], c1 = [sg.B[0] - sg.n[0] * sg.t / 2, sg.B[1] - sg.n[1] * sg.t / 2]; h += `<line x1="${c0[0]}" y1="${c0[1]}" x2="${c1[0]}" y2="${c1[1]}" class="pwallhit" stroke-width="${Math.max(sg.t, fs * 2.4)}" data-wall="${sg.id}"/>`; }
       h += `<polygon points="${poly.map((p) => p.join(",")).join(" ")}" class="pwall ${on ? "on" : ""}" data-wall="${sg.id}"/>`;
       // interior dimension along the wall
       const mid = [sg.A[0] + sg.d[0] * sg.L / 2 - sg.n[0] * (sg.t + fs * 1.3), sg.A[1] + sg.d[1] * sg.L / 2 - sg.n[1] * (sg.t + fs * 1.3)];
       let ang = (Math.atan2(sg.d[1], sg.d[0]) * 180) / Math.PI;
       if (ang > 90 || ang < -90) ang += 180;
-      h += `<text x="${mid[0]}" y="${mid[1]}" font-size="${fs}" class="pdim" transform="rotate(${ang} ${mid[0]} ${mid[1]})" text-anchor="middle" dominant-baseline="middle">${n1(sg.L)}</text>`;
+      if (plan.printing || ui.planTool === "draw") h += `<text x="${mid[0]}" y="${mid[1]}" font-size="${fs}" class="pdim" transform="rotate(${ang} ${mid[0]} ${mid[1]})" text-anchor="middle" dominant-baseline="middle">${n1(sg.L)}</text>`;
+      else { const txt = n1(sg.L), tw = fs * (0.7 * txt.length + 1.6), th = fs * 2; h += `<g class="pdimbtn pwlen" data-pdim="wl:${sg.id}" transform="rotate(${ang} ${mid[0]} ${mid[1]})"><rect class="phit" x="${mid[0] - tw / 2 - fs * 0.5}" y="${mid[1] - th}" width="${tw + fs}" height="${th * 2}"/><rect x="${mid[0] - tw / 2}" y="${mid[1] - th / 2}" width="${tw}" height="${th}" rx="${th / 2}"/><text x="${mid[0]}" y="${mid[1]}" font-size="${fs * 1.1}" text-anchor="middle" dominant-baseline="central">${txt}</text></g>`; } // v124: tap the wall length to type it
       // v117: the wall's number (as every message and field calls it) and a small arrow at its start («من أولها»)
       if (!plan.printing) {
         const k = segs.findIndex((x) => x.id === sg.id) + 1, bo = sg.t + fs * 3.3;
@@ -6460,9 +6753,9 @@ const plan = {
         const m = P((a + b) / 2, off);
         let ang = (Math.atan2(sg.d[1], sg.d[0]) * 180) / Math.PI;
         if (ang > 90 || ang < -90) ang += 180;
-        const txt = n1(b - a), tw = fs * (0.62 * txt.length + 1.1), th = fs * 1.5;
+        const txt = n1(b - a), tw = fs * (0.7 * txt.length + 1.5), th = fs * 2; // v124: bigger pills + a wider invisible target for the finger
         return `<g class="pchain ${cls}"><line x1="${p0[0]}" y1="${p0[1]}" x2="${p1[0]}" y2="${p1[1]}"/><line x1="${t0[0]}" y1="${t0[1]}" x2="${t1[0]}" y2="${t1[1]}"/><line x1="${u0[0]}" y1="${u0[1]}" x2="${u1[0]}" y2="${u1[1]}"/>
-          <g class="pdimbtn" data-pdim="${key}" transform="rotate(${ang} ${m[0]} ${m[1]})"><rect x="${m[0] - tw / 2}" y="${m[1] - th / 2}" width="${tw}" height="${th}" rx="${th / 2}"/><text x="${m[0]}" y="${m[1]}" font-size="${fs * 0.95}" text-anchor="middle" dominant-baseline="central">${txt}</text></g></g>`;
+          <g class="pdimbtn" data-pdim="${key}" transform="rotate(${ang} ${m[0]} ${m[1]})"><rect class="phit" x="${m[0] - tw / 2 - fs * 0.5}" y="${m[1] - th}" width="${tw + fs}" height="${th * 2}"/><rect x="${m[0] - tw / 2}" y="${m[1] - th / 2}" width="${tw}" height="${th}" rx="${th / 2}"/><text x="${m[0]}" y="${m[1]}" font-size="${fs * 1.1}" text-anchor="middle" dominant-baseline="central">${txt}</text></g></g>`;
       };
       const ws = state.sel && (sel?.kind === "unit" || !sel || plan.act?.kind === "unit") ? wallSpan(state.project, state.sel) : null;
       if (ws && (rows === "all" || (rows === "upper") === (ws.it.row === "upper") || ws.it.row === "tall")) {
@@ -6576,7 +6869,7 @@ const plan = {
 {
   const host = $("#plan");
   const room = () => state.project.room;
-  const after = (full = false) => { save(); plan.render(); if (full) { renderChips(); renderProps(); } };
+  const after = (full = false) => { save(); plan.render(); if (full) { renderChips(); renderProps(); renderErrs(); } };
   host.addEventListener("pointerdown", (e) => {
     if (ui.planView === "elev") return;
     host.setPointerCapture(e.pointerId);
@@ -6644,7 +6937,7 @@ const plan = {
       const u = selUnit(), L = projectPoses(state.project).get(u.id), box = localBox(R(u));
       plan.act = { kind: "rot", u, box, c: Room.centerOf(L, box), rot0: L.rot, a0: null };
     }
-    else { if (ui.planSel) { ui.planSel = null; after(true); } plan.act = { kind: "pan", c0: [e.clientX, e.clientY], vb: { ...plan.vb } }; }
+    else { if (ui.planSel) { ui.planSel = null; after(true); } plan.act = { kind: "pan", c0: [e.clientX, e.clientY], vb: { ...plan.vb }, empty: true }; }
   });
   host.addEventListener("pointermove", (e) => {
     if (ui.planView === "elev") return;
@@ -6719,7 +7012,11 @@ const plan = {
     if (!a) return;
     if (a.kind === "pinch" && plan.pointers.size) return;
     plan.act = null; ui.dragging = false;
+    // v124: one thing picked at a time — a wall / door / point / column tapped in the plan lets go of the unit (like in the 3D)
+    if (["wall", "open", "pt", "col"].includes(ui.planSel?.kind) && state.sel && !ui.multi) { state.sel = null; renderStrip(); after(true); view.update(); return; }
     if (["unit", "pt", "open", "mep", "col", "wall", "rot"].includes(a.kind)) { after(true); view.update(); }
+    // v124: a tap (not a pan) on empty plan lets go of the unit too
+    else if (a.kind === "pan" && a.empty && Math.hypot(e.clientX - a.c0[0], e.clientY - a.c0[1]) < 6 && state.sel && !ui.multi && !ui.alignPick) { state.sel = null; save(); renderStrip(); after(true); view.update(); }
   };
   host.addEventListener("pointerup", up);
   host.addEventListener("pointercancel", up);
@@ -6734,6 +7031,12 @@ const plan = {
 function planDimEdit(el) {
   const k = el.dataset.pdim, room = state.project.room;
   const val = +el.textContent || 0;
+  if (k.startsWith("wl:")) {
+    const segs = Room.segments(room), sg = segs.find((g) => g.id === k.slice(3));
+    if (!sg) return;
+    numAsk(el, `طول الحيطة ${segs.indexOf(sg) + 1}`, val, (v) => { if (v > 10) { Room.setWallLength(room, sg.i, v); save(); plan.render(); renderProps(); renderChips(); view.update(); } }, { min: 10 });
+    return;
+  }
   const done = () => { save(); plan.render(); renderProps(); renderChips(); view.update(); };
   if (k === "gl" || k === "gr" || k === "w") {
     const u = selUnit(), ws = u && wallSpan(state.project, u.id);
@@ -7834,18 +8137,72 @@ function grainOf(u, pt, lib) {
   return lb.h >= lb.w ? "h" : "w"; // boxes and the rest: along the longer side
 }
 const GRAIN_AR = { h: "↕ بالطول", w: "↔ بالعرض" };
+/** the REAL board a material slot is cut from (cut plan / prices / purchase / stock group on it, not on the engine's slot name):
+ *  its library material when it has one, else the name typed for it, else the factory default board of that slot's family
+ *  (carcass / fronts / back — «الأرفف الثابتة», «القواطيع الرأسية», «وش الأدراج» are the same 18 mm board as «خامة الهيكل» / «خامة الضلف») */
+const BOARD_CLASS = { carcass: "carcass", door: "front", front: "front", back: "back" };
+function boardOf(u, r, key, lib, mname) {
+  if (lib) return libDisplay(lib);
+  const nm = String(mname || "").trim();
+  const root = (keys, k) => { const seen = new Set(); while (k && keys[k]?.fallback && !seen.has(k)) { seen.add(k); k = keys[k].fallback; } return k; };
+  let cls = null;
+  if (u.kind === "kitchen") { if (nm === KU.K_DEFAULT_NAMES[key]) cls = BOARD_CLASS[key]; }
+  else if (u.kind === "dressing") { if (D.MATERIAL_KEYS[key] && (nm === D.MATERIAL_KEYS[key].label || nm === D.MATERIAL_DEFAULT_NAMES[key])) cls = BOARD_CLASS[root(D.MATERIAL_KEYS, key)]; }
+  else if (u.kind === "panel") { const rk = root(Catalog.MATERIAL_KEYS, key); if (nm === Catalog.DEFAULT_MATERIALS.dry[rk]?.[0] || nm === Catalog.MATERIAL_KEYS[key]?.label) cls = BOARD_CLASS[rk]; }
+  return cls ? KU.K_DEFAULT_NAMES[cls] : nm || key;
+}
+/** v124: the old cut groups were keyed by slot name — prices / sheet sizes / stock typed under an absorbed old key keep working */
+function adoptOldKeys(groups, withStock) {
+  const P = priceDefaults(), o = (state.cutOpts ??= {});
+  let changed = false;
+  const live = new Set(groups.map((g) => g.key));
+  for (const g of groups) for (const old of g.olds || []) {
+    if (old === g.key) continue;
+    for (const m of [P.sheets, P.m2]) if (m && !(+m[g.key] > 0) && +m[old] > 0) { m[g.key] = m[old]; changed = true; }
+    if (o.sheetFor?.[old] && !o.sheetFor[g.key]) { o.sheetFor[g.key] = o.sheetFor[old]; changed = true; }
+    const st = withStock && !live.has(old) && state.stock?.[old];
+    if (st) {
+      const to = stockOf(g.key);
+      to.sheets = (+to.sheets || 0) + (+st.sheets || 0);
+      to.remnants = [...(to.remnants || []), ...(st.remnants || [])];
+      delete state.stock[old]; changed = true;
+    }
+  }
+  if (changed) save();
+}
+/** stock kept under an engine slot's default name («الأرفف الثابتة — 18 مم», «NOVERA - كونتر أبيض — 18 مم») → the board it really is */
+function stockKeysCanon() {
+  if (!state.stock) return;
+  const cls = {};
+  for (const [k, v] of Object.entries(D.MATERIAL_KEYS)) { let r = k; const seen = new Set(); while (D.MATERIAL_KEYS[r]?.fallback && !seen.has(r)) { seen.add(r); r = D.MATERIAL_KEYS[r].fallback; } if (BOARD_CLASS[r]) cls[v.label] = BOARD_CLASS[r]; }
+  for (const [k, v] of Object.entries(Catalog.MATERIAL_KEYS)) { let r = k; const seen = new Set(); while (Catalog.MATERIAL_KEYS[r]?.fallback && !seen.has(r)) { seen.add(r); r = Catalog.MATERIAL_KEYS[r].fallback; } if (BOARD_CLASS[r]) { const nm = Catalog.DEFAULT_MATERIALS.dry[r]?.[0]; if (nm) cls[nm] = BOARD_CLASS[r]; } }
+  let changed = false;
+  for (const k of Object.keys(state.stock)) {
+    const m = /^(.*?) — (\d+(?:\.\d+)?) مم$/.exec(k), c = m && cls[m[1]];
+    if (!c) continue;
+    const to = `${KU.K_DEFAULT_NAMES[c]} — ${m[2]} مم`;
+    if (to === k) continue;
+    const st = state.stock[k], dst = stockOf(to);
+    dst.sheets = (+dst.sheets || 0) + (+st.sheets || 0); dst.remnants = [...(dst.remnants || []), ...(st.remnants || [])];
+    delete state.stock[k]; changed = true;
+  }
+  if (changed) save();
+}
 function projectPieces(project) {
-  ensureCodes(project);
+  // throw-away preview projects (quick estimates of proposals) must not burn unit codes on this device
+  if (project === state.project) ensureCodes(project);
   const out = [];
   project.units.forEach((u, ui_) => {
     const r = R(u);
     if (!r.ok) return;
     let n = 0;
+    const uc = u.code || `T${String(ui_ + 1).padStart(2, "0")}`; // a preview project's units have no code (and get none)
     for (const pt of r.parts) {
       if (!pt.cut_piece || !pt.label) continue;
-      const key = `${u.code}-${String(++n).padStart(2, "0")}`;
+      const key = `${uc}-${String(++n).padStart(2, "0")}`;
       const lib0 = r.libOf(pt.material);
-      const base = { ucode: u.code, unit: u.name, unitIdx: ui_, mname: r.names[pt.material] || pt.material, color: r.colors?.[pt.material] || "#ccc", lib: lib0, grain: grainOf(u, pt, lib0), kind: grainKind(pt), uid: u.id };
+      const mname = r.names[pt.material] || pt.material;
+      const base = { ucode: uc, unit: u.name, unitIdx: ui_, mname, board: boardOf(u, r, pt.material, lib0, mname), color: r.colors?.[pt.material] || "#ccc", lib: lib0, grain: grainOf(u, pt, lib0), kind: grainKind(pt), uid: u.id };
       const parts = splitBack(pt);
       if (parts.length === 1) { out.push({ ...base, key, code: key, pt, lb: pt.label }); continue; }
       const plinth = pt.role === "plinth" || /سكلو|وزرة/.test(pt.name || "");
@@ -7892,8 +8249,13 @@ function cutGroups(project) {
     const layers = thick.some((t) => Math.abs(t - lb.t) < 0.01) ? [lb.t] : Catalog.laminationFor(lb.t) || [lb.t];
     const g = pc.grain; // "h": the grain runs along the piece's h → lay it along the sheet's length (sheet w); "w": along the piece's w; null: free to turn
     layers.forEach((t, li) => {
-      const key = `${pc.mname} — ${Math.round(t * 10)} مم`;
-      if (!groups.has(key)) groups.set(key, { key, color: pc.color, parts: [] });
+      // grouped by the REAL board (v124): the engine's slot names («الأرفف الثابتة»، «وش الأدراج»…) are only info
+      const mm = Math.round(t * 10), key = `${pc.board || pc.mname} — ${mm} مم`;
+      if (!groups.has(key)) groups.set(key, { key, name: pc.board || pc.mname, color: pc.color, parts: [], slots: [], olds: [] });
+      const G0 = groups.get(key);
+      if (!G0.slots.includes(pc.mname)) G0.slots.push(pc.mname);
+      const old = `${pc.mname} — ${mm} مم`;
+      if (!G0.olds.includes(old)) G0.olds.push(old);
       const name = `${pc.unit}: ${pc.pt.name}${layers.length > 1 ? ` (طبقة ${li + 1})` : ""}`;
       const code = pc.key + (layers.length > 1 ? `/${li + 1}` : "");
       groups.get(key).parts.push(g === "h" ? { name, w: lb.h, h: lb.w, rotate: false, key: pc.key, code, grain: "w", hdim: "w", uid: pc.uid, kind: pc.kind, pname: pc.pt.name }
@@ -7927,9 +8289,16 @@ function cutGroups(project) {
       grp.parts.push(merged);
     }
   }
+  if (project === state.project) stockKeysCanon();
+  adoptOldKeys([...groups.values()], project === state.project);
   return { groups: [...groups.values()], outside };
 }
 
+/** the engine slots a board group holds («خامة الهيكل · الأرفف الثابتة · القواطيع الرأسية») — info only */
+function slotsInfo(g) {
+  const list = [...new Set((g.slots || []).map((x) => String(x || "").replace(/\s*\(.*\)\s*$/, "").trim()).filter(Boolean))];
+  return list.length && !(list.length === 1 && list[0] === g.name) ? `<small class="hint gslots">${esc(list.join(" · "))}</small>` : "";
+}
 const SHEETS = [[244, 122], [244, 183], [280, 207], [305, 122], [366, 183]];
 /** the sheet a material group is cut from: the user's choice, else the default — or the smallest standard
  *  sheet every piece fits on when the default is too small */
@@ -7955,7 +8324,7 @@ const remUsed = (r) => r.from !== state.project.id && +r.w > 0 && +r.h > 0 && (s
 const STOCK_MODES = [["first", "البواقي الأول (توفّر ألواح)"], ["pick", "أنا أختار البواقي"], ["off", "من غير بواقي"]];
 const stockModeSel = (id) => `<label class="f"><span>البواقي من المخزن</span><select data-stockmode id="${id}">${STOCK_MODES.map(([k, l]) => `<option value="${k}" ${stockMode() === k ? "selected" : ""}>${l}</option>`).join("")}</select></label>`;
 /** cut settings always usable numbers (an empty or mistyped box used to put every part on its own sheet) */
-const CUT_DEF = { sheetW: 244, sheetH: 122, kerf: 0.4, trim: 1 };
+const CUT_DEF = { sheetW: 244, sheetH: 122, kerf: 0.3, trim: 1 };
 const CUT_OK = { sheetW: [50, 600], sheetH: [30, 400], kerf: [0, 1.5], trim: [0, 5] };
 function cutOptsSafe() {
   const o = (state.cutOpts ??= {});
@@ -8024,7 +8393,7 @@ function drawCut() {
     const st = res.stats;
     const sh = g.sheet || { w: o.sheetW, h: o.sheetH };
     const pick = o.sheetFor?.[g.key];
-    h += `<section class="mgroup"><div class="mg-h"><i style="background:${g.color}"></i><h3>${esc(g.key)}</h3><span class="pill">${st.sheets} لوح ${sh.w}×${sh.h}</span><span class="pill">استغلال ${Math.round(st.utilization * 100)}%</span><span class="pill soft">${st.parts} قطعة</span>
+    h += `<section class="mgroup"><div class="mg-h"><i style="background:${g.color}"></i><h3>${esc(g.key)}</h3>${slotsInfo(g)}<span class="pill">${st.sheets} لوح ${sh.w}×${sh.h}</span><span class="pill">استغلال ${Math.round(st.utilization * 100)}%</span><span class="pill soft">${st.parts} قطعة</span>
       ${sheetSizeHtml(g.key, sh)}</div>`;
     if (sh.auto) h += `<p class="hint">اللوح اتظبط ${sh.w}×${sh.h} لوحده عشان فيه قطع أطول من ${o.sheetW}×${o.sheetH} — غيّره لو الخامة دي بتيجي بمقاس تاني.</p>`;
     else if (pick) h += `<p class="hint">المقاس ده للخامة دي بس — باقي الخامات على مقاسها.</p>`;
@@ -8123,7 +8492,7 @@ $("#v-cut").addEventListener("click", async (e) => {
     let n = 0;
     const pid = state.project.id, list = leftovers();
     for (const k of Object.keys(state.stock || {})) state.stock[k].remnants = (state.stock[k].remnants || []).filter((r) => r.from !== pid);
-    for (const x of list) { const st = stockOf(x.key); for (const o of x.list) { st.remnants.push({ id: uid(), w: Math.floor(o.w), h: Math.floor(o.h), from: pid, fromName: state.project.name, at: new Date().toISOString() }); n++; } }
+    for (const x of list) { const st = stockOf(x.key); for (const o of x.list) { st.remnants.push({ id: uid(), w: Math.floor(o.w * 10) / 10, h: Math.floor(o.h * 10) / 10, from: pid, fromName: state.project.name, at: new Date().toISOString() }); n++; } }
     save(); alertBar(`اتضاف ${n} باقي للمخزن ✓ — بيتستخدموا في المشاريع الجاية`); STK().f = "all"; for (const x of list) STK().open[x.key] = true; stockOpen(); return;
   }
 });
@@ -8152,7 +8521,7 @@ function drawParts() {
     const r = R(u);
     h += `<section class="mgroup"><div class="mg-h"><span class="ucode">${esc(unitCode(u))}</span><h3>${esc(u.name)}</h3><span class="pill soft">${esc(r.label || "")}</span>${r.ok ? `<span class="pill">${r.pieces} قطعة</span><span class="pill soft">${r.banding} م شريط</span>` : '<span class="pill bad">فيها أخطاء</span>'}</div>`;
     if (!r.ok) { h += r.errors.map((t) => `<p class="e">${esc(t)}</p>`).join("") + "</section>"; continue; }
-    for (const [k, v] of Object.entries(r.hardware)) hw[k] = Math.round(((hw[k] || 0) + v) * 100) / 100;
+    for (const [k, v] of Object.entries(hwNorm(r.hardware))) hw[k] = Math.round(((hw[k] || 0) + v) * 100) / 100;
     const codes = partCodes(u, r);
     h += `<div class="tblwrap"><table class="tbl"><thead><tr><th>الرقم</th><th>القطعة</th><th>الخامة</th><th>عرض</th><th>طول</th><th>سمك</th><th>شريط</th><th>أخرام</th></tr></thead><tbody>`;
     for (const pt of r.parts) {
@@ -8187,13 +8556,15 @@ function grooveInfo(pc) {
   const vert = g.axis === "vertical";
   const len = vert ? lb.h : lb.w, across = vert ? lb.w : lb.h;
   const a = g.ratio * across, b = across - a, near = a <= b;
-  const from = vert ? (near ? "الشمال" : "اليمين") : near ? "تحت" : "فوق";
+  // v124: measured from the edge it belongs to, never «يمين / شمال» — a left and a right side are the same piece mirrored and
+  // both read «من اليمين» before. A back groove sits by the back edge, a drawer-bottom groove by the box's bottom edge.
+  const from = drawer ? "الحرف اللي تحت" : "الحرف الخلفي";
   // measured to the groove's near side (the saw/router fence), not its centre
   const dist = Math.max(0, Math.round(((near ? a : b) - gw / 20) * 10) / 10);
-  const where = dist < 0.05 ? `على الحرف ${from} (رابيت)` : `على ${n1(dist)} سم من ${from}`;
+  const where = dist < 0.05 ? `على ${from} (رابيت)` : `على ${n1(dist)} سم من ${from}`;
   return { len: Math.round(len * 10) / 10, dist, from, gw, gz, vert,
     text: `مفحار بطول ${n1(len)} سم · ${where} · ${gw}×${gz} مم`,
-    short: `مفحار ${n1(len)} · ${dist < 0.05 ? `على حرف ${from}` : `${n1(dist)} من ${from}`} · ${gw}×${gz}مم` };
+    short: `مفحار ${n1(len)} · ${dist < 0.05 ? `رابيت على ${from}` : `${n1(dist)} من ${from}`} · ${gw}×${gz}مم` };
 }
 function pieceSvg(pc, size = 1) {
   const { lb, pt } = pc;
@@ -8283,7 +8654,7 @@ function labelsHtml(pieces, pid, sheets, fmt) {
   .wrap { display: ${a4 ? "grid" : "block"}; grid-template-columns: repeat(3, 63mm); gap: 2mm 3mm; justify-content: center; }
   .lab { width: 60mm; height: 40mm; box-sizing: border-box; padding: 1.5mm 2mm; border: ${a4 ? "0.2mm dashed #999" : "0"}; display: flex; flex-direction: column; gap: 0.8mm; overflow: hidden; break-inside: avoid; ${a4 ? "" : "page-break-after: always;"} }
   .top { display: flex; justify-content: space-between; gap: 2mm; font-size: 8.5pt; line-height: 1.15; }
-  .top b { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .top b { flex: 1; min-width: 0; font-size: 7pt; line-height: 1.1; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
   .dim { font-weight: 700; white-space: nowrap; direction: ltr; }
   .mid { flex: 1; display: flex; gap: 1.5mm; min-height: 0; align-items: center; }
   .dia { flex: 1; min-width: 0; } .dia svg { width: 100%; height: auto; max-height: 21mm; }
@@ -8334,7 +8705,7 @@ function prodBoard(pieces, prog) {
   }
   return h + `</div>`;
 }
-const SHOP_JUMP = () => `<div class="shopjump">${[["shPrice", "💰 الأسعار"], ["shStock", "📦 المخزن"], ["shBuy", "🛒 الطلبيات"], ["shSup", "🚚 المورّدين"], ["shLabels", "🏷 الملصقات"]].map(([id, t]) => `<button class="chip tog" data-jump="${id}">${t}</button>`).join("")}</div>`;
+const SHOP_JUMP = () => `<div class="shopjump">${[["shClient", "🤝 العميل"], ["shWork", "🏭 الورشة"], ["shPrice", "💰 الأسعار"], ["shStock", "📦 المخزن"], ["shBuy", "🛒 الطلبيات"], ["shSup", "🚚 المورّدين"], ["shLabels", "🏷 الملصقات"]].map(([id, t]) => `<button class="chip tog" data-jump="${id}">${t}</button>`).join("")}</div>`;
 /** v99: open the workshop screen at one of its sections — from the ☰ menu or the shortcut bar */
 function goShop(id) {
   ui.jump = id; if (id === "shSup") ui.supOpen = true;
@@ -8348,6 +8719,10 @@ function shopJumpNow() {
   if (!el) return; // not drawn yet (cut plan still computing)
   if (el.tagName === "DETAILS") el.open = true;
   const go = () => el.isConnected && el.scrollIntoView({ block: "start" });
+  // the client and workshop cards stand side by side: show which one was asked for
+  document.querySelectorAll("#v-shop .jumped").forEach((x) => x !== el && x.classList.remove("jumped"));
+  el.classList.remove("jumped"); void el.offsetWidth; el.classList.add("jumped");
+  document.querySelectorAll("#v-shop [data-jump]").forEach((b) => b.classList.toggle("on", b.dataset.jump === el.id));
   setTimeout(go, 60); setTimeout(go, 400);
 }
 // a scroll by hand ends the jump, so a later redraw does not pull the screen back
@@ -8363,7 +8738,7 @@ function drawShop() {
   const appr = ui.ownerApproval;
   let h = `${SHOP_JUMP()}<div class="cuthead"><div><h2>الورشة والعميل — ${esc(state.project.name)}</h2><p class="hint">ابعت التصميم للعميل يعتمده، واطبع الملصقات، وتابع كل قطعة في الورشة.</p></div></div>
   <div class="shopgrid">
-    <section class="mgroup"><div class="mg-h"><h3>العميل</h3>${appr?.status === "approved" ? `<span class="pill">${ICON.check} اتعمد ${appr.at ? new Date(appr.at).toLocaleDateString("ar-EG") : ""}${appr.variantName ? ` — اختار «${esc(appr.variantName)}»` : ""}</span>` : `<span class="pill soft">لسه ما اتعمدش</span>`}</div>
+    <section class="mgroup" id="shClient"><div class="mg-h"><h3>العميل</h3>${appr?.status === "approved" ? `<span class="pill">${ICON.check} اتعمد ${appr.at ? new Date(appr.at).toLocaleDateString("ar-EG") : ""}${appr.variantName ? ` — اختار «${esc(appr.variantName)}»` : ""}</span>` : `<span class="pill soft">لسه ما اتعمدش</span>`}</div>
       ${STORE_BUILD ? "" : `<p class="hint">بيتبعت نسخة من التصميم دلوقتي. لو عدّلت بعد كده دوس "حدّث النسخة المبعوتة".</p>
       ${clientOptsHtml(appr)}`}
       <details ${state.project.approval?.sig ? "open" : ""}><summary>✍️ اعتماد على الجهاز (توقيع العميل)${state.project.approval?.sig ? " · ✓" : ""}</summary>${sigPadHtml()}</details>
@@ -8371,7 +8746,7 @@ function drawShop() {
       ${online ? `<div class="btnrow"><button class="primary" data-publish="client">${ICON.share}${ui.sharedAt ? "حدّث النسخة المبعوتة" : "جهّز لينك العميل"}</button></div>
       ${ui.sharedAt ? linkBox(`${APP_URL}#c-${pid}`) : ""}` : STORE_BUILD ? `<p class="hint">ابعت للعميل عرض السعر PDF أو صورة التصميم من «تصدير وطباعة»، أو اعرضهوله هنا في وضع العرض وخلّيه يوقّع على الجهاز.</p>` : `<p class="e">لينك العميل واختيار اللون بالسعر شغالين من نسخة NOVERA أونلاين بس (عشان العميل يفتح نفس التصميم من موبايله). افتحها من هنا وانت مسجّل دخول، وانقل المشروع بـ«تصدير ← نسخة من المشروع» لو مش موجود هناك.</p>${window.noveraNative ? "" : `<div class="btnrow"><a class="primary" style="text-decoration:none" href="${APP_URL}" target="_blank" rel="noopener">افتح NOVERA أونلاين</a></div>`}`}
     </section>
-    <section class="mgroup"><div class="mg-h"><h3>الورشة</h3><span class="pill soft">${doneN} / ${pieces.length} قطعة خلصت</span></div>
+    <section class="mgroup" id="shWork"><div class="mg-h"><h3>الورشة</h3><span class="pill soft">${doneN} / ${pieces.length} قطعة خلصت</span></div>
       <p class="hint">${STORE_BUILD ? "كل ملصق عليه QR. امسحه من هنا بكاميرا الجهاز، تفتحلك القطعة وتعلّم المرحلة اللي خلصت." : "كل ملصق عليه QR. العامل يصوّره بكاميرا الموبايل، تفتحله القطعة ويعلّم المرحلة اللي خلصها — أو امسحه من هنا بكاميرا الجهاز."}</p>
       <div class="btnrow"><button class="primary" data-scan>📷 امسح ملصق</button></div>
       ${prodBoard(pieces, prog)}
@@ -8847,7 +9222,8 @@ function designChecks(project = state.project) {
   swingChecks(items, add, room, label);
   // overlaps (same height band)
   // the real height band of a wall unit (a ceiling unit sits above the wall unit under it — that is no clash)
-  const band = (it) => { const lf = +it.u?.lift || 0; if (lf > 0.5 && it.u?.kind !== "kitchen") { const hh = +R(it.u).params?.height || 60; return [lf + 0.5, lf + hh - 0.5]; } if (it.row === "upper") { const q = R(it.u).params || {}, z0 = +q.wall_mount_height || 140, lp = q.led_panel_below === true || q.led_panel_below === "true" ? +q.panel_thickness || 1.8 : 0; return [z0 - lp + 0.5, z0 + (+q.height || 70) - 0.5]; } return it.row === "lower" ? [0, 90] : it.row === "free" ? [0, 80] : [0, Math.max(90, +R(it.u).params?.height || 240) - 0.5]; }; // a tall unit: its real height (a ceiling unit over it is no clash)
+  const band = (it) => { const lf = +it.u?.lift || 0; if (lf > 0.5 && it.u?.kind !== "kitchen") { const hh = +R(it.u).params?.height || 60; return [lf + 0.5, lf + hh - 0.5]; } if (it.row === "upper") { const q = R(it.u).params || {}, z0 = +q.wall_mount_height || 140, lp = q.led_panel_below === true || q.led_panel_below === "true" ? ledSepH(q) : 0; return [z0 - lp + 0.5, z0 + (+q.height || 70) - 0.5]; } return it.row === "lower" ? [0, 90] : it.row === "free" ? [0, 80] : [0, Math.max(90, +R(it.u).params?.height || topOf(it.u) || 240) - 0.5]; };
+  const topOf = (u) => { const bs = (R(u).parts || []).filter((x) => x.box).map((x) => x.box.z1); return bs.length ? Math.max(...bs) + (+u.lift || 0) : 0; }; // v124: a free drawing has no «height» — its boards tell // a tall unit: its real height (a ceiling unit over it is no clash)
   for (let i = 0; i < items.length; i++) for (let j = i + 1; j < items.length; j++) {
     const A = items[i], B = items[j], [a0, a1] = band(A), [b0, b1] = band(B);
     if (A.u?.wcOf === B.id || B.u?.wcOf === A.id) continue; // v119: a kitchen cell of a divided wall stands inside it on purpose
@@ -8895,6 +9271,12 @@ function designChecks(project = state.project) {
       if (!o || o.wall === it.pose.wall) continue;
       const sg = segs.find((g) => g.id === o.wall);
       add(o.kind === "door" ? "e" : "w", `${label(it)} واقفة قدام ${o.kind === "door" ? "باب" : "شباك"} حيطة ${(sg?.i ?? 0) + 1} (جنب الركن) — ${o.kind === "door" ? "الباب مش هيفتح" : "هتقفل الشباك"}.`, it.id);
+    }
+    // v124: a unit pushed into a wall or standing outside the room
+    for (const it of items) {
+      if (it.u?.wcOf) continue;
+      const o = poseOutside(room, it.pose, it.box);
+      if (o) add("e", `${label(it)} ${o === "wall" ? "داخلة في الحيطة" : "برّه الأوضة"} — رجّعها لمكانها.`, it.id);
     }
     // services next to the units that need them
     const pts = (room.points || []).map((p) => ({ ...p, w: Room.pointWorld(room, p) })).filter((p) => p.w);
@@ -8972,7 +9354,12 @@ function designChecks(project = state.project) {
       const sum = dist(sinkIt, hobIt) + dist(hobIt, frIt) + dist(frIt, sinkIt);
       if (sum > 790) add("w", `مثلث الشغل (حوض ↔ بوتجاز ↔ تلاجة) ${n1(sum / 100)} م — طويل، الأحسن بين 4 و7.9 م.`);
       else if (sum < 400) add("w", `مثلث الشغل ${n1(sum / 100)} م بس — المطبخ هيبقى زحمة وانت بتشتغل.`);
-      else add("n", `مثلث الشغل ${n1(sum / 100)} م — مظبوط ✓`);
+      else {
+        // v124: the total can be right while a leg is not — say which
+        const legs = [["الحوض ↔ البوتجاز", dist(sinkIt, hobIt)], ["البوتجاز ↔ التلاجة", dist(hobIt, frIt)], ["التلاجة ↔ الحوض", dist(frIt, sinkIt)]].filter(([, d]) => d < 120 || d > 270);
+        if (legs.length) add("w", `مثلث الشغل ${n1(sum / 100)} م، بس ${legs.map(([l, d]) => `${l} ${n1(d / 100)} م`).join(" و")} — كل ضلع الأحسن بين 1.2 و2.7 م.`);
+        else add("n", `مثلث الشغل ${n1(sum / 100)} م — مظبوط ✓`);
+      }
     }
     const gapOn = (a, b) => {
       if (!a.pose.wall || a.pose.wall !== b.pose.wall || a.pose.s == null || b.pose.s == null) return null;
@@ -8997,7 +9384,7 @@ function designChecks(project = state.project) {
         if (o.row !== "upper" || o.pose.wall !== hobIt.pose.wall) continue;
         const g = gapOn(hobIt, o);
         if (g == null || g > -5) continue;
-        const hp = prm(hobIt), hobTop = hp.unit_category === "cooker_gap" ? (+hp.cooker_base_height || 0) + 85 : (+hp.height || 72) + (hp.include_toe_kick === false || hp.include_toe_kick === "false" ? 0 : +hp.toe_kick_height || 10) + (+hp.countertop_thickness || 3.8);
+        const hp = prm(hobIt), hobTop = hp.unit_category === "cooker_gap" ? (+hp.cooker_base_height || 0) + 85 : (+hp.height || 72) + (+hp.countertop_thickness || 3.8); // v124: the kitchen height already holds the plinth
         const hoodBottom = +prm(o).wall_mount_height || 140; // a built-in hood hangs inside the unit: its bottom is the unit's bottom
         const clear = hoodBottom - hobTop;
         if (clear < 65) add("w", `${label(o)} فوق البوتجاز على ${n1(clear)} سم بس — الشفاط محتاج 65 سم على الأقل (غاز 75).`, o.id);
@@ -9364,16 +9751,37 @@ function layoutPages(u) {
   return pages;
 }
 /** the guide as a PDF: summary page + one page per step with a 3D picture */
+/** a message that stays while a long job runs (alertBar's toasts go after 3.5 s); null text removes it */
+function progressToast(t) {
+  let d = document.querySelector("body > .toast.prog");
+  if (t == null) { d?.remove(); return; }
+  if (!d) { document.querySelectorAll("body > .toast").forEach((x) => x.remove()); d = document.createElement("div"); d.className = "toast prog"; d.setAttribute("role", "status"); document.body.appendChild(d); }
+  d.textContent = t;
+}
+/** let the browser paint (the progress, taps) between heavy steps */
+const breathe = () => new Promise((res) => requestAnimationFrame(() => setTimeout(res, 0)));
+let asmPdfBusy = false;
 async function exportAssemblyPdf(units = state.project.units) {
   if (!view.ready) throw new Error("العرض 3D مش جاهز");
+  // a second tap while the file is being made must not start a second one
+  if (asmPdfBusy) { progressToast(document.querySelector("body > .toast.prog")?.textContent || "لسه بيجهّز الملف…"); throw new Error("لسه بيجهّز الملف — استنى شوية"); }
+  asmPdfBusy = true;
+  try { return await exportAssemblyPdf0(units); } finally { asmPdfBusy = false; progressToast(null); }
+}
+async function exportAssemblyPdf0(units) {
   const keep = { asm: ui.asm, sel: state.sel, whole: state.whole, open: ui.open, plan: ui.planOn };
   const pages = [];
+  const todo = units.filter((u) => R(u).ok), N = todo.length;
   try {
     ui.planOn = false; state.whole = false; ui.open = false;
     $("#view3d").hidden = false;
+    let ui_ = 0;
     for (const u of units) {
       const S = unitSummary(u);
       if (!S) continue;
+      ui_++;
+      progressToast(`بيجهّز دليل التجميع… ${ui_} من ${N || units.length} (${unitCode(u)})`);
+      await breathe();
       const steps = asmPlan(u);
       state.sel = u.id;
       ui.asm = { id: u.id, step: steps.length - 1 };
@@ -9392,7 +9800,9 @@ async function exportAssemblyPdf(units = state.project.units) {
       pages.push({ title: "ملخص الوحدة", svg: t });
       pages.push(...layoutPages(u));
       for (let k = 0; k < steps.length; k++) {
-        ui.asm.step = k;
+        if (k) { progressToast(`بيجهّز دليل التجميع… ${ui_} من ${N || units.length} (${unitCode(u)} · خطوة ${k + 1} من ${steps.length})`); await breathe(); }
+        ui.asm = { id: u.id, step: k }; // a redraw while waiting may have reset it
+        state.sel = u.id;
         view.update(false);
         const img = view.snapshot(900, 600, false, frameBox || true);
         const s = steps[k];
@@ -9417,7 +9827,10 @@ async function exportAssemblyPdf(units = state.project.units) {
     render(true);
   }
   if (!pages.length) throw new Error("مفيش وحدات");
+  progressToast(`بيعمل ملف الـPDF (${pages.length} صفحة)…`);
+  await breathe();
   const bytes = await Exp.pdfFromSvgPages(pages.map((p, i) => pageFrame(p.svg, { title: p.title, page: i + 1, pages: pages.length })), { title: `${state.project.name} — دليل التجميع` });
+  progressToast(null);
   return Exp.deliver(cloud.downloads, `${fileBase()} — دليل التجميع.pdf`, bytes);
 }
 
@@ -9427,6 +9840,7 @@ function priceDefaults() {
   state.prices ??= { sheets: {}, band: 0, hw: {}, laborUnit: 0, laborM2: 0, install: 0, margin: 35, client: "", validity: 15, delivery: "4 أسابيع", warranty: "سنتين على الهيكل والهاردوير", notes: "" };
   // v97: one way of pricing — every piece by its own area × its board's price per m² (+ waste); the old "by sheets" mode is gone
   state.prices.mode = "area"; state.prices.waste ??= 10; state.prices.m2 ??= {}; state.prices.transport ??= 0;
+  state.prices.hw ??= {}; hwAdopt(state.prices.hw, true);
   return state.prices;
 }
 /** costs of the current project from the cut plan, hardware and labour; null until the cut plan is ready */
@@ -9471,7 +9885,7 @@ function quoteCalc() {
         if (uid0) unitMat.set(uid0, (unitMat.get(uid0) || 0) + pa * wf * pm);
       }
       const q = Math.round(a * wf * 100) / 100;
-      lines.push({ k: "m2", key: g.key, color: g.color, roles, area: a, sheet: g.sheet || groupSheet(g), label: `${g.key} (${n1(a)} م² + ${+P.waste || 0}% هالك)`, qty: q, unit: "م²", price: Math.round(pm), total: a * wf * pm });
+      lines.push({ k: "m2", key: g.key, slots: g.slots, name: g.name, color: g.color, roles, area: a, sheet: g.sheet || groupSheet(g), label: `${g.key} (${n1(a)} م² + ${+P.waste || 0}% هالك)`, qty: q, unit: "م²", price: Math.round(pm), total: a * wf * pm });
       mat += a * wf * pm; // unrounded: the units' rows add up to exactly this
     } else {
       const n = cutData.results[g.key].sheets.filter((s) => s.stock !== "remnant").length, pr = +P.sheets[g.key] || +P.defaultSheet || 0;
@@ -9517,7 +9931,9 @@ function quoteCalc() {
   for (const [k, q] of Object.entries(hw)) { const pr = +P.hw[k] || 0; lines.push({ k: "hw", key: k, label: k, qty: q, unit: "", price: pr, total: q * pr }); hwT += q * pr; }
   const units = state.project.units.filter((u) => R(u).ok).length;
   const fixed = (+P.install || 0) + (+P.transport || 0);
-  const labor = units * (+P.laborUnit || 0) + area * (+P.laborM2 || 0) + fixed;
+  // a quick cut list is one table, not furniture units: no labour per unit there (labour per m² still counts)
+  const perU = state.project.qcut ? 0 : +P.laborUnit || 0;
+  const labor = units * perU + area * (+P.laborM2 || 0) + fixed;
   const cost = mat + band + hwT + labor;
   const total = cost * (1 + (+P.margin || 0) / 100);
   let usedA = 0, sheetA = 0;
@@ -9531,9 +9947,9 @@ function quoteCalc() {
     perUnit = state.project.units.filter((u) => unitArea.has(u.id)).map((u) => {
       const r = R(u);
       let hwU = 0;
-      for (const [k, q] of Object.entries(r.hardware || {})) hwU += q * (+P.hw[k] || 0);
+      for (const [k, q] of Object.entries(hwNorm(r.hardware))) hwU += q * (+P.hw[k] || 0);
       const a = unitArea.get(u.id) || 0;
-      const c = (unitMat.get(u.id) || 0) + (unitOut.get(u.id) || 0) + r.banding * (+P.band || 0) + hwU + (+P.laborUnit || 0) + a * (+P.laborM2 || 0) + (area ? (fixed * a) / area : 0);
+      const c = (unitMat.get(u.id) || 0) + (unitOut.get(u.id) || 0) + r.banding * (+P.band || 0) + hwU + perU + a * (+P.laborM2 || 0) + (area ? (fixed * a) / area : 0);
       return { u, price: c * (1 + (+P.margin || 0) / 100), cost: c, area: a };
     });
   } else {
@@ -9542,8 +9958,8 @@ function quoteCalc() {
     perUnit = state.project.units.filter((u) => unitArea.has(u.id)).map((u) => {
       const r = R(u), a = unitArea.get(u.id) || 0;
       let hwU = 0;
-      for (const [k, q] of Object.entries(r.hardware || {})) hwU += q * (+P.hw[k] || 0);
-      const c = (area ? (sheetMat * a) / area : sheetMat / Math.max(1, units)) + (unitOut.get(u.id) || 0) + r.banding * (+P.band || 0) + hwU + (+P.laborUnit || 0) + a * (+P.laborM2 || 0) + (area ? (fixed * a) / area : 0);
+      for (const [k, q] of Object.entries(hwNorm(r.hardware))) hwU += q * (+P.hw[k] || 0);
+      const c = (area ? (sheetMat * a) / area : sheetMat / Math.max(1, units)) + (unitOut.get(u.id) || 0) + r.banding * (+P.band || 0) + hwU + perU + a * (+P.laborM2 || 0) + (area ? (fixed * a) / area : 0);
       return { u, price: c * (1 + (+P.margin || 0) / 100), cost: c, area: a };
     });
   }
@@ -9591,7 +10007,7 @@ function quoteHtml() {
       <div class="pboards">${boards.map((L) => {
         const sh = L.sheet || { w: 244, h: 122 }, m2typed = +P.m2?.[L.key] > 0;
         const roles = Object.entries(L.roles || {}).filter(([, a]) => a > 0.005).map(([r, a]) => `${PRICE_ROLE[r]} ${n1(a)} م²`).join(" · ");
-        return `<div class="pboard"><div class="pbh"><i style="background:${L.color || "#ccc"}"></i><b>${esc(L.key)}</b><span class="pill soft">${money(L.total)} ج.م</span></div>
+        return `<div class="pboard"><div class="pbh"><i style="background:${L.color || "#ccc"}"></i><b>${esc(L.key)}</b><span class="pill soft">${money(L.total)} ج.م</span></div>${slotsInfo(L)}
           <small class="hint">${roles}${roles ? " · " : ""}+ ${+P.waste || 0}% هالك = ${n1(L.qty)} م²</small>
           <div class="pbrow"><label class="f"><span>سعر اللوح</span>${num(`sheets.${L.key}`, P.sheets[L.key], P.defaultSheet || 0)}</label>
             <label class="f"><span>سعر المتر${m2typed ? "" : " (محسوب)"}</span><input class="pin" type="text" inputmode="decimal" data-numf data-price="m2.${esc(L.key)}" value="${m2typed ? P.m2[L.key] : ""}" placeholder="${L.price || 0}"></label></div>
@@ -9606,6 +10022,7 @@ function quoteHtml() {
       ${hws.map((L) => `<tr><td>${esc(L.label)}</td><td class="num">${L.qty}</td><td>${num(`hw.${L.key}`, L.price)}</td><td class="num">${money(L.total)}</td></tr>`).join("")}</tbody></table></div>
     </details>
     <details class="pstep" data-pk="labor" ${pOpen("labor", true)}><summary><b>③ المصنعية والنقل</b><span>${money(Q.labor)} ج.م</span></summary>
+      ${state.project.qcut ? `<p class="hint">كت ليست سريع: مصنعية الوحدة مش بتتحسب هنا — المصنعية بالمتر المربع بس.</p>` : ""}
       <div class="grid2">${pin("laborUnit", P.laborUnit, "مصنعية لكل وحدة")}${pin("laborM2", P.laborM2, "مصنعية لكل متر مربع خشب")}${pin("transport", P.transport, "النقل (مبلغ للمشروع)")}${pin("install", P.install, "التركيب (مبلغ للمشروع)")}</div>
     </details>
     <details class="pstep" data-pk="margin" ${pOpen("margin", true)}><summary><b>④ الهالك والربح</b><span>${+P.waste || 0}% · ${+P.margin || 0}%</span></summary>
@@ -9627,22 +10044,61 @@ function quoteHtml() {
 /** the small line at the foot of a label: unit, material and — always — the sheet number (shortened in the middle, never cut off) */
 function labelFoot(pc, sheets) {
   const sh = sheets[pc.key] ? I18n.tr(sheets[pc.key].split(" · ")[0]) : "";
-  let mid = I18n.tr(`${pc.ucode} ${pc.unit} · ${pc.mname}`);
+  let mid = I18n.tr(`${pc.ucode} ${pc.unit} · ${pc.board || pc.mname}`);
   const room = 50 - (sh ? sh.length + 3 : 0);
   if (mid.length > room) mid = mid.slice(0, Math.max(10, room - 1)) + "…";
   return sh ? `${mid} · ${sh}` : mid;
 }
-async function exportQuotePdf() {
+/** a small in-app «are you sure» box (the app's pop style, not window.confirm) → true when the user goes on */
+function sureAsk(title, html, ok = "كمّل", cancel = "رجوع") {
+  return new Promise((res) => {
+    const el = document.createElement("div");
+    el.className = "pop sureask"; el.style.zIndex = 75;
+    el.innerHTML = `<div class="popbox" role="dialog" aria-label="${esc(title)}"><div class="libhead"><h2>${esc(title)}</h2></div>${html}
+      <div class="btnrow"><button class="primary" data-sure="1">${esc(ok)}</button><button class="ghost2" data-sure="0">${esc(cancel)}</button></div></div>`;
+    const done = (v) => { el.remove(); res(v); };
+    el.addEventListener("click", (e) => { const b = e.target.closest("[data-sure]"); if (b) done(b.dataset.sure === "1" ? true : b.dataset.sure === "0" ? false : b.dataset.sure); else if (e.target === el) done(false); });
+    document.body.appendChild(el);
+  });
+}
+/** what the quote would price at 0: boards, supplier items, hardware, banding — and the units that use them */
+function quoteMissing(Q) {
+  const P = priceDefaults(), out = [], units = new Set();
+  for (const L of Q.lines) {
+    if (L.total > 0 || !(L.qty > 0)) continue;
+    if (L.k === "m2") {
+      out.push(`لوح «${L.key}»`);
+      const g = cutData?.groups?.find((x) => x.key === L.key);
+      for (const p of g?.parts || []) units.add(String(p.key).split("-")[0]);
+    } else if (L.k === "out" || L.k === "ctr") out.push(L.label);
+    else if (L.k === "band") out.push("شريط الحواف");
+  }
+  const hw = Q.lines.filter((L) => L.k === "hw" && !(L.price > 0)).map((L) => L.label);
+  if (hw.length) out.push(`هاردوير من غير سعر (${hw.length}): ${hw.slice(0, 6).join("، ")}${hw.length > 6 ? "…" : ""}`);
+  if (!(+P.laborUnit > 0) && !(+P.laborM2 > 0)) out.push("المصنعية");
+  return { list: out, units: [...units].filter((c) => state.project.units.some((u) => u.code === c)) };
+}
+async function exportQuotePdf(force = false) {
   await cutReady();
   const P = priceDefaults(), Q = quoteCalc();
   if (!Q.total) throw new Error("اكتب الأسعار الأول");
+  if (!force) {
+    const M = quoteMissing(Q);
+    if (M.list.length) {
+      const go = await sureAsk("في حاجات من غير سعر", `<p class="w">العرض هيطلع أرخص من الحقيقي — البنود دي متحسبة بصفر:</p><ul class="surelist">${M.list.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>${M.units.length ? `<p class="hint">الوحدات اللي فيها خامة من غير سعر: <b>${esc(M.units.join("، "))}</b></p>` : ""}<p class="hint">اكتب الأسعار في «💰 الأسعار وعرض السعر» — أو كمّل كده.</p>`, "اعمل العرض برضه", "رجوع أكتب الأسعار");
+      if (!go) return "declined";
+    }
+  }
   const no = `Q-${new Date().toISOString().slice(2, 10).replace(/-/g, "")}-${state.project.id.slice(0, 4).toUpperCase()}`;
   let t = `<text x="940" y="112" font-size="30" font-weight="800" text-anchor="end">عرض سعر</text>
     <text x="940" y="146" font-size="16" fill="#555" text-anchor="end">رقم ${esc(no)} · ${today()} · ساري ${P.validity} يوم</text>
     <text x="60" y="112" font-size="18" font-weight="700">${esc(P.client || "")}</text>
     <text x="60" y="140" font-size="15" fill="#555">${esc(state.project.name)}</text>`;
   let view3 = "";
-  try { if (view.ready && state.project.units.length) { const keep = state.whole; state.whole = true; view3 = view.snapshot(900, 480, true); state.whole = keep; view.update(true); } } catch { view3 = ""; }
+  // no selection in the client's picture (gold box / outline / corner dots): dropped for the shot, put back after
+  const keepSel = { sel: state.sel, multi: ui.multi, whole: state.whole };
+  try { if (view.ready && state.project.units.length) { state.sel = null; ui.multi = null; state.whole = true; view.update(true); view3 = view.snapshot(900, 480, true); } } catch { view3 = ""; }
+  finally { state.sel = keepSel.sel; ui.multi = keepSel.multi; state.whole = keepSel.whole; try { if (view.ready) view.update(true); } catch { /* the view comes back on the next render */ } }
   let y = 170;
   if (view3) { t += `<image href="${view3}" x="50" y="${y}" width="900" height="480"/>`; y += 500; }
   // the table carries on onto more pages (it used to stop after ~20 units while the total counted them all)
@@ -9692,9 +10148,57 @@ function cutRows() {
   }
   return rows;
 }
+// v124: one name per hardware item for prices / the purchase list / the hardware stock — the engines call the same thing
+// by different names (kitchen «مفصلات», dressing «مفصلة ضلفة», panel «مفصلة سوفت كلوز 35 مم»; rails keyed by their exact length).
+// [pattern, canonical name, metres-or-count per piece (number | match → number), options {max: the cam and its bolt are one set, extra: [[name, per piece]]}]
+const HW_RAIL = "ماسورة شماعة (متر طولي)", HW_SLIDE = "سكة سحّاب علوي + سفلي (متر طولي)";
+const HW_ALIAS = [
+  [/^(مفصلات|مفصلة ضلفة|مفصلة سوفت كلوز 35 مم)$/, "مفصلة سوفت كلوز 35 مم"],
+  [/^(أطقم أليتا\/كام لوك|أليتا — مسمار كام)$/, "طقم أليتا (مينيفكس)"],
+  [/^أليتا — (قفل كام|مسمار\/برغي كام)$/, "طقم أليتا (مينيفكس)", 1, { max: true }],
+  [/^(أليتا — دويلين \(خابور\)|دوبل \(خابور\))$/, "دوبل خشب (خابور)"],
+  [/^أزواج سكك أدراج$/, "مجرى درج (زوج)"],
+  [/^(سكة|مجرى) درج ([\d.]+) سم \(زوج\)$/, (m) => `مجرى درج ${m[2]} سم (زوج)`],
+  [/^شماعة ([\d.]+) سم$/, HW_RAIL, (m) => +m[1] / 100],
+  [/^ماسورة دولاب Ø25 طول ([\d.]+) سم \+ 2 حامل$/, HW_RAIL, (m) => +m[1] / 100, { extra: [["حامل شماعة", 2]] }],
+  [/^طقم سكة سحّاب \(علوي \+ سفلي\) ([\d.]+) م$/, HW_SLIDE, (m) => +m[1]],
+  [/^(ذراع رفع قلاب \(طقم\)|ذراع رفع ضلفة قلاب \(طقم\))$/, "ذراع رفع قلاب (طقم)"],
+  [/^(أرجل وحدات سفلية|رجل بلاستيك 10 سم|رجل بلاستيك سكلو 10 سم \(قابلة للضبط\))$/, "رجل بلاستيك 10 سم (قابلة للضبط)"],
+  [/^(كليبس وزرة|كليبس وزرة سكلو)$/, "كليبس وزرة سكلو"],
+  [/^(بروفايل ليد ألومنيوم غاطس \(متر\)|بروفايل ليد ألومنيوم \+ غطا \(متر\))$/, "بروفايل ليد ألومنيوم (متر)"],
+];
+/** name → { name: canonical, f: quantity factor (metres per piece for rails), max, extra } */
+function hwCanon(k) {
+  for (const [rx, to, f, o] of HW_ALIAS) {
+    const m = rx.exec(k);
+    if (!m) continue;
+    return { name: typeof to === "function" ? to(m) : to, f: typeof f === "function" ? f(m) : f ?? 1, max: !!o?.max, extra: o?.extra || [] };
+  }
+  return { name: k, f: 1, max: false, extra: [] };
+}
+/** one unit's (or any) hardware map with canonical names */
+function hwNorm(hw) {
+  const out = {}, r2 = (v) => Math.round(v * 100) / 100;
+  for (const [k, v] of Object.entries(hw || {})) {
+    const q = +v || 0, c = hwCanon(k);
+    out[c.name] = r2(c.max ? Math.max(out[c.name] || 0, q * c.f) : (out[c.name] || 0) + q * c.f);
+    for (const [n, per] of c.extra) out[n] = r2((out[n] || 0) + q * per);
+  }
+  return out;
+}
+/** prices / stock typed under an engine's own name still count: carried over to the canonical name (a piece price of a rail → per metre) */
+function hwAdopt(map, isPrice) {
+  if (!map) return;
+  for (const k of Object.keys(map)) {
+    const c = hwCanon(k), v = +map[k] || 0;
+    if (c.name === k || !(v > 0) || !(c.f > 0)) continue;
+    if (isPrice) { if (!(+map[c.name] > 0)) map[c.name] = Math.round((v / c.f) * 100) / 100; }
+    else { map[c.name] = Math.round(((+map[c.name] || 0) + v * c.f) * 100) / 100; delete map[k]; }
+  }
+}
 function hardwareTotals() {
   const hw = {};
-  for (const u of state.project.units) { const r = R(u); if (!r.ok) continue; for (const [k, v] of Object.entries(r.hardware || {})) hw[k] = Math.round(((hw[k] || 0) + v) * 100) / 100; }
+  for (const u of state.project.units) { const r = R(u); if (!r.ok) continue; for (const [k, v] of Object.entries(hwNorm(r.hardware))) hw[k] = Math.round(((hw[k] || 0) + v) * 100) / 100; }
   return hw;
 }
 function mepRows() {
@@ -9806,6 +10310,28 @@ async function exportCutPdf() {
   if (!pages.length) throw new Error("مفيش قطع");
   return pdfOut(pages, "خطة القص", true);
 }
+/** a piece's name on a 60 × 40 label: up to two lines (split at a word) in the 33 mm beside the code box, the font shrinking
+ *  a little for long names so the WHOLE name shows («جنب شمال - درج 1 - أسفل الفرن»); → [[text, font mm, baseline mm]] */
+function labelName(name) {
+  const room = 33, k = I18n.isEn() ? 0.55 : 0.5; // mm of space, average glyph width in em
+  const words = String(name || "").split(/\s+/).filter(Boolean);
+  const fits = (fs) => {
+    const cap = Math.floor(room / (fs * k));
+    if (words.join(" ").length <= cap) return [words.join(" ")];
+    let a = "", i = 0;
+    for (; i < words.length; i++) { const t = a ? `${a} ${words[i]}` : words[i]; if (t.length > cap && a) break; a = t; }
+    let b = words.slice(i).join(" ");
+    // the line break is the separator: no lone «-» left hanging at either end
+    a = a.replace(/\s*[-–·]$/, ""); b = b.replace(/^[-–·]\s*/, "");
+    return b.length <= cap && a.length <= cap ? [a, b] : null;
+  };
+  for (const fs of [2.9, 2.6, 2.35, 2.1, 1.9]) {
+    const L = fits(fs);
+    if (L) return L.length === 1 ? [[L[0], fs, 6.4]] : [[L[0], fs, 4.6], [L[1], fs, 4.6 + fs * 1.05]];
+  }
+  const cap = Math.floor(room / (1.9 * k)), all = words.join(" ");
+  return [[all.slice(0, cap), 1.9, 4.6], [all.slice(cap, 2 * cap - 1) + (all.length > 2 * cap - 1 ? "…" : ""), 1.9, 6.6]];
+}
 /** labels: A4 sheets of 3 × 7 (60 × 40 mm) or one label per page for a roll printer */
 async function exportLabelsPdf() {
   await cutReady();
@@ -9819,7 +10345,7 @@ async function exportLabelsPdf() {
     return `<g transform="translate(${x} ${y})"><rect width="${W}" height="${H}" fill="#fff" stroke="#bbb" stroke-dasharray="3 3"/>
       <rect x="${W - 2 * s - 21 * s}" y="${2 * s}" width="${21 * s}" height="${6 * s}" rx="${1 * s}" fill="#111"/>
       <text x="${W - 2 * s - 10.5 * s}" y="${6.6 * s}" font-size="${4.2 * s}" font-weight="800" fill="#fff" text-anchor="middle" direction="ltr">${esc(pc.key)}</text>
-      <text x="${W - 25 * s}" y="${6.4 * s}" font-size="${2.9 * s}" font-weight="700" text-anchor="end">${esc(trv(pc.pt.name).length > (I18n.isEn() ? 22 : 15) ? trv(pc.pt.name).slice(0, I18n.isEn() ? 21 : 14) + "…" : trv(pc.pt.name))}</text>
+      ${labelName(trv(pc.pt.name)).map(([ln, fs, y]) => `<text x="${W - 25 * s}" y="${y * s}" font-size="${fs * s}" font-weight="700" text-anchor="end">${esc(ln)}</text>`).join("")}
       <text x="${2 * s}" y="${12 * s}" font-size="${3.1 * s}" font-weight="700" direction="ltr">${n1(pc.lb.h)} × ${n1(pc.lb.w)} × ${n1(pc.lb.t)}</text>
       ${(() => { const gi = grooveInfo(pc); return gi ? `${nest(dia, 3 * s, 13 * s, 36 * s, 14.5 * s)}<text x="${W - 2 * s}" y="${29.6 * s}" font-size="${2.35 * s}" font-weight="800" fill="#8a5a00" text-anchor="end">${esc(gi.short)}</text>` : nest(dia, 3 * s, 13 * s, 36 * s, 17 * s); })()}
       ${qr ? nest(qr, W - 19 * s, 10 * s, 16 * s, 16 * s) : ""}
@@ -10310,7 +10836,7 @@ function quickEstimate(units) {
     ok++; pieces += r.pieces || 0; band += r.banding;
     mat += ctrMetres(r) * (+P.ctr || 0);
     for (const pt of r.parts) if (pt.cut_piece && pt.label) area += (pt.label.w * pt.label.h) / 10000;
-    for (const [k, q] of Object.entries(r.hardware || {})) hw[k] = (hw[k] || 0) + (+q || 0);
+    for (const [k, q] of Object.entries(hwNorm(r.hardware))) hw[k] = (hw[k] || 0) + (+q || 0);
   }
   const hwT = Object.entries(hw).reduce((s, [k, q]) => s + q * (+P.hw[k] || 0), 0);
   const labor = ok * (+P.laborUnit || 0) + area * (+P.laborM2 || 0) + (ok ? (+P.install || 0) + (+P.transport || 0) : 0);
@@ -10355,7 +10881,7 @@ function variantsPop() {
     const q = quickEstimate(variantUnits(v));
     const on = v.id === state.project.variant;
     h += `<div class="varrow ${on ? "on" : ""}"><input data-vname="${v.id}" value="${esc(v.name)}" aria-label="اسم النسخة">
-      <span class="vmeta">${q.units} وحدة · ${q.pieces} قطعة · <b>${priceText(q)}</b></span>
+      <span class="vmeta">${unitsTxt(q.units)} · ${q.pieces} قطعة · <b>${priceText(q)}</b></span>
       <span class="vbtns">${on ? `<span class="pill">مفتوحة</span>` : `<button class="ghost2" data-vopen="${v.id}">افتح</button>`}<button class="ghost2" data-vdup="${v.id}">نسخة منها</button>${vs.length > 1 ? `<button class="danger sm" data-vdel="${v.id}" aria-label="امسح">${ICON.trash}</button>` : ""}</span></div>`;
   }
   h += `</div><div class="btnrow"><button class="primary" data-vcompare ${vs.length < 2 ? "disabled" : ""}>قارن بالصور</button><button class="ghost2" data-vcomppdf ${vs.length < 2 ? "disabled" : ""}>مقارنة PDF للعميل</button></div><div id="vcomp"></div></div>`;
@@ -10475,7 +11001,16 @@ function withInserts(u, kinds) {
   return u;
 }
 /** a whole kitchen along one, two or three walls. Returns null when the walls are too short. */
+/** v124: NOVERA's 90 fridge cavity first — on a wall too short for it and the hob, the older 70 cavity (a kitchen
+ *  without a cooker is no kitchen) */
 function autoKitchen(room, chain, tier) {
+  const hasHob = (l) => !!l?.some((u) => /بوتجاز/.test(u.name || "") || u.params?.unit_label === "بوتجاز");
+  const a = autoKitchen0(room, chain, tier, 90);
+  if (hasHob(a)) return a;
+  const b = autoKitchen0(room, chain, tier, 70);
+  return hasHob(b) || !a ? b : a;
+}
+function autoKitchen0(room, chain, tier, fridgeW = 90) {
   const T = AK_TIERS[tier];
   const units = [];
   const pin = (u, seg, a, w) => { // a, w: from the wall's A end
@@ -10528,7 +11063,7 @@ function autoKitchen(room, chain, tier) {
   // the fridge (and in better kitchens a tall oven column) at the open end of the run nearest the sink —
   // never in front of a window
   const last = runs[runs.length - 1], first = runs[0];
-  const tallList = [kitchenUnit(tier, { ...KU.KITCHEN.k_fridge.params }, "تجويف تلاجة")];
+  const tallList = [kitchenUnit(tier, { ...KU.KITCHEN.k_fridge.params, fridge_cavity_width: fridgeW }, `تجويف تلاجة ${fridgeW}`)]; // v124: NOVERA fridge cavity 90
   if (T.tall) tallList.push(kitchenUnit(tier, { ...More.KITCHEN.k_oven_only.params }, "عمود فرن"));
   const tallW = tallList.map((u) => localBox(R(u)).x1 - localBox(R(u)).x0);
   const tallFree = (r) => minus([r.lo, r.hi], [...r.bl.all, ...r.bl.upper, ...(r.used || [])]);
@@ -10560,12 +11095,13 @@ function autoKitchen(room, chain, tier) {
   const frC = endRun.tall.length ? at(endRun.seg, (endRun.tall[0][0] + endRun.tall[0][1]) / 2) : null;
   let hob = null, bestS = Infinity;
   for (const r of runs) { const x = mepX(r, "cooker"); const a = x == null ? null : inFree(r, x - hobW / 2, hobW); if (a != null) { hob = { r, a: Math.round(a * 2) / 2 }; bestS = -1; break; } }
-  if (!hob) for (const r of runs) for (const [a, b] of r.free) {
+  // v124: 60 cm of counter between the sink and the hob first; on a short wall fall back to 30 rather than no hob at all
+  for (const minGap of [60, 30]) { if (hob) break; for (const r of runs) for (const [a, b] of r.free) {
     const lo = a + 30, hi = b - 30 - hobW;
     if (hi < lo) continue;
     const xs = [lo, hi, (lo + hi) / 2, ...Array.from({ length: 5 }, (_, i) => lo + ((hi - lo) * (i + 1)) / 6)];
     for (const x of xs) {
-      if (r === sinkRun) { const g = x + hobW <= sinkA ? sinkA - x - hobW : x - sinkA - sinkW; if (g < 30) continue; }
+      if (r === sinkRun) { const g = x + hobW <= sinkA ? sinkA - x - hobW : x - sinkA - sinkW; if (g < minGap) continue; }
       // never under a window (the hood needs the wall above the hob)
       if (r.bl.windows.some((o) => x < +o.at + +o.w && x + hobW > +o.at)) continue;
       const c = at(r.seg, x + hobW / 2);
@@ -10573,7 +11109,7 @@ function autoKitchen(room, chain, tier) {
       const score = Math.abs(tri - 550) + (tri > 790 ? (tri - 790) * 3 : 0) + (r === sinkRun && chain.length > 1 ? 40 : 0);
       if (score < bestS) { bestS = score; hob = { r, a: Math.round(x * 2) / 2 }; }
     }
-  }
+  } }
   if (hob) {
     pin(kitchenUnit(tier, { ...More.KITCHEN.k_hob90.params, width: hobW, unit_label: "بوتجاز" }, `وحدة بوتجاز ${hobW}`), hob.r.seg, hob.a, hobW);
     hob.r.free = minus([hob.r.lo, hob.r.hi], [...hob.r.bl.all, ...hob.r.tall, ...(hob.r === sinkRun ? [[sinkA, sinkA + sinkW]] : []), [hob.a, hob.a + hobW]]);
@@ -10604,7 +11140,7 @@ function autoKitchen(room, chain, tier) {
   for (const r of runs) {
     const blocks = [...r.bl.all, ...r.bl.upper, ...r.tall];
     if (hob && hob.r === r) {
-      pin(kitchenUnit(tier, { ...More.KITCHEN.k_wall_hood90.params, width: hobW, wall_mount_height: 155 }, `علوية شفاط ${hobW}`), r.seg, hob.a, hobW);
+      { const kd = kdefNow(), hu = kitchenUnit(tier, { ...More.KITCHEN.k_wall_hood90.params, width: hobW, wall_mount_height: 155 }, `علوية شفاط ${hobW}`); hu.params.height = Math.max(30, kd.wallZ + kd.wallH - 155); pin(hu, r.seg, hob.a, hobW); } // v124: its top on the wall units' line (set after the defaults)
       blocks.push([hob.a, hob.a + hobW]);
     }
     let glassLeft = T.uppersGlass ? 1 : 0;
@@ -10661,7 +11197,7 @@ function autoPop() {
   ui.akProps = kitchenProposals(tier);
   if (!ui.akProps.length) h += `<p class="e">الحيطان قصيرة أو مقفولة بأبواب — محتاج حيطة 1.5 متر فاضية على الأقل.</p>`;
   ui.akProps.forEach((pr, i) => {
-    h += `<div class="akcard"><b>${esc(pr.name)}</b><small>حيطة ${pr.walls.join(" + ")} · ${pr.q.units} وحدة · ${pr.q.pieces} قطعة</small><span class="akprice">${priceText(pr.q)}</span>
+    h += `<div class="akcard"><b>${esc(pr.name)}</b><small>حيطة ${pr.walls.join(" + ")} · ${unitsTxt(pr.q.units)} · ${pr.q.pieces} قطعة</small><span class="akprice">${priceText(pr.q)}</span>
       <button class="primary" data-akuse="${i}">استخدم ده</button></div>`;
   });
   h += `</div>`;
@@ -10753,7 +11289,7 @@ function takeStock(undo) {
       const added = [];
       // tagged with this project so its own plan never cuts from them; skipped when «خزّنها في المخزن» already stored them
       const already = st.remnants.some((r) => r.from === p.id);
-      if (!already) for (const s of res.sheets) for (const o of s.offcuts || []) if (Math.min(o.w, o.h) >= 30) { const r = { id: uid(), w: Math.floor(o.w), h: Math.floor(o.h), from: p.id, fromName: p.name, at: new Date().toISOString() }; st.remnants.push(r); added.push(r.id); }
+      if (!already) for (const s of res.sheets) for (const o of s.offcuts || []) if (Math.min(o.w, o.h) >= 30) { const r = { id: uid(), w: Math.floor(o.w * 10) / 10, h: Math.floor(o.h * 10) / 10, from: p.id, fromName: p.name, at: new Date().toISOString() }; st.remnants.push(r); added.push(r.id); }
       rec.moves.push({ key: g.key, sheets: take, removed, added });
     }
     p.stockTaken = rec;
@@ -10877,8 +11413,11 @@ async function exportVideo() {
         g.save(); g.globalAlpha = end > 0 ? end : 0.9;
         g.textAlign = "center"; g.direction = "rtl";
         if (end > 0) {
-          g.fillStyle = "#d9a63a"; g.beginPath(); g.roundRect?.(W / 2 - 46, H / 2 - 130, 92, 92, 20); g.fill();
-          g.fillStyle = "#123f23"; g.font = "800 64px system-ui, sans-serif"; g.fillText("N", W / 2, H / 2 - 62);
+          { // the NOVERA mark (MARK_SVG drawn on the canvas, 40 → 92 px)
+            const k = 92 / 40, x0 = W / 2 - 46, y0 = H / 2 - 130, R_ = (c, x, y, w, h) => { g.fillStyle = c; g.fillRect(x0 + x * k, y0 + y * k, w * k, h * k); };
+            R_("#0f2e1c", 0, 0, 40, 40); R_("#e9d9b0", 9, 9, 7, 22); R_("#e9d9b0", 24, 9, 7, 22); R_("#b98d34", 6, 33, 28, 2);
+            g.fillStyle = "#b98d34"; g.beginPath(); g.moveTo(x0 + 16 * k, y0 + 9 * k); g.lineTo(x0 + 19 * k, y0 + 9 * k); g.lineTo(x0 + 24 * k, y0 + 31 * k); g.lineTo(x0 + 21 * k, y0 + 31 * k); g.closePath(); g.fill();
+          }
           g.fillStyle = "#fff"; g.font = `800 52px "IBM Plex Sans Arabic", system-ui, sans-serif`; g.fillText(P.factory || "NOVERA", W / 2, H / 2 + 20);
           g.fillStyle = "#e8bd55"; g.font = `600 28px "IBM Plex Sans Arabic", system-ui, sans-serif`; g.fillText(state.project.name, W / 2, H / 2 + 70);
           if (P.phone) { g.fillStyle = "#cfe0d4"; g.font = "600 26px system-ui"; g.direction = "ltr"; g.fillText(P.phone, W / 2, H / 2 + 118); }
@@ -10920,7 +11459,7 @@ function brandPop() {
   const tf = (k, label, ph = "") => `<label class="f"><span>${esc(label)}</span><input data-brand="${k}" value="${esc(B[k] || "")}" placeholder="${esc(ph)}"></label>`;
   return `<div class="popbox defbox" role="dialog" aria-label="هوية المصنع"><div class="libhead"><h2>🏷 هوية المصنع على التصديرات</h2><button class="x" data-close aria-label="قفل">×</button></div>
     <p class="hint">اللوجو والاسم والتليفون والعنوان بيطلعوا على كل ورقة بتطلع من البرنامج: عرض السعر، الرسومات، الملصقات، قايمة الطلبيات، كتيب التركيب.</p>
-    <div class="brandprev"><div class="bp-head" style="background:${esc(B.color)}">${B.logo ? `<img src="${B.logo}" alt="">` : `<span class="mark big" style="background:${esc(B.accent)}">${esc((B.name || "N")[0])}</span>`}<div><b>${esc(B.name)}</b><small>${esc(B.slogan || "")}</small></div><span class="bp-ph">${esc(B.phone || "")}</span></div></div>
+    <div class="brandprev"><div class="bp-head" style="background:${esc(B.color)}">${B.logo ? `<img src="${B.logo}" alt="">` : !B.name || /NOVERA/i.test(B.name) ? `<span class="mark big svgm">${MARK_SVG}</span>` : `<span class="mark big" style="background:${esc(B.accent)}">${esc((B.name || "N")[0])}</span>`}<div><b>${esc(B.name)}</b><small>${esc(B.slogan || "")}</small></div><span class="bp-ph">${esc(B.phone || "")}</span></div></div>
     <div class="grid2">${tf("name", "اسم المصنع / الشركة", "NOVERA")}${tf("slogan", "سطر تحت الاسم", "تصميم وتصنيع المطابخ والأثاث")}</div>
     <div class="grid2">${tf("phone", "تليفون / واتساب", "010xxxxxxxx")}${tf("email", "إيميل")}</div>
     <div class="grid2">${tf("address", "العنوان")}${tf("web", "موقع / صفحة")}</div>
@@ -10946,7 +11485,9 @@ async function brandLogo(file) {
 /** header strip of every PDF page */
 function brandHead(W) {
   const B = brand();
-  const logo = B.logo ? `<image href="${B.logo}" x="${W - 60}" y="10" width="44" height="44" preserveAspectRatio="xMidYMid meet"/>` : `<rect x="${W - 60}" y="14" width="36" height="36" rx="8" fill="${esc(B.accent)}"/><text x="${W - 42}" y="40" font-size="22" font-weight="700" text-anchor="middle" fill="${esc(B.color)}">${esc((B.name || "N")[0])}</text>`;
+  // v124: no logo of their own → the NOVERA mark (v108), not the old gold «N» square
+  const mark = () => `<rect x="${W - 61}" y="11" width="42" height="42" rx="5" fill="none" stroke="#e9d9b0" stroke-opacity=".35"/>` + MARK_SVG.replace('<svg viewBox="0 0 40 40" aria-hidden="true">', `<svg x="${W - 60}" y="12" width="40" height="40" viewBox="0 0 40 40">`);
+  const logo = B.logo ? `<image href="${B.logo}" x="${W - 60}" y="10" width="44" height="44" preserveAspectRatio="xMidYMid meet"/>` : !B.name || /NOVERA/i.test(B.name) ? mark() : `<rect x="${W - 60}" y="14" width="36" height="36" rx="8" fill="${esc(B.accent)}"/><text x="${W - 42}" y="40" font-size="22" font-weight="700" text-anchor="middle" fill="${esc(B.color)}">${esc((B.name || "N")[0])}</text>`;
   const sub = [B.phone, B.email, B.web].filter(Boolean).join(" · ");
   return `<rect x="0" y="0" width="${W}" height="64" fill="${esc(B.color)}"/>${logo}
     <text x="${W - 72}" y="${sub ? 32 : 40}" font-size="${sub ? 18 : 20}" font-weight="700" fill="#fff" text-anchor="end">${esc(B.name)}${B.name === "NOVERA" ? ` <tspan fill="${esc(B.accent)}">Studio</tspan>` : ""}</text>
@@ -11191,7 +11732,7 @@ function pulseStrip(x) {
 }
 
 // ================================================================== v46 — hardware inventory
-function hwStock() { return (state.hwStock ??= {}); }
+function hwStock() { state.hwStock ??= {}; hwAdopt(state.hwStock, false); return state.hwStock; }
 function hwStockHtml() {
   const need = hardwareTotals(), have = hwStock();
   const keys = [...new Set([...Object.keys(need), ...Object.keys(have).filter((k) => +have[k] > 0)])];
@@ -11231,6 +11772,7 @@ function stockUsedIds(k) {
   return ids;
 }
 function stockList() {
+  stockKeysCanon();
   const keys = new Set(Object.keys(state.stock || {}));
   if (cutData?.pid === state.project.id) for (const g of cutData.groups || []) keys.add(g.key);
   return [...keys].map((k) => {
@@ -11241,9 +11783,11 @@ function stockList() {
   }).sort((a, b) => (b.st.sheets || 0) + b.rems.length - ((a.st.sheets || 0) + a.rems.length) || a.k.localeCompare(b.k));
 }
 const remTile = (r, sh, used, own) => {
-  // the full sheet (outline) with this offcut in its corner, both to scale; a long offcut lies along the sheet's length
+  // the full sheet (outline) with this offcut in its corner, both to scale — drawn as it was laid on the sheet (w along the
+  // sheet's length, the same w × h the cut plan and the text say); turned only when it can't lie that way on the sheet
   const S = 120 / sh.w, H0 = Math.round(sh.h * S);
-  const [a, b] = +r.w >= +r.h ? [+r.w, +r.h] : [+r.h, +r.w];
+  const asLaid = +r.w <= sh.w && +r.h <= sh.h;
+  const [a, b] = asLaid ? [+r.w, +r.h] : [+r.h, +r.w];
   const W = Math.min(118, Math.max(4, a * S)), H = Math.min(H0, Math.max(4, b * S));
   return `<svg class="stkrem" viewBox="0 0 120 ${H0 + 2}" width="120" height="${H0 + 2}" aria-hidden="true"><rect x="1" y="1" width="118" height="${H0}" class="sh"/><rect x="1" y="1" width="${W}" height="${H}" class="r ${used ? "used" : own ? "own" : ""}"/></svg>`;
 };
@@ -11267,7 +11811,7 @@ function stockPop() {
     h += `<details class="stkmat" data-stkname="${esc(hay)}" data-stkkey="${esc(x.k)}" ${open ? "open" : ""}${q && !hay.includes(q) ? ' style="display:none"' : ""}><summary><b>${esc(x.name)}</b>${x.mm ? `<span class="pill soft">${x.mm} مم</span>` : ""}<span class="pill">${+x.st.sheets || 0} لوح</span><span class="pill ${x.rems.length ? "gold" : "soft"}">${x.rems.length} باقي</span>${x.area ? `<span class="pill soft">${n1(x.area)} م²</span>` : ""}${x.inProject ? `<span class="pill soft">في المشروع المفتوح</span>` : ""}</summary>
       <div class="stkinfo"><span>مقاس اللوح: <b>${x.sh.w}×${x.sh.h}</b></span><span>سعر المتر: <b>${x.m2 ? money(x.m2) + " ج" : "—"}</b></span>${x.value ? `<span>قيمة اللي في المخزن: <b>${money(x.value)} ج</b></span>` : ""}</div>
       <div class="stksheets"><span>ألواح كاملة</span><button class="ghost2 sm" data-stks="${esc(x.k)}" data-d="-1" aria-label="أقل">−</button><input class="pin" type="text" inputmode="decimal" data-numf data-stksheets="${esc(x.k)}" value="${+x.st.sheets || 0}"><button class="ghost2 sm" data-stks="${esc(x.k)}" data-d="1" aria-label="أكتر">＋</button></div>
-      ${rems.length ? `<div class="stkgrid">${rems.map((r) => `<div class="stkcell ${used.has(r.id) ? "used" : own(r) ? "own" : ""}">${remTile(r, x.sh, used.has(r.id), own(r))}<b>${n1(r.w)} × ${n1(r.h)}</b><small>${n1(r.w * r.h / 10000)} م²${x.m2 ? ` · ${money(r.w * r.h / 10000 * x.m2)} ج` : ""}</small><small>${r.fromName ? `من «${esc(r.fromName)}»` : "اتضاف بإيدك"}${r.at ? ` · ${esc(whenAr(r.at))}` : ""}</small>${used.has(r.id) ? `<small class="ok">✓ هيتقص في المشروع ده</small>` : own(r) ? `<small>من المشروع المفتوح</small>` : ""}<button class="stkdel" data-stkdel="${esc(x.k)}|${r.id}" aria-label="شيل الباقي ده">×</button></div>`).join("")}</div>` : `<p class="hint">مفيش بواقي من الخامة دي.</p>`}
+      ${rems.length ? `<div class="stkgrid">${rems.map((r) => `<div class="stkcell ${used.has(r.id) ? "used" : own(r) ? "own" : ""}">${remTile(r, x.sh, used.has(r.id), own(r))}<b dir="ltr">${n1(r.w)} × ${n1(r.h)}</b><small>${n1(r.w * r.h / 10000)} م²${x.m2 ? ` · ${money(r.w * r.h / 10000 * x.m2)} ج` : ""}</small><small>${r.fromName ? `من «${esc(r.fromName)}»` : "اتضاف بإيدك"}${r.at ? ` · ${esc(whenAr(r.at))}` : ""}</small>${used.has(r.id) ? `<small class="ok">✓ هيتقص في المشروع ده</small>` : own(r) ? `<small>من المشروع المفتوح</small>` : ""}<button class="stkdel" data-stkdel="${esc(x.k)}|${r.id}" aria-label="شيل الباقي ده">×</button></div>`).join("")}</div>` : `<p class="hint">مفيش بواقي من الخامة دي.</p>`}
       <div class="stkadd"><span>ضيف باقي:</span><input class="pin" type="text" inputmode="decimal" data-numf placeholder="طول" data-stkw="${esc(x.k)}"><input class="pin" type="text" inputmode="decimal" data-numf placeholder="عرض" data-stkh="${esc(x.k)}"><input class="pin" type="text" inputmode="decimal" data-numf placeholder="عدد" data-stkn="${esc(x.k)}" value="1"><button class="ghost2" data-stkadd="${esc(x.k)}">＋ ضيف</button></div>
       <div class="stkacts">${x.rems.length ? `<button class="ghost2 sm" data-stksmall="${esc(x.k)}">🧹 شيل البواقي الأصغر من 30 سم</button>` : ""}<button class="danger sm" data-stkclear="${esc(x.k)}">🗑 فضّي الخامة دي</button></div></details>`;
   }
@@ -11454,7 +11998,45 @@ function workerOn() {
   ui.moveMode = false; ui.multi = null; ui.planOn = false; state.libOpen = false; state.tab = "design"; state.whole = false; ui.asm = null;
   document.body.classList.add("worker");
   render(true); renderWorker(); view.resize?.();
-  setTimeout(() => view.preset("iso"), 120);
+  setTimeout(() => { view.preset("iso"); workerFrame(true); }, 120);
+}
+/** v124: the worker panel covers half of the 3D — frame the unit into the free part of the view beside (or above) it */
+function workerFrame(force = false) {
+  if (!ui.worker || !view.ready || !view.fitTight) return;
+  const T = view.three, c = view.cam, cv = view.ren.domElement.getBoundingClientRect();
+  if (!cv.width || !cv.height) return;
+  // after a refit / a new unit / a view preset the camera target is not where we left it → frame again (a tap on a tab alone keeps the view)
+  if (!force && view.wfT && view.ctl.target.distanceTo(view.wfT) < 0.5 && view.cam.position.distanceTo(view.wfP) < 0.5) return;
+  let L = 0, Rr = cv.width, Tt = 0, B = cv.height;
+  const rel = (el) => { const r = el?.getBoundingClientRect(); return r && r.width && r.height ? { l: r.left - cv.left, r: r.right - cv.left, t: r.top - cv.top, b: r.bottom - cv.top } : null; };
+  const bars = rel($("#workerBar .wb-units")) || rel($("#workerBar .wb-top"));
+  if (bars) Tt = Math.max(Tt, Math.min(cv.height * 0.5, bars.b + 6));
+  const sd = rel($("#workerBar .wb-side"));
+  if (sd) {
+    if (sd.r - sd.l > cv.width * 0.7) B = Math.min(B, Math.max(Tt + 80, sd.t - 6)); // phone: the panel is at the bottom
+    else if ((sd.l + sd.r) / 2 > cv.width / 2) Rr = Math.max(L + 120, sd.l - 6);
+    else L = Math.min(Rr - 120, sd.r + 6);
+  }
+  const fw = Rr - L, fh = B - Tt;
+  if (fw < 60 || fh < 60) return;
+  view.fitTight(cv.width / cv.height, 0.08);
+  const box = view.frameBox; if (!box) return;
+  // fitTight leaves the camera looking at the unit, filling the whole canvas: the target = the closest point of the sight line to the unit
+  const ctr = box.getCenter(new T.Vector3()), f = new T.Vector3(); c.getWorldDirection(f);
+  const tgt = c.position.clone().addScaledVector(f, ctr.clone().sub(c.position).dot(f));
+  const dir = c.position.clone().sub(tgt), dist0 = dir.length(); dir.normalize();
+  const dist = dist0 * Math.max(cv.width / fw, cv.height / fh);
+  c.updateMatrixWorld(true);
+  const right = new T.Vector3().setFromMatrixColumn(c.matrixWorld, 0), up = new T.Vector3().setFromMatrixColumn(c.matrixWorld, 1);
+  const hv = 2 * dist * Math.tan((c.fov * Math.PI) / 360), hw = hv * (cv.width / cv.height);
+  const dx = (L + Rr) / 2 - cv.width / 2, dy = (Tt + B) / 2 - cv.height / 2; // where the free area's centre is, in px from the canvas centre
+  tgt.addScaledVector(right, (-dx / cv.width) * hw).addScaledVector(up, (dy / cv.height) * hv);
+  c.position.copy(tgt).addScaledVector(dir, dist);
+  view.ctl.target.copy(tgt); c.lookAt(tgt);
+  c.near = Math.max(1, dist / 200); c.far = Math.max(c.far, dist * 20); c.updateProjectionMatrix();
+  view.ctl.update?.();
+  view.wfT = view.ctl.target.clone(); view.wfP = c.position.clone();
+  view.dirty = true;
 }
 function workerOff() {
   if (!ui.worker) return;
@@ -11580,6 +12162,7 @@ function workerIsolate(u, name) {
 }
 function renderWorker() {
   if (!ui.worker) return;
+  clearTimeout(renderWorker.ft); renderWorker.ft = setTimeout(() => workerFrame(), 160); // after a unit / step change refit the view: keep the unit clear of the panel
   let bar = $("#workerBar");
   if (!bar) { bar = document.createElement("div"); bar.id = "workerBar"; bar.className = "workerbar"; $(".stage").appendChild(bar); }
   const W = ui.worker, u = selUnit(), r = u ? R(u) : null;
@@ -11642,8 +12225,8 @@ function renderWorker() {
     rows.push(["↔ العرض", dims.w], ["↕ الارتفاع", dims.h], ["▭ العمق", dims.d]);
     if (u.kind === "kitchen") {
       if (p.unit_type === "wall") rows.push(["🪝 من الأرض لتحت الوحدة", +p.wall_mount_height || 140], ["🔝 من الأرض لفوق الوحدة", (+p.wall_mount_height || 140) + (+p.height || 70)]);
-      else if (p.unit_type === "base") { rows.push(["🦵 السكلو", p.include_toe_kick === false ? 0 : +p.toe_kick_height || 10], ["🔝 سطح الكونتر من الأرض", (p.include_toe_kick === false ? 0 : +p.toe_kick_height || 10) + (+p.height || 72) + (+p.countertop_thickness || 3.8)]); }
-      else rows.push(["🔝 الارتفاع الكلي", (+p.toe_kick_height || 0) + (+p.height || 220)]);
+      else if (p.unit_type === "base") { rows.push(["🦵 السكلو", p.include_toe_kick === false ? 0 : +p.toe_kick_height || 10], ["🔝 سطح الكونتر من الأرض", (+p.height || 72) + (+p.countertop_thickness || 3.8)]); }
+      else rows.push(["🔝 الارتفاع الكلي", +p.height || 220]); // v124: the kitchen engine's height is from the floor, plinth included
       if (p.include_hood) rows.push(["🌀 فراغ الشفاط", +p.hood_height || 18]);
       if (p.unit_category === "washer_gap" || p.unit_category === "cooker_gap") rows.push(["🧺 فتحة الجهاز", +p.width || 60]);
     }
@@ -11849,7 +12432,7 @@ function ergoData() {
   const { sink, hob, fridge } = workSpots(items);
   const ctr = (it) => frontCenter(it);
   const base = items.filter((it) => it.row === "lower");
-  const counterH = base.length ? Math.max(...base.map((it) => { const p = prm(it); return (+p.height || 72) + ((p.include_toe_kick === true || p.include_toe_kick === "true") ? +p.toe_kick_height || 10 : 0) + (+p.countertop_thickness || 3.8); })) : null;
+  const counterH = base.length ? Math.max(...base.map((it) => { const p = prm(it); return (+p.height || 72) + (+p.countertop_thickness || 3.8); })) : null; // v124: height already holds the plinth
   const uppers = items.filter((it) => it.row === "upper").map((it) => { const p = prm(it); const top = (+p.wall_mount_height || 140) + (+p.height || 70); return { it, bottom: +p.wall_mount_height || 140, top, shelf: top - 4 }; });
   const far = uppers.filter((x) => x.shelf > reach);
   const tri = sink && hob && fridge ? [[sink, hob], [hob, fridge], [fridge, sink]].map(([a, b]) => ({ a, b, d: Math.hypot(ctr(a)[0] - ctr(b)[0], ctr(a)[1] - ctr(b)[1]) })) : null;
@@ -11883,7 +12466,7 @@ function renderErgo() {
   }
   if (D.tri) {
     const sum = D.tri.reduce((a, t) => a + t.d, 0), names = ["حوض ↔ بوتجاز", "بوتجاز ↔ تلاجة", "تلاجة ↔ حوض"];
-    h += `<div class="ergo-tri"><b>مثلث الشغل ${n1(sum / 100)} م ${sum >= 400 && sum <= 790 ? "✓" : "⚠"}</b>${D.tri.map((t, i) => `<span>${ok(t.d >= 120 && t.d <= 270)} ${names[i]}: ${n1(t.d / 100)} م</span>`).join("")}<small>كل ضلع بين 1.2 و2.7 م، والمجموع بين 4 و7.9 م.</small></div>`;
+    h += `<div class="ergo-tri"><b>مثلث الشغل ${n1(sum / 100)} م ${sum >= 400 && sum <= 790 && D.tri.every((t) => t.d >= 120 && t.d <= 270) ? "✓" : "⚠"}</b>${D.tri.map((t, i) => `<span>${ok(t.d >= 120 && t.d <= 270)} ${names[i]}: ${n1(t.d / 100)} م</span>`).join("")}<small>كل ضلع بين 1.2 و2.7 م، والمجموع بين 4 و7.9 م.</small></div>`;
   } else h += `<p class="hint">مثلث الشغل بيظهر لما يكون فيه حوض وبوتجاز وتلاجة.</p>`;
   h += `<p class="hint">الشخص واقف قدام الحوض؛ الخطوط في المشهد هي مثلث الشغل، والخط الأخضر عند مستوى الوصول.</p>`;
   el.innerHTML = h;
@@ -12873,7 +13456,7 @@ function qcutPaste() {
     const L = toNum(c[1]), W = toNum(c[2]), q = toNum(c[3]), T = toNum(c[4]);
     if (!(L > 0 && W > 0)) continue;
     const last = list[list.length - 1];
-    list.push({ ...PIECE_DEF(), name: c[0] || `قطعة ${list.length + 1}`, l: L, w: W, qty: q > 0 ? Math.round(q) : 1, t: T > 0 ? T : last?.t || 1.8, lib: last?.lib || "hpl_white" });
+    list.push({ ...PIECE_DEF(), name: c[0] || `قطعة ${list.length + 1}`, l: L, w: W, qty: q > 0 ? Math.round(q) : 1, t: T > 0 ? T : +u.params.allT > 0 ? +u.params.allT : 1.8, lib: last?.lib || "hpl_white" });
     n++;
   }
   // a first empty default row is replaced by the pasted ones
@@ -12893,6 +13476,7 @@ $("#v-qcut")?.addEventListener("change", (e) => {
     const v = t.dataset.qall === "t" ? toNum(t.value) : t.value;
     if (!v || (t.dataset.qall === "t" && !(v > 0))) return;
     for (const r of rows) r[t.dataset.qall] = v;
+    if (t.dataset.qall === "t") u.params.allT = v; // pasted rows without a thickness take it
     save(); drawQcut(); alertBar("اتطبّق على كل الصفوف");
   }
 });
@@ -13011,6 +13595,7 @@ async function recoverCheck() {
   if (lost.length && !$("#home").hidden) showHome();
 }
 async function boot() {
+  I18n.setUserTexts?.(() => [state.project?.name, ...(ui.projects || []).map((x) => x.name), ...(state.project?.units || []).filter((x) => x.nameByUser).map((x) => x.name), ...(state.project?.variants || []).map((x) => x.name)]);
   const hash = location.hash.slice(1);
   const m = hash.match(/^([cw])-([a-z0-9]+)(?:\.([0-9]+-[0-9]+))?$/);
   if (m) {
@@ -13030,6 +13615,7 @@ async function boot() {
     showHome();
     seedCodeSeq();
     setTimeout(recoverCheck, 1500);
+    setTimeout(() => Studio.draftOffer?.(async (d) => { if (d.pid !== state.project.id) await openProject(d.pid, true); if (d.pid !== state.project.id) return; closeHome(); render(true); openStudio(state.project.units.find((x) => x.id === d.uid) || null, { tool: d.tool || undefined, resume: d.key }); }), 2600);
   }
   // the splash stays at least a moment so the logo is seen, then fades into the start screen
   const sp = document.getElementById("splash");

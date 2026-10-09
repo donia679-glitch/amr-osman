@@ -4,7 +4,7 @@
 // order of operations, same inch arithmetic — the parity tests compare with real SketchUp.
 import { rround, sum as rsumF } from "../core/rubyMath.js";
 import { COLORS, FRONT_THICKNESS_CM, MIN_DIMENSION_CM, recessFor } from "./config.js";
-import { addColoredMarkerFace, adjustForFinish, assignLayer, bandAllSideEdges, bandEdge, bandEdges, createBox, createFlatSlab, createHoleMarker, createHoleMarkerY, createHoleMarkerZ, createSlabAlongX, getOrCreateNamedMaterial, hexToRgb, tagDoorHinge, tagDoorHinge3d, tagDrawerSlide, NO_BAND, } from "./helpers.js";
+import { addColoredMarkerFace, adjustForFinish, assignLayer, bandAllSideEdges, bandEdge, bandEdges, createBox, createFlatSlab, createHoleMarker, createHoleMarkerY, createHoleMarkerZ, createSlabAlongX, createSlabAlongY, getOrCreateNamedMaterial, hexToRgb, tagDoorHinge, tagDoorHinge3d, tagDrawerSlide, NO_BAND, } from "./helpers.js";
 import { fs, strictFloat, strip, toF, toI, toS, truthy } from "./rb.js";
 import { cm, Point3d, rmax, rmin, Transformation, Vector3d } from "./su/geom.js";
 import { Entities, Group, Material, RubyError } from "./su/model.js";
@@ -26,10 +26,12 @@ export const MAX_CUSTOM_DRAWERS = 8;
 export const argError = (msg) => new RubyError("ArgumentError", msg);
 const pcm = (v) => cm(toF(v));
 const all = (b) => ({ top: b, bottom: b, left: b, right: b });
-/** cup centres along a hinge edge of length len: first/last `edge` from the ends, the rest evenly between */
-export function hingeCupPositionsAlong(z0, z1, edge, count) {
-    const first = z0 + edge;
-    const last = z1 - edge;
+/** cup centres along a hinge edge (z0 → z1): first/last `end` from the door's ENDS, the rest evenly between.
+ *  NOVERA fix: `end` is hingeEndIn() (hinge_cup_end_distance, 10 cm) — not hinge_cup_edge_distance (2.2), which is the
+ *  cup centre's distance from the hinge EDGE of the door. */
+export function hingeCupPositionsAlong(z0, z1, end, count) {
+    const first = z0 + end;
+    const last = z1 - end;
     if (count <= 2)
         return [first, last];
     const step = (last - first) / (count - 1);
@@ -42,6 +44,14 @@ export function hingeCupPositionsAlong(z0, z1, edge, count) {
 export function hingeCountIn(p, lenIn) {
     return hingesForDoor(lenIn / cm(1.0), p);
 }
+/** distance (inches) of the first / last cup centre from the door's ends: hinge_cup_end_distance (10 cm);
+ *  a short door keeps them a quarter of its length in, but ≥ 4 cm (or 30 % of very short doors) so they stay ordered */
+export function hingeEndIn(p, lenIn) {
+    let end = pcm(p["hinge_cup_end_distance"] ?? 10.0);
+    if (!(end > 0))
+        end = cm(10.0);
+    return Math.max(Math.min(end, lenIn / 4.0), Math.min(cm(4.0), lenIn * 0.3));
+}
 /** the cup positions as ratios of the hinge edge's length (the label's hinge_ratios), [] when cups are off */
 export function hingeRatiosFor(p, lenIn) {
     if (!truthy(p["include_hinge_cups"]))
@@ -49,7 +59,7 @@ export function hingeRatiosFor(p, lenIn) {
     const edge = pcm(p["hinge_cup_edge_distance"]);
     if (!(lenIn > 2 * edge))
         return [];
-    return hingeCupPositionsAlong(0, lenIn, edge, hingeCountIn(p, lenIn)).filter((c) => c > 0 && c < lenIn).map((c) => rround(c / lenIn, 4));
+    return hingeCupPositionsAlong(0, lenIn, hingeEndIn(p, lenIn), hingeCountIn(p, lenIn)).filter((c) => c > 0 && c < lenIn).map((c) => rround(c / lenIn, 4));
 }
 /** material_label_name */
 export function materialLabelName(m) {
@@ -323,6 +333,10 @@ export class CarcassBuilder {
         }
         if (toF(p["width"]) <= 2 * toF(p["panel_thickness"]))
             throw argError("العرض أقل من ضعف سمك الأجناب — لا توجد مساحة داخلية.");
+        // NOVERA: a box narrower than its two sides + 10 cm has nothing inside it (a 7.5 cm two-door unit built with 3.9 cm doors)
+        const inner = toF(p["width"]) - 2 * toF(p["panel_thickness"]);
+        if (inner < 10.0 && !["washer_gap", "cooker_gap", "fridge"].includes(toS(p["unit_category"])))
+            throw argError(`الوحدة عرضها ${fs(rround(toF(p["width"]), 1))} سم — جوّاها ${fs(rround(inner, 1))} سم بس (أقل حاجة 10 سم). كبّر العرض.`);
         if (toF(p["back_groove_depth"]) > toF(p["panel_thickness"]))
             throw argError("عمق دخول الظهرية داخل المفحار أكبر من سمك الجنب.");
         if (truthy(p["include_toe_kick"]) && toF(p["toe_kick_height"]) >= toF(p["height"]))
@@ -481,14 +495,14 @@ export class CarcassBuilder {
             if (hingeSide === "top") {
                 const w = x1 - x0;
                 if (w > 2 * edge) {
-                    const pos = this.hingeCupPositions(x0, x1, edge, count).filter((cx) => cx > x0 && cx < x1);
+                    const pos = this.hingeCupPositions(x0, x1, hingeEndIn(this.p, w), count).filter((cx) => cx > x0 && cx < x1);
                     ratios = pos.map((cx) => rround((cx - x0) / w, 4));
                 }
             }
             else {
                 const h = z1 - z0;
                 if (h > 2 * edge) {
-                    const pos = this.hingeCupPositions(z0, z1, edge, count).filter((cz) => cz > z0 && cz < z1);
+                    const pos = this.hingeCupPositions(z0, z1, hingeEndIn(this.p, h), count).filter((cz) => cz > z0 && cz < z1);
                     ratios = pos.map((cz) => rround((cz - z0) / h, 4));
                 }
             }
@@ -524,15 +538,65 @@ export class CarcassBuilder {
     ledPanelBelow() {
         return this.unitType() === "wall" && truthy(this.p["led_panel_below"]);
     }
+    /** v124: how tall the separator under a ceiling unit is (the unit hangs that much above the one under it) */
+    ledSepType() {
+        const t = toS(this.p["led_sep_type"] || "board");
+        return ["board", "recess", "profile", "shelf"].includes(t) ? t : "board";
+    }
     buildLedPanel(e) {
+        const kind = this.ledSepType();
+        if (kind === "recess")
+            return this.buildLedRecess(e);
+        if (kind === "profile")
+            return this.buildLedProfile(e);
+        return this.buildLedBoard(e, kind === "shelf");
+    }
+    /** a recessed wooden strip (shadow gap) between the two rows: a base board on the unit under it, a strip set back
+     *  from the doors' face, a back strip — the LED in an aluminium profile under the ceiling unit, behind the strip */
+    buildLedRecess(e) {
+        const t = this.panelT(), H = rmax(pcm(this.p["led_sep_height"] ?? 6), t * 2 + cm(1)), sb = rmax(pcm(this.p["led_sep_setback"] ?? 5), 0);
+        const W = this.width(), D = this.depth(), y0 = sb;
+        if (D - y0 < t * 3)
+            return;
+        const color = truthy(this.p["led_panel_front_color"] ?? true) ? this.frontColor() : this.carcassMaterial();
+        const mname = color === this.frontColor() ? this.frontMaterialName() : this.carcassMaterialName();
+        const b = this.edgeBandingEnabled();
+        // the base board lying on the unit under it
+        const base = createBox(this.ctx, e, "فاصل غاطس - قاعدة", 0, y0, -H, W, D, -H + t, color);
+        assignLayer(this.ctx, base, TAGS.carcass);
+        this.ctx.labels.add(this.unitId, this.unitGroupName(), "فاصل غاطس - قاعدة", W, D - y0, t, { banded: { top: false, bottom: b, left: b, right: b }, material: mname });
+        // the strip you see, set back from the doors
+        const strip = createBox(this.ctx, e, "فاصل غاطس - شريط", 0, y0, -H + t, W, y0 + t, 0, color);
+        assignLayer(this.ctx, strip, TAGS.carcass);
+        this.ctx.labels.add(this.unitId, this.unitGroupName(), "فاصل غاطس - شريط", W, H - t, t, { banded: { top: false, bottom: false, left: b, right: b }, material: mname });
+        const back = createBox(this.ctx, e, "فاصل غاطس - ظهر", 0, D - t, -H + t, W, D, 0, this.carcassMaterial());
+        assignLayer(this.ctx, back, TAGS.carcass);
+        this.ctx.labels.add(this.unitId, this.unitGroupName(), "فاصل غاطس - ظهر", W, H - t, t, { banded: { top: false, bottom: false, left: false, right: false }, material: this.carcassMaterialName() });
+        // the LED profile under the ceiling unit, just behind the strip's face
+        const pr = createBox(this.ctx, e, "بروفايل ليد", cm(1), y0 + t, -cm(0.8), W - cm(1), y0 + t + cm(1.7), 0, [188, 192, 198]);
+        assignLayer(this.ctx, pr, TAGS.carcass);
+        addColoredMarkerFace(this.ctx, pr, [new Point3d(cm(1), y0 + t, -cm(0.8)), new Point3d(W - cm(1), y0 + t, -cm(0.8)), new Point3d(W - cm(1), y0 + t + cm(1.7), -cm(0.8)), new Point3d(cm(1), y0 + t + cm(1.7), -cm(0.8))], COLORS.led);
+    }
+    /** a slim aluminium LED profile only — no wood between the rows */
+    buildLedProfile(e) {
+        const H = cm(2), W = this.width();
+        const overlay = this.doorPosition() === "overlay";
+        const y0 = overlay ? -this.frontT() : 0;
+        const pr = createBox(this.ctx, e, "بروفايل ليد ألومنيوم", 0, y0, -H, W, y0 + cm(2.5), 0, [188, 192, 198]);
+        assignLayer(this.ctx, pr, TAGS.carcass);
+        addColoredMarkerFace(this.ctx, pr, [new Point3d(cm(0.5), y0 + cm(0.5), -H), new Point3d(W - cm(0.5), y0 + cm(0.5), -H), new Point3d(W - cm(0.5), y0 + cm(2), -H), new Point3d(cm(0.5), y0 + cm(2), -H)], COLORS.led);
+    }
+    buildLedBoard(e, shelf = false) {
         const t = this.panelT();
         const overlay = this.doorPosition() === "overlay";
-        const y0 = (overlay ? -this.frontT() : 0) + rmax(pcm(this.p["led_panel_setback"] ?? 0), 0);
+        // a shelf stands out in front of the doors (projection), the board is flush with them (or set back)
+        const y0 = shelf ? (overlay ? -this.frontT() : 0) - rmax(pcm(this.p["led_sep_projection"] ?? 3), 0) : (overlay ? -this.frontT() : 0) + rmax(pcm(this.p["led_panel_setback"] ?? 0), 0);
         const y1 = this.depth();
         if (y1 <= y0)
             return;
         const color = truthy(this.p["led_panel_front_color"] ?? true) ? this.frontColor() : this.carcassMaterial();
-        const pnl = createBox(this.ctx, e, "لوح ليد", 0, y0, -t, this.width(), y1, 0, color);
+        const pname = shelf ? "رف ليد بارز" : "لوح ليد";
+        const pnl = createBox(this.ctx, e, pname, 0, y0, -t, this.width(), y1, 0, color);
         assignLayer(this.ctx, pnl, TAGS.carcass);
         if (this.edgeBandingEnabled())
             bandEdges(this.ctx, pnl, [new Vector3d(0, -1, 0), new Vector3d(-1, 0, 0), new Vector3d(1, 0, 0)], this.edgeBandingMaterial());
@@ -541,7 +605,7 @@ export class CarcassBuilder {
         if (ly1 > ly0)
             addColoredMarkerFace(this.ctx, pnl, [new Point3d(cm(1), ly0, -t), new Point3d(this.width() - cm(1), ly0, -t), new Point3d(this.width() - cm(1), ly1, -t), new Point3d(cm(1), ly1, -t)], COLORS.led);
         const b = this.edgeBandingEnabled();
-        this.ctx.labels.add(this.unitId, this.unitGroupName(), "لوح ليد", this.width(), y1 - y0, t, {
+        this.ctx.labels.add(this.unitId, this.unitGroupName(), pname, this.width(), y1 - y0, t, {
             banded: { top: false, bottom: b, left: b, right: b }, led: true, led_ratio: rmin((ly0 + ly1) / 2 / rmax(y1 - y0, 0.001), 1), material: color === this.frontColor() ? this.frontMaterialName() : this.carcassMaterialName(),
         });
     }
@@ -578,6 +642,26 @@ export class CarcassBuilder {
             : this.buildGroovedHorizontal(e, "قاعدة", pt, this.width() - pt, this.z0Carcass(), this.z0Carcass() + pt, "notch_at_top");
         this.bandFrontAndBack(piece);
         this.recordHorizontalLabel("قاعدة", pt, this.width() - pt, 0, this.depth());
+        const r = this.ptrapEnabled() ? this.ptrapRect() : null;
+        const last = r ? this.ctx.labels.last(this.unitId, "قاعدة") : null;
+        if (last) {
+            const c = (v) => fs(rround(v / cm(1.0), 1));
+            const note = `فتحة سيفون: تفريغ ‎${c(r.px1 - r.px0)}×${c(r.y1 - r.py0)} سم في الحرف الخلفي (عرض × عمق من الضهر)، على بعد ${c(r.px0 - r.x0)} سم من الحرف الشمال`;
+            last.note = last.note ? `${last.note} | ${note}` : note;
+        }
+    }
+    /** the P-trap notch at the back of the bottom board (unit inches), null when it doesn't fit */
+    ptrapRect() {
+        const x0 = this.panelT();
+        const x1 = this.width() - this.panelT();
+        const y0 = 0;
+        const y1 = this.depth();
+        const pw = cm(rmin(toF(this.p["ptrap_width"]), (x1 - x0) / cm(1.0) - 2));
+        const pd = cm(rmin(toF(this.p["ptrap_depth"]), (y1 - y0) / cm(1.0) - 1));
+        const px0 = x0 + cm(toF(this.p["ptrap_x_offset"]));
+        const px1 = px0 + pw;
+        const py0 = y1 - pd;
+        return pw > 0 && pd > 0 && px0 > x0 && px1 < x1 && py0 > y0 ? { x0, x1, y1, px0, px1, py0 } : null;
     }
     ptrapEnabled() {
         return truthy(this.p["include_ptrap_opening"]);
@@ -610,16 +694,12 @@ export class CarcassBuilder {
         const x1 = this.width() - this.panelT();
         const y0 = 0;
         const y1 = this.depth();
-        const pw = cm(rmin(toF(this.p["ptrap_width"]), (x1 - x0) / cm(1.0) - 2));
-        const pxOffset = cm(toF(this.p["ptrap_x_offset"]));
-        const pd = cm(rmin(toF(this.p["ptrap_depth"]), (y1 - y0) / cm(1.0) - 1));
-        const px0 = x0 + pxOffset;
-        const px1 = px0 + pw;
-        const py0 = y1 - pd;
         const z0 = this.z0Carcass();
-        if (!(pw > 0 && pd > 0 && px0 > x0 && px1 < x1 && py0 > y0)) {
+        const r = this.ptrapRect();
+        if (!r) {
             return createBox(this.ctx, e, "قاعدة", x0, y0, z0, x1, y1, z0 + this.panelT(), this.carcassMaterial());
         }
+        const { px0, px1, py0 } = r;
         const pts = [
             new Point3d(x0, y0, 0), new Point3d(x1, y0, 0), new Point3d(x1, y1, 0), new Point3d(px1, y1, 0),
             new Point3d(px1, py0, 0), new Point3d(px0, py0, 0), new Point3d(px0, y1, 0), new Point3d(x0, y1, 0),
@@ -843,10 +923,19 @@ export class CarcassBuilder {
         const z1 = this.height() - pt + bg;
         const y1 = this.depth() - this.backRearOffset();
         const y0 = y1 - this.backT();
-        const b = createBox(this.ctx, e, "ظهر", x0, y0, z0, x1, y1, z1, this.backMaterial());
+        // NOVERA: over a P-trap notch in the bottom the back is notched too (the drain pipe goes into the wall there) — it used to stand
+        // full height in front of the pipe
+        const r = this.ptrapEnabled() && this.hoodLift() <= 0 ? this.ptrapRect() : null;
+        const nTop = this.z0Carcass() + pt + cm(rmax(toF(this.p["ptrap_back_height"] ?? 15.0), 1.0));
+        const notch = r && y0 >= r.py0 - cm(0.05) && r.px0 > x0 && r.px1 < x1 && nTop < z1 - cm(5.0) ? { a: r.px0, b: r.px1, top: nTop } : null;
+        const b = notch
+            ? createSlabAlongY(this.ctx, e, "ظهر", y0, y1, [[x0, z0], [notch.a, z0], [notch.a, notch.top], [notch.b, notch.top], [notch.b, z0], [x1, z0], [x1, z1], [x0, z1]], this.backMaterial())
+            : createBox(this.ctx, e, "ظهر", x0, y0, z0, x1, y1, z1, this.backMaterial());
         assignLayer(this.ctx, b, TAGS.back);
+        const c = (v) => fs(rround(v / cm(1.0), 1));
         this.ctx.labels.add(this.unitId, this.unitGroupName(), "ظهر", x1 - x0, z1 - z0, this.backT(), {
             banded: { ...NO_BAND }, material: materialLabelName(this.backMaterial()),
+            note: notch ? `تفريغ للسيفون في الحرف اللي تحت: عرض ${c(notch.b - notch.a)} × ارتفاع ${c(notch.top - z0)} سم، على بعد ${c(notch.a - x0)} سم من الحرف الشمال` : null,
         });
     }
     buildCountertop(e) {
@@ -1163,6 +1252,12 @@ export class CarcassBuilder {
         const zz1 = z1 - edgeGap;
         if (zx1 <= zx0 || zz1 <= zz0)
             return;
+        // NOVERA: a strip under 10 cm (e.g. between the oven and the microwave) can't be a door / drawer — it is one fixed filler board, no hinges
+        if (z1 - z0 < cm(10.0)) {
+            this.buildFixedPanel(e, zx0, zx1, z0 + edgeGap, zz1, `${labelPrefix}فيلر ثابت`);
+            return;
+        }
+        this.checkFrontWidth(type, zx1 - zx0, edgeGap, labelPrefix);
         const fc = this.frontColor();
         const eb = this.edgeBandingEnabled();
         const ebm = () => this.edgeBandingMaterial();
@@ -1287,6 +1382,29 @@ export class CarcassBuilder {
             }
         }
     }
+    /** NOVERA size checks for a front zone of width w: a door leaf < 10 cm or a drawer < 10 cm can't be built (error),
+     *  a leaf < 15 cm / a drawer opening < 20 cm is a warning */
+    checkFrontWidth(type, w, gap, labelPrefix = "") {
+        const c = (v) => fs(rround(v / cm(1.0), 1));
+        const where = strip(String(labelPrefix).replace(/\s*-\s*$/, ""));
+        const pre = where ? `${where}: ` : "";
+        if (type === "drawers") {
+            if (w < cm(10.0))
+                throw argError(`${pre}فتحة الدرج ${c(w)} سم بس — مينفعش يتعمل درج (أقل حاجة 20 سم).`);
+            // (a front with no wooden box — an oil / cargo trolley — takes its own narrow mechanism)
+            if (w < cm(20.0) && this.drawerBoxesEnabled())
+                this.ctx.puts(`[KitchenUnitDesigner] ⚠ ${pre}فتحة الدرج ${c(w)} سم — ضيقة قوي على المجرى (أقل حاجة 20 سم).`);
+            return;
+        }
+        const two = ["double", "double_glass", "double_glass_metal", "flip_up_double"].includes(type);
+        if (!two && !["single", "single_glass", "single_glass_metal", "flip_up"].includes(type))
+            return;
+        const leaf = two ? (w - gap) / 2.0 : w;
+        if (leaf < cm(10.0))
+            throw argError(`${pre}الضلفة عرضها ${c(leaf)} سم بس — مينفعش تتركب (أقل حاجة 15 سم). كبّر الوحدة${two ? " أو خليها ضلفة واحدة" : ""}.`);
+        if (leaf < cm(15.0))
+            this.ctx.puts(`[KitchenUnitDesigner] ⚠ ${pre}الضلفة عرضها ${c(leaf)} سم — ضيقة قوي (أقل حاجة 15 سم).`);
+    }
     glassMaterial() {
         return this.once("glass_material", () => {
             const name = strip(toS(this.p["material_glass_name"]));
@@ -1376,7 +1494,7 @@ export class CarcassBuilder {
             if (z1 - z0 <= 2 * edge)
                 return door;
             const cupX = hingeX + direction * edge;
-            const positions = this.hingeCupPositions(z0, z1, edge, count);
+            const positions = this.hingeCupPositions(z0, z1, hingeEndIn(this.p, z1 - z0), count);
             const actual = [];
             for (const cz of positions) {
                 if (cz <= z0 || cz >= z1)
@@ -1402,8 +1520,8 @@ export class CarcassBuilder {
         door.setAttribute("KUD", "hinge_cup_ratios", ratios.map(fs).join(","));
         door.setAttribute("KUD", "hinge_side", direction > 0 ? "left" : "right");
     }
-    hingeCupPositions(z0, z1, edge, count) {
-        return hingeCupPositionsAlong(z0, z1, edge, count);
+    hingeCupPositions(z0, z1, end, count) {
+        return hingeCupPositionsAlong(z0, z1, end, count);
     }
     /** v110: a glass door is labelled as its frame rails + the glass (buildFramedGlassDoor) — no extra whole-door label.
      *  The hinge data goes on the hinge-side rail (stood up: its length along h, like a door's height). */

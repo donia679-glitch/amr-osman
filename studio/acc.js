@@ -127,6 +127,7 @@ export function fits(def, c) {
     if (v < lo) return { ok: false, why: `${lab} ${r1(v)} — أقل من ${lo}` };
     if (v > hi) return { ok: false, why: `${lab} ${r1(v)} — أكبر من ${hi}` };
   }
+  if (n.top && c.ext && c.z1 < c.ext.z1 - 8) return { ok: false, why: "لازم تبقى في أعلى خانة (تحت الرخامة على طول)" }; // v124
   if (n.zMin != null && c.z0 < n.zMin) return { ok: false, why: `محتاجة تبقى فوق ${n.zMin} سم من الأرض` };
   if (n.zMax != null && c.z1 > n.zMax + 5 && c.z0 > n.zMax) return { ok: false, why: `محتاجة تبقى تحت ${n.zMax} سم` };
   return { ok: true, why: "" };
@@ -165,7 +166,7 @@ export const ACC = {
     draw: (k, c, o) => { if (!o.show) return; const sp = (c.w - 1.8) / (o.n + 1); for (let i = 0; i <= o.n; i++) k.goods("trays", c.x0 + i * sp + (i ? 1.8 : 0) + 0.4, c.x0 + (i + 1) * sp - 0.4, c.y0 + 3, c.y1 - 2, c.z0, Math.min(c.h - 6, 40)); } },
   k_lazy: { g: "kb", icon: "🔄", label: "رف دوّار (لازي سوزان)", era: "old", desc: "رفين دايرة بيلفّوا على عمود — في الركن أو أي دولاب عميق.", need: { w: n2(45, 120), h: n2(45, 220), d: n2(45, 120) }, mv: "spin", clear: true,
     opts: { n: cnt(2, 3, 1, "الأدوار"), shape: { label: "الشكل", ch: [["full", "دايرة كاملة"], ["kidney", "كلية (3/4)"]], def: "full" }, show: SHOW }, hw: (c, o) => ({ [`رف دوّار ${o.shape === "full" ? "دايرة" : "3/4"} قطر ${Math.round(Math.min(c.w, c.d) - 4)} سم ${o.n} أدوار`]: 1 }), draw: (k, c, o) => lazy(k, c, o) },
-  k_board: { g: "kb", icon: "🔪", label: "لوح تقطيع سحب تحت الرخامة", era: "old", desc: "لوح خشب صلب بيطلع من تحت الرخامة على مجرى — تقطّع عليه وترجّعه.", need: { w: n2(30, 100), h: n2(8, 200), d: n2(35, 70) }, mv: "pull",
+  k_board: { g: "kb", icon: "🔪", label: "لوح تقطيع سحب تحت الرخامة", era: "old", desc: "لوح خشب صلب بيطلع من تحت الرخامة على مجرى — تقطّع عليه وترجّعه.", need: { w: n2(30, 100), h: n2(8, 200), d: n2(35, 70), top: true }, mv: "pull",
     hw: (c) => ({ [`مجرى بلي ${runLen(c.d)} سم (زوج) للوح التقطيع`]: 1 }),
     wood: (c) => [{ name: "لوح تقطيع سحب", x: c.x0 + 1.3, y: c.y0, z: c.z1 - 3.4, w: c.w - 2.6, d: c.d - 2, h: 2.5, material: "accent" }], draw: (k, c) => { k.runners(c, c.z1 - 2.2, 0.8); } },
   k_table: { g: "kb", icon: "🍽", label: "ترابيزة سحب مخفية", era: "std", desc: "سطح ترابيزة بيطلع على مجرى تقيل وبتنزل له رجل — للمطابخ الصغيرة.", need: { w: n2(50, 120), h: n2(10, 200), d: n2(45, 70) }, mv: "pull", travel: 1.6,
@@ -178,7 +179,7 @@ export const ACC = {
     hw: () => ({ "حامل فوط سحب 3 أعمدة": 1 }), draw: (k, c) => towels(k, c) },
   k_wine: { g: "kb", icon: "🍷", label: "رف نبيت (خلايا الزجاجات)", era: "old", desc: "شبكة أعمدة كروم بتنام فيها الزجاجات — في خانة مفتوحة أو ورا ضلفة.", need: { w: n2(25, 120), h: n2(25, 220), d: n2(30, 70) }, clear: true,
     opts: { show: SHOW }, hw: (c) => ({ [`رف زجاجات كروم ${Math.floor((c.w - 2) / 10)}×${Math.floor((c.h - 2) / 10)} خلية`]: 1 }), draw: (k, c, o) => wine(k, c, o.show) },
-  k_popup: { g: "kb", icon: "🔌", label: "بريزة منبثقة في الرخامة", era: "smart", desc: "عمود بريز + USB بيطلع من الرخامة بلمسة وينزل يستخبى — بيتخرم في الرخامة.", need: { w: n2(20, 200), h: n2(25, 220), d: n2(30, 80) },
+  k_popup: { g: "kb", icon: "🔌", label: "بريزة منبثقة في الرخامة", era: "smart", desc: "عمود بريز + USB بيطلع من الرخامة بلمسة وينزل يستخبى — بيتخرم في الرخامة.", need: { w: n2(20, 200), h: n2(25, 220), d: n2(30, 80), top: true },
     mv: "up", hw: () => ({ "بريزة منبثقة للرخامة 3 بريز + USB-C (خرم 60 مم)": 1 }), draw: (k, c) => popup(k, c) },
   // ---------------------------------------------------------------- kitchen — wall
   k_drainer: { g: "kw", icon: "🍽", label: "مصفاة أطباق ستانلس دورين", era: "std", desc: "دورين ستانلس للأطباق والكوبايات + صينية تنقيط — في العلوي فوق الحوض.", need: { w: n2(45, 120), h: n2(40, 120), d: n2(22, 40) }, clear: true,
@@ -280,7 +281,8 @@ export const MECH = {
     servo: { label: "فتح كهربا بلمسة (Servo-Drive)", era: "smart", hw: (a) => ({ ...(a.drawers ? { "وحدة Servo-Drive للأدراج": a.drawers } : {}), ...(a.flaps ? { "Servo-Drive للقلاب (Aventos)": a.flaps } : {}), ...(a.doors ? { "كبّاس كهربا للضلفة": a.doors } : {}), "محول + كابل Servo-Drive": 1 }), note: "محتاجة بريزة ورا الوحدة" },
   } },
   hinge: { label: "المفصلات", items: {
-    "": { label: "مفصلة عادية 110°", era: "old", hw: (a) => ({ "مفصلة سوستة 110° (بكبة 35)": a.hinges }) },
+    "": { label: "سوفت كلوز 35 (زي الوحدة)", era: "std" }, // v124: NOVERA's own hinge — the unit's hinge lines stay as they are
+    spring: { label: "مفصلة عادية 110° (من غير سوفت)", era: "old", hw: (a) => ({ "مفصلة سوستة 110° (بكبة 35)": a.hinges }) },
     soft: { label: "مفصلة سوفت كلوز (بتقفل بهدوء)", era: "std", hw: (a) => ({ "مفصلة سوفت كلوز 110° Blumotion": a.hinges }) },
     wide: { label: "مفصلة 155°/170° (فتح واسع)", era: "std", hw: (a) => ({ "مفصلة فتح واسع 155° سوفت كلوز": a.hinges }), note: "للضلف اللي جنب حيطة أو اللي جواها أدراج/سلال" },
     zero: { label: "زيرو بروتريشن (السلال تطلع من غير ما تخبط)", era: "new", hw: (a) => ({ "مفصلة زيرو بروتريشن 155°": a.hinges }) },
@@ -875,13 +877,20 @@ export function plan(u, r) {
       const def = ACC[e.id];
       if (!def) return;
       const o = accOpts(def, e.o);
-      const c = cavityOf(cavs, e.at, def);
+      let c = cavityOf(cavs, e.at, def);
       if (!c) { out.warn.push(`${def.label}: مفيش خانة فاضية في الوحدة`); return; }
       const f = fits(def, c);
       if (!f.ok) out.warn.push(`${def.label}: الخانة ${c.n} — ${f.why}`);
       const k = `${c.key}|${def.mv === "door" ? "door" : "in"}`;
       if (used.has(k) && def.mv !== "door" && ACC[used.get(k)]?.mv !== "door") out.warn.push(`${def.label}: الخانة ${c.n} فيها «${ACC[used.get(k)].label}» كمان — اختار خانة تانية`);
       used.set(k, e.id);
+      const c0 = c;
+      // v124 (NOVERA rule): anything that slides out behind a hinged door is narrower, so it clears the open hinges
+      if (def.mv === "pull" && c0.front?.kind === "door" && !c0.front.flap) {
+        const sp = 2.5;
+        c = { ...c0, x0: c0.x0 + sp, x1: c0.x1 - sp, w: c0.w - 2 * sp };
+        out.notes.push(`${def.label}: اتضيّق ${sp} سم من كل جنب عشان يعدّي من المفصلات وهي مفتوحة`);
+      }
       let mover = null;
       if (def.mv && def.mv !== "door") {
         const travel = Math.min(c.d - 4, runLen(c.d)) * (def.travel || 1);
@@ -894,8 +903,8 @@ export function plan(u, r) {
       } else if (def.mv === "door" && c.front?.kind === "door") mover = c.front.mover;
       out.list.push({ i, id: e.id, def, o, c, ok: f.ok, mover });
       addHw(def.hw?.(c, o));
-      if (def.clear && !c.drawers) out.drops.push(c);
-      if (def.trim) out.trims.push({ c, by: def.trim });
+      if (def.clear && !c.drawers) out.drops.push(c0);
+      if (def.trim) out.trims.push({ c: c0, by: def.trim });
       for (const p of def.wood?.(c, o) || []) out.panels.push({ ...p, x: r1(p.x), y: r1(p.y), z: r1(p.z), w: r1(p.w), d: r1(p.d), h: r1(p.h), accMover: mover, acc: i });
     });
   }

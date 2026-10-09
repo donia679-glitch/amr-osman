@@ -215,7 +215,7 @@ function sideHtml(n) {
       const kr = kitRow(n.kit), inf = kitInfo(n.kit);
       h2 += `<p class="wcnote">🍳 ${inf[2]} — ${kr === "base" ? "وحدة سفلية بالرخامة والوزرة" : kr === "wall" ? `علوية معلّقة، ارتفاعها = ارتفاع الخانة (${f1(h)}) وبتبدأ من ${f1(r.z0)} من الأرض` : `دولاب طويل ارتفاعه ${f1(h)}`}. بعد «✓ خلصت» تقدر تدوس عليها وتعدّل كل تفاصيلها زي أي وحدة مطبخ.</p>`;
       if (inf[3] && Math.abs(inf[3] - w) > 0.5) h2 += `<div class="wcbtns"><button data-wc="kitw">📐 خلّي الخانة ${f1(inf[3])} (مقاسها)</button></div>`;
-      if (kr === "base" && Math.abs(h - 86) > 3) h2 += `<p class="wcwarn">الوحدة السفلية بالرخامة ارتفاعها حوالي 86 — الخانة ${f1(h)}. <button class="dclink" data-wc="kith">خليها 86</button></p>`;
+      if (kr === "base" && Math.abs(h - (ctx.kdef?.baseTop || 90)) > 3) h2 += `<p class="wcwarn">الوحدة السفلية بالكونتر ارتفاعها ${f1(ctx.kdef?.baseTop || 90)} — الخانة ${f1(h)}. <button class="dclink" data-wc="kith">خليها ${f1(ctx.kdef?.baseTop || 90)}</button></p>`;
     }
     if (k === "device") {
       const dv = n.dev || (n.tv ? "tv" : "other");
@@ -505,7 +505,7 @@ function onClick(e) {
   if (a === "suggest") { suggest(); return; }
   if (a === "starters") { showStart = !showStart; draw(); if (showStart) el.querySelector(".wcside").scrollTop = 0; return; }
   if (a === "kitw") { const n = nodeAt(sel), w = kitInfo(n.kit)[3]; if (w) { const snap = clone(P); const ok = setCellSize(sel, "v", w); if (ok) { hist.push(snap); draw(); } else if (ok === null) ctx.alertBar("قسّم الحيطة طولي الأول علشان العرض يتظبط"); } return; }
-  if (a === "kith") { const snap = clone(P); const ok = setCellSize(sel, "h", 86); if (ok) { hist.push(snap); draw(); } else if (ok === null) ctx.alertBar("قسّمها عرضي الأول (صفوف) علشان الارتفاع يتظبط"); return; }
+  if (a === "kith") { const snap = clone(P); const ok = setCellSize(sel, "h", ctx.kdef?.baseTop || 90); if (ok) { hist.push(snap); draw(); } else if (ok === null) ctx.alertBar("قسّمها عرضي الأول (صفوف) علشان الارتفاع يتظبط"); return; }
 }
 function fixSel() {
   if (!nodeAt(sel) || nodeAt(sel).dir) sel = firstLeaf(P.wc.root, []);
@@ -595,14 +595,15 @@ function starter(id) {
   let root;
   if (id === "kitchen") {
     // NOVERA heights: base 86 with the counter, wall units 145 → 215, tall 215; the sink under the window, the cooker away from it
-    const pr = proposeKitchen(W, ctx.holes || []), wallTop = Math.min(215, H), top = H - wallTop;
+    const KD = ctx.kdef || { baseTop: 90, wallZ: 145, wallH: 80 }; // v124: the same heights as everywhere else (defaults ⚙)
+    const pr = proposeKitchen(W, ctx.holes || []), wallTop = Math.min(KD.wallZ + KD.wallH, H), top = H - wallTop;
     const col = (c) => {
       if (c.tall) return top >= 5 ? rows(part(null, { kind: "empty" }), part(wallTop, { kind: "kitchen", kit: c.tall })) : { kind: "kitchen", kit: c.tall };
       const p = [];
       if (top >= 5) p.push(part(top, { kind: "empty" }));
-      p.push(part(70, c.wall ? { kind: "kitchen", kit: c.wall } : { kind: "empty" }));
+      p.push(part(KD.wallH, c.wall ? { kind: "kitchen", kit: c.wall } : { kind: "empty" }));
       p.push(part(null, { kind: "empty" }));
-      p.push(part(86, { kind: "kitchen", kit: c.base || "k_base2" }));
+      p.push(part(KD.baseTop, { kind: "kitchen", kit: c.base || "k_base2" }));
       return rows(...p);
     };
     const ps = [];

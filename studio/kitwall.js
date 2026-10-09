@@ -46,7 +46,7 @@ const ROWN = new Proxy({}, { get: (_, k) => (kitType() ? ROWN_K : ROWN_G)[k] });
 let ctx = null, K = null, sel = { col: 0, row: "base" }, hist = [], el = null, view = null, grip = null, gripMoved = false, ctab = "kitchen";
 const clone = (o) => JSON.parse(JSON.stringify(o));
 const f1 = (v) => String(Math.round(v * 10) / 10);
-const BASE_TOP = 86, KICK = 10;
+let BASE_TOP = 90; const KICK = 10; // v124: the counter top (NOVERA 88 + 2) — set from ctx.kdef on open
 
 /** a first proposal for an empty wall: the sink under the window, a cooker away from it, the rest base + wall units (60–90), doors kept clear */
 /** v120: where the room's services say each appliance goes (Amr #11: «نقط المرافق مش بتتاخد في الحسبان»):
@@ -60,7 +60,8 @@ const mepAt = (holes, what, run) => {
 };
 export function proposeKitchen(L, holes) {
   const lo = 3, hi = L - 3, cols = [];
-  const doors = holes.filter((o) => o.kind === "door").map((o) => [o.x0 - 2, o.x1 + 2]).sort((a, b) => a[0] - b[0]);
+  // v124: units already standing there (from the next wall, a corner unit, a fridge) block the floor like a door
+  const doors = holes.filter((o) => o.kind === "door" || (o.kind === "unit" && o.z0 < 100)).map((o) => (o.kind === "unit" ? [o.x0, o.x1] : [o.x0 - 2, o.x1 + 2])).sort((a, b) => a[0] - b[0]);
   const free = [];
   let a = lo;
   for (const [p, q] of doors) { if (p > a + 30) free.push([a, Math.min(p, hi)]); a = Math.max(a, q); }
@@ -77,8 +78,10 @@ export function proposeKitchen(L, holes) {
   const fixed = [];
   const put = (w, x0, c, why) => { fixed.push({ w, x0: Math.max(run[0], Math.min(run[1] - w, x0)), c, hard: !!why }); if (why) used.push(why); };
   const pf = mepAt(holes, "fridge", run);
-  if (pf != null) put(75, pf - run[0] < run[1] - pf ? (pf - run[0] < 110 ? run[0] : pf - 37.5) : (run[1] - pf < 110 ? run[1] - 75 : pf - 37.5), { tall: "k_fridge" }, "التلاجة عند بريزة التلاجة");
-  else if (len >= 300) put(75, run[0], { tall: "k_fridge" });
+  // NOVERA: the fridge cavity is 90 wide (75 only when the wall is short)
+  const FW = len >= 330 ? 90 : 75;
+  if (pf != null) put(FW, pf - run[0] < run[1] - pf ? (pf - run[0] < 110 ? run[0] : pf - FW / 2) : (run[1] - pf < 110 ? run[1] - FW : pf - FW / 2), { tall: "k_fridge" }, "التلاجة عند بريزة التلاجة");
+  else if (len >= 300) put(FW, run[0], { tall: "k_fridge" });
   const ps = mepAt(holes, "sink", run), sinkW = 80;
   const sinkX = ps != null ? ps - sinkW / 2 : win ? (win.x0 + win.x1) / 2 - sinkW / 2 : run[0] + Math.round(len / 3 - sinkW / 2);
   put(sinkW, sinkX, { base: "k_sink", wall: "k_plates80" }, ps != null ? "الحوض على الصرف والتغذية" : "");
@@ -153,7 +156,8 @@ export function proposeKitchen(L, holes) {
 export function open(model, c) {
   ctx = c;
   K = clone(model);
-  K.wallZ ??= 145; K.wallH ??= 70; K.ceilH ??= ctx?.wallH || c?.wallH || 270; K.tallH ??= K.wallZ + K.wallH; K.s0 ??= 3; K.cols ??= [];
+  if (c?.kdef?.baseTop) BASE_TOP = +c.kdef.baseTop;
+  K.wallZ ??= c?.kdef?.wallZ ?? 145; K.wallH ??= c?.kdef?.wallH ?? 80; K.ceilH ??= ctx?.wallH || c?.wallH || 270; K.tallH ??= K.wallZ + K.wallH; K.s0 ??= 3; K.cols ??= [];
   hist = []; grip = null; ctab = WALL_TYPES[K.type]?.tab || "kitchen";
   sel = { col: 0, row: K.cols[0]?.tall ? "tall" : "base" };
   el = document.createElement("div");
@@ -298,7 +302,7 @@ function drawSvg() {
   let h = `<rect x="${X(0)}" y="${Y(H)}" width="${W * k}" height="${H * k}" class="wcwall"/>`;
   for (const o of ctx.holes || []) {
     if (o.kind === "pt") { h += `<g class="wchole pt"><rect x="${X(o.x0)}" y="${Y(o.z1)}" width="${(o.x1 - o.x0) * k}" height="${(o.z1 - o.z0) * k}"/><text x="${X((o.x0 + o.x1) / 2)}" y="${Y(o.z1) - 3}" text-anchor="middle" class="pt">${o.label || ""}</text></g>`; continue; }
-    h += `<g class="wchole ${o.kind}"><rect x="${X(o.x0)}" y="${Y(o.z1)}" width="${(o.x1 - o.x0) * k}" height="${(o.z1 - o.z0) * k}"/><text x="${X((o.x0 + o.x1) / 2)}" y="${Y(o.z1) + 16}" text-anchor="middle">${o.kind === "window" ? "شباك" : "باب"} ${f1(o.x1 - o.x0)}</text></g>`;
+    h += `<g class="wchole ${o.kind}"><rect x="${X(o.x0)}" y="${Y(o.z1)}" width="${(o.x1 - o.x0) * k}" height="${(o.z1 - o.z0) * k}"/><text x="${X((o.x0 + o.x1) / 2)}" y="${Y(o.z1) + 16}" text-anchor="middle">${o.kind === "window" ? "شباك" : o.kind === "unit" ? `🔒 ${o.label || ""}` : "باب"} ${f1(o.x1 - o.x0)}</text></g>`;
   }
   const pr = problems();
   // the counter over the base units (one strip per run of base units)
@@ -476,7 +480,7 @@ function onClick(e) {
 function freeRun(L, holes) {
   const lo = 3, hi = L - 3, free = [];
   let a = lo;
-  for (const [p, q] of holes.filter((o) => o.kind === "door").map((o) => [o.x0 - 2, o.x1 + 2]).sort((x, y) => x[0] - y[0])) { if (p > a + 30) free.push([a, Math.min(p, hi)]); a = Math.max(a, q); }
+  for (const [p, q] of holes.filter((o) => o.kind === "door" || (o.kind === "unit" && o.z0 < 100)).map((o) => (o.kind === "unit" ? [o.x0, o.x1] : [o.x0 - 2, o.x1 + 2])).sort((x, y) => x[0] - y[0])) { if (p > a + 30) free.push([a, Math.min(p, hi)]); a = Math.max(a, q); }
   if (hi > a + 30) free.push([a, hi]);
   return free.length ? free.reduce((x, y) => (y[1] - y[0] > x[1] - x[0] ? y : x)) : null;
 }
