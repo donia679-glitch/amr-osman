@@ -2,6 +2,7 @@ import SwiftUI
 import WebKit
 import ARKit
 import QuickLook
+import StoreKit // v126 guard: the subscription's signed transaction for the engines server
 
 /// Shows the app from the bundled Web folder through a private "novera://" address, so it works with no internet
 /// and keeps its projects (IndexedDB / localStorage) like a normal app.
@@ -17,8 +18,9 @@ struct NoveraWebView: UIViewRepresentable {
         config.userContentController.add(context.coordinator, name: "noveraLang")
         config.userContentController.add(context.coordinator, name: "noveraVault")
         config.userContentController.add(context.coordinator, name: "noveraQR")
+        config.userContentController.add(context.coordinator, name: "noveraEntitlement") // v126 guard
         // tell the page what this device can do (the room scan needs a LiDAR iPad / iPhone Pro)
-        config.userContentController.addUserScript(WKUserScript(source: "window.noveraNative = { scan: \(RoomScanController.isSupported ? "true" : "false"), ar: \(ARWorldTrackingConfiguration.isSupported ? "true" : "false"), qr: true };", injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        config.userContentController.addUserScript(WKUserScript(source: "window.noveraNative = { scan: \(RoomScanController.isSupported ? "true" : "false"), ar: \(ARWorldTrackingConfiguration.isSupported ? "true" : "false"), qr: true, entitlement: true };", injectionTime: .atDocumentStart, forMainFrameOnly: true))
         config.allowsInlineMediaPlayback = true
         config.websiteDataStore = .default()
 
@@ -114,6 +116,7 @@ struct NoveraWebView: UIViewRepresentable {
             if message.name == "noveraLang", let l = message.body as? String { UserDefaults.standard.set(l, forKey: "novera-lang"); return }
             if message.name == "noveraVault" { vault(message.body); return }
             if message.name == "noveraQR" { startQR(); return }
+            if message.name == "noveraEntitlement" { entitlement(message.body); return } // v126 guard
             guard message.name == "noveraSave",
                   let body = message.body as? [String: Any],
                   let name = body["name"] as? String,
@@ -201,6 +204,33 @@ struct NoveraWebView: UIViewRepresentable {
                     top.present(sheet, animated: true)
                     self.arDone(true, "share")
                 }
+            }
+        }
+
+        // MARK: v126 guard — the active subscription's signed transaction (JWS) for the engines server.
+        // The page posts {token}; the answer is window.noveraEntitlementResult(token, {ok, jws?, product?, expires?})
+        // (expires in ms since 1970). The server checks Apple's signature itself — nothing here is trusted.
+        func entitlement(_ body: Any) {
+            let raw = (body as? [String: Any])?["token"] as? String ?? ""
+            let token = raw.filter { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" }
+            Task {
+                let ids: Set<String> = await MainActor.run { SubscriptionStore.productIDs }
+                var best: (jws: String, product: String, exp: Date)? = nil
+                for await result in Transaction.currentEntitlements {
+                    guard case .verified(let t) = result, ids.contains(t.productID), t.revocationDate == nil else { continue }
+                    let exp = t.expirationDate ?? Date.distantFuture
+                    if best == nil || exp > best!.exp { best = (result.jwsRepresentation, t.productID, exp) }
+                }
+                var out: [String: Any] = ["ok": best != nil]
+                if let b = best {
+                    out["jws"] = b.jws
+                    out["product"] = b.product
+                    out["expires"] = Int64(b.exp.timeIntervalSince1970 * 1000)
+                }
+                var json = "{\"ok\":false}"
+                if let d = try? JSONSerialization.data(withJSONObject: out), let s = String(data: d, encoding: .utf8) { json = s }
+                let js = "window.noveraEntitlementResult && window.noveraEntitlementResult('\(token)', \(json))"
+                await MainActor.run { self.webView?.evaluateJavaScript(js) }
             }
         }
 

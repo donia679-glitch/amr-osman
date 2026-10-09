@@ -1441,6 +1441,17 @@ body.kpad-on .wcask { bottom: calc(var(--kpad-h, 300px) + 10px); }
 .chip.seg3 button.on { background: var(--brand); color: #fff; }
 .pghost { fill: none; stroke: #9aa08f; stroke-dasharray: 3 3; stroke-width: .8; pointer-events: none; }
 .punit.upper.thru polygon { fill-opacity: .1; stroke: #9a7a2a; stroke-width: 1.4; stroke-dasharray: 5 4; pointer-events: stroke; }
+
+/* v126: optional modules */
+.modbox .modrow { display: flex; gap: 10px; align-items: flex-start; padding: 10px 4px; border-bottom: 1px solid var(--line); cursor: pointer; }
+.modbox .modrow input { width: 22px; height: 22px; flex: none; margin-top: 2px; accent-color: var(--brand); }
+.modbox .modrow b { display: block; font-size: 14.5px; } .modbox .modrow small { display: block; color: var(--muted); font-size: 12.5px; line-height: 1.5; }
+.modpop .popbox { max-height: calc(100vh - 40px); overflow: auto; }
+.modpop .modbody { display: grid; gap: 10px; }
+.modcard { border: 1px solid var(--line); border-radius: 14px; padding: 12px; background: var(--panel2); }
+.modkpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; }
+.modkpis > div { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 8px 10px; } .modkpis b { display: block; font-size: 20px; } .modkpis span { color: var(--muted); font-size: 12px; }
+.modslot { margin: 10px 0; padding: 12px; border: 1.5px dashed var(--brand); border-radius: 14px; background: color-mix(in srgb, var(--brand) 6%, transparent); }
 </style>
 <div id="splash" class="splash" aria-hidden="true">
   <div class="sp-in">

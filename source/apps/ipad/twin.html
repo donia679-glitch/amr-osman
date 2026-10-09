@@ -1,0 +1,363 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>النسخة الرقمية للمطبخ</title>
+<style>
+  :root { --brand: #123f23; --gold: #d9a63a; --ink: #18201b; --muted: #5f6b63; --bg: #f3f1ea; --card: #fff; --line: #e1ddd2; --soft: #f6f4ee; --ok: #1f8f4e; }
+  @media (prefers-color-scheme: dark) { :root { --ink: #eef1ec; --muted: #a7b3aa; --bg: #0f1612; --card: #18211b; --line: #2a362e; --soft: #121a15; } }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.6 -apple-system, "IBM Plex Sans Arabic", "Segoe UI", Tahoma, sans-serif; }
+  header { background: var(--brand); color: #fff; padding: 20px 16px 28px; text-align: center; }
+  header svg.mk { width: 52px; height: 52px; border-radius: 12px; }
+  header h1 { margin: 8px 0 2px; font-size: 22px; }
+  header p { margin: 0; color: #cfe0d4; font-size: 14px; }
+  main { max-width: 640px; margin: -16px auto 30px; padding: 0 16px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 16px; margin-bottom: 12px; }
+  .kv { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; font-size: 15px; }
+  .kv span { color: var(--muted); }
+  h2 { font-size: 17px; margin: 0 0 8px; }
+  ul { margin: 0; padding-inline-start: 20px; } li { margin: 4px 0; }
+  .btns { display: grid; gap: 10px; }
+  .btn { display: block; width: 100%; text-align: center; text-decoration: none; padding: 14px; border-radius: 14px; font: inherit; font-weight: 700; font-size: 16px; cursor: pointer; border: 0; }
+  .btn.p { background: var(--ok); color: #fff; }
+  .btn.s { background: transparent; color: var(--ink); border: 1.5px solid var(--line); }
+  .btn.sm { display: inline-block; width: auto; padding: 6px 12px; font-size: 13px; border-radius: 10px; }
+  .bad { text-align: center; padding: 40px 16px; color: var(--muted); }
+  small, .mut { color: var(--muted); }
+  .tier { display: inline-block; font-size: 12px; padding: 3px 10px; border-radius: 999px; background: rgba(255,255,255,.14); color: #fff; margin-top: 8px; }
+  .unit { border: 1px solid var(--line); border-radius: 14px; margin-bottom: 10px; background: var(--card); overflow: hidden; }
+  .unit > summary { list-style: none; cursor: pointer; padding: 12px 14px; display: flex; gap: 12px; align-items: center; }
+  .unit > summary::-webkit-details-marker { display: none; }
+  .unit .cd { font-weight: 800; font-size: 18px; color: var(--brand); min-width: 54px; direction: ltr; text-align: center; }
+  @media (prefers-color-scheme: dark) { .unit .cd { color: var(--gold); } }
+  .unit .nm { flex: 1; min-width: 0; } .unit .nm b { display: block; } .unit .nm small { display: block; }
+  .unit .body { padding: 0 14px 14px; }
+  .unit.hl { outline: 3px solid var(--gold); }
+  .sw { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; background: var(--soft); border: 1px solid var(--line); border-radius: 999px; padding: 2px 10px 2px 4px; margin: 2px; }
+  .sw i { width: 16px; height: 16px; border-radius: 50%; border: 1px solid rgba(0,0,0,.2); display: inline-block; }
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  th, td { padding: 6px 4px; border-bottom: 1px solid var(--line); text-align: start; vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; }
+  td.c { direction: ltr; text-align: right; font-weight: 700; white-space: nowrap; }
+  td.d { direction: ltr; text-align: right; white-space: nowrap; }
+  .bd { font-size: 11.5px; color: var(--muted); }
+  .pcs { margin-top: 8px; border-top: 1px solid var(--line); }
+  .pc { display: grid; grid-template-columns: 1fr auto; gap: 0 10px; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+  .pc .pt, .pc .pd, .pc .bd { grid-column: 1; } .pc .pt .c { direction: ltr; unicode-bidi: isolate; color: var(--brand); }
+  @media (prefers-color-scheme: dark) { .pc .pt .c { color: var(--gold); } }
+  .pc .pd { color: var(--ink); } .pc button { grid-column: 2; grid-row: 1 / span 3; align-self: center; }
+  input[type=search] { width: 100%; font: inherit; padding: 10px 12px; border-radius: 12px; border: 1.5px solid var(--line); background: var(--card); color: var(--ink); }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  svg.pl { width: 100%; height: auto; max-height: 340px; display: block; background: var(--soft); border-radius: 12px; }
+  svg.el { width: 100%; max-width: 260px; height: auto; display: block; margin: 8px auto; }
+  .note { background: var(--soft); border: 1px dashed var(--line); border-radius: 12px; padding: 10px 12px; font-size: 14px; }
+  dialog { border: 0; border-radius: 18px; padding: 0; width: min(560px, 94vw); background: var(--card); color: var(--ink); }
+  dialog::backdrop { background: rgba(0,0,0,.45); }
+  dialog .in { padding: 16px; display: grid; gap: 10px; }
+  textarea { width: 100%; min-height: 90px; font: inherit; padding: 10px; border-radius: 12px; border: 1.5px solid var(--line); background: var(--soft); color: var(--ink); }
+  .pk { max-height: 46vh; overflow: auto; border: 1px solid var(--line); border-radius: 12px; }
+  .pk button { display: flex; width: 100%; gap: 10px; text-align: start; background: none; border: 0; border-bottom: 1px solid var(--line); padding: 8px 10px; font: inherit; color: inherit; cursor: pointer; }
+  .pk button.on { background: color-mix(in srgb, var(--ok) 16%, transparent); }
+  .foot { text-align: center; margin-top: 18px; }
+</style>
+</head>
+<body>
+<header><svg class="mk" viewBox="0 0 40 40" aria-hidden="true"><rect width="40" height="40" rx="3" fill="#0f2e1c"/><rect x="9" y="9" width="7" height="22" fill="#e9d9b0"/><rect x="24" y="9" width="7" height="22" fill="#e9d9b0"/><path d="M16 9h3l5 22h-3z" fill="#b98d34"/><rect x="6" y="33" width="28" height="2" fill="#b98d34"/></svg>
+<h1 id="f">NOVERA</h1><p id="sub">النسخة الرقمية للمطبخ</p><span class="tier" id="tier" hidden></span></header>
+<main id="m"><div class="bad">بيفتح…</div></main>
+<dialog id="dlg"><div class="in" id="dlgIn"></div></dialog>
+<script>
+// NOVERA Studio — the client's page of the kitchen's digital twin (module «twin», v126). Static: the data comes from the URL hash
+//   #z=<base64url(deflate-raw(JSON))> · #j=<base64url(JSON)> · #id=<id>[&b=<folder>]&z=… (hosted: fetches <folder>/<id>.json, falls back to z)
+// Codec (same as modules/twin/index.js): {v, t: m|u|f, f factory, p phone, w warranty, n project, c code, dt date, cl client?,
+//   M [[name, colour]], U [[code, name, dims, row l|u|t|f, [mat], finish, handle, hinge, runner, pieces]],
+//   P {code: [[name, L, W, T, mat, bands 1|2|4|8, keyTail?]]}, H {code: [[name, qty]]}, E {code: [W, H, z0, [[x, z, w, h]]]},
+//   L {r: room pts, u: [[cx, cz, deg, w, d] | null]}, S plan svg (hosted), k [part, parts], x 1 = cut list on the unit labels}
+(function () {
+  "use strict";
+  var CARE = {
+    k: ["امسح الضلف والكونتر بقماشة مبلولة ومية وصابون خفيف، ونشّف على طول.", "ما تسيبش مية على الحروف أو جنب الحوض — الرطوبة أكتر حاجة بتبوّظ الخشب.", "استخدم الشفاط وقت الطبخ عشان البخار والدهون ما يتجمعوش على العلويات.", "ما تحطش حاجة سخنة على الكونتر مباشرة — استخدم قاعدة.", "لو ضلفة نزلت أو بقت مش مظبوطة، المفصلات بتتظبط بمفك — أو كلّمنا."],
+    d: ["ما تحملش الشماعة أكتر من طاقتها (حوالي 30 كجم للمتر).", "سيب الضلف تقفل لوحدها — ما تخبطهاش.", "امسح بقماشة ناشفة أو مبلولة سنة، من غير منظفات قوية.", "لو عندك ليد بحساس وما بيشتغلش، اتأكد من الكهربا الأول وبعدين كلّمنا."],
+    f: ["امسح بقماشة ناشفة أو مبلولة سنة.", "بعّدها عن الشمس المباشرة والسخان.", "ما تحطش أحمال تقيلة على الأرفف الطويلة.", "لو مسمار أو مفصلة فكّت، كلّمنا قبل ما تتسع."]
+  };
+  var ROWN = { l: "سفلي", u: "علوي", t: "عمود", f: "" };
+  var FILL = { l: "#cfe3d3", u: "#e9ddb8", t: "#b9cdbf", f: "#dcd6ea" };
+  var esc = function (s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); };
+  var $ = function (id) { return document.getElementById(id); };
+  var m = $("m");
+
+  // ---------------------------------------------------------------- raw inflate (RFC 1951) for phones without DecompressionStream
+  function inflateRaw(src) {
+    var pos = 0, bb = 0, bc = 0, out = [], i;
+    function bits(n) { while (bc < n) { if (pos >= src.length) throw new Error("eof"); bb |= src[pos++] << bc; bc += 8; } var v = bb & ((1 << n) - 1); bb >>>= n; bc -= n; return v; }
+    function table(lens, n) { var count = new Uint16Array(16), offs = new Uint16Array(16), sym = new Uint16Array(n), k; for (k = 0; k < n; k++) count[lens[k]]++; count[0] = 0; for (k = 1; k < 16; k++) offs[k] = offs[k - 1] + count[k - 1]; for (k = 0; k < n; k++) if (lens[k]) sym[offs[lens[k]]++] = k; return { c: count, s: sym }; }
+    function decode(h) { var code = 0, first = 0, index = 0; for (var len = 1; len < 16; len++) { code |= bits(1); var c = h.c[len]; if (code - c < first) return h.s[index + (code - first)]; index += c; first += c; first <<= 1; code <<= 1; } throw new Error("bad code"); }
+    var LB = [3,4,5,6,7,8,9,10,11,13,15,17,19,23,27,31,35,43,51,59,67,83,99,115,131,163,195,227,258], LE = [0,0,0,0,0,0,0,0,1,1,1,1,2,2,2,2,3,3,3,3,4,4,4,4,5,5,5,5,0];
+    var DB = [1,2,3,4,5,7,9,13,17,25,33,49,65,97,129,193,257,385,513,769,1025,1537,2049,3073,4097,6145,8193,12289,16385,24577], DE = [0,0,0,0,1,1,2,2,3,3,4,4,5,5,6,6,7,7,8,8,9,9,10,10,11,11,12,12,13,13];
+    var ORD = [16,17,18,0,8,7,9,6,10,5,11,4,12,3,13,2,14,1,15];
+    var last, type, lt, dt;
+    do {
+      last = bits(1); type = bits(2);
+      if (type === 0) {
+        bb = 0; bc = 0;
+        var len = src[pos] | (src[pos + 1] << 8); pos += 4;
+        for (i = 0; i < len; i++) out.push(src[pos++]);
+        continue;
+      }
+      if (type === 1) {
+        var l = new Uint8Array(288); for (i = 0; i < 144; i++) l[i] = 8; for (; i < 256; i++) l[i] = 9; for (; i < 280; i++) l[i] = 7; for (; i < 288; i++) l[i] = 8;
+        lt = table(l, 288); var d = new Uint8Array(30); for (i = 0; i < 30; i++) d[i] = 5; dt = table(d, 30);
+      } else if (type === 2) {
+        var nl = bits(5) + 257, nd = bits(5) + 1, nc = bits(4) + 4, cl = new Uint8Array(19);
+        for (i = 0; i < nc; i++) cl[ORD[i]] = bits(3);
+        var ct = table(cl, 19), ll = new Uint8Array(nl + nd);
+        for (i = 0; i < nl + nd;) {
+          var s = decode(ct), rep = 0, v = 0;
+          if (s < 16) { ll[i++] = s; continue; }
+          if (s === 16) { v = ll[i - 1]; rep = 3 + bits(2); } else if (s === 17) rep = 3 + bits(3); else rep = 11 + bits(7);
+          while (rep--) ll[i++] = v;
+        }
+        lt = table(ll.subarray(0, nl), nl); dt = table(ll.subarray(nl), nd);
+      } else throw new Error("bad block");
+      for (;;) {
+        var sy = decode(lt);
+        if (sy < 256) { out.push(sy); continue; }
+        if (sy === 256) break;
+        sy -= 257;
+        var n = LB[sy] + bits(LE[sy]), ds = decode(dt), dist = DB[ds] + bits(DE[ds]), from = out.length - dist;
+        for (i = 0; i < n; i++) out.push(out[from + i]);
+      }
+    } while (!last);
+    return new Uint8Array(out);
+  }
+  function unb64(s) { var b = s.replace(/-/g, "+").replace(/_/g, "/"); b += "===".slice((b.length + 3) % 4); var bin = atob(b), u = new Uint8Array(bin.length); for (var i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return u; }
+  function utf8(u) { if (typeof TextDecoder === "function") return new TextDecoder().decode(u); var s = ""; for (var i = 0; i < u.length; i++) s += String.fromCharCode(u[i]); return decodeURIComponent(escape(s)); }
+  function unzip(u) {
+    if (typeof DecompressionStream === "function" && !window.__noDS) {
+      try {
+        var ds = new DecompressionStream("deflate-raw");
+        return new Response(new Blob([u]).stream().pipeThrough(ds)).arrayBuffer().then(function (b) { return new Uint8Array(b); }).catch(function () { return inflateRaw(u); });
+      } catch (e) { /* no deflate-raw here */ }
+    }
+    return Promise.resolve(inflateRaw(u));
+  }
+  function hashArg(k) { var r = new RegExp("[#&]" + k + "=([^&]+)").exec(location.hash); return r ? r[1] : null; }
+  function readHash() {
+    var z = hashArg("z"), j = hashArg("j");
+    if (z) return unzip(unb64(z)).then(function (u) { return JSON.parse(utf8(u)); });
+    if (j) return Promise.resolve(JSON.parse(utf8(unb64(j))));
+    return Promise.resolve(null);
+  }
+
+  // ---------------------------------------------------------------- state
+  var D = null, UNITS = [], tier = "", unitsOnly = null, unitMm = false;
+  var phone = "", intl = "";
+  function mat(i) { return (D.M && D.M[i]) || ["—", ""]; }
+  function num(v) { return unitMm ? String(Math.round(v * 10)) : String(Math.round(v * 10) / 10); }
+  function bandTxt(b) { var o = []; if (b & 1) o.push("ط١"); if (b & 2) o.push("ط٢"); if (b & 4) o.push("ع١"); if (b & 8) o.push("ع٢"); return o.length === 4 ? "الأربع حروف" : o.length ? o.join(" ") : "من غير شريط"; }
+  /** the unit's pieces with their codes (same numbering as the factory's labels: K01-01, K01-02, K01-03/1 …) */
+  function piecesOf(code) {
+    var rows = (D.P && D.P[code]) || [], n = 0, out = [];
+    for (var i = 0; i < rows.length; i++) {
+      var q = rows[i], t = q[6], key;
+      if (t) { key = String(t).indexOf("/") >= 0 ? t : String(t); n = parseInt(t, 10); if (String(t).indexOf("/") < 0) key = pad(n); }
+      else { n++; key = pad(n); }
+      out.push({ code: code + "-" + key, name: q[0], L: q[1], W: q[2], T: q[3], m: q[4], b: q[5] });
+    }
+    return out;
+  }
+  function pad(n) { return (n < 10 ? "0" : "") + n; }
+  function wa(t) { return "https://wa.me/" + intl + "?text=" + encodeURIComponent(t); }
+  function head() { return "مشروع: " + (D.n || "") + (D.c ? " (كود " + D.c + ")" : "") + (D.dt ? " — اتسلّم " + D.dt : ""); }
+
+  // ---------------------------------------------------------------- drawings
+  function planSvg() {
+    if (D.S) return D.S.replace("<svg ", '<svg class="pl" ');
+    if (!D.L || !D.L.r) return "";
+    var pts = D.L.r.slice(), us = D.L.u || [], i;
+    for (i = 0; i < us.length; i++) if (us[i]) pts.push([us[i][0], us[i][1]]);
+    var xs = pts.map(function (q) { return q[0]; }), zs = pts.map(function (q) { return q[1]; });
+    var x0 = Math.min.apply(null, xs) - 30, z0 = Math.min.apply(null, zs) - 30, w = Math.max.apply(null, xs) - x0 + 30, h = Math.max.apply(null, zs) - z0 + 30;
+    var g = '<polygon points="' + D.L.r.map(function (q) { return q.join(","); }).join(" ") + '" fill="none" stroke="currentColor" stroke-width="5"/>';
+    var order = []; for (i = 0; i < us.length; i++) if (us[i] && D.U[i]) order.push(i);
+    order.sort(function (x, y) { return (D.U[x][3] === "u") - (D.U[y][3] === "u"); }); // the wall units over the base row, see-through
+    var tx = "";
+    order.forEach(function (i) {
+      var L = us[i], U = D.U[i], up = U[3] === "u", rad = L[2] * Math.PI / 180, off = up ? -L[4] / 4 : L[4] / 6;
+      g += '<g transform="translate(' + L[0] + " " + L[1] + ") rotate(" + L[2] + ')" data-u="' + esc(U[0]) + '" style="cursor:pointer"><rect x="' + (-L[3] / 2) + '" y="' + (-L[4] / 2) + '" width="' + L[3] + '" height="' + L[4] + '" fill="' + (FILL[U[3]] || FILL.f) + '" fill-opacity="' + (up ? 0.3 : 0.95) + '" stroke="' + (up ? "#9a7a2a" : "#123f23") + '" stroke-width="1.5"' + (up ? ' stroke-dasharray="5 4"' : "") + "/>" + (up ? "" : '<line x1="' + (-L[3] / 2) + '" y1="' + (L[4] / 2) + '" x2="' + (L[3] / 2) + '" y2="' + (L[4] / 2) + '" stroke="#123f23" stroke-width="3"/>') + "</g>";
+      tx += '<text x="' + Math.round(L[0] - Math.sin(rad) * off) + '" y="' + Math.round(L[1] + Math.cos(rad) * off + 4) + '" font-size="' + (up ? 10 : 12) + '" text-anchor="middle" font-weight="700" fill="' + (up ? "#9a7a2a" : "#123f23") + '" pointer-events="none">' + esc(U[0]) + "</text>";
+    });
+    g += tx;
+    return '<svg class="pl" viewBox="' + x0 + " " + z0 + " " + w + " " + h + '" xmlns="http://www.w3.org/2000/svg">' + g + "</svg>";
+  }
+  function elevSvg(code) {
+    var E = D.E && D.E[code]; if (!E) return "";
+    var W = E[0], H = E[1], g = '<rect x="0" y="0" width="' + W + '" height="' + H + '" fill="none" stroke="currentColor" stroke-width="1.2"/>';
+    (E[3] || []).forEach(function (r) { g += '<rect x="' + r[0] + '" y="' + (H - r[1] - r[3]) + '" width="' + r[2] + '" height="' + r[3] + '" fill="#d9a63a" fill-opacity=".22" stroke="currentColor" stroke-width=".8"/>'; });
+    return '<svg class="el" viewBox="-4 -4 ' + (W + 8) + " " + (H + 8) + '" xmlns="http://www.w3.org/2000/svg">' + g + "</svg>";
+  }
+
+  // ---------------------------------------------------------------- page
+  function render() {
+    $("f").textContent = D.f || "NOVERA";
+    document.title = (D.f || "NOVERA") + " — " + (D.n || "النسخة الرقمية");
+    $("sub").textContent = "النسخة الرقمية للمطبخ" + (D.n ? " · " + D.n : "");
+    var tg = $("tier"); tg.hidden = false; tg.textContent = tier;
+    phone = String(D.p || "").replace(/[^0-9+]/g, "");
+    intl = phone.replace(/^\+/, "").replace(/^00/, "").replace(/^0/, "20");
+    var h = '<div class="card"><div class="kv">' + (D.n ? "<span>المشروع</span><b>" + esc(D.n) + "</b>" : "") + (D.c ? '<span>الكود</span><b dir="ltr" style="text-align:right">' + esc(D.c) + "</b>" : "") +
+      (D.cl ? "<span>العميل</span><b>" + esc(D.cl) + "</b>" : "") + (D.dt ? "<span>تاريخ التسليم</span><b>" + esc(D.dt) + "</b>" : "") + (D.w ? "<span>الضمان</span><b>" + esc(D.w) + "</b>" : "") +
+      "<span>الوحدات</span><b>" + (D.U || []).length + "</b></div></div>";
+    if (D.t === "u") {
+      var U0 = D.U && D.U[0];
+      h += '<div class="note">ده ملصق الوحدة <b dir="ltr">' + esc(U0 ? U0[0] : "") + "</b>" + (D.k ? " — جزء " + D.k[0] + " من " + D.k[1] + " من قايمة قطعها (الباقي على الملصق التاني جوه نفس الوحدة)" : "") + ". باقي المطبخ في الكود الرئيسي (جوه دولاب الحوض).</div>";
+    } else if (D.x && D.t !== "f") {
+      h += '<div class="note">قايمة القطع بالتفصيل على ملصق كل وحدة من جوه — صوّره عشان تشوف قطعها.</div>';
+    }
+    h += reqCard();
+    var pl = planSvg();
+    if (pl) h += '<div class="card"><h2>رسم المطبخ من فوق</h2>' + pl + '<small>الخط التقيل = ناحية الضلف. دوس على وحدة تروح لها.</small></div>';
+    var hasP = D.P && Object.keys(D.P).some(function (k) { return D.P[k] && D.P[k].length; });
+    h += '<div class="card"><div class="row" style="justify-content:space-between"><h2 style="margin:0">الوحدات' + (hasP ? " وقايمة القطع" : "") + "</h2>" +
+      (hasP ? '<button class="btn s sm" id="unitT">المقاسات بـ ' + (unitMm ? "المللي" : "السنتي") + " ⇄</button>" : "") + "</div>" +
+      (hasP ? '<p style="margin:8px 0"><input type="search" id="q" placeholder="دوّر على قطعة: اسم، كود، خامة…" aria-label="بحث"></p>' : "") + '<div id="units">' + unitsHtml("") + "</div></div>";
+    h += hwCard();
+    h += careCard();
+    h += '<p class="foot"><small>من صناعة ' + esc(D.f || "NOVERA") + " · NOVERA Studio</small></p>";
+    m.innerHTML = h;
+    var q = $("q"); if (q) q.oninput = function () { $("units").innerHTML = unitsHtml(q.value); };
+    var ut = $("unitT"); if (ut) ut.onclick = function () { unitMm = !unitMm; ut.textContent = "المقاسات بـ " + (unitMm ? "المللي" : "السنتي") + " ⇄"; $("units").innerHTML = unitsHtml(q ? q.value : ""); };
+    var hl = (location.hash.match(/[#&]u=([^&]+)/) || [])[1];
+    if (D.t === "u" && D.U && D.U[0]) hl = D.U[0][0];
+    if (hl) openUnit(decodeURIComponent(hl), D.t !== "u");
+  }
+  function norm(s) { return String(s || "").toLowerCase().replace(/[أإآ]/g, "ا").replace(/ة/g, "ه").replace(/ى/g, "ي").replace(/[ً-ْ]/g, ""); }
+  function unitsHtml(q) {
+    var words = norm(q).split(/\s+/).filter(Boolean), h = "", shown = 0;
+    (D.U || []).forEach(function (U) {
+      var code = U[0], pcs = piecesOf(code);
+      var match = function (s) { var t = norm(s); return words.every(function (w) { return t.indexOf(w) >= 0; }); };
+      var uText = code + " " + U[1] + " " + U[2] + " " + (U[4] || []).map(function (k) { return mat(k)[0]; }).join(" ");
+      var list = words.length ? pcs.filter(function (p) { return match(p.code + " " + p.name + " " + mat(p.m)[0] + " " + uText); }) : pcs;
+      if (words.length && !list.length && !match(uText)) return;
+      shown++;
+      var mats = (U[4] || []).map(function (k) { var x = mat(k); return '<span class="sw"><i style="background:' + esc(x[1] || "#ccc") + '"></i>' + esc(x[0]) + "</span>"; }).join("");
+      var kv = (U[5] ? "<span>التشطيب</span><b>" + esc(U[5]) + "</b>" : "") + (U[6] ? "<span>المقبض</span><b>" + esc(U[6]) + "</b>" : "") + (U[7] ? "<span>المفصلات</span><b>" + esc(U[7]) + "</b>" : "") + (U[8] ? "<span>المجاري</span><b>" + esc(U[8]) + "</b>" : "");
+      h += '<details class="unit" id="u-' + esc(code) + '"' + (words.length ? " open" : "") + '><summary><span class="cd">' + esc(code) + '</span><span class="nm"><b>' + esc(U[1]) + "</b><small><span dir=\"ltr\">" + esc(U[2]) + "</span> سم" + (ROWN[U[3]] ? " · " + ROWN[U[3]] : "") + "</small></span><small>" + (U[9] ? U[9] + " قطعة" : "") + " ▾</small></summary><div class=\"body\">" +
+        (mats ? "<div>" + mats + "</div>" : "") + (kv ? '<div class="kv" style="margin-top:8px">' + kv + "</div>" : "") + elevSvg(code);
+      if (pcs.length) {
+        h += '<div class="pcs">' + list.map(function (p) {
+          return '<div class="pc"><div class="pt"><b class="c">' + esc(p.code) + "</b> " + esc(p.name) + '</div><div class="pd"><span dir="ltr">' + num(p.L) + " × " + num(p.W) + " × " + num(p.T) + "</span> " + (unitMm ? "مم" : "سم") + " · <bdi>" + esc(mat(p.m)[0]) + "</bdi>" + '</div><div class="bd">شريط: ' + bandTxt(p.b) + '</div><button class="btn s sm" data-ask="' + esc(p.code) + '">🧩 اطلب</button></div>';
+        }).join("") + "</div>";
+        if (D.U[0] && D.t === "u" && D.k) h += '<p class="bd">ده جزء ' + D.k[0] + " من " + D.k[1] + " من قطع الوحدة.</p>";
+      } else if (U[9]) h += '<p class="bd">الوحدة دي فيها ' + U[9] + " قطعة — قايمتها بالتفصيل على الملصق اللي جوه الوحدة نفسها.</p>";
+      if (D.H && D.H[code] && D.H[code].length) h += '<details style="margin-top:8px"><summary>الهاردوير (' + D.H[code].length + ")</summary><ul>" + D.H[code].map(function (x) { return "<li>" + esc(x[0]) + " — <b>" + esc(x[1]) + "</b></li>"; }).join("") + "</ul></details>";
+      h += '<div class="row" style="margin-top:10px"><button class="btn s sm" data-req="fix" data-unit="' + esc(code) + '">🛠 صيانة للوحدة دي</button><button class="btn s sm" data-req="add" data-unit="' + esc(code) + '">➕ تعديل عليها</button></div></div></details>';
+    });
+    return shown ? h : '<p class="mut">مفيش حاجة بالاسم ده.</p>';
+  }
+  function hwCard() {
+    if (!D.H) return "";
+    var tot = {};
+    Object.keys(D.H).forEach(function (k) { (D.H[k] || []).forEach(function (x) { tot[x[0]] = Math.round(((tot[x[0]] || 0) + +x[1]) * 10) / 10; }); });
+    var ks = Object.keys(tot); if (!ks.length) return "";
+    return '<details class="card"><summary><b>الهاردوير كله (' + ks.length + ")</b></summary><ul>" + ks.map(function (k) { return "<li>" + esc(k) + " — <b>" + tot[k] + "</b></li>"; }).join("") + "</ul></details>";
+  }
+  function careCard() {
+    var kinds = {}; (D.U || []).forEach(function (U) { kinds[/^K/.test(U[0]) ? "k" : /^D/.test(U[0]) ? "d" : "f"] = 1; });
+    var list = [];
+    ["k", "d", "f"].forEach(function (k) { if (kinds[k]) list = list.concat(CARE[k]); });
+    if (!list.length) list = CARE.k;
+    return '<details class="card"><summary><b>طريقة الاستعمال والعناية</b></summary><ul>' + list.map(function (c) { return "<li>" + esc(c) + "</li>"; }).join("") + "</ul></details>";
+  }
+  function reqCard() {
+    return '<div class="card btns"><h2 style="margin:0">محتاج حاجة؟</h2><button class="btn p" data-req="fix">🛠 طلب صيانة</button><button class="btn s" data-req="piece">🧩 طلب قطعة</button><button class="btn s" data-req="add">➕ إضافة / تعديل</button>' +
+      (phone ? '<a class="btn s" href="tel:' + esc(phone) + '">📞 اتصل <span dir="ltr">' + esc(D.p) + "</span></a>" : "") + "</div>";
+  }
+  function openUnit(code, scroll) {
+    var el = document.getElementById("u-" + code); if (!el) return;
+    el.open = true; el.classList.add("hl");
+    if (scroll) setTimeout(function () { el.scrollIntoView({ behavior: "smooth", block: "start" }); }, 60);
+  }
+
+  // ---------------------------------------------------------------- requests (WhatsApp, else call / copy)
+  function unitLine(code) { var U = (D.U || []).filter(function (x) { return x[0] === code; })[0]; return U ? "الوحدة: " + U[0] + " — " + U[1] + " (" + U[2] + " سم)" : ""; }
+  function pieceLine(code) {
+    var uc = code.replace(/-[^-]*$/, ""), p = piecesOf(uc).filter(function (x) { return x.code === code; })[0];
+    return p ? "القطعة: " + p.code + " — " + p.name + "\nالمقاس: " + num(p.L) + " × " + num(p.W) + " × " + num(p.T) + (unitMm ? " مم" : " سم") + "\nالخامة: " + mat(p.m)[0] + "\nالشريط: " + bandTxt(p.b) + "\n" + unitLine(uc) : "";
+  }
+  function msgFor(kind, unit, piece) {
+    var t = kind === "fix" ? "🛠 طلب صيانة" : kind === "piece" ? "🧩 طلب قطعة" : "➕ طلب إضافة / تعديل";
+    var s = t + "\n" + head() + "\n";
+    if (piece) s += pieceLine(piece) + "\n";
+    else if (unit) s += unitLine(unit) + "\n";
+    s += kind === "fix" ? "المشكلة: " : kind === "piece" ? (piece ? "السبب (اتكسرت / عايز زيها / …): " : "القطعة المطلوبة: ") : "اللي عايزه: ";
+    return s;
+  }
+  function dlg(html) { $("dlgIn").innerHTML = html; var d = $("dlg"); if (d.showModal) { if (!d.open) d.showModal(); } else d.setAttribute("open", ""); }
+  function closeDlg() { var d = $("dlg"); if (d.close) d.close(); else d.removeAttribute("open"); }
+  function sendBox(text) {
+    dlg("<h2>الرسالة</h2><small>عدّل اللي محتاجه واكتب التفاصيل، وبعدين ابعت.</small><textarea id=\"msg\">" + esc(text) + "</textarea>" +
+      (phone ? '<button class="btn p" data-send>💬 ابعت على واتساب</button><a class="btn s" href="tel:' + esc(phone) + '">📞 اتصل <span dir="ltr">' + esc(D.p) + "</span></a>" :
+        '<p class="note">رقم المصنع مش مكتوب في الكود — انسخ الرسالة وابعتها للمصنع اللي ركّبلك.</p>') +
+      '<button class="btn s" data-copy>📋 انسخ الرسالة</button><button class="btn s" data-x>رجوع</button>');
+    var ta = $("msg"); setTimeout(function () { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }, 50);
+  }
+  function piecePicker() {
+    var all = [];
+    (D.U || []).forEach(function (U) { piecesOf(U[0]).forEach(function (p) { all.push(p); }); });
+    if (!all.length) {
+      dlg("<h2>🧩 طلب قطعة</h2><p>اختار الوحدة اللي فيها القطعة (كود الوحدة مكتوب على الملصق اللي جواها):</p><div class=\"pk\">" + (D.U || []).map(function (U) { return '<button data-pku="' + esc(U[0]) + '"><b dir="ltr">' + esc(U[0]) + "</b><span>" + esc(U[1]) + "</span></button>"; }).join("") + '</div><button class="btn s" data-x>رجوع</button>');
+      return;
+    }
+    dlg('<h2>🧩 طلب قطعة</h2><input type="search" id="pkq" placeholder="دوّر: اسم القطعة أو كودها (مكتوب على ملصقها)…"><div class="pk" id="pkl"></div><button class="btn s" data-x>رجوع</button>');
+    var drawPk = function (q) {
+      var w = norm(q).split(/\s+/).filter(Boolean);
+      $("pkl").innerHTML = all.filter(function (p) { var t = norm(p.code + " " + p.name + " " + mat(p.m)[0]); return w.every(function (x) { return t.indexOf(x) >= 0; }); }).slice(0, 200).map(function (p) {
+        return '<button data-pkp="' + esc(p.code) + '"><b dir="ltr" style="min-width:76px">' + esc(p.code) + "</b><span>" + esc(p.name) + '<br><small dir="ltr">' + num(p.L) + " × " + num(p.W) + " × " + num(p.T) + "</small> · <small>" + esc(mat(p.m)[0]) + "</small></span></button>";
+      }).join("") || '<p class="mut" style="padding:10px">مفيش.</p>';
+    };
+    $("pkq").oninput = function () { drawPk(this.value); };
+    drawPk("");
+  }
+  document.addEventListener("click", function (e) {
+    var t = e.target.closest ? e.target.closest("button, g[data-u]") : null;
+    if (!t) return;
+    var ds = t.dataset || {};
+    if (t.getAttribute("data-u")) { openUnit(t.getAttribute("data-u"), true); return; }
+    if (ds.req) { if (ds.req === "piece" && !ds.unit) piecePicker(); else sendBox(msgFor(ds.req, ds.unit)); return; }
+    if (ds.ask) { sendBox(msgFor("piece", null, ds.ask)); return; }
+    if (ds.pkp) { sendBox(msgFor("piece", null, ds.pkp)); return; }
+    if (ds.pku != null) { sendBox(msgFor("piece", ds.pku)); return; }
+    if (t.hasAttribute("data-x")) { closeDlg(); return; }
+    if (t.hasAttribute("data-send")) { location.href = wa($("msg").value); return; }
+    if (t.hasAttribute("data-copy")) {
+      var v = $("msg").value;
+      var ok = function () { t.textContent = "✓ اتنسخت"; };
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(v).then(ok, function () { $("msg").select(); document.execCommand("copy"); ok(); });
+      else { $("msg").select(); document.execCommand("copy"); ok(); }
+    }
+  });
+
+  // ---------------------------------------------------------------- boot
+  function fail() { m.innerHTML = '<div class="card bad">الكود ده مش مقروء. كلّم المصنع اللي ركّبلك.</div>'; }
+  function show(d, how) { D = d; tier = how; render(); window.__twin = { D: D, piecesOf: piecesOf, tier: tier }; }
+  readHash().then(function (d) {
+    var id = hashArg("id");
+    if (!id || !/^[a-z0-9]{6,40}$/i.test(id)) { if (d) show(d, D_TIER(d)); else fail(); return; }
+    var base = decodeURIComponent(hashArg("b") || "../twins");
+    if (d) show(d, "📦 من الكود — بيحمّل النسخة الكاملة…");
+    fetch(base.replace(/\/$/, "") + "/" + id + ".json", { cache: "no-store" }).then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+      .then(function (full) { if (!full || !full.U) throw new Error("bad"); show(full, "☁ النسخة الكاملة" + (full.at ? " · اتحدثت " + String(full.at).slice(0, 10) : "")); })
+      .catch(function () { if (d) show(d, "📦 من الكود (النسخة الكاملة مش متاحة دلوقتي)"); else fail(); });
+  }).catch(function (e) { console.error(e); fail(); });
+  function D_TIER(d) { return d.t === "u" ? "📦 ملصق وحدة — كل البيانات جوه الكود" : "📦 كل البيانات جوه الكود — من غير سيرفر"; }
+  window.__inflateRaw = inflateRaw;
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,11 @@
+{
+  "name": "novera-guard",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "sync": "node sync.mjs",
+    "test": "node sync.mjs && node test/test.mjs",
+    "deploy": "node sync.mjs && npx wrangler deploy",
+    "license": "node tools/mint-license.mjs"
+  }
+}

@@ -29,6 +29,7 @@ import * as Studio from "./draw/studio.js";
 import * as WComp from "./wallcomp.js";
 import * as KWall from "./kitwall.js";
 import * as Acc from "./acc.js";
+import * as Mods from "./modules/registry.js"; // v126: optional modules (each OFF until switched on in ⚙)
 import * as DevChat from "./devchat.js";
 import * as WCL from "./engine/panel/templatesRooms.js";
 import * as I18n from "./i18n.js";
@@ -38,7 +39,7 @@ import * as DG from "./draw/geom.js";
 
 const APP_URL = "https://claude.ai/artifact/EP8c8LmBNS8d3EqLcDioXi";
 const APP_VERSION = "1.0";
-const RELEASE = "v125"; // bumped with every shipped version (the developer notes carry it)
+const RELEASE = "v126"; // bumped with every shipped version (the developer notes carry it)
 // the NOVERA mark — the same one as the website (two cream panels, the brass profile between them, the brass base line)
 const MARK_SVG = '<svg viewBox="0 0 40 40" aria-hidden="true"><rect width="40" height="40" rx="3" fill="#0f2e1c"/><rect x="9" y="9" width="7" height="22" fill="#e9d9b0"/><rect x="24" y="9" width="7" height="22" fill="#e9d9b0"/><path d="M16 9h3l5 22h-3z" fill="#b98d34"/><rect x="6" y="33" width="28" height="2" fill="#b98d34"/></svg>';
 /** the App Store build (inside the iOS app): no links to the online version, no plugin / other-brand wording */
@@ -3296,6 +3297,7 @@ function renderProps0() {
   if (u.kind === "kitchen" && r.ok) h += applianceField(u, p) + (p.unit_category === "washer_gap" || p.unit_category === "cooker_gap" ? "" : organizerField(u, r));
   if (r.ok && u.kind !== "pieces") h += accProps(u, r);
   if (r.ok) h += summaryHtml(u);
+  if (r.ok) h += Mods.slot("unit", u, r);
   if (r.ok) h += `<div class="btnrow"><button class="ghost2" data-tostudio title="نسخة من الوحدة كألواح تعدّلها بحرية">✏️ عدّلها بحرية في ورشة الرسم</button></div>`;
   h += u.kind === "dressing" ? dressingProps(p) : u.kind === "kitchen" ? kitchenProps(p) : panelProps(p, r);
   if (u.kind === "panel" && r.ok) h += softProps(u, r);
@@ -3900,6 +3902,7 @@ function defaultsPop() {
   const nf = (attr, label, v, ph = "") => `<label class="f"><span>${esc(label)}</span><input type="text" inputmode="decimal" data-numf data-def="${attr}" value="${v ?? ""}" placeholder="${esc(String(ph))}"></label>`;
   let h = `<div class="popbox defbox" role="dialog" aria-label="الإعدادات الافتراضية"><div class="libhead"><h2>⚙ الإعدادات الافتراضية</h2><button class="x" data-close aria-label="قفل">×</button></div>
     <p class="hint">اللي تكتبه هنا بيبقى البداية لأي وحدة أو أوضة أو عرض سعر جديد — مش هتحتاج تدخله كل مرة. الخانة الفاضية = إعداد البرنامج العادي (الرقم الباهت).</p>
+    ${modulesBox()}
     <details open><summary>🍳 مقاسات وحدات المطبخ</summary><div class="grid3">
       ${nf("dims.base.height", "ارتفاع السفلي بالسكلو (من غير الكونتر)", D0.dims.base?.height, 88)}${nf("dims.base.depth", "عمق السفلي", D0.dims.base?.depth, 58)}<span></span>
       ${nf("dims.wall.height", "ارتفاع العلوي", D0.dims.wall?.height, 80)}${nf("dims.wall.depth", "عمق العلوي", D0.dims.wall?.depth, 35)}${nf("dims.wall.wall_mount_height", "تعليق العلوي من الأرض", D0.dims.wall?.wall_mount_height, 145)}
@@ -5892,7 +5895,8 @@ function renderPop0() {
       ${it("fincmp", "🎨", "لو الضلف خامة تانية؟", "نفس التصميم بأكتر من خامة جنب بعض مع فرق السعر")}
       ${it("present", "🖥", "وضع العرض للعميل", "شاشة نظيفة: الريندر، الألوان البديلة، السعر، والاعتماد بالتوقيع")}
       ${it("worker", "👷", "وضع العمال", "تصفح مصوّر بالأرقام بس: الوحدات، القطع بمقاساتها، الهاردوير، خطوات التجميع وارتفاعات التركيب — مع قراءة بالصوت")}
-      <h3>الإعدادات</h3>${it("brand", "🏷", "هوية المصنع", "اللوجو والاسم والتليفون والشروط على كل الأوراق")}${it("defaults", "⚙", "الإعدادات الافتراضية", "مقاسات الوحدات، التصنيع، التسعير، القص — مرة واحدة لكل المشاريع")}${it("look", "🎨", "الألوان والمظهر والكيبورد", "فاتح/غامق، لون التطبيق، كيبورد الأرقام")}
+      ${Mods.slot("menu")}
+      <h3>الإعدادات</h3>${it("modules", "🧩", "الموديولات", "ميزات إضافية تشغّلها وتقفلها: القص الذكي، 5 تصميمات، النسخة الرقمية، الحماية، صورة ← مطبخ")}${it("brand", "🏷", "هوية المصنع", "اللوجو والاسم والتليفون والشروط على كل الأوراق")}${it("defaults", "⚙", "الإعدادات الافتراضية", "مقاسات الوحدات، التصنيع، التسعير، القص — مرة واحدة لكل المشاريع")}${it("look", "🎨", "الألوان والمظهر والكيبورد", "فاتح/غامق، لون التطبيق، كيبورد الأرقام")}
       <h3>مساعدة</h3>${it("lang", "🌐", I18n.lang === "en" ? "Language: English" : "اللغة: عربي", I18n.lang === "en" ? "Tap to switch the whole app to Arabic · عربي" : "دوس عشان التطبيق كله يبقى إنجليزي · English").replace('class="mitem"', 'class="mitem" data-noi18n')}${it("tour", "🧭", "الجولة التعريفية", "شرح سريع لكل جزء في الشاشة")}${it("about", "ⓘ", "عن التطبيق", "الإصدار والتواصل")}</div>`;
   }
   else if (ui.pop === "ar") {
@@ -5910,6 +5914,7 @@ function renderPop0() {
     const onlyPlan = ui.expFilter === "plan"; ui.expFilter = null;
     if (onlyPlan) h += `<p class="hint">📐 المسقط لوحده — اختار اللي يظهر فيه:</p>`;
     for (const [id, title, desc] of onlyPlan ? EXPORTS.filter((x) => /^plan|^drawings$/.test(x[0])) : EXPORTS) h += `<button class="mrow" data-exp="${id}"><span><b>${esc(title)}</b><small class="wrap">${esc(desc)}</small></span><em class="expst" data-st="${id}"></em></button>`;
+    h += Mods.slot("export");
     h += `</div><div class="grid2"><label class="f"><span>مقاس الملصقات</span><select id="labelFmt2"><option value="a4" ${state.labelFmt === "a4" ? "selected" : ""}>A4 — 21 ملصق في الورقة</option><option value="roll" ${state.labelFmt === "roll" ? "selected" : ""}>رول 60×40 مم</option></select></label>
       <label class="f"><span>فتح نسخة مشروع</span><input type="file" id="impFile" accept=".json,application/json"></label></div></div>`;
   }
@@ -6131,6 +6136,7 @@ $("#pop").addEventListener("click", async (e) => {
     if (m === "devchat") { ui.pop = null; renderPop(); openDevChat(); return; }
     if (m === "gosup") { goShop("shSup"); return; }
     if (m === "lang") { await Lib.put(state.project).catch(() => {}); I18n.setLang(I18n.lang === "en" ? "ar" : "en"); return; }
+    if (m === "modules") { ui.pop = "defaults"; renderPop(); setTimeout(() => document.querySelector(".modbox")?.scrollIntoView({ block: "start" }), 50); return; }
     ui.pop = m; renderPop(); return;
   }
   if (ui.pop === "look" && d.lkpad) { state.kpad = d.lkpad === "on"; save(); renderPop(); return; }
@@ -6416,6 +6422,7 @@ async function showHome() {
       <button class="htile" data-hstudio><b>✏️ ورشة الرسم</b><small>ارسم وحدتك أو قطعتك من الصفر برسم 3D حر</small></button>
       <button class="htile" data-hcut><b>✂ كت ليست سريع</b><small>اكتب مقاسات القطع وخد خطة القص والملصقات</small></button>
       <button class="htile" data-hstock><b>📦 المخزن</b><small>كل خامة بألواحها وبواقيها بالمقاسات، والهاردوير</small></button>
+      ${Mods.slot("home")}
       <button class="htile" data-hdev><b>💬 كلّم المطوّر</b><small>ابعت أي مشكلة أو فكرة بصورة — بتتجمع وتتبعت مرة واحدة والرد بيوصلك هنا</small></button>
     </div>
     <button class="hcont" data-hlast><span>↩</span><span><b>كمّل «${esc(state.project.name)}»</b><small>${unitsTxt(state.project.units.length)} · آخر حاجة كنت شغال عليها</small></span></button>
@@ -8387,6 +8394,7 @@ function drawCut() {
   let sheets = 0, lb = 0;
   for (const g of groups) { sheets += results[g.key].stats.sheets; lb += results[g.key].stats.lower_bound; }
   h += `<div class="kpis"><div><b>${sheets}</b><span>لوح كامل</span></div><div><b>${lb}</b><span>أقل عدد نظري</span></div><div><b>${groups.length}</b><span>خامة/سمك</span></div><div><b>${groups.reduce((a, g) => a + g.parts.length, 0)}</b><span>قطعة على المنشار</span></div></div>`;
+  h += Mods.slot("cut");
   h += leftoversHtml();
   for (const g of groups) {
     const res = results[g.key];
@@ -13614,6 +13622,8 @@ async function boot() {
     view.init("#view3d");
     showHome();
     seedCodeSeq();
+    Mods.setApi(modApi());
+    Mods.loadAll(state).then(() => { if (Mods.running().length) { renderLib?.(); if (!$("#home")?.hidden) showHome(); else render(true); } }).catch(() => {});
     setTimeout(recoverCheck, 1500);
     setTimeout(() => Studio.draftOffer?.(async (d) => { if (d.pid !== state.project.id) await openProject(d.pid, true); if (d.pid !== state.project.id) return; closeHome(); render(true); openStudio(state.project.units.find((x) => x.id === d.uid) || null, { tool: d.tool || undefined, resume: d.key }); }), 2600);
   }
@@ -13703,6 +13713,53 @@ matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", () => { 
 applyLook();
 const DEV = location.protocol === "http:" && /^(localhost|127\.0\.0\.1)$/.test(location.hostname);
 // ================================================================== v47 — command palette (⌘K): type what you want — a unit, a library item, an export, a screen
+/** v126: «🧩 الموديولات» — one switch per optional module (off by default; an off module isn't even loaded) */
+function modulesBox() {
+  const on = state.modules || {};
+  return `<details class="modbox" open><summary>🧩 الموديولات (ميزات إضافية)</summary><p class="hint">كل موديول لوحده: شغّله تجرّبه، واقفله يرجع التطبيق زي ما هو بالظبط.</p>
+    ${Mods.MODULES.map((m) => `<label class="modrow"><input type="checkbox" data-modtog="${m.id}" ${on[m.id] ? "checked" : ""}><span><b>${m.icon} ${esc(m.name)}</b><small>${esc(m.desc)}</small></span></label>`).join("")}</details>`;
+}
+document.addEventListener("change", async (e) => {
+  const t = e.target.closest?.("[data-modtog]");
+  if (!t) return;
+  const id = t.dataset.modtog;
+  state.modules = { ...(state.modules || {}), [id]: t.checked };
+  save();
+  if (t.checked) { const m = await Mods.load(id); if (m) alertBar(`🧩 اشتغل: ${Mods.MODULES.find((x) => x.id === id)?.name}`); }
+  else { Mods.unload(id); alertBar("🧩 اتقفل — التطبيق رجع زي ما كان"); }
+  render(true); renderLib?.();
+});
+// a module's button anywhere in the app (data-mod="<id>:<action>")
+document.addEventListener("click", (e) => {
+  const b = e.target.closest?.("[data-mod]");
+  if (!b) return;
+  e.preventDefault(); e.stopPropagation();
+  if (b.closest(".pop") && ui.pop) { ui.pop = null; renderPop(); }
+  Mods.action(b.dataset.mod, b);
+}, true);
+/** what a module may use — the app's own functions, nothing copied */
+function modApi() {
+  return {
+    get state() { return state; }, get ui() { return ui; }, get cutData() { return cutData; }, RELEASE, STORE_BUILD,
+    R, expanded, setParams, save, render, renderPop, renderProps, renderLib, showHome, closeHome, alertBar, sureAsk, numAsk, esc, n1, clone, uid,
+    cutGroups, cutOptsSafe, groupSheet, projectPieces, runCut, optimize, cutCall: (groups, opts) => zwCall(groups, opts), quoteCalc, quickEstimate, priceDefaults, hwNorm, ctrMetres,
+    libUnit, withDefaults, kitchenProposals, autoKitchen, applyKitchen, addVariant, switchVariant, designChecks, ergoData, workSpots, frontCenter,
+    roomSegs, projectPoses, projectItems, localBox, rowOf, wallSpan, crossSpans, sameBand, pinOthers, ensureCodes, unitCode, dimsText, newProject, openProject,
+    qrSvg, pieceSvg, warrantyUrl, b64url, kdefNow, userDefs, Room, Catalog, KU, Lib, I18n, Exp, deliver: (name, data) => Exp.deliver(cloud.downloads, name, data), view,
+    popup: modPopup,
+  };
+}
+/** a full-screen panel a module draws into (the app's pop look): {el, set(html), close()} */
+function modPopup({ title = "", html = "", wide = true, onClose = null } = {}) {
+  const el = document.createElement("div");
+  el.className = "pop modpop"; el.style.zIndex = 70;
+  const set = (h) => { el.innerHTML = `<div class="popbox ${wide ? "wide" : ""}" role="dialog" aria-label="${esc(title)}"><div class="libhead"><h2>${esc(title)}</h2><button class="x" data-modclose aria-label="قفل">×</button></div><div class="modbody">${h}</div></div>`; };
+  const close = () => { el.remove(); onClose?.(); };
+  el.addEventListener("click", (e) => { if (e.target.closest("[data-modclose]") || e.target === el) close(); });
+  set(html);
+  document.body.appendChild(el);
+  return { el, set, close, body: () => el.querySelector(".modbody") };
+}
 function cmdItems() {
   const items = [];
   const add = (grp, label, run, hint = "") => items.push({ grp, label, hint, run });
@@ -13711,6 +13768,8 @@ function cmdItems() {
   const pops = [["scrap", "♻️ أعمل إيه من الفضلات؟"], ["speak", "🗣 اوصفلي المطبخ"], ["auto", "✨ صمملي المطبخ"], ["checks", "🔍 فحص التصميم"], ["fincmp", "🎨 لو الضلف خامة تانية؟"], ["brand", "🏷 هوية المصنع"], ["defaults", "⚙ الإعدادات الافتراضية"], ["variants", "🗂 النسخ"], ["look", "🎨 المظهر والكيبورد"], ["about", "ⓘ عن التطبيق"]];
   for (const [k, l] of pops) add("أدوات", l, () => { ui.pop = k; renderPop(); });
   add("أدوات", "💬 كلّم المطوّر (ملاحظة / مشكلة)", () => openDevChat());
+  add("أدوات", "🧩 الموديولات", () => { ui.pop = "defaults"; renderPop(); setTimeout(() => document.querySelector(".modbox")?.scrollIntoView({ block: "start" }), 50); });
+  for (const it of Mods.cmd()) add("الموديولات", it.label, it.run, it.hint || "");
   add("أدوات", "🖥 وضع العرض للعميل", () => presentOn());
   add("أدوات", "👷 وضع العمال (مصوّر بالأرقام)", () => workerOn());
   add("أدوات", "✏️ ورشة الرسم", () => { const su = selUnit(); openStudio(su?.params?.model ? su : null); });
