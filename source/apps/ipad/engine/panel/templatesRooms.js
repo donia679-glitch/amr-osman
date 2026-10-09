@@ -633,12 +633,15 @@ export function buildTvWall(tb) {
     inc(d.hardware, "حامل شاشة حيطة", 1);
     d.notes.push("حامل الشاشة يتثبت في الحيطة نفسها (أو عرق جوه الوحدة المصمتة) مش في وش الوحدة المصمتة. منتصف الشاشة المعتاد 110–120 سم من الأرض.");
 }
-// ================================================================ v118 — «قسّم الحيطة»: a wall divided into cells
+// ================================================================ v117/v118 — «قسّم الحيطة»: a wall divided into cells
 // p.wc.root is a tree: a split {dir: "v" (columns, left → right) | "h" (rows, top → bottom), parts: [{size: cm | null (shares the rest), node}]}
-// or a cell {kind, depth, shelves, count, led, mat}. Every cell becomes real boards: a cabinet (doors / open shelves / drawers / flap),
-// a decorative niche (an open box lined in the accent material), a solid built-out face, a place for an appliance, or nothing.
-export const WC_KINDS = { doors: "دولاب ضلف", open: "أرفف مفتوحة", drawers: "أدراج", flap: "قلاب", niche: "تجويف ديكور", solid: "تكسية مصمتة", device: "مكان جهاز / شاشة", empty: "فاضي" };
-export const WC_BOX = new Set(["doors", "open", "drawers", "flap", "niche"]);
+// or a cell {kind, depth, shelves, count, led, mat, glass, mount, …}. Every cell becomes real boards: a cabinet (doors / open shelves / drawers /
+// flap / drawers + doors / wardrobe with a hanging rail / sliding doors), a decorative niche, a solid built-out face (with its own niche),
+// a place for an appliance, or nothing.
+export const WC_KINDS = { doors: "دولاب ضلف", open: "أرفف مفتوحة", drawers: "أدراج", combo: "أدراج + ضلف", wardrobe: "دولاب هدوم (شماعة)", sliding: "ضلف جرار", flap: "قلاب", niche: "تجويف ديكور", solid: "تكسية مصمتة", device: "مكان جهاز / شاشة", empty: "فاضي" };
+export const WC_BOX = new Set(["doors", "open", "drawers", "flap", "niche", "combo", "wardrobe", "sliding"]);
+/** appliances a «device» cell can hold, with their usual opening (w × h) */
+export const WC_DEVICES = { tv: ["شاشة", null, null], fridge: ["تلاجة", 75, 185], oven: ["فرن بلت إن", 60, 60], micro: ["ميكرويف بلت إن", 60, 40], washer: ["غسالة", 62, 85], dish: ["غسالة أطباق", 60, 82], other: ["جهاز", null, null] };
 /** every cell of the tree with its rectangle (x0..x1 from the left, z0..z1 from the floor); bad sizes → errors */
 export function wallCompLayout(wc, W, H, errors = []) {
     const cells = [];
@@ -665,13 +668,32 @@ export function wallCompLayout(wc, W, H, errors = []) {
     walk(wc.root, 0, W, 0, H, []);
     return cells;
 }
-/** a solid face built out from the wall by `dd` over [x0, x1] × [z0, z1]: face boards (≤ 118 × one board, grain up) + a frame behind it */
-function wcSolid(tb, c, dd, D, mat, nm, maxB) {
+/** where a solid cell's niche sits (clear opening) — x from the cell's left or centred, z from the floor or centred */
+export function wcHoleRect(c, hole) {
+    const w = +hole.w || 60, h = +hole.h || 40;
+    const x0 = hole.x === "center" || hole.x == null || hole.x === "" ? c.x0 + (c.x1 - c.x0 - w) / 2 : c.x0 + +hole.x;
+    const z0 = hole.z === "center" || hole.z == null || hole.z === "" ? c.z0 + (c.z1 - c.z0 - h) / 2 : +hole.z;
+    return { x0, x1: x0 + w, z0, z1: z0 + h };
+}
+/** a solid face built out from the wall by `dd` over [x0, x1] × [z0, z1]: face boards (≤ 118 × one board, grain up) + a frame behind it,
+ *  optionally with a niche cut through it (lined, with a back, shelves, LED) */
+function wcSolid(tb, c, dd, D, mat, nm, maxB, hole) {
     const { d, t } = tb;
     const fy0 = D - dd, fy1 = fy0 + t, w = c.x1 - c.x0;
     const bands = [];
     { let a = c.z0; for (const hh of stackHeights(c.z1 - c.z0, maxB, 0)) { bands.push([a, a + hh]); a += hh; } }
-    const face = bands.flatMap(([a, b]) => splitRect({ x0: c.x0, x1: c.x1, z0: a, z1: b }, 118, maxB));
+    let r = null;
+    if (hole) {
+        const q = wcHoleRect(c, hole);
+        r = { ...q, hx0: q.x0 - t, hx1: q.x1 + t, hz0: q.z0 - t, hz1: q.z1 + t };
+        if (q.x1 - q.x0 < 5 || q.z1 - q.z0 < 5) { d.warnings.push(`${nm}: التجويف صغير قوي — اتشال.`); r = null; }
+        else if (r.hx0 < c.x0 + t - 0.01 || r.hx1 > c.x1 - t + 0.01 || r.hz0 < c.z0 + t - 0.01 || r.hz1 > c.z1 - t + 0.01) {
+            d.errors.push(`${nm}: التجويف (${fmt(q.x1 - q.x0)}×${fmt(q.z1 - q.z0)}) طالع برا الخانة — لازم يبعد ${fmt(2 * t)} سم على الأقل عن أطرافها.`);
+            r = null;
+        }
+    }
+    const holes = r ? [{ x0: r.hx0, x1: r.hx1, z0: r.hz0, z1: r.hz1 }] : [];
+    const face = bands.flatMap(([a, b]) => rectMinus(c.x0, c.x1, a, b, holes)).flatMap((f) => splitRect(f, 118, maxB));
     face.forEach((f, i) => tb.add(face.length > 1 ? `${nm} - وش ${i + 1}` : `${nm} - وش`, "other", mat, tb.box(f.x0, fy0, f.z0, f.x1, fy1, f.z1), { band: ["left", "right", "top", "bottom"], grain: "z", layer: "front" }));
     if (D - fy1 > 0.5 && w > 2 * t + 1) {
         for (const [a, b] of bands) {
@@ -685,9 +707,67 @@ function wcSolid(tb, c, dd, D, mat, nm, maxB) {
         for (const [a] of bands.slice(1))
             for (const [p0, p1] of strips(w - 2 * t, maxB)) tb.add(d.seqName(`${nm} - عرضية ربط`), "horizontal", "carcass", tb.box(c.x0 + t + p0, fy1, a - t, c.x0 + t + p1, D, a), { band: [], grain: "x", note: "بتربط الجزء اللي تحت باللي فوق" });
         const n = Math.floor((w - 2 * t) / 60);
-        for (let k = 1; k <= n; k++) { const x = c.x0 + (w * k) / (n + 1); for (const [a, b] of bands) tb.add(d.seqName(`${nm} - عرق`), "divider", "carcass", tb.box(x - t / 2, fy1, a + (a === c.z0 ? t : 0), x + t / 2, D, b - t), { band: [], grain: "z" }); }
+        for (let k = 1; k <= n; k++) {
+            const x = c.x0 + (w * k) / (n + 1);
+            if (r && x > r.hx0 - t && x < r.hx1 + t) continue; // never through the niche
+            for (const [a, b] of bands) tb.add(d.seqName(`${nm} - عرق`), "divider", "carcass", tb.box(x - t / 2, fy1, a + (a === c.z0 ? t : 0), x + t / 2, D, b - t), { band: [], grain: "z" });
+        }
         inc(d.hardware, "زاوية تثبيت في الحيطة", 4 + 2 * n);
     }
+    if (!r) return;
+    // the niche: four lining boards from the face back, a back panel (contrast material), shelves, LED in its ceiling
+    const lm = hole.lining || "accent";
+    const by1 = Math.min(fy0 + Math.max(+hole.depth || dd, t + 1), D - t);
+    tb.add(`${nm} - تجويف سقف`, "horizontal", lm, tb.box(r.hx0, fy0, r.z1, r.hx1, by1, r.hz1), { band: ["front"], grain: "x" });
+    tb.add(`${nm} - تجويف قاعدة`, "horizontal", lm, tb.box(r.hx0, fy0, r.hz0, r.hx1, by1, r.z0), { band: ["front"], grain: "x" });
+    tb.add(`${nm} - تجويف جنب شمال`, "side", lm, tb.box(r.hx0, fy0, r.z0, r.x0, by1, r.z1), { band: ["front"], grain: "z" });
+    tb.add(`${nm} - تجويف جنب يمين`, "side", lm, tb.box(r.x1, fy0, r.z0, r.hx1, by1, r.z1), { band: ["front"], grain: "z" });
+    tb.add(`${nm} - تجويف ضهر`, "back", hole.back || "accent", tb.box(r.x0, by1, r.z0, r.x1, by1 + t, r.z1), { band: [], grain: r.x1 - r.x0 >= r.z1 - r.z0 ? "x" : "z", note: "ضهر التجويف — لون/خامة مختلفة بتدّيه عمق" });
+    const ns = Math.max(0, Math.min(6, Math.trunc(+hole.shelves || 0)));
+    for (let k = 1; k <= ns; k++) {
+        const z = r.z0 + ((r.z1 - r.z0) * k) / (ns + 1) - t / 2;
+        tb.add(`${nm} - تجويف رف ${k}`, "fixed_shelf", lm, tb.box(r.x0, fy0 + 1, z, r.x1, by1, z + t), { band: ["front"], grain: "x" });
+    }
+    if (hole.led) d.addLed(`ليد ${nm} - تجويف`, tb.box(r.x0 + 1, fy0 + 1.5, r.z1 - 0.6, r.x1 - 1, fy0 + 3.1, r.z1));
+    d.notes.push(`${nm}: تجويف ${fmt(r.x1 - r.x0)}×${fmt(r.z1 - r.z0)} على ارتفاع ${fmt(r.z0)} سم — حروف الوش حواليه بتتشرّط.`);
+}
+/** glass doors: every hinged door of the box becomes a frame (4 members) + a 4 mm glass in a groove (same group → opens as one) */
+function wcGlassify(tb, parts) {
+    const { d } = tb;
+    let n = 0;
+    for (const pt of parts) {
+        if (pt.role !== "door" || /درج/.test(pt.name) || pt.material === "glass" || !pt.box) continue;
+        const b = pt.box, W = b.x1 - b.x0, H = b.z1 - b.z0, fw = Math.min(6, W / 4, H / 4), eng = 0.8, gt = 0.4, ym = (b.y0 + b.y1) / 2;
+        d.parts.splice(d.parts.indexOf(pt), 1);
+        const side = pt.door_label?.hinge_side || "left";
+        const note = `فريم ضلفة زجاج: مفحار ${fmt(gt * 10 + 1)} مم × 8 مم في نص السمك على الحرف الداخلي، الزجاج بيتركب أثناء تجميع الفريم (دويلين في كل ركن)`;
+        const mem = { left: ["شمال", b.x0, b.z0 + fw, b.x0 + fw, b.z1 - fw, "z"], right: ["يمين", b.x1 - fw, b.z0 + fw, b.x1, b.z1 - fw, "z"], top: ["فوق", b.x0, b.z1 - fw, b.x1, b.z1, "x"], bottom: ["تحت", b.x0, b.z0, b.x1, b.z0 + fw, "x"] };
+        const order = [side, ...["left", "right", "top", "bottom"].filter((k) => k !== side)];
+        withModule(tb, pt.module, () => {
+            order.forEach((k, i) => {
+                const [lbl, x0, z0, x1, z1, gr] = mem[k];
+                tb.add(`${pt.name} - فريم ${lbl}`, "door", pt.material, tb.box(x0, b.y0, z0, x1, b.y1, z1), {
+                    label_axes: ["x", "z"], band: ["left", "right", "top", "bottom"], band_all_sides: true, layer: "front", group: pt.group, grain: gr,
+                    door_label: i === 0 ? pt.door_label : null, note: i === 0 ? note : null,
+                });
+            });
+            tb.add(`${pt.name} - زجاج`, "door", "glass", tb.box(b.x0 + fw - eng, ym - gt / 2, b.z0 + fw - eng, b.x1 - fw + eng, ym + gt / 2, b.z1 - fw + eng), { label_axes: ["x", "z"], band: [], layer: "front", group: pt.group });
+        });
+        inc(d.hardware, "دوبل خشب 8 مم (فريم زجاج)", 8);
+        n++;
+    }
+    return n;
+}
+/** the inside of a box just imported: between its sides, over its bottom, under its top, in front of its back */
+function wcInner(parts, c) {
+    const hz = parts.filter((p) => p.role === "horizontal" && p.box).sort((a, b) => a.box.z0 - b.box.z0);
+    const sides = parts.filter((p) => p.role === "side" && p.box);
+    const back = parts.filter((p) => p.role === "back" && p.box).sort((a, b) => a.box.y0 - b.box.y0)[0];
+    return {
+        x0: sides.length ? Math.min(...sides.map((p) => p.box.x1)) : c.x0, x1: sides.length ? Math.max(...sides.map((p) => p.box.x0)) : c.x1,
+        z0: hz.length ? hz[0].box.z1 : c.z0, z1: hz.length ? hz[hz.length - 1].box.z0 : c.z1,
+        zb: hz.length ? hz[0].box.z0 : c.z0, zt: hz.length ? hz[hz.length - 1].box.z1 : c.z1, yb: back ? back.box.y0 : null,
+    };
 }
 export function buildWallComp(tb) {
     const { d, p, t } = tb;
@@ -699,33 +779,103 @@ export function buildWallComp(tb) {
     const depthOf = (n) => (n.depth != null && n.depth !== "" ? +n.depth : n.kind === "solid" ? Math.min(30, +wc.depth || 35) : +wc.depth || 35);
     const D = Math.max(5, ...cells.filter((c) => c.node.kind !== "device" && c.node.kind !== "empty").map((c) => depthOf(c.node)));
     p.depth = D;
+    const ft = +p.front_thickness || 1.8;
     const count = {};
     cells.forEach((c, i) => {
         const n = c.node, k = n.kind, w = c.x1 - c.x0, h = c.z1 - c.z0;
         count[k] = (count[k] || 0) + 1;
         const nm = `${WC_KINDS[k] || k} ${count[k]}`;
         if (k === "empty") return;
-        if (k === "device") { d.notes.push(`${nm}: ${fmt(w)}×${fmt(h)} سم على ارتفاع ${fmt(c.z0)} — فاضي للجهاز.`); if (n.tv) inc(d.hardware, "حامل شاشة حيطة", 1); return; }
+        if (k === "device") {
+            const dv = WC_DEVICES[n.dev || (n.tv ? "tv" : "other")] || WC_DEVICES.other;
+            d.notes.push(`${nm}: مكان ${dv[0]} ${fmt(w)}×${fmt(h)} سم على ارتفاع ${fmt(c.z0)} — فاضي للجهاز${dv[1] && (w < dv[1] - 0.5 || h < dv[2] - 0.5) ? ` ⚠ أصغر من المقاس المعتاد (${dv[1]}×${dv[2]})` : ""}.`);
+            if (dv[1] && (w < dv[1] - 0.5 || h < dv[2] - 0.5)) d.warnings.push(`${nm}: مكان ${dv[0]} ${fmt(w)}×${fmt(h)} أصغر من المعتاد (${dv[1]}×${dv[2]} سم) — اتأكد من مقاس الجهاز.`);
+            if (n.dev === "tv" || (!n.dev && n.tv)) inc(d.hardware, "حامل شاشة حيطة", 1);
+            if (n.dev === "oven" || n.dev === "micro") d.notes.push(`${nm}: سيب فتحة تهوية 5 سم ورا الجهاز وفيشة كهربا في الخانة اللي جنبه.`);
+            return;
+        }
         if (w < 2 * t + 5 || h < 2 * t + 5) { d.errors.push(`${nm} (${fmt(w)}×${fmt(h)}) صغيرة قوي على إنها تتعمل.`); return; }
         const dd = Math.min(D, Math.max(t + 1, depthOf(n)));
-        if (k === "solid") { withModule(tb, `wc${i}`, () => wcSolid(tb, c, dd, D, n.mat || "accent", nm, maxB)); if (n.led) d.addLed(`ليد ${nm}`, tb.box(c.x0 + 3, D - 0.8, c.z1 - 3, c.x1 - 3, D, c.z1 - 1.4)); return; }
-        const zone = k === "doors" ? { type: "doors", count: n.count ?? (w >= 70 ? 2 : 1), height: "auto", shelves: n.shelves ?? 2 }
-            : k === "drawers" ? { type: "drawers", count: n.count ?? Math.max(1, Math.min(6, Math.round(h / 22))), height: "auto", shelves: 0 }
-            : k === "flap" ? { type: "flap", count: 1, height: "auto", shelves: n.shelves ?? 0 }
-            : { type: "open", count: 1, height: "auto", shelves: n.shelves ?? (k === "niche" ? 0 : Math.max(0, Math.round(h / 35) - 1)), led: !!n.led };
+        if (k === "solid") { withModule(tb, `wc${i}`, () => { wcSolid(tb, c, dd, D, n.mat || "accent", nm, maxB, n.hole || null); if (n.led) d.addLed(`ليد ${nm}`, tb.box(c.x0 + 3, D - 0.8, c.z1 - 3, c.x1 - 3, D, c.z1 - 1.4)); }); return; }
+        const dCnt = Math.max(1, Math.min(4, Math.round(+n.dcount || 2)));
+        const zones = k === "doors" ? [{ type: "doors", count: n.count ?? (w >= 70 ? 2 : 1), height: "auto", shelves: n.shelves ?? 2, hinge: n.hinge || "left" }]
+            : k === "drawers" ? [{ type: "drawers", count: n.count ?? Math.max(1, Math.min(6, Math.round(h / 22))), height: "auto", shelves: 0 }]
+            : k === "combo" ? [{ type: "drawers", count: dCnt, height: Math.min(+n.dh || Math.min(18 * dCnt, h * 0.45), h - 30) }, { type: "doors", count: n.count ?? (w >= 70 ? 2 : 1), height: "auto", shelves: n.shelves ?? 1, hinge: n.hinge || "left" }]
+            : k === "wardrobe" ? [(n.count ?? (w >= 70 ? 2 : 1)) > 0 ? { type: "doors", count: n.count ?? (w >= 70 ? 2 : 1), height: "auto", shelves: 0, hinge: n.hinge || "left" } : { type: "open", count: 1, height: "auto", shelves: 0 }]
+            : k === "sliding" ? [{ type: "open", count: 1, height: "auto", shelves: n.shelves ?? Math.max(0, Math.round(h / 40) - 1) }]
+            : k === "flap" ? [{ type: "flap", count: 1, height: "auto", shelves: n.shelves ?? 0 }]
+            : [{ type: "open", count: 1, height: "auto", shelves: n.shelves ?? (k === "niche" ? 0 : Math.max(0, Math.round(h / 35) - 1)), led: !!n.led }];
         const segs = stackHeights(h, maxB, 0);
-        let z = c.z0;
-        segs.forEach((hh, j) => {
-            const first = j === 0, n0 = d.parts.length;
-            subUnit(tb, { width: w, height: hh, depth: dd, mount: first && c.z0 < 0.5 ? "floor" : "wall", top: "full",
-                fronts: first ? [zone] : [{ type: "open", count: 1, height: "auto", shelves: 0 }], led_under: false },
-                [c.x0, D - dd, z], first ? nm : `${nm} - تكملة`, `wc${i}${j ? `_t${j}` : ""}`);
-            if (k === "niche" || n.mat) for (const pt of d.parts.slice(n0)) if (["carcass", "shelf", "back"].includes(pt.material)) pt.material = n.mat || "accent";
-            z += hh;
-        });
-        if (segs.length > 1) { inc(d.hardware, "مسمار ربط وحدات", 4 * (segs.length - 1)); d.notes.push(`${nm} ارتفاعها ${fmt(h)} سم أطول من لوح — اتعملت ${segs.map(fmt).join(" + ")} فوق بعض.`); }
+        const onFloor = c.z0 < 0.5;
+        const mount = onFloor && n.mount !== "flat" ? "floor" : "wall";
+        // v118: a cell wider than one box (wc.module_max, 90) is made of equal boxes side by side (shelves don't sag, backs fit a board)
+        const nMod = wcModules(w, wc), mw = w / nMod;
+        const zonesFor = () => zones.map((zn) => (zn.type === "doors" ? { ...zn, count: wcDoorsPer(n, w, wc) } : zn));
+        let innFirst = null;
+        for (let m = 0; m < nMod; m++) {
+            const mx = c.x0 + m * mw, mNm = nMod > 1 ? `${nm} (${m + 1})` : nm;
+            let z = c.z0;
+            segs.forEach((hh, j) => {
+                const first = j === 0, n0 = d.parts.length, tag = `wc${i}${j ? `_t${j}` : ""}${m ? `_m${m}` : ""}`;
+                subUnit(tb, { width: mw, height: hh, depth: dd, mount: first ? mount : "wall", top: "full",
+                    fronts: first ? zonesFor(mw) : [{ type: "open", count: 1, height: "auto", shelves: 0 }], led_under: false },
+                    [mx, D - dd, z], first ? mNm : `${mNm} - تكملة`, tag);
+                const mine = d.parts.slice(n0);
+                if (k === "niche" || n.mat) for (const pt of mine) if (["carcass", "shelf", "back"].includes(pt.material)) pt.material = n.mat || "accent";
+                if (first && n.glass && (k === "doors" || k === "combo" || k === "wardrobe" || k === "flap")) wcGlassify(tb, mine);
+                if (first && k === "wardrobe") withModule(tb, tag, () => wcWardrobe(tb, wcInner(mine, { ...c, x0: mx, x1: mx + mw, z1: c.z0 + hh }), D - dd, n, mNm));
+                if (first) innFirst ??= wcInner(mine, { ...c, z1: c.z0 + hh });
+                z += hh;
+            });
+        }
+        // sliding doors run over the whole cell, whatever boxes stand behind them
+        if (k === "sliding" && innFirst) withModule(tb, `wc${i}`, () => wcSliding(tb, { ...c, z1: c.z0 + segs[0] }, innFirst, D - dd, n, nm, ft));
+        if (nMod > 1) { inc(d.hardware, "مسمار ربط وحدات", 3 * (nMod - 1) * segs.length); d.notes.push(`${nm} عرضها ${fmt(w)} سم — اتعملت ${nMod} علب جنب بعض كل واحدة ${fmt(mw)} سم (أقصى علبة ${fmt(+wc.module_max || 90)}) بتتربط ببعض بمسامير ربط.`); }
+        if (segs.length > 1) { inc(d.hardware, "مسمار ربط وحدات", 4 * (segs.length - 1) * nMod); d.notes.push(`${nm} ارتفاعها ${fmt(h)} سم أطول من لوح — اتعملت ${segs.map(fmt).join(" + ")} فوق بعض.`); }
+        if (!onFloor && n.mount === "floor") d.warnings.push(`${nm} مش على الأرض — اتعملت معلّقة (من غير رجول).`);
     });
     const boxes = cells.filter((c) => WC_BOX.has(c.node.kind));
     if (boxes.length > 1) inc(d.hardware, "مسمار ربط وحدات", 2 * (boxes.length - 1));
     d.notes.push(`الحيطة ${fmt(W)}×${fmt(H)} سم مقسومة على ${cells.length} خانة — كل علبة لوحدها بتتربط في اللي جنبها.`);
+}
+/** doors on each box of a cell: the typed count is for the whole cell (shared by its boxes), else 2 on a box ≥ 70 wide */
+export function wcDoorsPer(n, w, wc) {
+    const m = wcModules(w, wc), mw = w / m;
+    if (n.count == null || n.count === "") return mw >= 70 ? 2 : 1;
+    return m > 1 ? Math.max(1, Math.min(2, Math.round(+n.count / m))) : Math.max(1, Math.min(2, +n.count));
+}
+/** how many equal boxes a cell of width w is made of (each ≤ wc.module_max, default 120) */
+export function wcModules(w, wc) { return Math.max(1, Math.ceil(w / Math.max(40, +wc?.module_max || 90) - 1e-6)); }
+/** a wardrobe: a hat shelf + a hanging rail under it (two levels: a middle shelf + a second rail) */
+function wcWardrobe(tb, inn, yF, n, nm) {
+    const { d, t } = tb;
+    const ih = inn.z1 - inn.z0, yb = inn.yb ?? yF + 50, yc = (yF + yb) / 2, len = inn.x1 - inn.x0;
+    const two = (+n.rods || 1) >= 2 && ih >= 175;
+    if ((+n.rods || 1) >= 2 && !two) d.warnings.push(`${nm}: الارتفاع الداخلي ${fmt(ih)} سم ميكفيش شماعتين (محتاج 175) — اتعملت شماعة واحدة.`);
+    if (ih < 95) { d.warnings.push(`${nm}: الارتفاع الداخلي ${fmt(ih)} سم صغير على شماعة.`); return; }
+    if (yb - yF < 50) d.warnings.push(`${nm}: العمق الداخلي ${fmt(yb - yF)} سم — أقل من 50، الهدوم مش هتاخد راحتها (خليه 58–60).`);
+    const shelf = (z, lbl) => tb.add(`${nm} - ${lbl}`, "fixed_shelf", "shelf", tb.box(inn.x0, yF + 1, z, inn.x1, yb, z + t), { label_axes: ["x", "y"], band: ["front"], grain: "x" });
+    const rod = (z, i) => {
+        tb.add(`${nm} - ماسورة${two ? ` ${i}` : ""}`, "handle", "handle", tb.box(inn.x0, yc - 1.25, z - 1.25, inn.x1, yc + 1.25, z + 1.25), { cut_piece: false, layer: "shelf", shape: { type: "cylinder_x", cx: (inn.x0 + inn.x1) / 2, cy: yc, cz: z, r: 1.25, length: len } });
+        inc(d.hardware, `ماسورة دولاب Ø25 طول ${fmt(len)} سم + 2 حامل`, 1);
+    };
+    const zs = inn.z1 - Math.min(35, ih * 0.2) - t; // the hat shelf, ~35 cm under the top
+    shelf(zs, "رف فوق الشماعة");
+    rod(zs - 6, 1);
+    if (two) { const zm = inn.z0 + (zs - inn.z0) / 2 - t / 2; shelf(zm, "رف نص"); rod(zm - 6, 2); d.notes.push(`${nm}: شماعتين — فوق وتحت الرف اللي في النص (هدوم قصيرة: قمصان / جاكتات).`); }
+    else d.notes.push(`${nm}: شماعة تحت الرف اللي فوق على ${fmt(zs - 6)} سم من أول الدولاب (فساتين / بالطو).`);
+}
+/** sliding doors in front of an open box: n panels on two tracks overlapping 3 cm (every second panel on the front track) */
+function wcSliding(tb, c, inn, yF, n, nm, ft) {
+    const { d } = tb;
+    const cnt = Math.max(2, Math.min(3, Math.round(+n.count || 2))), ov = 3, W = c.x1 - c.x0, wp = (W + (cnt - 1) * ov) / cnt;
+    for (let j = 0; j < cnt; j++) {
+        const x0 = c.x0 + j * (wp - ov), front = j % 2 === 1;
+        const y1 = front ? yF - ft - 0.9 : yF - 0.4;
+        tb.add(`${nm} - ضلفة جرار ${j + 1}`, "sliding_door", "front", tb.box(x0, y1 - ft, inn.zb, x0 + wp, y1, inn.zt), { label_axes: ["x", "z"], band: ["left", "right", "top", "bottom"], band_all_sides: true, layer: "front", grain: "z" });
+    }
+    if (n.glass) d.notes.push(`${nm}: الضلف الجرار زجاج/مراية — اطلبها من الزجاجاتي بالمقاس ${fmt(wp)}×${fmt(inn.zt - inn.zb)} سم.`);
+    inc(d.hardware, `طقم مجرى ضلف جرار (فوق + تحت) ${fmt(W)} سم`, 1);
+    inc(d.hardware, "طقم عجل ضلفة جرار", cnt);
+    d.notes.push(`${nm}: ${cnt} ضلف جرار ${fmt(wp)} سم عرض، راكبين على بعض 3 سم، على مجريين — المجرى بياخد حوالي ${fmt(2 * ft + 1.3)} سم قدام الدولاب.`);
 }

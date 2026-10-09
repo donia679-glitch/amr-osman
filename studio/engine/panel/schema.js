@@ -466,13 +466,16 @@ function num(p, path, name, lo, hi, errors) {
 }
 
 // v118: «قسّم الحيطة» — the cell tree cleaned up: known kinds, sane numbers, at most 6 levels and 12 parts per split
-const WC_KIND = ["doors", "open", "drawers", "flap", "niche", "solid", "device", "empty"];
+const WC_KIND = ["doors", "open", "drawers", "combo", "wardrobe", "sliding", "flap", "niche", "solid", "device", "empty"];
+const WC_DEV = ["tv", "fridge", "oven", "micro", "washer", "dish", "other"];
+const WC_LIB = (v) => typeof v === "string" && /^[\w:.\-]{1,80}$/.test(v);
 function normalizeWallComp(p, raw, errors) {
     const D = TEMPLATE_DEFAULTS.wall_comp.wc;
     const q = p.wc = isHash(p.wc) ? p.wc : deepDup(D);
     if (has(raw?.wc || {}, "root")) q.root = deepDup(raw.wc.root); // the tree is replaced whole, never merged with the default one
     { const v = toF(q.max_board); q.max_board = v === null ? 240 : clamp(v, 100, 300); }
     { const v = toF(q.depth); q.depth = v === null ? 35 : clamp(v, 5, 80); }
+    { const v = toF(q.module_max); q.module_max = v === null ? 90 : clamp(v, 40, 240); }
     const fix = (n, lvl) => {
         if (!isHash(n)) return { kind: "empty" };
         if ((n.dir === "v" || n.dir === "h") && lvl < 6 && Array.isArray(n.parts) && n.parts.length >= 2) {
@@ -483,10 +486,26 @@ function normalizeWallComp(p, raw, errors) {
         }
         const k = WC_KIND.includes(n.kind) ? n.kind : (n.dir ? "empty" : "open");
         const c = { kind: k };
-        for (const f of ["depth", "shelves", "count"]) { const v = toF(n[f]); if (v !== null) c[f] = f === "depth" ? clamp(v, 1, 80) : clamp(Math.round(v), f === "count" ? 1 : 0, f === "count" ? (k === "drawers" ? 6 : 2) : 12); }
-        if (truthy(n.led)) c.led = true;
-        if (truthy(n.tv)) c.tv = true;
+        const cMax = k === "drawers" ? 6 : k === "sliding" ? 3 : 24, cMin = k === "wardrobe" ? 0 : k === "sliding" ? 2 : 1;
+        for (const f of ["depth", "shelves", "count", "dcount", "dh", "rods"]) {
+            const v = toF(n[f]);
+            if (v === null) continue;
+            c[f] = f === "depth" ? clamp(v, 1, 80) : f === "count" ? clamp(Math.round(v), cMin, cMax) : f === "dcount" ? clamp(Math.round(v), 1, 4) : f === "dh" ? clamp(v, 10, 150) : f === "rods" ? clamp(Math.round(v), 1, 2) : clamp(Math.round(v), 0, 12);
+        }
+        for (const f of ["led", "tv", "glass"]) if (truthy(n[f])) c[f] = true;
         if (["carcass", "front", "accent", "shelf"].includes(n.mat)) c.mat = n.mat;
+        if (n.hinge === "right") c.hinge = "right";
+        if (["floor", "flat"].includes(n.mount)) c.mount = n.mount;
+        if (WC_DEV.includes(n.dev)) c.dev = n.dev;
+        for (const f of ["lib", "flib"]) if (WC_LIB(n[f])) c[f] = n[f];
+        if (k === "solid" && isHash(n.hole)) {
+            const o = n.hole, hv = { w: clamp(toF(o.w) ?? 60, 5, 400), h: clamp(toF(o.h) ?? 40, 5, 400), depth: o.depth == null || o.depth === "" ? null : clamp(toF(o.depth) ?? 20, 2, 80), shelves: clamp(Math.round(toF(o.shelves) ?? 0), 0, 6) };
+            hv.x = o.x === "center" || o.x == null || o.x === "" || toF(o.x) === null ? "center" : clamp(toF(o.x), 0, 1200);
+            hv.z = o.z === "center" || o.z == null || o.z === "" || toF(o.z) === null ? "center" : clamp(toF(o.z), 0, 400);
+            if (truthy(o.led)) hv.led = true;
+            for (const f of ["lining", "back"]) if (["carcass", "front", "accent", "shelf"].includes(o[f])) hv[f] = o[f];
+            c.hole = hv;
+        }
         return c;
     };
     q.root = fix(q.root, 0);

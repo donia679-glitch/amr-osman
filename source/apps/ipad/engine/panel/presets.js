@@ -3058,6 +3058,28 @@ export const LIST = {
                 { "size": 80, "node": { "dir": "h", "parts": [ { "size": null, "node": { "kind": "open", "shelves": 3 } }, { "size": 80, "node": { "kind": "doors", "count": 2, "shelves": 1 } } ] } } ] } },
             "materials": { "carcass": { "lib": "hpl_offwhite" }, "front": { "lib": "hpl_greige" }, "accent": { "lib": "wood_oak_natural_v" }, "shelf": { "lib": "hpl_offwhite" } } }
     },
+    "wc_closet_hang": {
+        "label": "حيطة مقسومة: دولاب هدوم بشماعات وجرار",
+        "group": "غرف النوم",
+        "desc": "دولاب هدوم حيطة: شماعة طويلة شمال، شماعتين فوق بعض يمين، وفي النص أدراج + ضلف زجاج بفريم — كله بيتغيّر من «قسّم الحيطة».",
+        "params": { "template": "wall_comp", "width": 300, "height": 250, "handle": "bar",
+            "wc": { "depth": 60, "module_max": 90, "root": { "dir": "v", "parts": [
+                { "size": 90, "node": { "kind": "wardrobe", "rods": 1, "count": 2 } },
+                { "size": null, "node": { "kind": "combo", "dcount": 3, "dh": 60, "count": 2, "shelves": 2, "glass": true } },
+                { "size": 90, "node": { "kind": "wardrobe", "rods": 2, "count": 2 } } ] } },
+            "materials": { "carcass": { "lib": "hpl_offwhite" }, "front": { "lib": "hpl_greige" }, "accent": { "lib": "wood_oak_natural_v" }, "shelf": { "lib": "hpl_offwhite" } } }
+    },
+    "wc_tv_niche": {
+        "label": "حيطة مقسومة: تكسية بتجويف + فاترينتين",
+        "group": "الريسبشن",
+        "desc": "تكسية مصمتة خشب في النص بتجويف ليد فوق الشاشة، يمين وشمال فاترينتين ضلف زجاج فوق أدراج.",
+        "params": { "template": "wall_comp", "width": 380, "height": 260, "handle": "push",
+            "wc": { "depth": 40, "root": { "dir": "v", "parts": [
+                { "size": 70, "node": { "kind": "combo", "dcount": 2, "dh": 45, "count": 1, "hinge": "left", "shelves": 3, "glass": true } },
+                { "size": null, "node": { "dir": "h", "parts": [ { "size": null, "node": { "kind": "solid", "depth": 25, "hole": { "w": 150, "h": 35, "x": "center", "z": 205, "shelves": 0, "led": true } } }, { "size": 45, "node": { "kind": "drawers", "count": 2 } } ] } },
+                { "size": 70, "node": { "kind": "combo", "dcount": 2, "dh": 45, "count": 1, "hinge": "right", "shelves": 3, "glass": true } } ] } },
+            "materials": { "carcass": { "lib": "hpl_offwhite" }, "front": { "lib": "hpl_offwhite" }, "accent": { "lib": "wood_walnut_v" }, "shelf": { "lib": "hpl_offwhite" } } }
+    },
     "tvw_slats_two_niches": {
         "label": "وحدة شاشة: دولابين مفتوحين + وحدة مصمتة سادة",
         "group": "الريسبشن",
