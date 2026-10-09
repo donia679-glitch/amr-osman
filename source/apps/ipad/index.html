@@ -1365,6 +1365,19 @@ body.kpad-on .wcask { bottom: calc(var(--kpad-h, 300px) + 10px); }
 .dccfg h3 { margin: 0; font-size: 16px; } .dccfg ol { margin: 0; padding-inline-start: 20px; line-height: 1.8; } .dccfg a { color: var(--brand); font-weight: 800; }
 .dccfg label { display: flex; flex-direction: column; gap: 4px; font-weight: 700; font-size: 13px; } .dccfg input { height: 42px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel2); color: var(--ink); font: inherit; padding: 0 10px; }
 .dcnote { margin: 0; font-weight: 700; font-size: 13px; }
+.wctabs { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; background: var(--panel2); border-radius: 12px; padding: 3px; margin-bottom: 10px; }
+.wctabs button { min-height: 42px; border: 0; border-radius: 10px; background: transparent; color: var(--ink); font: inherit; font-size: 13.5px; font-weight: 800; }
+.wctabs button.on { background: var(--brand); color: #fff; }
+.wckh { margin: 10px 0 6px; font-size: 13px; color: var(--muted); }
+.wcstart { border: 2px solid var(--gold); border-radius: 14px; padding: 10px; margin-bottom: 12px; background: color-mix(in srgb, var(--gold) 10%, var(--panel)); }
+.wcstart > b { display: block; font-size: 13.5px; margin-bottom: 8px; } .wcstart small { display: block; color: var(--muted); font-size: 11.5px; margin-top: 6px; }
+.wcstart > div { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
+.wcstart button { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 58px; border: 1.5px solid var(--line); border-radius: 12px; background: var(--panel); color: var(--ink); font: inherit; font-size: 12.5px; font-weight: 800; }
+.wcstart button i { font-style: normal; font-size: 20px; } .wcb.on2 { border-color: var(--gold); background: color-mix(in srgb, var(--gold) 18%, var(--panel2)); }
+.wccell.kitchen > rect:first-child { fill: #e3d5bb; }
+.kwtabs { display: flex; flex-wrap: wrap; gap: 6px; padding: 4px 0 8px; margin: 6px 0 4px; }
+.kwtabs button { flex: none; min-height: 38px; padding: 0 12px; border: 1.5px solid var(--line); border-radius: 999px; background: var(--panel2); color: var(--ink); font: inherit; font-size: 12.5px; font-weight: 800; white-space: nowrap; }
+.kwtabs button.on { background: var(--brand); border-color: var(--brand); color: #fff; }
 @media (max-width: 760px) { .wcbody { flex-direction: column; } .wcside { width: auto; max-height: 42%; border-inline-start: 0; border-top: 1px solid var(--line); } }
 .chip.seg3 { display: inline-flex; gap: 2px; padding: 2px; }
 .chip.seg3 button { border: 0; background: transparent; color: inherit; font: inherit; font-size: 13px; padding: 0 10px; min-height: 32px; border-radius: 999px; }

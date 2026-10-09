@@ -466,7 +466,7 @@ function num(p, path, name, lo, hi, errors) {
 }
 
 // v118: «قسّم الحيطة» — the cell tree cleaned up: known kinds, sane numbers, at most 6 levels and 12 parts per split
-const WC_KIND = ["doors", "open", "drawers", "combo", "wardrobe", "sliding", "flap", "niche", "solid", "device", "empty"];
+const WC_KIND = ["doors", "open", "drawers", "combo", "wardrobe", "sliding", "flap", "niche", "solid", "device", "kitchen", "empty"];
 const WC_DEV = ["tv", "fridge", "oven", "micro", "washer", "dish", "other"];
 const WC_LIB = (v) => typeof v === "string" && /^[\w:.\-]{1,80}$/.test(v);
 function normalizeWallComp(p, raw, errors) {
@@ -498,6 +498,7 @@ function normalizeWallComp(p, raw, errors) {
         if (["floor", "flat"].includes(n.mount)) c.mount = n.mount;
         if (WC_DEV.includes(n.dev)) c.dev = n.dev;
         for (const f of ["lib", "flib"]) if (WC_LIB(n[f])) c[f] = n[f];
+        if (k === "kitchen") { if (WC_LIB(n.kit)) c.kit = n.kit; if (WC_LIB(n.kuid)) c.kuid = n.kuid; }
         if (k === "solid" && isHash(n.hole)) {
             const o = n.hole, hv = { w: clamp(toF(o.w) ?? 60, 5, 400), h: clamp(toF(o.h) ?? 40, 5, 400), depth: o.depth == null || o.depth === "" ? null : clamp(toF(o.depth) ?? 20, 2, 80), shelves: clamp(Math.round(toF(o.shelves) ?? 0), 0, 6) };
             hv.x = o.x === "center" || o.x == null || o.x === "" || toF(o.x) === null ? "center" : clamp(toF(o.x), 0, 1200);

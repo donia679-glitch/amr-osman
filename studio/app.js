@@ -37,7 +37,7 @@ import * as DG from "./draw/geom.js";
 
 const APP_URL = "https://claude.ai/artifact/EP8c8LmBNS8d3EqLcDioXi";
 const APP_VERSION = "1.0";
-const RELEASE = "v118"; // bumped with every shipped version (the developer notes carry it)
+const RELEASE = "v119"; // bumped with every shipped version (the developer notes carry it)
 // the NOVERA mark — the same one as the website (two cream panels, the brass profile between them, the brass base line)
 const MARK_SVG = '<svg viewBox="0 0 40 40" aria-hidden="true"><rect width="40" height="40" rx="3" fill="#0f2e1c"/><rect x="9" y="9" width="7" height="22" fill="#e9d9b0"/><rect x="24" y="9" width="7" height="22" fill="#e9d9b0"/><path d="M16 9h3l5 22h-3z" fill="#b98d34"/><rect x="6" y="33" width="28" height="2" fill="#b98d34"/></svg>';
 /** the App Store build (inside the iOS app): no links to the online version, no plugin / other-brand wording */
@@ -2672,7 +2672,7 @@ function planChips() {
   }
   // v117: in the room step the plan builds the room; opened from the design step it is a way of arranging the units
   if (!inDesign || !room) h += `<button class="chip" data-roompop>أوضة جاهزة بالمقاسات</button><button class="chip" data-draw>ارسم حيطان</button><button class="chip" data-wallstudio>🧱 ارسمها 3D في ورشة الرسم</button>`;
-  if (sel?.kind === "wall") h += `<button class="chip tog gold" data-kwnew>🍳 مطبخ على الحيطة دي</button><button class="chip tog gold" data-wcnew>🧩 قسّم الحيطة دي</button><button class="chip tog" data-addop="door">+ باب</button><button class="chip tog" data-addop="window">+ شباك</button><button class="chip tog" data-mepop>+ كهربا / سباكة / غاز</button><button class="chip tog" data-elev>واجهة الحيطة</button>`;
+  if (sel?.kind === "wall") h += `<button class="chip tog gold" data-kwnew>🧱 صمّم الحيطة دي (مطبخ · دواليب · أي حاجة)</button><button class="chip tog gold" data-wcnew>🧩 قسّم الحيطة دي</button><button class="chip tog" data-addop="door">+ باب</button><button class="chip tog" data-addop="window">+ شباك</button><button class="chip tog" data-mepop>+ كهربا / سباكة / غاز</button><button class="chip tog" data-elev>واجهة الحيطة</button>`;
   if (room && !inDesign) h += `<button class="chip tog" data-addcol>+ عمود</button>`;
   if (state.project.units.length) { const rw = ui.planRows || "all"; h += `<span class="chip seg3" role="group" aria-label="الصف اللي ظاهر">${[["all", "الكل"], ["lower", "السفلي"], ["upper", "العلوي"]].map(([k, l]) => `<button data-prows="${k}" class="${rw === k ? "on" : ""}">${l}</button>`).join("")}</span>`; }
   if (state.project.units.some((x) => x.pos)) h += `<button class="chip tog" data-autolay>رصّ تلقائي</button>`;
@@ -2683,12 +2683,13 @@ function renderChips() {
   const u = selUnit();
   const el = $("#chips");
   if (ui.planOn) { el.innerHTML = `<div class="cbody">${planChips()}</div>`; return; }
-  if (!u) { el.innerHTML = `<div class="cbody"><button class="chip tog" data-plan>المسقط والحيطان</button><button class="chip tog" data-roompop>📐 أوضة بالمقاسات · 📷 مسح</button><button class="chip tog gold" data-autok>✨ صمملي المطبخ</button>${state.project.room ? `<button class="chip tog gold" data-kwnew>🍳 مطبخ حيطة بحيطة</button>` : ""}<button class="chip tog" data-speak>🗣 اوصفلي</button>${state.project.variants?.length > 1 ? `<button class="chip tog" data-varpop>🗂 النسخ</button>` : ""}</div>`; return; }
+  if (!u) { el.innerHTML = `<div class="cbody"><button class="chip tog" data-plan>المسقط والحيطان</button><button class="chip tog" data-roompop>📐 أوضة بالمقاسات · 📷 مسح</button><button class="chip tog gold" data-autok>✨ صمملي المطبخ</button>${state.project.room ? `<button class="chip tog gold" data-kwnew>🧱 حيطة بحيطة</button>` : ""}<button class="chip tog" data-speak>🗣 اوصفلي</button>${state.project.variants?.length > 1 ? `<button class="chip tog" data-varpop>🗂 النسخ</button>` : ""}</div>`; return; }
   const r = R(u);
   const p = r.params;
   let h = "";
   if (u.kind === "kitchen") {
-    if (u.kw && state.project.kwalls?.[u.kw]) h += `<button class="chip tog gold" data-kwopen>🍳 مطبخ الحيطة</button>`;
+    if (u.kw && state.project.kwalls?.[u.kw]) h += `<button class="chip tog gold" data-kwopen>🧱 الحيطة كلها</button>`;
+    if (u.wcOf && state.project.units.some((q) => q.id === u.wcOf)) h += `<button class="chip tog gold" data-wcback>🧩 قسّم الحيطة</button>`;
     for (const [path, label] of KU.dimsFor(p).slice(0, 3)) h += stepChip(path, label, n1(+p[path] || 0));
     if (p.unit_category === "washer_gap") { h += cycleChip("washer_gap_side", "جنب يمسك الرأس", "K_GAP_SIDE", p.washer_gap_side || "none") + cycleChip("top_style", "الرأس", "K_TOP", p.top_style) + togChip("include_assembly_holes", "أليتا", p.include_assembly_holes); el.innerHTML = `<div class="cbody">${h}</div>`; return; }
     if (p.unit_category === "cooker_gap") { h += cycleChip("washer_gap_side", "جنب تقفيلة", "K_GAP_SIDE", p.washer_gap_side || "none") + stepChip("cooker_base_height", "القعدة", n1(+p.cooker_base_height || 0), 1); el.innerHTML = `<div class="cbody">${h}</div>`; return; }
@@ -2720,6 +2721,7 @@ function renderChips() {
     const spec = Schema.SPECIAL[tpl];
     const hide = spec?.hide || [];
     if (tpl === "wall_comp") h += `<button class="chip tog gold" data-wcopen>🧩 قسّم الحيطة</button>`;
+    if (u.kw && state.project.kwalls?.[u.kw]) h += `<button class="chip tog gold" data-kwopen>🧱 الحيطة كلها</button>`;
     if (!hide.includes("size") && tpl !== "free") h += stepChip("width", "العرض", n1(p.width)) + stepChip("height", "الارتفاع", n1(p.height));
     for (const [path, label, type, choices] of Schema.liveFields(tpl)) {
       const v = getPath(p, path);
@@ -2764,7 +2766,7 @@ function renderChips() {
     a += `<span class="chip step zone"><span class="zl">لف</span><button data-rot="-90" aria-label="لف 90 شمال">↺90</button><button data-rot="-15" aria-label="لف 15 شمال">↺15</button><button data-rot="15" aria-label="لف 15 يمين">↻15</button><button data-rot="90" aria-label="لف 90 يمين">↻90</button></span>`;
     if (state.project.units.some((x) => x.pos)) a += `<button class="chip tog" data-autolay>رصّ تلقائي</button>`;
   }
-  let rm = `<button class="chip tog" data-plan>المسقط والحيطان</button><button class="chip tog" data-roompop>📐 أوضة بالمقاسات · 📷 مسح بالكاميرا</button><button class="chip tog" data-speak>🗣 اوصفلي المطبخ</button><button class="chip tog gold" data-autok>✨ صمملي المطبخ</button>${state.project.room ? `<button class="chip tog gold" data-kwnew>🍳 مطبخ حيطة بحيطة</button>` : ""}`;
+  let rm = `<button class="chip tog" data-plan>المسقط والحيطان</button><button class="chip tog" data-roompop>📐 أوضة بالمقاسات · 📷 مسح بالكاميرا</button><button class="chip tog" data-speak>🗣 اوصفلي المطبخ</button><button class="chip tog gold" data-autok>✨ صمملي المطبخ</button>${state.project.room ? `<button class="chip tog gold" data-kwnew>🧱 حيطة بحيطة</button>` : ""}`;
   rm += `<button class="chip tog" data-varpop>🗂 النسخ${state.project.variants?.length > 1 ? ` (${state.project.variants.length})` : ""}</button>`;
   if (whole || state.project.room) { const n = designChecks().filter((c) => c.level !== "n").length; rm += `<button class="chip tog ${n ? "warnchip" : ""}" data-checks>فحص التصميم${n ? ` (${n})` : " ✓"}</button>`; }
   if (state.project.room) rm += `<p class="chiphint">في العرض 3D: دوس على حيطة أو بريزة أو عمود عشان تعدّله. اختار البريزة واسحبها على الحيطة.</p>`;
@@ -2807,6 +2809,7 @@ $("#chips").addEventListener("click", async (e) => {
   if (b.hasAttribute("data-kwnew")) { openKitWall(roomSegs(state.project).find((g) => g.id === ui.planSel?.id)); return; }
   if (b.hasAttribute("data-wcnew")) { const seg = roomSegs(state.project).find((g) => g.id === ui.planSel?.id); if (seg) newWallComp(seg); return; }
   if (b.hasAttribute("data-wcopen") && u) { openWallComp(u); return; }
+  if (b.hasAttribute("data-wcback") && u) { const w = state.project.units.find((q) => q.id === u.wcOf); if (w) { state.sel = w.id; openWallComp(w); } return; }
   if (b.hasAttribute("data-kwopen") && u) { openKitWall(roomSegs(state.project).find((g) => g.id === u.kw)); return; }
   if (b.hasAttribute("data-kwnew")) { openKitWall(null); return; }
   if (d.prows) { ui.planRows = d.prows; renderChips(); plan.render(); return; }
@@ -3227,7 +3230,7 @@ function openWallComp(u, fresh = false, pname = null) {
     wallLen: seg ? Math.round((seg.L - (L.s || 0)) * 10) / 10 : null, wallH: seg ? Math.round(seg.h || 260) : null,
     libs: { own: O.own, mine: O.mine, cat: O.cat, name: libDisplay, color: libColorOf },
     params: (x) => R(x).params,
-    apply: (P) => { applied = true; setParams(u, (p) => { p.width = P.width; p.height = P.height; p.wc = P.wc; }); },
+    apply: (P) => { applied = true; setParams(u, (p) => { p.width = P.width; p.height = P.height; p.wc = P.wc; }); wcSyncKitchen(u); },
     numAsk, alertBar, esc,
     closed: () => {
       if (fresh && !applied) { state.project.units = state.project.units.filter((x) => x.id !== u.id); state.sel = state.project.units.at(-1)?.id ?? null; save(); render(true); return; }
@@ -3261,10 +3264,34 @@ function openKitWall(seg) {
   }
   KWall.open(K, {
     holes, wallLen: Math.round(seg.L * 10) / 10, wallH: Math.round(seg.h || 270),
+    catalog: kwCatalog(), info: kwInfo, kitRow: kwKitRow,
     numAsk, alertBar, esc,
     apply: (K2) => kwApply(seg, K2),
     closed: () => render(true),
   });
+}
+/** v119: what «حيطة بحيطة» can put in a cell — every library tab (kitchen, dressing, every furniture group) + a free divided unit */
+let kwCat = null, kwMap = null;
+function kwCatalog() {
+  if (kwCat) return kwCat;
+  const IC = { "غرف النوم": "🛏", "الريسبشن": "📺", "مكتبات": "📚", "الحمام": "🛁", "الترابيزات": "🪑", "ترابيزات كتل": "🧱" };
+  const kRow = (v) => (v.params.unit_type === "wall" ? "⬆" : v.params.unit_type === "tall" || ["fridge", "wardrobe", "bedroom_wardrobe"].includes(v.params.unit_category) ? "▮" : "⬇");
+  const tabs = [{ id: "kall", label: "🍳 كل المطبخ", items: Object.entries(KU.KITCHEN).filter(([, v]) => v.params && v.params.element_mode !== "accessory" && !/corner/.test(v.params.unit_category || "")).map(([k, v]) => [k, kRow(v), v.label, +v.params.width || null, +v.params.height || null]) }];
+  tabs.push({ id: "dress", label: "👔 دريسنج", items: Object.entries(DRESSING).map(([k, v]) => [`d:${k}`, "👔", v.label, +v.params?.width || null, +v.params?.height || null]) });
+  const groups = {};
+  for (const [k, v] of Object.entries(PRESETS)) (groups[v.group || "تانية"] ??= []).push([`p:${k}`, IC[v.group] || "🗄", v.label, +v.params?.width || null, +v.params?.height || null]);
+  for (const [g, items] of Object.entries(groups)) tabs.push({ id: `g:${g}`, label: `${IC[g] || "🗄"} ${g}`, items });
+  tabs.push({ id: "free", label: "🧩 حر", items: [["wc", "🧩", "تقسيم حر (قسّمها براحتك)", null, null], ["", "⬚", "فاضي", null, null]] });
+  kwMap = new Map(tabs.flatMap((t) => t.items.map((it) => [it[0], it])));
+  return (kwCat = tabs);
+}
+function kwInfo(id) { kwCatalog(); return kwMap.get(id) || null; }
+function kwKitRow(id) { const v = KU.KITCHEN[id]; if (!v) return null; return v.params.unit_type === "wall" ? "wall" : v.params.unit_type === "tall" || ["fridge", "wardrobe", "bedroom_wardrobe"].includes(v.params.unit_category) ? "tall" : "base"; }
+function kwMake(id, w) {
+  if (id.startsWith("d:")) return libUnit({ dress: id.slice(2) });
+  if (id.startsWith("p:")) return libUnit({ preset: id.slice(2) });
+  if (id === "wc") return { id: uid(), kind: "panel", name: "تقسيم حر", params: { template: "wall_comp", width: w, height: 100, handle: "push", wc: { max_board: 240, depth: 35, root: { kind: "open" } } } };
+  return libUnit({ kitchen: id }, { width: w });
 }
 /** make / update the kitchen units of a composed wall (units whose kind didn't change keep all their own settings) */
 function kwApply(seg, K) {
@@ -3281,33 +3308,46 @@ function kwApply(seg, K) {
     const slots = c.tall ? [["tall", c.tall]] : [["base", c.base], ["wall", c.wall]];
     for (const row of ["base", "wall", "tall"]) if (!slots.some(([r, k]) => r === row && k)) delete c.ids[row];
     for (const [row, kid] of slots) {
-      if (!kid || !KU.KITCHEN[kid]) continue;
+      const kit = !!KU.KITCHEN[kid];
+      if (!kid || !(kit || kwInfo(kid))) continue;
       let u = P.units.find((q) => q.id === c.ids[row]);
       if (!u || u.kwKind !== kid) {
-        u = libUnit({ kitchen: kid }, { width: +c.w });
+        u = kwMake(kid, +c.w);
         u.kwKind = kid;
-        if (ref) for (const [k, lib] of Object.entries(ref.libs || {})) {
+        if (kit && ref) for (const [k, lib] of Object.entries(ref.libs || {})) {
           if (!KU.K_MATS[k] || (k === "countertop" && row !== "base")) continue;
           u.libs[k] = lib; u.params[KU.K_MATS[k][1]] = ref.params[KU.K_MATS[k][1]] ?? Catalog.libName(lib);
         }
-        if (ref?.params?.door_color) u.params.door_color = ref.params.door_color;
-        if (ref?.params?.kud_handles) u.params.kud_handles = clone(ref.params.kud_handles);
+        if (kit && ref?.params?.door_color) u.params.door_color = ref.params.door_color;
+        if (kit && ref?.params?.kud_handles) u.params.kud_handles = clone(ref.params.kud_handles);
         P.units.push(u);
         c.ids[row] = u.id;
         made++;
       }
       u.kw = seg.id;
-      const sp = KU.KITCHEN[kid].params || {};
-      u.params.width = +c.w;
-      if (row === "wall") {
-        const ph = +sp.height || 70, std = !sp.height || Math.abs(ph - 70) < 0.5;
-        u.params.height = std ? +K.wallH : ph;
-        u.params.wall_mount_height = Math.round((std ? +K.wallZ : +K.wallZ + +K.wallH - ph) * 10) / 10; // tops line up
+      const hOv = c.hz?.[row], wz = c.wz ?? +K.wallZ;
+      if (kit) {
+        const sp = KU.KITCHEN[kid].params || {};
+        u.params.width = +c.w;
+        if (row === "wall") {
+          const ph = +sp.height || 70, std = !sp.height || Math.abs(ph - 70) < 0.5;
+          const hh = hOv != null ? +hOv : std ? +K.wallH : ph;
+          u.params.height = hh;
+          u.params.wall_mount_height = Math.round((hOv != null || std || c.wz != null ? wz : wz + +K.wallH - ph) * 10) / 10; // tops line up
+        }
+        if (row === "tall") u.params.height = hOv != null ? +hOv : +K.tallH;
+        if (row === "base" && hOv != null) u.params.height = Math.max(30, +hOv - 14); // the carcass under the counter + plinth
+      } else {
+        // any other unit: as wide as the column, as tall as its cell, a wall-row one hung at the cell's bottom
+        const hh = KWall.cellHeight(K, c, row, kwInfo(kid));
+        u.params = expanded(u);
+        u.params.width = +c.w;
+        u.params.height = Math.round(hh * 10) / 10;
+        if (row === "wall" && wz > 0.5) u.lift = Math.round(wz * 10) / 10; else delete u.lift;
       }
-      if (row === "tall") u.params.height = +K.tallH;
       // the name follows the width while it is still the automatic one
       if (!u.kwName || u.name === u.kwName) {
-        const lab = KU.KITCHEN[kid].label;
+        const lab = kit ? KU.KITCHEN[kid].label : kid === "wc" ? "تقسيم حر" : kwInfo(kid)?.[2] || u.name;
         u.name = /\d+(\.\d+)?$/.test(lab) ? lab.replace(/\d+(\.\d+)?$/, String(+c.w)) : `${lab} ${+c.w}`;
         u.kwName = u.name;
       }
@@ -3324,7 +3364,58 @@ function kwApply(seg, K) {
   state.sel = [...keep][0] ?? state.sel;
   save();
   render(true);
-  alertBar(`🍳 المطبخ على الحيطة: ${keep.size} وحدة${made ? ` (${made} جديدة)` : ""}${gone.length ? ` · اتشال ${gone.length}` : ""} — كل وحدة بتتعدّل لوحدها كمان`);
+  alertBar(`🧱 الحيطة: ${keep.size} وحدة${made ? ` (${made} جديدة)` : ""}${gone.length ? ` · اتشال ${gone.length}` : ""} — كل وحدة بتتعدّل لوحدها كمان`);
+}
+/** v119: the kitchen cells of a divided wall become REAL kitchen units (kitchen engine) standing in their places on the wall.
+ *  A cell keeps its unit (`kuid`, all its own settings) while its kind stays in the same row; dropped cells drop their units. */
+function wcSyncKitchen(u) {
+  const P = state.project, p = u.params, raw = p?.wc?.root;
+  if (!raw) return;
+  const at = (path) => { let n = raw; for (const i of path) n = n?.parts?.[i]?.node; return n; };
+  const cells = WCL.wallCompLayout(p.wc, +p.width, +p.height).filter((c) => c.node.kind === "kitchen" && KU.KITCHEN[c.node.kit]);
+  const mine = P.units.filter((q) => q.wcOf === u.id);
+  const L = projectPoses(P).get(u.id);
+  if (cells.length && !L?.wall) { alertBar("🍳 خانات المطبخ محتاجة الحيطة المقسومة تكون على حيطة من حيطان الأوضة — حطها على حيطة وافتحها تاني"); return; }
+  const ref = P.units.find((q) => q.kind === "kitchen" && q.libs && Object.keys(q.libs).length);
+  const rowOfKit = (id) => (KWall.KW_TALL.some((x) => x[0] === id) ? "tall" : KWall.KW_WALL.some((x) => x[0] === id) ? "wall" : "base");
+  const keep = new Set();
+  let made = 0;
+  for (const c of cells) {
+    const n = at(c.path), kid = c.node.kit, row = rowOfKit(kid), w = Math.round((c.x1 - c.x0) * 10) / 10, h = Math.round((c.z1 - c.z0) * 10) / 10;
+    let k = mine.find((q) => q.id === n?.kuid && !keep.has(q.id));
+    if (k && k.kwKind !== kid) { P.units = P.units.filter((q) => q !== k); k = null; }
+    if (!k) {
+      k = libUnit({ kitchen: kid }, { width: w });
+      k.kwKind = kid;
+      if (ref) for (const [mk, lib] of Object.entries(ref.libs || {})) {
+        if (!KU.K_MATS[mk] || (mk === "countertop" && row !== "base")) continue;
+        k.libs[mk] = lib; k.params[KU.K_MATS[mk][1]] = ref.params[KU.K_MATS[mk][1]] ?? Catalog.libName(lib);
+      }
+      if (ref?.params?.door_color) k.params.door_color = ref.params.door_color;
+      if (ref?.params?.kud_handles) k.params.kud_handles = clone(ref.params.kud_handles);
+      P.units.push(k);
+      made++;
+    }
+    if (n) n.kuid = k.id;
+    k.wcOf = u.id;
+    k.params.width = w;
+    if (row === "wall") { k.params.height = Math.max(30, Math.min(130, h)); k.params.wall_mount_height = Math.round(c.z0 * 10) / 10; delete k.lift; }
+    else if (row === "tall") { k.params.height = Math.max(120, Math.min(300, h)); if (c.z0 > 0.5) k.lift = Math.round(c.z0 * 10) / 10; else delete k.lift; }
+    else if (c.z0 > 0.5) k.lift = Math.round(c.z0 * 10) / 10; else delete k.lift;
+    const lab = KU.KITCHEN[kid].label;
+    if (!k.kwName || k.name === k.kwName) { k.name = /\d+(\.\d+)?$/.test(lab) ? lab.replace(/\d+(\.\d+)?$/, String(w)) : `${lab} ${w}`; k.kwName = k.name; }
+    k.pos = { wall: L.wall, s: Math.round(((L.s || 0) + c.x0) * 10) / 10 };
+    keep.add(k.id);
+  }
+  const gone = mine.filter((q) => !keep.has(q.id)).map((q) => q.id);
+  if (gone.length) P.units = P.units.filter((q) => !gone.includes(q.id));
+  if (!keep.size && !gone.length) return;
+  pinOthers(null);
+  ensureCodes(P);
+  state.whole = true;
+  save();
+  render(true);
+  alertBar(`🍳 ${keep.size} وحدة مطبخ على الحيطة${made ? ` (${made} جديدة)` : ""}${gone.length ? ` · اتشال ${gone.length}` : ""} — دوس على أي واحدة وعدّل تفاصيلها، أو 🧩 ترجع للتقسيم`);
 }
 /** v118: a new divided wall on the picked wall of the room, as long as the wall */
 function newWallComp(seg) {
@@ -4884,7 +4975,7 @@ const selBar = {
   html(u) {
     const inPlan = ui.planOn, armed = this.armed === u.id;
     if (ui.alignPick) return `<span class="sbhint">⇹ دوس على الوحدة اللي هتتظبط عليها</span><button data-sb="alignx">إلغاء</button>`;
-    return `${R(u).params?.template === "wall_comp" ? `<button data-sb="wc" class="gold" title="قسّم الحيطة">🧩<small>قسّم</small></button>` : ""}${u.kw && state.project.kwalls?.[u.kw] ? `<button data-sb="kw" class="gold" title="مطبخ الحيطة">🍳<small>الحيطة</small></button>` : ""}${inPlan ? "" : `<button data-sb="nudge" class="${ui.nudgeOpen ? "on" : ""}" title="حرّكها مسافة محددة">↔<small>بمقاس</small></button>`}
+    return `${R(u).params?.template === "wall_comp" ? `<button data-sb="wc" class="gold" title="قسّم الحيطة">🧩<small>قسّم</small></button>` : ""}${u.kw && state.project.kwalls?.[u.kw] ? `<button data-sb="kw" class="gold" title="الحيطة كلها">🧱<small>الحيطة</small></button>` : ""}${u.wcOf && state.project.units.some((q) => q.id === u.wcOf) ? `<button data-sb="wcb" class="gold" title="قسّم الحيطة">🧩<small>قسّم</small></button>` : ""}${inPlan ? "" : `<button data-sb="nudge" class="${ui.nudgeOpen ? "on" : ""}" title="حرّكها مسافة محددة">↔<small>بمقاس</small></button>`}
       <button data-sb="rot" title="لف 90 درجة">↻<small>لف</small></button>
       <button data-sb="align" title="محاذاة مع وحدة تانية">⇹<small>محاذاة</small></button>
       <button data-sb="dup" title="نسخة جنبها">⧉<small>نسخة</small></button>
@@ -4951,6 +5042,7 @@ const selBar = {
     else if (k === "mat") { ui.matpOpen = !ui.matpOpen; ui.nudgeOpen = false; renderMatp(); }
     else if (k === "rot") { rotateUnit(u, 90); return; }
     else if (k === "wc") { openWallComp(u); return; }
+    else if (k === "wcb") { const w = state.project.units.find((q) => q.id === u.wcOf); if (w) { state.sel = w.id; openWallComp(w); } return; }
     else if (k === "kw") { openKitWall(roomSegs(state.project).find((g) => g.id === u.kw)); return; }
     else if (k === "align") { ui.alignPick = true; alertBar("⇹ دوس على الوحدة اللي عايزها تتظبط عليها (في العرض أو في الشريط اللي تحت)"); }
     else if (k === "alignx") { ui.alignPick = false; }
@@ -8394,9 +8486,10 @@ function designChecks(project = state.project) {
   swingChecks(items, add, room, label);
   // overlaps (same height band)
   // the real height band of a wall unit (a ceiling unit sits above the wall unit under it — that is no clash)
-  const band = (it) => { if (it.row === "upper") { const q = R(it.u).params || {}, z0 = +q.wall_mount_height || 140, lp = q.led_panel_below === true || q.led_panel_below === "true" ? +q.panel_thickness || 1.8 : 0; return [z0 - lp + 0.5, z0 + (+q.height || 70) - 0.5]; } return it.row === "lower" ? [0, 90] : it.row === "free" ? [0, 80] : [0, 240]; };
+  const band = (it) => { const lf = +it.u?.lift || 0; if (lf > 0.5 && it.u?.kind !== "kitchen") { const hh = +R(it.u).params?.height || 60; return [lf + 0.5, lf + hh - 0.5]; } if (it.row === "upper") { const q = R(it.u).params || {}, z0 = +q.wall_mount_height || 140, lp = q.led_panel_below === true || q.led_panel_below === "true" ? +q.panel_thickness || 1.8 : 0; return [z0 - lp + 0.5, z0 + (+q.height || 70) - 0.5]; } return it.row === "lower" ? [0, 90] : it.row === "free" ? [0, 80] : [0, 240]; };
   for (let i = 0; i < items.length; i++) for (let j = i + 1; j < items.length; j++) {
     const A = items[i], B = items[j], [a0, a1] = band(A), [b0, b1] = band(B);
+    if (A.u?.wcOf === B.id || B.u?.wcOf === A.id) continue; // v119: a kitchen cell of a divided wall stands inside it on purpose
     if (Math.min(a1, b1) <= Math.max(a0, b0)) continue;
     const ov = overlapArea(Room.footprint(A.pose, A.box), Room.footprint(B.pose, B.box));
     if (ov > 30) add("e", `${label(A)} داخلة في ${label(B)} — حرّك واحدة منهم.`, A.id);
@@ -8405,7 +8498,7 @@ function designChecks(project = state.project) {
     const segs = Room.segments(room);
     // install clearance on each wall that runs between two walls (NOVERA: leave ~3 cm)
     for (const sg of segs) {
-      const on = items.filter((it) => it.pose.wall === sg.id && it.row !== "upper");
+      const on = items.filter((it) => it.pose.wall === sg.id && it.row !== "upper" && !(+it.u?.lift >= 80) && !items.some((x) => x.u?.wcOf === it.id)); // a divided wall holding kitchen units: they count, not the frame
       if (!on.length) continue;
       const used = on.reduce((a, it) => a + (it.box.x1 - it.box.x0), 0);
       if (used > sg.L + 0.5) add("e", `حيطة ${sg.i + 1}: الوحدات السفلية ${n1(used)} سم أطول من الحيطة (${n1(sg.L)} سم).`);

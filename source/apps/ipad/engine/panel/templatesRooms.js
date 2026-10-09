@@ -638,7 +638,7 @@ export function buildTvWall(tb) {
 // or a cell {kind, depth, shelves, count, led, mat, glass, mount, …}. Every cell becomes real boards: a cabinet (doors / open shelves / drawers /
 // flap / drawers + doors / wardrobe with a hanging rail / sliding doors), a decorative niche, a solid built-out face (with its own niche),
 // a place for an appliance, or nothing.
-export const WC_KINDS = { doors: "دولاب ضلف", open: "أرفف مفتوحة", drawers: "أدراج", combo: "أدراج + ضلف", wardrobe: "دولاب هدوم (شماعة)", sliding: "ضلف جرار", flap: "قلاب", niche: "تجويف ديكور", solid: "تكسية مصمتة", device: "مكان جهاز / شاشة", empty: "فاضي" };
+export const WC_KINDS = { doors: "دولاب ضلف", open: "أرفف مفتوحة", drawers: "أدراج", combo: "أدراج + ضلف", wardrobe: "دولاب هدوم (شماعة)", sliding: "ضلف جرار", flap: "قلاب", niche: "تجويف ديكور", solid: "تكسية مصمتة", device: "مكان جهاز / شاشة", kitchen: "وحدة مطبخ", empty: "فاضي" };
 export const WC_BOX = new Set(["doors", "open", "drawers", "flap", "niche", "combo", "wardrobe", "sliding"]);
 /** appliances a «device» cell can hold, with their usual opening (w × h) */
 export const WC_DEVICES = { tv: ["شاشة", null, null], fridge: ["تلاجة", 75, 185], oven: ["فرن بلت إن", 60, 60], micro: ["ميكرويف بلت إن", 60, 40], washer: ["غسالة", 62, 85], dish: ["غسالة أطباق", 60, 82], other: ["جهاز", null, null] };
@@ -777,7 +777,7 @@ export function buildWallComp(tb) {
     for (const e of errors) d.errors.push(e);
     if (errors.length) return;
     const depthOf = (n) => (n.depth != null && n.depth !== "" ? +n.depth : n.kind === "solid" ? Math.min(30, +wc.depth || 35) : +wc.depth || 35);
-    const D = Math.max(5, ...cells.filter((c) => c.node.kind !== "device" && c.node.kind !== "empty").map((c) => depthOf(c.node)));
+    const D = Math.max(5, ...cells.filter((c) => !["device", "empty", "kitchen"].includes(c.node.kind)).map((c) => depthOf(c.node)));
     p.depth = D;
     const ft = +p.front_thickness || 1.8;
     const count = {};
@@ -786,6 +786,8 @@ export function buildWallComp(tb) {
         count[k] = (count[k] || 0) + 1;
         const nm = `${WC_KINDS[k] || k} ${count[k]}`;
         if (k === "empty") return;
+        // v119: a kitchen cell is a real kitchen unit made by the kitchen engine (app.js wcSyncKitchen) — nothing is built here
+        if (k === "kitchen") { d.notes.push(`${nm}: ${fmt(w)}×${fmt(h)} سم على ارتفاع ${fmt(c.z0)} — وحدة مطبخ لوحدها (كود خاص بيها).`); return; }
         if (k === "device") {
             const dv = WC_DEVICES[n.dev || (n.tv ? "tv" : "other")] || WC_DEVICES.other;
             d.notes.push(`${nm}: مكان ${dv[0]} ${fmt(w)}×${fmt(h)} سم على ارتفاع ${fmt(c.z0)} — فاضي للجهاز${dv[1] && (w < dv[1] - 0.5 || h < dv[2] - 0.5) ? ` ⚠ أصغر من المقاس المعتاد (${dv[1]}×${dv[2]})` : ""}.`);

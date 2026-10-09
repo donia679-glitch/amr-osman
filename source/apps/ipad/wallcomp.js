@@ -6,15 +6,21 @@
 // its own catalogue materials · split around the room's windows and doors. «✓ خلصت» writes it all back into the unit
 // (template wall_comp) and the engine turns every cell into real boards.
 import { wallCompLayout, WC_KINDS, WC_DEVICES, wcHoleRect, wcModules, wcDoorsPer } from "./engine/panel/templatesRooms.js";
+import { KW_BASE, KW_WALL, KW_TALL, kwArt, proposeKitchen } from "./kitwall.js";
+// v119: kitchen cells — each one becomes a REAL kitchen unit (kitchen engine) standing in that place; `kit` = the kitchen preset
+const KIT = { base: KW_BASE.filter((x) => x[0]), wall: KW_WALL.filter((x) => x[0]), tall: KW_TALL.filter((x) => x[0]) };
+const kitRow = (id) => (KIT.tall.some((x) => x[0] === id) ? "tall" : KIT.wall.some((x) => x[0] === id) ? "wall" : "base");
+const kitInfo = (id) => [...KIT.base, ...KIT.wall, ...KIT.tall].find((x) => x[0] === id) || ["", "🍳", "وحدة مطبخ", null];
+const KIT_ROWN = { base: "⬇ سفلي (تحت الرخامة)", wall: "⬆ علوي (معلّق)", tall: "▮ طويل (من الأرض)" };
 
-const KIND_ICON = { doors: "🚪", open: "📚", drawers: "🗄", combo: "🗃", wardrobe: "👔", sliding: "↔", flap: "⬆", niche: "◫", solid: "▮", device: "📺", empty: "⬚" };
-const KIND_FILL = { doors: "#d7c4a3", open: "#efe6d4", drawers: "#d3c09d", combo: "#d5c2a0", wardrobe: "#d9c7a6", sliding: "#d2c3a7", flap: "#dccbab", niche: "#c9d8cf", solid: "#b7a58a", device: "#2b2f2c", empty: "transparent" };
+const KIND_ICON = { doors: "🚪", open: "📚", drawers: "🗄", combo: "🗃", wardrobe: "👔", sliding: "↔", flap: "⬆", niche: "◫", solid: "▮", device: "📺", kitchen: "🍳", empty: "⬚" };
+const KIND_FILL = { doors: "#d7c4a3", open: "#efe6d4", drawers: "#d3c09d", combo: "#d5c2a0", wardrobe: "#d9c7a6", sliding: "#d2c3a7", flap: "#dccbab", niche: "#c9d8cf", solid: "#b7a58a", device: "#2b2f2c", kitchen: "#e3d5bb", empty: "transparent" };
 const DEV_ICON = { tv: "📺", fridge: "🧊", oven: "🔥", micro: "♨", washer: "🧺", dish: "🍽", other: "🔌" };
 const BOX = new Set(["doors", "open", "drawers", "flap", "niche", "combo", "wardrobe", "sliding"]);
 const FRONTED = new Set(["doors", "drawers", "flap", "combo", "wardrobe", "sliding"]);
 const GLASSY = new Set(["doors", "flap", "combo", "wardrobe"]);
 let ctx = null, P = null, sel = [], hist = [], el = null, view = null;
-let multiOn = false, multi = [], clip = null, grip = null, gripMoved = false;
+let multiOn = false, multi = [], clip = null, grip = null, gripMoved = false, tab = "box", showStart = false;
 const clone = (o) => JSON.parse(JSON.stringify(o));
 const f1 = (v) => String(Math.round(v * 10) / 10);
 const key = (p) => p.join(".");
@@ -26,7 +32,7 @@ export function open(unit, c) {
   P = { width: +p.width || 360, height: +p.height || 260, wc: clone(p.wc || {}) };
   if (!P.wc.root) P.wc.root = { kind: "open" };
   P.wc.depth ??= 35; P.wc.max_board ??= 240; P.wc.module_max ??= 90;
-  hist = []; multiOn = false; multi = []; grip = null;
+  hist = []; multiOn = false; multi = []; grip = null; tab = "box";
   sel = c.startPath && nodeAt(c.startPath) && !nodeAt(c.startPath).dir ? c.startPath : firstLeaf(P.wc.root, []);
   el = document.createElement("div");
   el.id = "wcomp"; el.className = "wcomp";
@@ -90,7 +96,8 @@ function setPart(path, i, v, quiet = false) {
   const others = 5 * (s.length - 1);
   if (v < 5 || v > total - others + 0.01) { if (!quiet) ctx.alertBar(`المقاس هنا من 5 لـ ${f1(total - others)} سم`); return false; }
   n.parts[i].size = Math.round(v * 10) / 10;
-  if (!n.parts.some((q, j) => j !== i && q.size == null)) n.parts[i + 1 < n.parts.length ? i + 1 : i - 1].size = null;
+  const j = i + 1 < n.parts.length ? i + 1 : i - 1;
+  if (!n.parts.some((q, jj) => jj !== i && q.size == null) && n.parts[j]) n.parts[j].size = null;
   return true;
 }
 /** size of a cell along a direction ("v" = its width, "h" = its height): set in the nearest split of that direction */
@@ -135,6 +142,7 @@ function draw() {
       <button class="wcb" data-wc="dup">⧉ نسخة<small>خانة زيها جنبها</small></button>
       <button class="wcb" data-wc="swapa" ${par && idx > 0 ? "" : "disabled"} aria-label="بدّلها مع اللي قبلها">${par?.dir === "h" ? "⇡" : "⇠"}<small>بدّل</small></button>
       <button class="wcb" data-wc="swapb" ${par && idx < par.parts.length - 1 ? "" : "disabled"} aria-label="بدّلها مع اللي بعدها">${par?.dir === "h" ? "⇣" : "⇢"}<small>بدّل</small></button>
+      <button class="wcb ${showStart ? "on2" : ""}" data-wc="starters">⚡ قوالب<small>مطبخ · دولاب · تلفزيون…</small></button>
       ${holesBig ? `<button class="wcb" data-wc="suggest">🪟 حوالين الفتحات<small>قسّم حوالين الشباك والباب</small></button>` : ""}
       <span class="wchint">دوس على خانة تختارها · اسحب أي خط تقسيم بصباعك · دوس على أي مقاس تكتبه</span>
     </div>`;
@@ -163,6 +171,13 @@ function sideHtml(n) {
   if (!n || n.dir) return tools;
   const k = n.kind || "empty", r = rectOf(sel), h = r.z1 - r.z0, w = r.x1 - r.x0;
   const chip = (kk) => `<button class="wckind ${k === kk && !many ? "on" : ""}" data-wckind="${kk}"><i>${KIND_ICON[kk]}</i>${WC_KINDS[kk]}</button>`;
+  if (k === "kitchen" && !many) tab = "kitchen";
+  const kitChip = ([id, ic, nm, nw]) => `<button class="wckind ${k === "kitchen" && n.kit === id && !many ? "on" : ""}" data-wckit="${id}"><i>${ic}</i>${nm}${nw ? `<small>${f1(nw)}</small>` : ""}</button>`;
+  const kinds = tab === "kitchen"
+    ? `<p class="wcnote">كل خانة هنا بتطلع <b>وحدة مطبخ حقيقية</b> (رخامة، وزرة، مفصلات، أدراج…) بعرض الخانة وفي مكانها.</p>${["base", "wall", "tall"].map((rw) => `<h4 class="wckh">${KIT_ROWN[rw]}</h4><div class="wckinds">${KIT[rw].map(kitChip).join("")}</div>`).join("")}`
+    : `<div class="wckinds">${Object.keys(WC_KINDS).filter((x) => x !== "kitchen").map(chip).join("")}</div>`;
+  const tabs = `<div class="wctabs"><button data-wctab="box" class="${tab === "box" ? "on" : ""}">🗄 دواليب ومكتبات</button><button data-wctab="kitchen" class="${tab === "kitchen" ? "on" : ""}">🍳 مطبخ</button></div>`;
+  const start = !P.wc.root.dir || showStart ? `<div class="wcstart"><b>⚡ ابدأ بسرعة — الحيطة كلها:</b><div>${STARTERS.map(([id, ic, nm]) => `<button data-wcstart="${id}"><i>${ic}</i>${nm}</button>`).join("")}</div><small>بيقسّمها لوحده على مقاسها (وحوالين الشباك والباب) — وبعدين غيّر أي خانة.</small></div>` : "";
   let h2 = "";
   const hits = many ? [] : holeHits(r);
   if (hits.length && k !== "empty" && k !== "device") h2 += `<p class="wcwarn">⚠ الخانة دي راكبة على ${hits.map(holeName).join(" و")} — خليها «فاضي» أو قسّمها حواليه (🪟).</p>`;
@@ -196,6 +211,12 @@ function sideHtml(n) {
           <div class="wcbtns"><button data-wc="holec">⊕ في النص</button></div></div>`;
       }
     }
+    if (k === "kitchen") {
+      const kr = kitRow(n.kit), inf = kitInfo(n.kit);
+      h2 += `<p class="wcnote">🍳 ${inf[2]} — ${kr === "base" ? "وحدة سفلية بالرخامة والوزرة" : kr === "wall" ? `علوية معلّقة، ارتفاعها = ارتفاع الخانة (${f1(h)}) وبتبدأ من ${f1(r.z0)} من الأرض` : `دولاب طويل ارتفاعه ${f1(h)}`}. بعد «✓ خلصت» تقدر تدوس عليها وتعدّل كل تفاصيلها زي أي وحدة مطبخ.</p>`;
+      if (inf[3] && Math.abs(inf[3] - w) > 0.5) h2 += `<div class="wcbtns"><button data-wc="kitw">📐 خلّي الخانة ${f1(inf[3])} (مقاسها)</button></div>`;
+      if (kr === "base" && Math.abs(h - 86) > 3) h2 += `<p class="wcwarn">الوحدة السفلية بالرخامة ارتفاعها حوالي 86 — الخانة ${f1(h)}. <button class="dclink" data-wc="kith">خليها 86</button></p>`;
+    }
     if (k === "device") {
       const dv = n.dev || (n.tv ? "tv" : "other");
       h2 += `<div class="wcdevs">${Object.entries(WC_DEVICES).map(([d, [nm, dw, dh]]) => `<button class="${dv === d ? "on" : ""}" data-wcdev="${d}"><i>${DEV_ICON[d]}</i>${nm}${dw ? `<small>${dw}×${dh}</small>` : ""}</button>`).join("")}</div>`;
@@ -211,8 +232,8 @@ function sideHtml(n) {
     h2 += row("الخامة", seg("mat", n.mat || "", [["", so ? "المميزة" : "الهيكل"], ...(so ? [["carcass", "الهيكل"]] : [["accent", "المميزة"]]), ["front", "زي الضلف"]]));
     h2 += `<div class="wclibs"><b>🎨 من الكتالوج</b>${libSel("lib", n.lib, k === "solid" ? "الوش والجسم" : "الجسم والأرفف")}${FRONTED.has(k) || many ? libSel("flib", n.flib, "الضلف والوشوش") : ""}</div>`;
   }
-  return `${tools}<h3>${many ? `${T.length} خانات مختارة <small>أي حاجة تغيّرها بتتطبّق عليهم كلهم</small>` : `الخانة المختارة <small>${f1(w)} × ${f1(h)} سم · على ارتفاع ${f1(r.z0)}</small>`}</h3>
-    <div class="wckinds">${Object.keys(WC_KINDS).map(chip).join("")}</div>${h2}
+  return `${start}${tools}<h3>${many ? `${T.length} خانات مختارة <small>أي حاجة تغيّرها بتتطبّق عليهم كلهم</small>` : `الخانة المختارة <small>${f1(w)} × ${f1(h)} سم · على ارتفاع ${f1(r.z0)}</small>`}</h3>
+    ${tabs}${kinds}${h2}
     ${!many && BOX.has(k) && wcModules(w, P.wc) > 1 ? `<p class="wcnote">أعرض من علبة (${f1(P.wc.module_max)}) — هتتعمل ${wcModules(w, P.wc)} علب جنب بعض كل واحدة ${f1(w / wcModules(w, P.wc))} سم.</p>` : ""}
     ${!many && r.z1 - r.z0 > P.wc.max_board + 0.01 && BOX.has(k) ? `<p class="wcnote">أطول من لوح (${f1(P.wc.max_board)}) — هتتعمل علبة + تكملة فوقها أوتوماتيك.</p>` : ""}`;
 }
@@ -233,11 +254,12 @@ function drawSvg(list) {
     const clash = kk !== "empty" && kk !== "device" && holeHits(c).length;
     const fill = (n.flib && FRONTED.has(kk) ? ctx.libs?.color(n.flib) : n.lib && (kk === "solid" || kk === "open" || kk === "niche") ? ctx.libs?.color(n.lib) : null) || KIND_FILL[kk];
     h += `<g class="wccell ${kk} ${on ? "on" : ""} ${clash ? "clash" : ""}" data-wcpath="${key(c.path)}"><rect x="${x + 1}" y="${y + 1}" width="${Math.max(0, w - 2)}" height="${Math.max(0, hh - 2)}" fill="${fill}" rx="2"/>`;
-    h += cellArt(kk, n, x + 1, y + 1, w - 2, hh - 2, c, k);
-    const icon = kk === "device" ? DEV_ICON[n.dev || (n.tv ? "tv" : "other")] : KIND_ICON[kk];
-    const big = w > 70 && hh > 34, inv = kk === "device" ? "inv" : "";
-    if (big) h += `<text x="${x + w / 2}" y="${y + hh / 2 - 2}" class="wclab ${inv}" text-anchor="middle">${icon} ${kk === "device" ? WC_DEVICES[n.dev || (n.tv ? "tv" : "other")][0] : WC_KINDS[kk]}${n.glass ? " · زجاج" : ""}</text><text x="${x + w / 2}" y="${y + hh / 2 + 14}" class="wclab sm ${inv}" text-anchor="middle">${f1(c.x1 - c.x0)}×${f1(c.z1 - c.z0)}</text>`;
-    else if (w > 26 && hh > 18) h += `<text x="${x + w / 2}" y="${y + hh / 2 + 5}" class="wclab ${inv}" text-anchor="middle">${icon}</text>`;
+    if (kk === "kitchen") { const kr = kitRow(n.kit); h += kwArt(n.kit || "", x + 1, y + 1, w - 2, hh - 2, k, kr); if (kr === "base") h += `<rect x="${x}" y="${y}" width="${w}" height="${4 * k}" class="kwctr"/><rect x="${x + 2}" y="${y + hh - 10 * k}" width="${Math.max(0, w - 4)}" height="${10 * k}" class="kwkick"/>`; }
+    else h += cellArt(kk, n, x + 1, y + 1, w - 2, hh - 2, c, k);
+    const icon = kk === "device" ? DEV_ICON[n.dev || (n.tv ? "tv" : "other")] : kk === "kitchen" ? kitInfo(n.kit)[1] : KIND_ICON[kk];
+    const big = w > 70 && hh > 34 && (kk !== "empty" || on), inv = kk === "device" ? "inv" : "";
+    if (big) h += `<text x="${x + w / 2}" y="${y + hh / 2 - 2}" class="wclab ${inv}" text-anchor="middle">${icon} ${kk === "device" ? WC_DEVICES[n.dev || (n.tv ? "tv" : "other")][0] : kk === "kitchen" ? kitInfo(n.kit)[2] : WC_KINDS[kk]}${n.glass ? " · زجاج" : ""}</text><text x="${x + w / 2}" y="${y + hh / 2 + 14}" class="wclab sm ${inv}" text-anchor="middle">${f1(c.x1 - c.x0)}×${f1(c.z1 - c.z0)}</text>`;
+    else if (w > 26 && hh > 18 && (kk !== "empty" || on)) h += `<text x="${x + w / 2}" y="${y + hh / 2 + 5}" class="wclab ${inv}" text-anchor="middle">${icon}</text>`;
     if (on && multiOn) h += `<circle cx="${x + 14}" cy="${y + 14}" r="9" class="wctick"/><text x="${x + 14}" y="${y + 18}" text-anchor="middle" class="wctickt">✓</text>`;
     h += `</g>`;
   }
@@ -355,6 +377,7 @@ function gripMove(e) {
   if (!gripMoved && Math.hypot(dx, dy) < 6) return;
   gripMoved = true;
   const { path, i, s } = grip, n = nodeAt(path);
+  if (!n?.parts?.[i + 1]) { grip = null; return; }
   const delta = (grip.dir === "v" ? dx : dy) / view.k;
   const pair = s[i] + s[i + 1];
   const a = Math.max(5, Math.min(pair - 5, Math.round(s[i] + delta)));
@@ -380,7 +403,7 @@ function onChange(e) {
 }
 function onClick(e) {
   if (gripMoved) return;
-  const t = e.target.closest("[data-wc],[data-wcpath],[data-wcdim],[data-wcsize],[data-wckind],[data-wcstep],[data-wcset],[data-wcfield],[data-wctog],[data-wchole],[data-wcdev]");
+  const t = e.target.closest("[data-wc],[data-wcpath],[data-wcdim],[data-wcsize],[data-wckind],[data-wcstep],[data-wcset],[data-wcfield],[data-wctog],[data-wchole],[data-wcdev],[data-wckit],[data-wctab],[data-wcstart]");
   if (!t) return;
   const d = t.dataset;
   if (d.wctog) {
@@ -395,6 +418,12 @@ function onClick(e) {
     if (multiOn) { const kk = d.wcpath, i = multi.indexOf(kk); if (i >= 0 && multi.length > 1) multi.splice(i, 1); else if (i < 0) multi.push(kk); sel = unkey(multi.at(-1)); }
     else sel = p;
     draw(); return;
+  }
+  if (d.wctab) { tab = d.wctab; draw(); return; }
+  if (d.wcstart) { starter(d.wcstart); return; }
+  if (d.wckit) {
+    edit((n0, p) => { if (n0.kind === "kitchen" && n0.kit === d.wckit) return; const keep = { kind: "kitchen", kit: d.wckit }; if (n0.kind === "kitchen" && n0.kuid && kitRow(n0.kit) === kitRow(d.wckit)) keep.kuid = n0.kuid; setNode(p, keep); });
+    return;
   }
   if (d.wckind) {
     let deep = false;
@@ -471,6 +500,9 @@ function onClick(e) {
   if (a === "holec") { const n = nodeAt(sel); if (n.hole) { remember(); n.hole.x = "center"; n.hole.z = "center"; draw(); } return; }
   if (a === "devsize") { const n = nodeAt(sel), D = WC_DEVICES[n.dev || "other"]; if (D?.[1]) { remember(); sizeTo(D[1], D[2]); draw(); } return; }
   if (a === "suggest") { suggest(); return; }
+  if (a === "starters") { showStart = !showStart; draw(); if (showStart) el.querySelector(".wcside").scrollTop = 0; return; }
+  if (a === "kitw") { const n = nodeAt(sel), w = kitInfo(n.kit)[3]; if (w) { const snap = clone(P); const ok = setCellSize(sel, "v", w); if (ok) { hist.push(snap); draw(); } else if (ok === null) ctx.alertBar("قسّم الحيطة طولي الأول علشان العرض يتظبط"); } return; }
+  if (a === "kith") { const snap = clone(P); const ok = setCellSize(sel, "h", 86); if (ok) { hist.push(snap); draw(); } else if (ok === null) ctx.alertBar("قسّمها عرضي الأول (صفوف) علشان الارتفاع يتظبط"); return; }
 }
 function fixSel() {
   if (!nodeAt(sel) || nodeAt(sel).dir) sel = firstLeaf(P.wc.root, []);
@@ -547,6 +579,56 @@ function suggest() {
   sel = firstLeaf(P.wc.root, []); multi = []; multiOn = false;
   draw();
   ctx.alertBar(`🪟 اتقسمت حوالين ${groups.length} ${groups.length > 1 ? "فتحات" : "فتحة"} — غيّر أي خانة، أو ↶ ترجع زي ما كانت`);
+}
+// ---------------------------------------------------------------- quick starters: the whole wall in one tap
+const STARTERS = [["kitchen", "🍳", "مطبخ"], ["closet", "👔", "دولاب هدوم"], ["dressing", "🚪", "دريسنج مفتوح"], ["tv", "📺", "حيطة تلفزيون"], ["study", "📚", "مكتبة ومكتب"], ["shelves", "🗄", "مكتبة حيطة"]];
+const part = (size, node) => ({ size, node });
+const rows = (...p) => ({ dir: "h", parts: p });
+const cols = (...p) => ({ dir: "v", parts: p });
+/** columns of about `each` cm filling w (equal, whole cm; the last takes the rest) */
+function spread(w, each, mk) { const n = Math.max(1, Math.round(w / each)), a = Math.floor(w / n); return Array.from({ length: n }, (_, i) => part(i === n - 1 ? null : a, mk(i, n))); }
+function starter(id) {
+  const W = P.width, H = P.height;
+  let root;
+  if (id === "kitchen") {
+    // NOVERA heights: base 86 with the counter, wall units 145 → 215, tall 215; the sink under the window, the cooker away from it
+    const pr = proposeKitchen(W, ctx.holes || []), wallTop = Math.min(215, H), top = H - wallTop;
+    const col = (c) => {
+      if (c.tall) return top >= 5 ? rows(part(null, { kind: "empty" }), part(wallTop, { kind: "kitchen", kit: c.tall })) : { kind: "kitchen", kit: c.tall };
+      const p = [];
+      if (top >= 5) p.push(part(top, { kind: "empty" }));
+      p.push(part(70, c.wall ? { kind: "kitchen", kit: c.wall } : { kind: "empty" }));
+      p.push(part(null, { kind: "empty" }));
+      p.push(part(86, { kind: "kitchen", kit: c.base || "k_base2" }));
+      return rows(...p);
+    };
+    const ps = [];
+    if (pr.s0 >= 5) ps.push(part(pr.s0, { kind: "empty" }));
+    for (const c of pr.cols) ps.push(part(c.w, col(c)));
+    const used = pr.s0 + pr.cols.reduce((t, c) => t + c.w, 0);
+    if (W - used >= 5) ps.push(part(null, { kind: "empty" })); else if (ps.length) ps[ps.length - 1].size = null;
+    if (!pr.cols.length) { ctx.alertBar("الحيطة قصيرة على مطبخ (أو باب في نصها) — قسّمها بإيدك من تبويب 🍳"); return; }
+    root = ps.length > 1 ? cols(...ps.slice(0, 12)) : ps[0].node;
+  } else if (id === "closet") {
+    P.wc.depth = Math.max(P.wc.depth, 60);
+    root = cols(...spread(W, 90, (i, n) => (i === Math.floor(n / 2) && n >= 3 ? { kind: "combo", dcount: 3, dh: 60, shelves: 2 } : { kind: "wardrobe", rods: i % 2 ? 2 : 1 })));
+  } else if (id === "dressing") {
+    P.wc.depth = Math.max(P.wc.depth, 55);
+    root = cols(...spread(W, 80, (i) => (i % 3 === 1 ? rows(part(null, { kind: "open", shelves: 4 }), part(70, { kind: "drawers", count: 3 })) : { kind: "wardrobe", rods: i % 3 === 2 ? 2 : 1, count: 0 })));
+  } else if (id === "tv") {
+    const side = W >= 300 ? 60 : Math.max(30, Math.round(W * 0.18));
+    root = cols(part(side, { kind: "open", led: true }), part(null, rows(part(Math.max(20, H - 175), { kind: "solid" }), part(null, { kind: "device", dev: "tv" }), part(50, { kind: "drawers", count: 2, depth: 45 }))), part(side, { kind: "open", led: true }));
+  } else if (id === "study") {
+    const side = Math.min(90, Math.round(W * 0.3));
+    root = cols(part(side, rows(part(null, { kind: "open" }), part(80, { kind: "doors" }))), part(null, rows(part(Math.min(60, H * 0.25), { kind: "doors", shelves: 0 }), part(60, { kind: "niche", led: true, depth: 25 }), part(null, { kind: "empty" }))), part(side, rows(part(null, { kind: "open" }), part(80, { kind: "doors" }))));
+  } else {
+    root = cols(...spread(W, 80, () => rows(part(null, { kind: "open", led: true }), part(85, { kind: "doors" }))));
+  }
+  remember();
+  P.wc.root = root;
+  sel = firstLeaf(P.wc.root, []); multi = []; multiOn = false; tab = id === "kitchen" ? "kitchen" : "box"; showStart = false;
+  draw();
+  ctx.alertBar(id === "kitchen" ? "🍳 ده اقتراح مطبخ: كل خانة 🍳 هتطلع وحدة مطبخ حقيقية — دوس على أي خانة وغيّر نوعها من تبويب «🍳 مطبخ»" : "✓ اتقسمت — دوس على أي خانة وغيّرها، أو ↶ ترجع");
 }
 /** how to split the picked cell: 2 / 3 / 4 equal, or typed sizes (60,200,60 — the last one may be left out: it takes the rest) */
 function askSplit(btn, dir) {

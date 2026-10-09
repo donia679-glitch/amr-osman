@@ -24,9 +24,12 @@ export const KW_TALL = [
   ["k_cargo40", "▯", "كارجو", 40], ["k_broom40", "🧹", "مكانس", 40],
 ];
 const LIST = { base: KW_BASE, wall: KW_WALL, tall: KW_TALL };
-const info = (row, id) => LIST[row].find((k) => k[0] === id) || ["", "⬚", "فاضي", null];
+// v119: any item of the library can stand in a cell — kitchen preset ids as they are, "d:<id>" dressing, "p:<id>" furniture preset,
+// "wc" a free divided unit («قسّم الحيطة» inside the cell). ctx.info(id) → [id, icon, name, natural width, natural height]
+const isKit = (id) => !!id && !id.includes(":") && id !== "wc";
+const info = (row, id) => (id ? LIST[row].find((k) => k[0] === id) || LIST.base.find((k) => k[0] === id) || LIST.wall.find((k) => k[0] === id) || LIST.tall.find((k) => k[0] === id) || ctx?.info?.(id) : null) || ["", "⬚", "فاضي", null, null];
 const ROWN = { base: "السفلي", wall: "العلوي", tall: "الطويل" };
-let ctx = null, K = null, sel = { col: 0, row: "base" }, hist = [], el = null, view = null, grip = null, gripMoved = false;
+let ctx = null, K = null, sel = { col: 0, row: "base" }, hist = [], el = null, view = null, grip = null, gripMoved = false, ctab = "kitchen";
 const clone = (o) => JSON.parse(JSON.stringify(o));
 const f1 = (v) => String(Math.round(v * 10) / 10);
 const BASE_TOP = 86, KICK = 10;
@@ -85,11 +88,11 @@ export function open(model, c) {
   ctx = c;
   K = clone(model);
   K.wallZ ??= 145; K.wallH ??= 70; K.tallH ??= K.wallZ + K.wallH; K.s0 ??= 3; K.cols ??= [];
-  hist = []; grip = null;
+  hist = []; grip = null; ctab = c.tab || "kitchen";
   sel = { col: 0, row: K.cols[0]?.tall ? "tall" : "base" };
   el = document.createElement("div");
   el.id = "kwall"; el.className = "wcomp kwall";
-  el.setAttribute("role", "dialog"); el.setAttribute("aria-label", "مطبخ الحيطة");
+  el.setAttribute("role", "dialog"); el.setAttribute("aria-label", "حيطة بحيطة");
   document.body.appendChild(el);
   document.body.classList.add("inwcomp");
   el.addEventListener("click", onClick);
@@ -112,11 +115,19 @@ function remember() { hist.push(clone(K)); if (hist.length > 60) hist.shift(); }
 const used = () => K.cols.reduce((t, c) => t + +c.w, 0);
 const avail = () => ctx.wallLen - K.s0;
 const colX = (i) => K.s0 + K.cols.slice(0, i).reduce((t, c) => t + +c.w, 0);
+/** a cell's place: kitchen units follow the wall's heights; any other item its own height (or the one typed for that cell) */
+export function cellHeight(K, c, row, inf) {
+  const id = row === "tall" ? c.tall : c[row], kit = isKit(id) || !id, o = c.hz?.[row];
+  if (o != null) return +o;
+  if (row === "tall") return kit ? K.tallH : +inf?.[4] || K.tallH;
+  if (row === "wall") return kit ? K.wallH : Math.min(+inf?.[4] || K.wallH, 150);
+  return kit ? BASE_TOP : +inf?.[4] || BASE_TOP;
+}
 function rectOf(i, row) {
-  const c = K.cols[i], x0 = colX(i), x1 = x0 + +c.w;
-  if (row === "tall") return { x0, x1, z0: 0, z1: K.tallH };
-  if (row === "wall") return { x0, x1, z0: K.wallZ, z1: K.wallZ + K.wallH };
-  return { x0, x1, z0: 0, z1: BASE_TOP };
+  const c = K.cols[i], x0 = colX(i), x1 = x0 + +c.w, id = row === "tall" ? c.tall : c[row], h = cellHeight(K, c, row, info(row, id));
+  if (row === "tall") return { x0, x1, z0: 0, z1: h };
+  if (row === "wall") { const z0 = c.wz ?? K.wallZ; return { x0, x1, z0, z1: z0 + h }; }
+  return { x0, x1, z0: 0, z1: h };
 }
 const hitsOf = (r) => (ctx.holes || []).filter((o) => o.kind !== "pt" && Math.min(r.x1, o.x1) - Math.max(r.x0, o.x0) > 1 && Math.min(r.z1, o.z1) - Math.max(r.z0, o.z0) > 1);
 /** what the column problems are, for the side panel / the badge */
@@ -136,7 +147,7 @@ function draw() {
   const c = K.cols[sel.col];
   el.innerHTML = `
     <div class="wchead">
-      <b>🍳 مطبخ الحيطة</b>
+      <b>🧱 حيطة بحيطة</b>
       <span class="kwlen">الحيطة ${f1(ctx.wallLen)} سم</span>
       <button class="wcsz" data-kwsize="s0">البداية من أول الحيطة <b>${f1(K.s0)}</b></button>
       <button class="wcsz" data-kwsize="wallZ">العلوي من الأرض <b>${f1(K.wallZ)}</b></button>
@@ -167,7 +178,7 @@ function draw() {
 }
 function sideHtml(c, pr) {
   const i = sel.col, row = c.tall ? "tall" : sel.row === "tall" ? "base" : sel.row, id = c.tall ? c.tall : c[row];
-  const cur = info(row, id);
+  const cur = info(row, id), r = rectOf(i, row);
   const mine = pr.filter((p) => p.i === i);
   const nat = cur[3];
   return `<h3>العمود ${i + 1} <small>${f1(c.w)} سم · ${c.tall ? "عمود طويل" : "سفلي + علوي"}</small></h3>
@@ -177,12 +188,18 @@ function sideHtml(c, pr) {
     ${mine.map((p) => `<p class="wcwarn">⚠ ${p.text}</p>`).join("")}
     ${c.tall ? "" : `<div class="wcrow"><span>بتختار</span><span class="wcseg"><button data-kwrow="base" class="${row === "base" ? "on" : ""}">⬇ السفلي</button><button data-kwrow="wall" class="${row === "wall" ? "on" : ""}">⬆ العلوي</button></span></div>`}
     <h3 class="kwh">${ROWN[row]}: <small>${cur[1]} ${cur[2]}</small></h3>
-    <div class="wckinds">${LIST[row].map(([k, ic, nm, w]) => `<button class="wckind ${k === id ? "on" : ""}" data-kwkind="${k}"><i>${ic}</i>${nm}${w ? `<small>${f1(w)}</small>` : ""}</button>`).join("")}</div>`;
+    ${id ? `<div class="wcrow"><span>ارتفاع الخانة</span><span><button class="wcnum" data-kwfield="h">${f1(r.z1 - r.z0)}${c.hz?.[row] == null ? " <small>تلقائي</small>" : ""}</button>${c.hz?.[row] != null ? ` <button class="dclink" data-kw="hauto">رجّعه تلقائي</button>` : ""}</span></div>` : ""}
+    ${row === "wall" ? `<div class="wcrow"><span>بتبدأ من الأرض</span><span><button class="wcnum" data-kwfield="wz">${f1(r.z0)}${c.wz == null ? " <small>زي الباقي</small>" : ""}</button>${c.wz != null ? ` <button class="dclink" data-kw="wzauto">زي الباقي</button>` : ""}</span></div>` : ""}
+    ${id === "wc" ? `<p class="wcnote">🧩 «تقسيم حر»: بعد «✓ خلصت» دوس على الوحدة دي و«🧩 قسّم» وقسّمها زي ما تحب (أرفف، ضلف، أدراج، تجاويف…).</p>` : ""}
+    <div class="kwtabs">${[{ id: "kitchen", label: "🍳 مطبخ" }, ...(ctx.catalog || [])].map((t) => `<button data-kwtab="${t.id}" class="${ctab === t.id ? "on" : ""}">${t.label}</button>`).join("")}</div>
+    <div class="wckinds">${(ctab === "kitchen" ? LIST[row] : (ctx.catalog || []).find((t) => t.id === ctab)?.items || []).map(([k, ic, nm, w]) => `<button class="wckind ${k === id ? "on" : ""}" data-kwkind="${k}"><i>${ic}</i>${nm}${w ? `<small>${f1(w)}</small>` : ""}</button>`).join("")}</div>
+    ${ctab === "kitchen" ? "" : `<p class="wcnote">أي حاجة من المكتبة بتتحط في الخانة بعرضها${row === "wall" ? " ومعلّقة على ارتفاعها" : ""} — وبعد «خلصت» كل وحدة بتتعدّل لوحدها.</p>`}`;
 }
 function drawSvg() {
   const svg = el.querySelector(".wcsvg"), host = el.querySelector(".wcstage");
   const Wpx = host.clientWidth || 700, Hpx = host.clientHeight || 500;
-  const W = Math.max(ctx.wallLen, 50), H = Math.max(ctx.wallH || 270, K.tallH + 10, K.wallZ + K.wallH + 10);
+  const tops = K.cols.flatMap((c, i) => (c.tall ? [rectOf(i, "tall").z1] : [rectOf(i, "wall").z1, rectOf(i, "base").z1]));
+  const W = Math.max(ctx.wallLen, 50), H = Math.max(ctx.wallH || 270, K.tallH + 10, K.wallZ + K.wallH + 10, ...tops.map((z) => z + 10));
   const mL = 30, mR = 30, mT = 60, mB = 70;
   const k = Math.max(0.05, Math.min((Wpx - mL - mR) / W, (Hpx - mT - mB) / H));
   const ox = mL + ((Wpx - mL - mR) - W * k) / 2, oy = mT + ((Hpx - mT - mB) - H * k) / 2;
@@ -203,7 +220,7 @@ function drawSvg() {
       const [, ic, nm] = info(row, id), x = X(r.x0), y = Y(r.z1), w = (r.x1 - r.x0) * k, hh = (r.z1 - r.z0) * k;
       const bad = pr.some((p) => p.i === i && p.row === row);
       h += `<g class="wccell kw ${id ? row : "empty"} ${on ? "on" : ""} ${bad ? "clash" : ""}" data-kwcell="${i}|${row}"><rect x="${x + 1}" y="${y + 1}" width="${Math.max(0, w - 2)}" height="${Math.max(0, hh - 2)}" rx="2" class="kwbox ${id ? "" : "none"}"/>`;
-      if (id && row === "base") h += `<rect x="${x}" y="${Y(BASE_TOP)}" width="${w}" height="${4 * k}" class="kwctr"/><rect x="${x + 2}" y="${Y(KICK)}" width="${Math.max(0, w - 4)}" height="${KICK * k}" class="kwkick"/>`;
+      if (id && row === "base" && isKit(id)) h += `<rect x="${x}" y="${y}" width="${w}" height="${4 * k}" class="kwctr"/><rect x="${x + 2}" y="${Y(KICK)}" width="${Math.max(0, w - 4)}" height="${KICK * k}" class="kwkick"/>`;
       if (id) h += kwArt(id, x, y, w, hh, k, row);
       if (w > 34) h += `<text x="${x + w / 2}" y="${y + hh / 2 - (w > 70 ? 2 : -5)}" class="wclab" text-anchor="middle">${ic}${w > 70 ? ` ${nm}` : ""}</text>`;
       h += `</g>`;
@@ -211,7 +228,8 @@ function drawSvg() {
   });
   // drag handles between columns + after the last one
   K.cols.forEach((c, i) => {
-    const gx = X(colX(i) + +c.w), y0 = Y(Math.max(K.tallH, K.wallZ + K.wallH)), y1 = Y(0);
+    const top = c.tall ? rectOf(i, "tall").z1 : Math.max(rectOf(i, "wall").z1, rectOf(i, "base").z1);
+    const gx = X(colX(i) + +c.w), y0 = Y(Math.max(top, BASE_TOP + 40)), y1 = Y(0);
     const act = grip && grip.i === i ? "act" : "";
     h += `<g class="wcgrip v ${act}" data-kwgrip="${i}"><rect x="${gx - 11}" y="${y0}" width="22" height="${y1 - y0}"/><line x1="${gx}" y1="${y0 + 4}" x2="${gx}" y2="${y1 - 4}"/><rect class="knob" x="${gx - 5}" y="${Y(BASE_TOP + 20) - 16}" width="10" height="32" rx="5"/></g>`;
   });
@@ -221,7 +239,7 @@ function drawSvg() {
   if (K.s0 > 0.5) h += chain(X(0), X(K.s0), Y(0) + 22, f1(K.s0), `data-kwsize="s0"`, "auto");
   svg.innerHTML = h.replace(/(width|height|r)="-[\d.e+-]*"/g, '$1="0"'); // a squeezed / tiny cell never draws a negative box
 }
-function kwArt(id, x, y, w, h, k, row) {
+export function kwArt(id, x, y, w, h, k, row) {
   const L = (x1, y1, x2, y2, cls = "wcln") => `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" class="${cls}"/>`;
   let s = "";
   if (/drawers|drw|cutlery|knives|spices/.test(id)) { const n = /2_80|plates_drw/.test(id) ? 2 : 3, top = y + 4 * k, hh = h - (KICK + 4) * k; for (let i = 1; i < n; i++) s += L(x + 2, top + (hh * i) / n, x + w - 2, top + (hh * i) / n); }
@@ -280,16 +298,23 @@ function gripUp(e) {
 // ---------------------------------------------------------------- actions
 function onClick(e) {
   if (gripMoved) return;
-  const t = e.target.closest("[data-kw],[data-kwcell],[data-kwkind],[data-kwrow],[data-kwsize],[data-kwfield],[data-kwdim]");
+  const t = e.target.closest("[data-kw],[data-kwcell],[data-kwkind],[data-kwrow],[data-kwsize],[data-kwfield],[data-kwdim],[data-kwtab]");
   if (!t) return;
   const d = t.dataset, c = K.cols[sel.col];
   if (d.kwcell) { const [i, row] = d.kwcell.split("|"); sel = { col: +i, row }; draw(); return; }
   if (d.kwrow) { sel.row = d.kwrow; draw(); return; }
+  if (d.kwtab) { ctab = d.kwtab; draw(); el.querySelector(".kwtabs")?.scrollIntoView({ block: "nearest" }); return; }
   if (d.kwkind != null) {
     if (!c) return;
     remember();
-    const row = c.tall ? "tall" : sel.row === "tall" ? "base" : sel.row;
-    if (c.tall) c.tall = d.kwkind; else c[row] = d.kwkind;
+    const row = c.tall ? "tall" : sel.row === "tall" ? "base" : sel.row, id = d.kwkind;
+    // a kitchen unit goes to its own row (a tall one makes the column tall, a wall one goes up); anything else where you are
+    const nat = isKit(id) ? ctx.kitRow?.(id) : null;
+    if (nat === "tall") { c.tall = id; sel.row = "tall"; }
+    else if (c.tall) { if (nat === "wall") { c.tall = ""; c.wall = id; c.base = c.base || "k_base2"; sel.row = "wall"; } else if (nat === "base") { c.tall = ""; c.base = id; c.wall = c.wall || ""; sel.row = "base"; } else c.tall = id; }
+    else if (nat && nat !== row) { c[nat] = id; sel.row = nat; ctx.alertBar(`اتحطت في ${ROWN[nat]} — دي وحدة ${ROWN[nat]}`); }
+    else c[row] = id;
+    if (c.hz) delete c.hz[c.tall ? "tall" : sel.row];
     draw(); return;
   }
   if (d.kwsize) {
@@ -304,6 +329,12 @@ function onClick(e) {
     }, { min: 0 });
     return;
   }
+  if (d.kwfield === "h" || d.kwfield === "wz") {
+    const row = c.tall ? "tall" : sel.row, r = rectOf(sel.col, row);
+    if (d.kwfield === "h") ctx.numAsk(t, "ارتفاع الخانة", r.z1 - r.z0, (v) => { remember(); c.hz = { ...(c.hz || {}), [row]: Math.max(10, Math.min(400, Math.round(v * 10) / 10)) }; draw(); }, { min: 10 });
+    else ctx.numAsk(t, "بتبدأ من الأرض على", r.z0, (v) => { remember(); c.wz = Math.max(0, Math.min(350, Math.round(v * 10) / 10)); draw(); }, { min: 0 });
+    return;
+  }
   if (d.kwfield === "w" || d.kwdim != null) {
     const i = d.kwdim != null ? +d.kwdim : sel.col, col = K.cols[i];
     ctx.numAsk(t, `عرض العمود ${i + 1}`, col.w, (v) => { if (v < 15 || v > 300) { ctx.alertBar("العرض من 15 لـ 300 سم"); return; } remember(); col.w = Math.round(v * 10) / 10; sel.col = i; draw(); }, { min: 15 });
@@ -316,6 +347,8 @@ function onClick(e) {
     if (used() > avail() + 0.5) { ctx.alertBar(`الأعمدة أطول من الحيطة بـ ${f1(used() - avail())} سم — صغّر عمود أو شيله`); return; }
     close(true); return;
   }
+  if (a === "hauto" && c) { remember(); delete c.hz?.[c.tall ? "tall" : sel.row]; draw(); return; }
+  if (a === "wzauto" && c) { remember(); delete c.wz; draw(); return; }
   if (a === "split" && c?.tall) { remember(); c.base = "k_base2"; c.wall = "k_wall2"; c.tall = ""; sel.row = "base"; draw(); return; }
   if (a === "tall" && c && !c.tall) { remember(); c.tall = "k_pantry60"; sel.row = "tall"; draw(); return; }
   if (a === "nat" && c) { const row = c.tall ? "tall" : sel.row, w = info(row, c.tall || c[row])[3]; if (w) { remember(); c.w = w; draw(); } return; }
