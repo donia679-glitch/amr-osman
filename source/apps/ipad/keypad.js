@@ -81,8 +81,9 @@ function show(t) {
   if (!same) { cur = t; fresh = true; dirty = false; startVal = t.value; }
   pad.querySelector(".kplabel").textContent = labelOf(t);
   // the drawing studio's size box: sizes like 60,40 · x5 · /4 · 24s · −2 (a cut), and the pad off to the side
-  const ex = t.hasAttribute("data-kpextra");
+  const ex = t.hasAttribute("data-kpextra") || t.hasAttribute("data-kpcomma");
   pad.classList.toggle("extra", ex);
+  pad.classList.toggle("comma", t.hasAttribute("data-kpcomma")); // v118: a list of sizes — only the comma key is added
   pad.classList.toggle("side", !!t.closest("#drawStudio"));
   sync();
   pad.classList.add("on");

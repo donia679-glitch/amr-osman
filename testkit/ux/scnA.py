@@ -1,0 +1,6 @@
+boot()
+tap("#homeName"); pg.keyboard.type("تجربة 117"); tap("[data-hnew]"); pg.wait_for_timeout(1500)
+if pg.locator("[data-tskip]:visible").count(): tap("[data-tskip]")
+tap("[data-rstart=draw]")
+for x,y in [(500,250),(950,250),(950,600),(500,600),(500,250)]: tapxy(x,y)
+pg.wait_for_timeout(800)

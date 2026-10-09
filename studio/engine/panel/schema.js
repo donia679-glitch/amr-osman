@@ -16,6 +16,7 @@ export const TEMPLATES = {
     desk: { label: "مكتب", group: "غرف النوم" },
     tv_unit: { label: "وحدة شاشة (أرضي + بانوه + أعمدة)", group: "الريسبشن" },
     tv_wall: { label: "وحدة شاشة مرنة (دولابين + وحدة وسط + تجويف)", group: "الريسبشن" },
+    wall_comp: { label: "حيطة مقسومة (قسّم الحيطة خانات)", group: "عام" },
     shoe_cabinet: { label: "جزامة", group: "الريسبشن" },
     open_shelf: { label: "مكتبة / أرفف مفتوحة", group: "الريسبشن" },
     cabinet: { label: "وحدة عامة (أي علبة بضلف/أدراج)", group: "عام" },
@@ -134,6 +135,21 @@ export const TEMPLATE_DEFAULTS = {
             niches: [{ on: true, x: "center", z: 40.0, w: 150.0, h: 35.0, depth: 25.0, shelves: 0, led: true, lining: "carcass", back: "carcass" }],
         },
     },
+    wall_comp: {
+        environment: "dry", width: 360.0, height: 260.0, depth: 35.0, fronts: [], handle: "push",
+        wc: {
+            max_board: 240.0, depth: 35.0,
+            root: { dir: "v", parts: [
+                { size: 60.0, node: { kind: "open", shelves: 5, led: true } },
+                { size: null, node: { dir: "h", parts: [
+                    { size: 80.0, node: { kind: "solid" } },
+                    { size: null, node: { kind: "device", tv: true } },
+                    { size: 50.0, node: { kind: "drawers", count: 2, depth: 45.0 } },
+                ] } },
+                { size: 60.0, node: { kind: "open", shelves: 5, led: true } },
+            ] },
+        },
+    },
     bed: {
         environment: "dry", width: 0.0, height: 0.0, depth: 0.0, fronts: [],
         bed: {
@@ -165,6 +181,7 @@ export const TEMPLATE_DEFAULTS = {
 const U = undefined;
 export const SPECIAL = {
     tv_wall: { hide: ["size", "fronts"], fields: [] },
+    wall_comp: { hide: ["size", "fronts"], fields: [] },
     tv_unit: { hide: ["fronts", "depth"], fields: [
             ["tv.base_height", "ارتفاع الأرضي", "num", U, 20, 120], ["tv.base_depth", "عمق الأرضي", "num", U, 20, 70],
             ["tv.base_float", "الأرضي معلّق على ارتفاع (0 = على الأرض)", "num", U, 0, 100],
@@ -304,12 +321,13 @@ export function normalize(rawIn) {
     p.joints.enabled = truthy(p.joints.enabled);
     validateSpecial(p, errors);
     if (tpl === "tv_wall") normalizeTvWall(p, raw, errors);
+    if (tpl === "wall_comp") normalizeWallComp(p, raw, errors);
     if (tpl === "bed") {
         // bed dimensions come from the mattress
     }
     else if (tpl !== "free") {
-        num(p, ["width"], "العرض", 10, tpl === "tv_wall" ? 800 : 400, errors);
-        num(p, ["height"], "الارتفاع", 10, tpl === "tv_wall" ? 400 : 300, errors);
+        num(p, ["width"], "العرض", 10, tpl === "tv_wall" ? 800 : tpl === "wall_comp" ? 1200 : 400, errors);
+        num(p, ["height"], "الارتفاع", 10, tpl === "tv_wall" || tpl === "wall_comp" ? 400 : 300, errors);
         num(p, ["depth"], "العمق", 5, TableSpec.isTable(tpl) ? 200 : 120, errors);
     }
     num(p, ["thickness"], "سمك الخشب", 0.6, 5.4, errors);
@@ -447,6 +465,32 @@ function num(p, path, name, lo, hi, errors) {
     h[last] = v;
 }
 
+// v118: «قسّم الحيطة» — the cell tree cleaned up: known kinds, sane numbers, at most 6 levels and 12 parts per split
+const WC_KIND = ["doors", "open", "drawers", "flap", "niche", "solid", "device", "empty"];
+function normalizeWallComp(p, raw, errors) {
+    const D = TEMPLATE_DEFAULTS.wall_comp.wc;
+    const q = p.wc = isHash(p.wc) ? p.wc : deepDup(D);
+    if (has(raw?.wc || {}, "root")) q.root = deepDup(raw.wc.root); // the tree is replaced whole, never merged with the default one
+    { const v = toF(q.max_board); q.max_board = v === null ? 240 : clamp(v, 100, 300); }
+    { const v = toF(q.depth); q.depth = v === null ? 35 : clamp(v, 5, 80); }
+    const fix = (n, lvl) => {
+        if (!isHash(n)) return { kind: "empty" };
+        if ((n.dir === "v" || n.dir === "h") && lvl < 6 && Array.isArray(n.parts) && n.parts.length >= 2) {
+            return { dir: n.dir, parts: n.parts.slice(0, 12).map((pt) => {
+                const s = isHash(pt) ? toF(pt.size) : null;
+                return { size: s === null || s <= 0 ? null : clamp(s, 5, 1200), node: fix(isHash(pt) ? pt.node : null, lvl + 1) };
+            }) };
+        }
+        const k = WC_KIND.includes(n.kind) ? n.kind : (n.dir ? "empty" : "open");
+        const c = { kind: k };
+        for (const f of ["depth", "shelves", "count"]) { const v = toF(n[f]); if (v !== null) c[f] = f === "depth" ? clamp(v, 1, 80) : clamp(Math.round(v), f === "count" ? 1 : 0, f === "count" ? (k === "drawers" ? 6 : 2) : 12); }
+        if (truthy(n.led)) c.led = true;
+        if (truthy(n.tv)) c.tv = true;
+        if (["carcass", "front", "accent", "shelf"].includes(n.mat)) c.mat = n.mat;
+        return c;
+    };
+    q.root = fix(q.root, 0);
+}
 // v113: the flexible TV wall — each part's numbers clamped, its fronts normalised like a cabinet's, the overall size computed
 function normalizeTvWall(p, raw, errors) {
     const D = TEMPLATE_DEFAULTS.tv_wall.tvw;

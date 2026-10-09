@@ -1,0 +1,5 @@
+tap("[data-step0=design]"); pg.wait_for_timeout(1200)
+tap("#libBtn"); pg.wait_for_timeout(1200)
+el=pg.locator("[data-smart]").first; el.scroll_into_view_if_needed(); pg.wait_for_timeout(300)
+tap("[data-smart]"); pg.wait_for_timeout(2000)
+tap("[data-lpadd]"); pg.wait_for_timeout(3000)

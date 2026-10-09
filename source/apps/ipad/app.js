@@ -26,6 +26,8 @@ import * as SurveyUI from "./survey_ui.js";
 import * as Media from "./media.js";
 import * as Keypad from "./keypad.js";
 import * as Studio from "./draw/studio.js";
+import * as WComp from "./wallcomp.js";
+import * as WCL from "./engine/panel/templatesRooms.js";
 import * as I18n from "./i18n.js";
 await I18n.init();
 if (I18n.isEn()) Exp.setTranslator(I18n.tr, I18n.trMarkup);
@@ -155,6 +157,7 @@ for (const u of state.project.units) u.kind ??= "panel";
 state.project.id ??= uid();
 if (!state.sel || !state.project.units.find((u) => u.id === state.sel)) state.sel = state.project.units[0]?.id ?? null;
 let ui = { matPick: null, pop: null, mode: "owner", sharedPid: null, sharedProject: null, approval: null, progress: {}, piece: null, cloud: "local", projects: [] };
+try { ui.chipShut = localStorage.getItem("novera-chipshut") === "1"; } catch { /* private mode */ }
 
 function loadLocal() {
   try { const raw = localStorage.getItem(STORE); return raw ? JSON.parse(raw) : null; } catch { return null; }
@@ -907,7 +910,8 @@ function openStudio(u, extra = {}) {
         else for (const u of state.project.units) if (u.pos?.wall && !nr.walls.some((w) => w.id === u.pos.wall)) delete u.pos;
         state.project.room = nr; if (nr) { state.whole = true; ui.planOn = false; plan.vb = null; }
       }
-      const empty = !model.solids.length && !model.sweeps.length && !model.sketches.length;
+      // v117: flat shapes only (no board with a thickness) are not a unit — a new one is not made (it showed as «الرسمة فاضية» with an error)
+      const empty = !model.solids.length && !model.sweeps.length;
       // a board given a material of its own in the studio → that piece's material on the unit
       // (keyed by its name when the name is unique in the drawing, else by the board's own id)
       const ovOf = (solids) => {
@@ -927,10 +931,15 @@ function openStudio(u, extra = {}) {
         u.params = { ...u.params, model, template: "free" }; u.name = name || u.name;
         if (Object.keys(next).length) u.matOv = next; else delete u.matOv;
       }
-      else if (!empty) { const nu = { id: uid(), kind: "panel", name: name || "تصميم حر", params: { template: "free", model, materials: {} }, ...(Object.keys(ov).length ? { matOv: ov } : {}) }; state.project.units.push(nu); state.sel = nu.id; }
+      else if (!empty) {
+        const nu = { id: uid(), kind: "panel", name: name || "تصميم حر", params: { template: "free", model, materials: {} }, ...(Object.keys(ov).length ? { matOv: ov } : {}) };
+        // v117: drawn inside the room → it stays exactly where it was drawn (it used to be sent to some wall by the auto layout)
+        if (state.project.room) { const off = modelOffset(model); pinOthers(nu.id); nu.pos = { x: Math.round(-off[0] * 10) / 10, z: Math.round(off[1] * 10) / 10, rot: 0 }; if (off[2] < -0.5) nu.lift = Math.round(-off[2] * 10) / 10; }
+        state.project.units.push(nu); state.sel = nu.id;
+      }
       for (const lib of Object.values(ov)) if (!Catalog.LIB[lib]) { const m = Mat.get(lib); if (m && !(state.project.mats || []).some((x) => x.id === lib)) state.project.mats = [...(state.project.mats || []), m]; }
       state.libOpen = false; save(); render(true);
-      if (empty && !u) { if (x.roomChanged) alertBar("اتحفظت الحيطان ✓ — بقت حيطان المشروع في المسقط والواجهات والـ3D"); }
+      if (empty && !u) alertBar(x.roomChanged ? "اتحفظت الحيطان ✓ — بقت حيطان المشروع في المسقط والواجهات والـ3D" : model.sketches.length ? "ما اتعملتش وحدة: الرسمة كانت أشكال من غير سُمك (مفيش ألواح)" : "ورشة الرسم اتقفلت من غير ألواح");
       else alertBar(x.roomChanged ? "اتحفظ التصميم والحيطان ✓ — الألواح في القص والملصقات، والحيطان في المسقط" : "اتحفظ التصميم ✓ — ألواحه في القص والملصقات وملفات الـCNC");
     },
     saveLib: (model, name) => {
@@ -1244,7 +1253,8 @@ const TOUR = [
   ["#steps", "أهلاً بيك في NOVERA Studio 👋", "الشريط ده هو خريطة الشغل كله بالترتيب: الأوضة ← التصميم ← الخامات ← القص ← القطع ← السعر ← العميل ← الورشة. دوس على أي خطوة توديك عليها، و✓ معناها إنها خلصت."],
   ['#steps [data-step0="room"]', "① الأوضة", "ارسم الحيطان، أو اختار أوضة جاهزة بالمقاسات، أو امسحها بالكاميرا. الأبواب والشبابيك والأعمدة بتتحط عليها."],
   ["#libBtn", "② التصميم", "من «المكتبة» ضيف أي وحدة جاهزة — أو من الأوضة دوس «✨ صمّملي المطبخ»."],
-  ["#view3d", "✋ عدّل بصباعك", "دوس على الوحدة: مقاساتها بتظهر جنبها — دوس على أي رقم وغيّره. وكل الإعدادات في اللوحة اللي على الجنب (أساسي / كل الإعدادات + بحث)."],
+  ["#view3d", "✋ عدّل بصباعك", "دوس على الوحدة تختارها واسحبها تتحرك على طول. مقاساتها والمسافات اللي حواليها بتظهر جنبها — دوس على أي رقم واكتبه. وتحتها شريط فيه: بمقاس · لف · محاذاة · نسخة · خامة · حذف."],
+  ['#steps [data-step0="room"]', "🧩 قسّم الحيطة", "في المسقط دوس على حيطة ← «قسّم الحيطة دي»: تقسمها خانات بالمقاسات (دولاب، أرفف، أدراج، تجويف، تكسية، مكان شاشة) وكل خانة بتتعمل ألواح لوحدها."],
   [".undogrp", "↶ غلطت؟ ولا يهمك", "التراجع بيرجّع أي خطوة — أو المس الشاشة بصباعين."],
   ["#menuBtn", "☰ القائمة", "كل الباقي هنا: مشاريعي، التصدير، رفع المقاسات، الإعدادات الافتراضية، والمظهر. وتقدر ترجع للجولة دي من هنا."],
 ];
@@ -1275,7 +1285,7 @@ function stepNow() {
   if (state.tab === "cut") return "cut";
   if (state.tab === "parts") return "parts";
   if (state.tab === "shop") return ui.stepAt === "client" ? "client" : ui.stepAt === "shop" ? "shop" : "price";
-  if (ui.planOn) return "room";
+  if (ui.planOn && ui.planIn !== "design") return "room";
   return ui.stepAt === "mats" ? "mats" : "design";
 }
 function stepDone(k) {
@@ -1326,7 +1336,7 @@ $("#steps").addEventListener("click", (e) => {
     box?.scrollIntoView({ block: "start", behavior: "smooth" });
   }, 120);
   if (k === "qcut") { state.tab = "qcut"; }
-  else if (k === "room") { state.tab = "design"; ui.planOn = true; ui.planView = "plan"; state.libOpen = false; }
+  else if (k === "room") { state.tab = "design"; ui.planOn = true; ui.planIn = "room"; ui.planView = "plan"; state.libOpen = false; }
   else if (k === "design") { state.tab = "design"; ui.planOn = false; state.whole = true; }
   else if (k === "mats") {
     state.tab = "design"; ui.planOn = false;
@@ -1428,8 +1438,8 @@ $("#libBtn").addEventListener("click", () => { state.libOpen = !state.libOpen; r
     drag = { pid: e.pointerId, t: performance.now(), xy: [e.clientX, e.clientY], start: L, u, box, rot: L.rot, off: [c[0] - hit[0], c[1] - hit[1]], row: rowOf(u, R(u)), segs: roomSegs(state.project), pose: L, crew,
       others: projectItems(state.project).filter((it) => it.id !== id && !crewIds.has(it.id)).map((it) => ({ box: it.box, row: it.row, pose: view.poses.get(it.id) })).filter((o) => o.pose) };
     drag.grip = gripAt(e, drag);
+    drag.xy0 = [e.clientX, e.clientY];
     view.ctl.enabled = false;
-    view.highlight(id, true);
     try { host.setPointerCapture(e.pointerId); } catch { /* pointer gone */ }
   };
   /** a finger that goes down on one of the unit's corners (the gold dots) holds the unit by that corner:
@@ -1489,6 +1499,7 @@ $("#libBtn").addEventListener("click", () => { state.libOpen = !state.libOpen; r
   /** stop a move half-way and put the unit back (a second finger, the app going to the background …) */
   const cancelDrag = () => {
     if (drag) { view.highlight(drag.u.id, false); view.snapMark(null); view.movePicked(drag.u.id, drag.start); for (const o of drag.crew || []) view.movePicked(o.u.id, o.L); drag = null; }
+    ui.dragging = false; dragTag(null);
     ptDrag = null;
     down = null;
     clearTimeout(press);
@@ -1501,7 +1512,7 @@ $("#libBtn").addEventListener("click", () => { state.libOpen = !state.libOpen; r
     down = [e.clientX, e.clientY];
     clearTimeout(press);
     // move mode + a selected electrical/plumbing point under the finger: slide it over its wall
-    if (ui.moveMode && ui.room3d && ui.planSel?.kind === "pt" && state.project.room) {
+    if (canMove() && ui.room3d && ui.planSel?.kind === "pt" && state.project.room) {
       const h = view.pickAny(e.clientX, e.clientY);
       const pt = (state.project.room.points || []).find((x) => x.id === ui.planSel.id);
       const seg = pt && Room.segments(state.project.room).find((g) => g.id === pt.wall);
@@ -1515,15 +1526,15 @@ $("#libBtn").addEventListener("click", () => { state.libOpen = !state.libOpen; r
     }
     if (!wholeView() || ui.mode !== "owner" || !view.ready || !e.isPrimary) return;
     // a corner dot of the selected unit wins over whatever stands in front of it
-    if (ui.moveMode && state.sel) {
+    if (canMove() && state.sel) {
       const su = selUnit(), L0 = view.poses?.get(state.sel);
       if (su && L0 && gripAt(e, { u: su, start: L0, box: localBox(R(su)), others: [] }, true)) { e.stopPropagation(); startDrag(e, state.sel); return; }
     }
     const id = view.pickAt(e.clientX, e.clientY);
-    if (id && !ui.moveMode) press = setTimeout(() => { if (down && Math.hypot(down[2] || 0, down[3] || 0) < 8) { down = null; if (!ui.multi?.has(id)) toggleMulti(id); } }, 550);
+    if (id && id !== state.sel) press = setTimeout(() => { if (down && Math.hypot(down[2] || 0, down[3] || 0) < 8) { down = null; if (!ui.multi?.has(id)) toggleMulti(id); } }, 550);
     if (!id || (id !== state.sel && !(ui.multi?.size > 1 && ui.multi.has(id)))) return; // only the outlined (selected) units ever move
-    if (ui.moveMode) { e.stopPropagation(); startDrag(e, id); return; }
-    // "scene" mode: nothing ever moves — a drag only turns the camera
+    // v117: the selected unit moves by dragging it — no «move mode» to switch on first; a drag that starts anywhere else turns the camera
+    if (canMove()) { e.stopPropagation(); startDrag(e, id); return; }
   }, true);
   host.addEventListener("pointermove", (e) => {
     if (drag && e.pointerId !== drag.pid) return;
@@ -1551,6 +1562,11 @@ $("#libBtn").addEventListener("click", () => { state.libOpen = !state.libOpen; r
     }
     if (down && !drag) { down[2] = e.clientX - down[0]; down[3] = e.clientY - down[1]; if (Math.hypot(down[2], down[3]) > 8) clearTimeout(press); }
     if (!drag) return;
+    // v117: a tap on the selected unit stays a tap — it moves only once the finger really travels
+    if (!drag.moved) {
+      if (Math.hypot(e.clientX - drag.xy0[0], e.clientY - drag.xy0[1]) < 7) return;
+      drag.moved = true; ui.dragging = true; view.highlight(drag.u.id, true);
+    }
     if (drag.grip) {
       const gp = gripPose(e);
       if (!gp) return;
@@ -1561,17 +1577,22 @@ $("#libBtn").addEventListener("click", () => { state.libOpen = !state.libOpen; r
       drag.pose = Room.snapPose(drag.segs, drag.box, [hit[0] + drag.off[0], hit[1] + drag.off[1]], drag.rot, drag.others, drag.row);
     }
     view.movePicked(drag.u.id, drag.pose);
+    dragTag(e, drag.pose, drag.box, drag.others, drag.row);
     if (drag.crew?.length) { const dx = drag.pose.x - drag.start.x, dz = drag.pose.z - drag.start.z, dr = drag.pose.rot - drag.start.rot; for (const o of drag.crew) view.movePicked(o.u.id, crewPose(o.L, drag.start, dx, dz, dr)); }
   });
   const end = (e) => {
     clearTimeout(press);
     if (ptDrag) { ptDrag = null; view.ctl.enabled = true; down = null; save(); renderProps(); view.update(); return; }
     if (view.final?.active && !drag) { down = null; return; } // taps never change the selection while the final render runs
+    dragTag(null);
+    if (drag && !drag.moved) { view.snapMark(null); drag = null; ui.dragging = false; view.ctl.enabled = true; } // only a tap: handled below
     if (drag) {
       view.highlight(drag.u.id, false);
       view.snapMark(null);
+      ui.dragging = false;
       const p = drag.pose, s0 = drag.start;
-      drag.u.pos = p.wall ? { wall: p.wall, s: p.s } : { x: p.x, z: p.z, rot: p.rot };
+      const pt = tidyPose(p, drag.box, drag.others);
+      drag.u.pos = p.wall ? { wall: p.wall, s: pt.s } : { x: Math.round(p.x * 10) / 10, z: Math.round(p.z * 10) / 10, rot: p.rot };
       if (drag.crew?.length) {
         const dx = p.x - s0.x, dz = p.z - s0.z, dr = p.rot - s0.rot, ds = p.wall && p.wall === s0.wall ? p.s - s0.s : null;
         for (const o of drag.crew) {
@@ -1583,7 +1604,7 @@ $("#libBtn").addEventListener("click", () => { state.libOpen = !state.libOpen; r
       view.ctl.enabled = true;
       down = null;
       save();
-      renderChips();
+      renderChips(); renderProps();
       view.update();
       return;
     }
@@ -1605,7 +1626,7 @@ $("#libBtn").addEventListener("click", () => { state.libOpen = !state.libOpen; r
     if (ui.worker) { workerTap(e.clientX, e.clientY); return; }
     if (ui.present) { const id = view.pickAt(e.clientX, e.clientY); if (id) presentTell(id); return; }
     const hit = view.pickAny(e.clientX, e.clientY);
-    if (!hit && ui.moveMode) { sceneMode(); alertBar("رجعت للوضع العادي — السحب بيلف المشهد كله."); return; }
+    if (ui.alignPick && hit?.kind === "unit" && hit.id !== state.sel) { alignPickDone(hit.id); return; }
     if (hit?.kind === "unit") {
       if (ui.multi) { multiToggle(hit.id); renderMulti(); renderStrip(); renderChips(); renderProps(); view.update(); return; }
       ui.room3d = false; ui.planSel = null;
@@ -1927,10 +1948,10 @@ $("#ptbar").addEventListener("click", async (e) => {
 });
 // full-screen design view (the stage alone) and the phone's bottom sheet for the properties
 function renderMoveBar() {
-  $("#movebar").hidden = !(ui.moveMode && wholeView() && !ui.planOn && state.tab === "design");
+  $("#movebar").hidden = true; // v117: no move mode any more — the selected unit simply follows the finger
   const vm = document.querySelector("#view3d .vmode");
   if (vm) {
-    vm.hidden = !wholeView() || ui.mode !== "owner";
+    vm.hidden = true;
     for (const b of vm.querySelectorAll("button")) b.classList.toggle("on", (b.dataset.vmode === "units") === !!ui.moveMode);
   }
 }
@@ -2566,9 +2587,12 @@ function renderStrip() {
 $("#unitStrip").addEventListener("click", (e) => {
   const b = e.target.closest("[data-unit]");
   if (!b) return;
+  if (ui.alignPick && b.dataset.unit !== state.sel) { alignPickDone(b.dataset.unit); return; }
   if (ui.multi) { multiToggle(b.dataset.unit); renderMulti(); renderStrip(); renderChips(); renderProps(); view.update(); return; }
   if (state.sel === b.dataset.unit && matchMedia("(max-width: 640px), (max-height: 520px)").matches) { ui.sheet = ui.sheet === "min" ? "half" : "min"; document.body.dataset.sheet = ui.sheet; setTimeout(() => view.resize(), 260); }
   state.sel = b.dataset.unit;
+  // v117: the side panel follows what was picked last (it kept showing the window after a unit was picked here)
+  ui.planSel = ui.planOn ? { kind: "unit", id: state.sel } : null; ui.room3d = false;
   save();
   render(true);
 });
@@ -2582,7 +2606,7 @@ const TABLES = { D_STYLES: D.DOOR_STYLES, D_LAYOUT: D.DOOR_LAYOUTS, D_HANDLES: D
   K_DOORS: KU.K_DOORS, K_POS: KU.K_POS, K_HANDLES: KU.K_HANDLES, K_GAP_SIDE: KU.K_GAP_SIDE, K_TOP: KU.K_TOP };
 
 function planChips() {
-  const room = state.project.room, sel = ui.planSel;
+  const room = state.project.room, sel = ui.planSel, inDesign = ui.planIn === "design";
   let h = `<button class="chip tog on" data-plan>${ICON.cube}3D</button>`;
   if (ui.planView === "elev") return h + `<button class="chip" data-elevback>رجوع للمسقط</button>`;
   if (ui.planTool === "draw") {
@@ -2593,10 +2617,11 @@ function planChips() {
     if (n) h += `<button class="chip tog" data-drawundo>رجّع نقطة</button>`;
     return h + `<button class="chip tog" data-drawcancel>إلغاء</button>`;
   }
-  h += `<button class="chip" data-roompop>أوضة جاهزة بالمقاسات</button><button class="chip" data-draw>ارسم حيطان</button><button class="chip" data-wallstudio>🧱 ارسمها 3D في ورشة الرسم</button>`;
-  if (sel?.kind === "wall") h += `<button class="chip tog" data-addop="door">+ باب</button><button class="chip tog" data-addop="window">+ شباك</button><button class="chip tog" data-mepop>+ كهربا / سباكة / غاز</button><button class="chip tog" data-elev>واجهة الحيطة</button>`;
-  if (room) h += `<button class="chip tog" data-addcol>+ عمود</button>`;
-  if (sel?.kind === "unit" || (state.sel && !sel)) h += `<span class="chip step zone"><span class="zl">لف الوحدة</span><button data-rot="-90">↺90</button><button data-rot="-15">↺15</button><button data-rot="15">↻15</button><button data-rot="90">↻90</button></span>`;
+  // v117: in the room step the plan builds the room; opened from the design step it is a way of arranging the units
+  if (!inDesign || !room) h += `<button class="chip" data-roompop>أوضة جاهزة بالمقاسات</button><button class="chip" data-draw>ارسم حيطان</button><button class="chip" data-wallstudio>🧱 ارسمها 3D في ورشة الرسم</button>`;
+  if (sel?.kind === "wall") h += `<button class="chip tog gold" data-wcnew>🧩 قسّم الحيطة دي</button><button class="chip tog" data-addop="door">+ باب</button><button class="chip tog" data-addop="window">+ شباك</button><button class="chip tog" data-mepop>+ كهربا / سباكة / غاز</button><button class="chip tog" data-elev>واجهة الحيطة</button>`;
+  if (room && !inDesign) h += `<button class="chip tog" data-addcol>+ عمود</button>`;
+  if (state.project.units.length) { const rw = ui.planRows || "all"; h += `<span class="chip seg3" role="group" aria-label="الصف اللي ظاهر">${[["all", "الكل"], ["lower", "السفلي"], ["upper", "العلوي"]].map(([k, l]) => `<button data-prows="${k}" class="${rw === k ? "on" : ""}">${l}</button>`).join("")}</span>`; }
   if (state.project.units.some((x) => x.pos)) h += `<button class="chip tog" data-autolay>رصّ تلقائي</button>`;
   { const n = designChecks().filter((c) => c.level !== "n").length; h += `<button class="chip tog ${n ? "warnchip" : ""}" data-checks>فحص التصميم${n ? ` (${n})` : " ✓"}</button>`; }
   return h + `<button class="chip tog" data-planfit>ملء الشاشة</button>`;
@@ -2640,6 +2665,7 @@ function renderChips() {
     const tpl = p.template;
     const spec = Schema.SPECIAL[tpl];
     const hide = spec?.hide || [];
+    if (tpl === "wall_comp") h += `<button class="chip tog gold" data-wcopen>🧩 قسّم الحيطة</button>`;
     if (!hide.includes("size") && tpl !== "free") h += stepChip("width", "العرض", n1(p.width)) + stepChip("height", "الارتفاع", n1(p.height));
     for (const [path, label, type, choices] of Schema.liveFields(tpl)) {
       const v = getPath(p, path);
@@ -2673,24 +2699,24 @@ function renderChips() {
   let a = "";
   if (whole) {
     const L = projectPoses(state.project).get(u.id);
-    a += `<button class="chip tog ${ui.moveMode ? "on" : ""}" data-move>✋ ${ui.moveMode ? "بتحرّك — دوس للخروج" : "حرّك"}</button>`;
     a += `<button class="chip tog ${ui.multi ? "on" : ""}" data-multi>☑ ${ui.multi ? `مختار ${ui.multi.size}` : "اختار أكتر من وحدة"}</button>`;
     a += `<button class="chip tog" data-alignpop>⇹ محاذاة مع وحدة</button>`;
     if (L?.wall) {
       const segs = roomSegs(state.project);
       const seg = segs.find((g) => g.id === L.wall);
-      a += `<span class="chip step zone"><span class="zl">على الحيطة ${seg && !seg.virtual ? segs.indexOf(seg) + 1 : ""} · من أولها</span><button data-mv="-5" aria-label="5 سم لورا">${ICON.minus}</button><b>${n1(L.s)}</b><button data-mv="5" aria-label="5 سم لقدام">${ICON.plus}</button></span>`;
+      a += `<span class="chip step zone"><span class="zl">على الحيطة ${seg && !seg.virtual ? segs.indexOf(seg) + 1 : ""} · من أولها</span><button data-mv="-1" aria-label="1 سم لورا">${ICON.minus}</button><button class="chipnum" data-ask="s" title="دوس واكتب المسافة">${n1(L.s)}</button><button data-mv="1" aria-label="1 سم لقدام">${ICON.plus}</button></span>`;
     }
-    a += `<span class="chip step zone"><span class="zl">↕ من الأرض</span><button data-lift="-5" aria-label="نزّل 5 سم">${ICON.minus}</button><b>${n1(+u.lift || 0)}</b><button data-lift="5" aria-label="ارفع 5 سم">${ICON.plus}</button></span>`;
+    a += `<span class="chip step zone"><span class="zl">↕ من الأرض</span><button data-lift="-1" aria-label="نزّل 1 سم">${ICON.minus}</button><button class="chipnum" data-ask="lift" title="دوس واكتب الارتفاع">${n1(+u.lift || 0)}</button><button data-lift="1" aria-label="ارفع 1 سم">${ICON.plus}</button></span>`;
     a += `<span class="chip step zone"><span class="zl">لف</span><button data-rot="-90" aria-label="لف 90 شمال">↺90</button><button data-rot="-15" aria-label="لف 15 شمال">↺15</button><button data-rot="15" aria-label="لف 15 يمين">↻15</button><button data-rot="90" aria-label="لف 90 يمين">↻90</button></span>`;
     if (state.project.units.some((x) => x.pos)) a += `<button class="chip tog" data-autolay>رصّ تلقائي</button>`;
   }
   let rm = `<button class="chip tog" data-plan>المسقط والحيطان</button><button class="chip tog" data-roompop>📐 أوضة بالمقاسات · 📷 مسح بالكاميرا</button><button class="chip tog" data-speak>🗣 اوصفلي المطبخ</button><button class="chip tog gold" data-autok>✨ صمملي المطبخ</button>`;
   rm += `<button class="chip tog" data-varpop>🗂 النسخ${state.project.variants?.length > 1 ? ` (${state.project.variants.length})` : ""}</button>`;
   if (whole || state.project.room) { const n = designChecks().filter((c) => c.level !== "n").length; rm += `<button class="chip tog ${n ? "warnchip" : ""}" data-checks>فحص التصميم${n ? ` (${n})` : " ✓"}</button>`; }
-  if (state.project.room) rm += `<p class="chiphint">في العرض 3D: دوس على حيطة أو بريزة أو عمود عشان تعدّله. البريزة تتسحب على الحيطة من "الترتيب ← حرّك".</p>`;
+  if (state.project.room) rm += `<p class="chiphint">في العرض 3D: دوس على حيطة أو بريزة أو عمود عشان تعدّله. اختار البريزة واسحبها على الحيطة.</p>`;
   const body = { unit: h, view: v, arr: a, room: rm }[ui.chipTab];
-  h = `<div class="ctabs" role="tablist">${tabs.map(([k, l]) => `<button role="tab" aria-selected="${ui.chipTab === k}" data-ctab="${k}">${l}</button>`).join("")}</div><div class="cbody">${body}</div>`;
+  // v117: tap the open tab again to fold its buttons away (more room for the 3D view); any tab opens them again
+  h = `<div class="ctabs" role="tablist">${tabs.map(([k, l]) => `<button role="tab" aria-selected="${ui.chipTab === k}" data-ctab="${k}">${l}${ui.chipTab === k ? `<i class="ctfold">${ui.chipShut ? "▾" : "▴"}</i>` : ""}</button>`).join("")}</div>${ui.chipShut ? "" : `<div class="cbody">${body}</div>`}`;
   el.innerHTML = h;
 }
 const ZTYPES = ["doors", "drawers", "flap", "open"];
@@ -2700,11 +2726,11 @@ $("#chips").addEventListener("click", async (e) => {
   const b = e.target.closest("button");
   if (!b) return;
   const d = b.dataset;
-  if (d.ctab) { ui.chipTab = d.ctab; renderChips(); return; }
+  if (d.ctab) { if (ui.chipTab === d.ctab) ui.chipShut = !ui.chipShut; else { ui.chipTab = d.ctab; ui.chipShut = false; } try { localStorage.setItem("novera-chipshut", ui.chipShut ? "1" : ""); } catch { /* private mode */ } renderChips(); return; }
   if (b.hasAttribute("data-gotocut")) { state.tab = "cut"; save(); render(true); return; }
   if (b.hasAttribute("data-multi")) { toggleMulti(); return; }
   if (b.hasAttribute("data-alignpop")) { ui.pop = "align"; renderPop(); return; }
-  if (b.hasAttribute("data-plan")) { ui.planOn = !ui.planOn; ui.planView = "plan"; ui.planTool = "select"; plan.vb = null; if (!ui.planOn) { state.whole = state.whole || !!state.project.room; } render(true); return; }
+  if (b.hasAttribute("data-plan")) { ui.planOn = !ui.planOn; if (ui.planOn) ui.planIn = state.project.room ? "design" : "room"; ui.planView = "plan"; ui.planTool = "select"; plan.vb = null; if (!ui.planOn) { state.whole = state.whole || !!state.project.room; } render(true); return; }
   if (b.hasAttribute("data-roompop")) { ui.pop = "room"; renderPop(); return; }
   if (b.hasAttribute("data-autok")) { ui.pop = "auto"; renderPop(); return; }
   if (b.hasAttribute("data-speak")) { ui.pop = "speak"; renderPop(); setTimeout(() => $("#speakText")?.focus(), 100); return; }
@@ -2724,6 +2750,9 @@ $("#chips").addEventListener("click", async (e) => {
   if (b.hasAttribute("data-drawundo")) { ui.draft?.pop(); renderChips(); renderProps(); plan.render(); return; }
   if (b.hasAttribute("data-drawcancel")) { ui.planTool = "select"; ui.draft = null; plan.hover = null; renderChips(); renderProps(); plan.render(); return; }
   if (b.hasAttribute("data-planfit")) { plan.vb = null; plan.render(); return; }
+  if (b.hasAttribute("data-wcnew")) { const seg = roomSegs(state.project).find((g) => g.id === ui.planSel?.id); if (seg) newWallComp(seg); return; }
+  if (b.hasAttribute("data-wcopen") && u) { openWallComp(u); return; }
+  if (d.prows) { ui.planRows = d.prows; renderChips(); plan.render(); return; }
   if (d.addop) { const o = Room.addOpening(state.project.room, ui.planSel.id, d.addop); if (o) ui.planSel = { kind: "open", id: o.id }; save(); renderChips(); renderProps(); plan.render(); view.update(); return; }
   if (b.hasAttribute("data-elev")) { ui.planView = "elev"; renderChips(); plan.render(); return; }
   if (b.hasAttribute("data-mepop")) { ui.pop = "mep"; ui.mepWall = ui.planSel.id; renderPop(); return; }
@@ -2743,6 +2772,12 @@ $("#chips").addEventListener("click", async (e) => {
   if (b.hasAttribute("data-final")) { if (ui.pt) closeFinal(); else { ui.pt = { quality: "high", size: "hd", denoise: true, phase: "setup" }; renderPt(); } renderChips(); return; }
   if (b.hasAttribute("data-shot")) { b.disabled = true; exportImage().catch(() => alertBar("ما قدرتش أحفظ الصورة.")).finally(() => { b.disabled = false; }); return; }
   if (b.hasAttribute("data-move")) { ui.moveMode = !ui.moveMode; renderMoveBar(); renderChips(); return; }
+  if (d.ask) {
+    const ws = wallSpan(state.project, u.id);
+    if (d.ask === "s" && ws) numAsk(b, `من أول الحيطة ${ws.index}`, ws.s, (v) => { pinOthers(u.id); u.pos = { wall: ws.L.wall, s: Math.round(Math.max(0, Math.min(ws.seg.L - ws.w, v)) * 10) / 10 }; save(); renderChips(); renderProps(); view.update(); if (ui.planOn) plan.render(); }, { min: 0 });
+    if (d.ask === "lift") numAsk(b, "من الأرض", +u.lift || 0, (v) => { u.lift = Math.max(0, v); save(); renderChips(); renderProps(); view.update(); if (ui.planOn) plan.render(); }, { min: 0 });
+    return;
+  }
   if (d.lift) { u.lift = Math.max(0, Math.round(((+u.lift || 0) + +d.lift) * 10) / 10); save(); renderChips(); renderProps(); view.update(); if (ui.planOn) plan.render(); return; }
   if (b.hasAttribute("data-autolay")) { for (const x of state.project.units) delete x.pos; save(); render(true); return; }
   if (d.mv || b.hasAttribute("data-rot")) {
@@ -2753,18 +2788,7 @@ $("#chips").addEventListener("click", async (e) => {
     if (d.mv && L.wall) {
       const seg = roomSegs(state.project).find((g) => g.id === L.wall);
       u.pos = { wall: L.wall, s: Math.max(0, Math.min((seg?.L ?? 1e9) - (box.x1 - box.x0), L.s + +d.mv)) };
-    } else if (b.hasAttribute("data-rot")) {
-      // turn about the unit's centre and stand free
-      const c = Room.centerOf(L, box);
-      const rot = (L.rot || 0) - ((+d.rot || 90) * Math.PI) / 180;
-      const pose = Room.snapPose([], box, c, rot, [], rowOf(u, R(u)));
-      // turned back to face the room the way its wall does (a full turn or 2 × 90): it goes back onto that wall
-      const wall = u.wallBefore && roomSegs(state.project).find((g) => g.id === u.wallBefore.wall);
-      const wrot = wall ? Room.rotFor(wall.n) : null, same = (a, b) => Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b))) < 0.01;
-      if (L.wall) u.wallBefore = { wall: L.wall, s: L.s };
-      if (wall && same(rot, wrot)) { u.pos = { wall: u.wallBefore.wall, s: u.wallBefore.s }; delete u.wallBefore; }
-      else u.pos = { x: pose.x, z: pose.z, rot };
-    }
+    } else if (b.hasAttribute("data-rot")) { rotateUnit(u, +d.rot || 90); return; }
     save();
     renderChips();
     view.update();
@@ -2824,6 +2848,17 @@ function finishEditor(spec, attr, fallback, finishes = Mat.FINISHES) {
   h += `</div>`;
   if (f === "paint") h += `<div class="paints">${Mat.PAINTS.map((c) => `<button style="background:${c}" data-${attr}col="${c}" aria-label="${c}"></button>`).join("")}</div>`;
   return h;
+}
+/** v117: step 1 with no room yet — the ways to start it, big and in plain words */
+function roomStartHtml() {
+  return `<div class="ph"><h2 class="uname">ابدأ بالأوضة</h2></div>
+    <p class="hint">الأوضة الأول عشان الوحدات تتحط على حيطانها بمقاسات حقيقية.</p>
+    <div class="rstart">
+      <button data-rstart="pop"><b>📐 أوضة بالمقاسات</b><small>مستطيلة أو L أو U — اكتب الأطوال وخلاص</small></button>
+      <button data-rstart="draw"><b>✏️ ارسم الحيطان</b><small>دوس على كل ركن، أو اكتب طول كل حيطة واتجاهها</small></button>
+      <button data-rstart="studio"><b>🧱 ارسمها 3D</b><small>في ورشة الرسم، للأوض الغريبة</small></button>
+      <button data-rstart="skip" class="ghost"><b>⏭ من غير أوضة</b><small>صمّم الوحدات الأول وارجع للأوضة بعدين</small></button>
+    </div>`;
 }
 function roomOverview() {
   const room = state.project.room;
@@ -2950,6 +2985,7 @@ function renderProps0() {
   if (ui.planOn && ui.planTool === "draw") { el.innerHTML = drawProps(); return; }
   if ((ui.planOn || ui.room3d) && state.project.room && ["wall", "open", "pt", "col"].includes(ui.planSel?.kind)) { el.innerHTML = roomProps(); return; }
   if (ui.planOn && state.project.room && !ui.planSel) { el.innerHTML = roomOverview(); return; }
+  if (ui.planOn && !state.project.room) { el.innerHTML = roomStartHtml(); return; }
   if (!u) { el.innerHTML = `<div class="emptyp"><h2>ابدأ بوحدة</h2><p class="hint">افتح المكتبة واختار تصميم جاهز أو قالب فاضي.</p></div>`; return; }
   const r = R(u);
   const p = r.params;
@@ -2959,8 +2995,14 @@ function renderProps0() {
     <div class="tplname"><span class="ucode">${esc(unitCode(u))}</span>${esc(r.label || (u.kind === "dressing" ? "دريسنج" : u.kind === "kitchen" ? "وحدة مطبخ" : ""))}</div>`;
   if (r.ok) h += `<div class="stats"><div><b>${r.pieces}</b><span>قطعة</span></div><div><b>${r.banding}</b><span>م شريط</span>${bandSplitHtml(r)}</div><div><b>${r.doors}</b><span>ضلفة</span></div><div><b>${r.drawers}</b><span>درج</span></div></div>`;
   if (ui.asm?.id === u.id) { el.innerHTML = asmProps(u); return; }
-  if (r.ok && wholeView()) h += `<div class="grid2"><label class="f"><span>↕ رفع الوحدة من الأرض (سم)</span><input type="text" inputmode="decimal" data-numf step="1" min="0" data-ulift value="${+u.lift || 0}"></label></div>
-    <p class="hint">زيادة على ارتفاعها العادي — مثلاً وحدة على قاعدة أو رف معلّق. الوحدات العلوية للمطبخ ارتفاعها من "التعليق من الأرض".</p>`;
+  if (r.ok && wholeView()) {
+    // v117: where the unit stands, as numbers you can type (before: a ± chip of 5 cm on another tab)
+    const ws = wallSpan(state.project, u.id);
+    h += `<div class="grid2 posrow">${ws ? `<label class="f"><span>↔ من أول الحيطة ${ws.index} (سم)</span><input type="text" inputmode="decimal" data-numf data-upos="s" value="${n1(ws.s)}"></label>
+      <label class="f"><span>⇥ الفاضي اللي بعدها (سم)</span><input type="text" inputmode="decimal" data-numf data-upos="gr" value="${n1(ws.rightStart - ws.e)}"></label>` : ""}
+      <label class="f"><span>↕ رفع الوحدة من الأرض (سم)</span><input type="text" inputmode="decimal" data-numf step="1" min="0" data-ulift value="${+u.lift || 0}"></label></div>
+    <p class="hint">${ws ? `على الحيطة ${ws.index} — السهم الأبيض في المسقط بيوري أولها. ` : ""}الرفع زيادة على ارتفاعها العادي (وحدة على قاعدة أو رف معلّق).</p>`;
+  }
   if (u.kind === "pieces") { el.innerHTML = h + (r.ok ? summaryHtml(u) : "") + piecesProps(u); return; }
   if (u.params?.model) {
     h += modelProps(u, r) + (r.ok ? summaryHtml(u) : `<p class="hint">${esc(r.errors?.[0] || "")}</p>`);
@@ -3035,6 +3077,7 @@ function panelProps(p, r) {
     h += `</div></details>`;
   }
   if (tpl === "tv_wall") h += tvWallProps(p);
+  if (tpl === "wall_comp") h += wallCompProps(p);
   if (tpl === "free") {
     const ROLE_AR = { side: "جنب", horizontal: "قاعدة/رأس", fixed_shelf: "رف ثابت", divider: "قاطوع", shelf: "رف", back: "ظهر", door: "ضلفة/غطا", plinth: "وزرة", other: "تاني" };
     const mats = Object.fromEntries(Object.entries(PANEL_MATS).filter(([k]) => !k.startsWith("table")));
@@ -3088,6 +3131,49 @@ function zonesEd(prefix, zones) {
       ${selF(`${prefix}.${i}.hinge`, "المفصلة", { left: "شمال", right: "يمين" }, z.hinge)}${boolF(`${prefix}.${i}.led`, "ليد في الخانة", z.led)}</div>${z.type === "drawers" ? glassChips(`${prefix}.${i}.glass`, z.glass, Math.max(1, +z.count || 1)) : ""}</div>`;
   });
   return h + `<button class="add" data-zadd2="${prefix}">${ICON.plus}ضيف جزء (من تحت لفوق)</button>`;
+}
+/** v118: «قسّم الحيطة» — open the wall editor; the cells listed under it */
+function wallCompProps(p) {
+  const errs = [], cells = WCL.wallCompLayout(p.wc || {}, +p.width, +p.height, errs);
+  const cnt = {};
+  for (const c of cells) cnt[c.node.kind] = (cnt[c.node.kind] || 0) + 1;
+  return `<details open class="keepopen"><summary>🧩 الحيطة المقسومة</summary>
+    <button class="primary wcopen" data-wcopen>🧩 افتح «قسّم الحيطة» — قسّم وعدّل الخانات</button>
+    <p class="hint">${n1(p.width)} × ${n1(p.height)} سم · ${cells.length} خانة: ${Object.entries(cnt).map(([k, v]) => `${v} ${WCL.WC_KINDS[k] || k}`).join(" · ")}</p>
+    ${errs.length ? `<p class="e">${esc(errs[0])}</p>` : ""}
+    <div class="btnrow"><button class="ghost2 sm" data-tvmat>🎨 خامة واحدة للوحدة كلها / خامة لكل جزء</button></div></details>`;
+}
+function openWallComp(u, fresh = false) {
+  let applied = false;
+  // the doors / windows / columns of the wall it stands on, in its own frame (x from its left as you face it) — drawn behind the cells
+  const L = projectPoses(state.project).get(u.id), room = state.project.room, holes = [];
+  const seg = L?.wall && room && Room.segments(room).find((g) => g.id === L.wall);
+  if (seg) {
+    const fromA = Room.runStart(seg).S === seg.A;
+    for (const o of (room.openings || []).filter((x) => x.wall === seg.id)) { const a = fromA ? o.at : seg.L - o.at - o.w; holes.push({ x0: a - L.s, x1: a + o.w - L.s, z0: o.kind === "door" ? 0 : +o.sill || 0, z1: (o.kind === "door" ? 0 : +o.sill || 0) + +o.h, kind: o.kind }); }
+    for (const p of (room.points || []).filter((x) => x.wall === seg.id)) { const a = fromA ? p.at : seg.L - p.at; holes.push({ x0: a - L.s - 4, x1: a - L.s + 4, z0: p.z - 4, z1: p.z + 4, kind: "pt", label: (Room.MEP_KINDS[p.kind] || Room.MEP_KINDS.socket)[3] }); }
+  }
+  WComp.open(u, {
+    holes,
+    params: (x) => R(x).params,
+    apply: (P) => { applied = true; setParams(u, (p) => { p.width = P.width; p.height = P.height; p.wc = P.wc; }); },
+    numAsk, alertBar, esc,
+    closed: () => {
+      if (fresh && !applied) { state.project.units = state.project.units.filter((x) => x.id !== u.id); state.sel = state.project.units.at(-1)?.id ?? null; save(); render(true); return; }
+      render(true);
+    },
+  });
+}
+/** v118: a new divided wall on the picked wall of the room, as long as the wall */
+function newWallComp(seg) {
+  const L = Math.round(seg.L * 10) / 10, H = Math.min(Math.round(seg.h || 260), 260);
+  const u = { id: uid(), kind: "panel", name: `حيطة ${roomSegs(state.project).findIndex((g) => g.id === seg.id) + 1} مقسومة`, params: { template: "wall_comp", width: L, height: H, handle: "push", wc: { max_board: 240, depth: 35, root: { kind: "empty" } } } };
+  pinOthers(u.id);
+  u.pos = { wall: seg.id, s: 0 };
+  state.project.units.push(u); ensureCodes(state.project);
+  state.sel = u.id; ui.planSel = ui.planOn ? { kind: "unit", id: u.id } : null;
+  save(); render(true);
+  openWallComp(u, true);
 }
 function tvWallProps(p) {
   const q = p.tvw || {}, L = q.left || {}, R = q.right || {}, M = q.mid || {}, C = q.clad || {};
@@ -3586,6 +3672,13 @@ props.addEventListener("change", (e) => {
     return;
   }
   if (d.ulift !== undefined) { u.lift = Math.max(0, toNum(t.value)); save(); renderChips(); view.update(); if (ui.planOn) plan.render(); return; }
+  if (d.upos) {
+    const ws = wallSpan(state.project, u.id); if (!ws) return;
+    const v = Math.max(0, toNum(t.value)), s = d.upos === "s" ? v : ws.rightStart - v - ws.w;
+    pinOthers(u.id);
+    u.pos = { wall: ws.L.wall, s: Math.round(Math.max(0, Math.min(ws.seg.L - ws.w, s)) * 10) / 10 };
+    save(); renderChips(); renderProps(); view.update(); if (ui.planOn) plan.render(); return;
+  }
   if (t.id === "xmoveAx") { ui.xmoveAx = t.value; return; }
   if (d.xcut) {
     const [i, f] = d.xcut.split(".");
@@ -3616,6 +3709,15 @@ props.addEventListener("click", (e) => {
   state.propsAdv = b.dataset.padv === "shop" ? "shop" : b.dataset.padv === "1"; save(); renderProps();
   if (state.propsAdv && b.classList.contains("advmore")) $("#props").querySelector("details.advhid, details[data-basic='0']")?.scrollIntoView({ block: "start", behavior: "smooth" });
 }, true);
+props.addEventListener("click", (e) => {
+  const b = e.target.closest("[data-rstart]");
+  if (!b) return;
+  const k = b.dataset.rstart;
+  if (k === "pop") { ui.pop = "room"; renderPop(); }
+  else if (k === "draw") { ui.planTool = "draw"; ui.draft = []; renderChips(); renderProps(); plan.render(); }
+  else if (k === "studio") openStudio(null, { tool: "wall" });
+  else if (k === "skip") { ui.planOn = false; state.whole = true; state.libOpen = true; save(); render(true); }
+});
 props.addEventListener("input", (e) => {
   if (e.target.id !== "unitName") return;
   selUnit().name = e.target.value;
@@ -3876,6 +3978,7 @@ props.addEventListener("click", (e) => {
   else if (d.ndel != null) setParams(u, (p) => p.tvw.niches.splice(+d.ndel, 1));
   else if (d.ndup != null) setParams(u, (p) => { const n = JSON.parse(JSON.stringify(p.tvw.niches[+d.ndup])); if (typeof n.x === "number") n.x += n.w + 10; p.tvw.niches.push(n); });
   else if (b.hasAttribute("data-tvmat")) { ui.matpOpen = true; ui.nudgeOpen = false; renderMatp(); }
+  else if (b.hasAttribute("data-wcopen")) openWallComp(u);
   else if (d.tvcopy) setParams(u, (p) => { const a = d.tvcopy, b2 = a === "left" ? "right" : "left"; const S = JSON.parse(JSON.stringify(p.tvw[a])); S.fronts = (S.fronts || []).map((z) => ({ ...z, hinge: z.hinge === "left" ? "right" : z.hinge === "right" ? "left" : z.hinge })); p.tvw[b2] = S; });
   else if (b.hasAttribute("data-zadd")) setParams(u, (p) => p.fronts.push({ type: "open", count: 1, height: "auto", shelves: 1, hinge: "left", led: false }));
   else if (d.secdel != null) setParams(u, (p) => { if (p.sections.length > 1) p.sections.splice(+d.secdel, 1); });
@@ -3944,7 +4047,7 @@ function renderMulti() {
   const n = targetUnits().length;
   el.hidden = false;
   el.innerHTML = `<span>دوس على الوحدات (في العرض أو تحت) عشان تضيفها أو تشيلها · <b>مختار ${n}</b></span>
-    <button data-mm="move" class="${ui.moveMode ? "on" : ""}">✋ ${ui.moveMode ? "بتحرّكهم — اسحب أي واحدة" : "حرّكهم مع بعض"}</button><button data-mm="mat">🎨 الخامات</button><button data-mm="dup">⧉ نسخة</button><button data-mm="del">🗑 امسح</button><button data-mm="up">↑ 5</button><button data-mm="down">↓ 5</button><button data-mm="all">الكل</button><button data-mm="off">✕ خلاص</button>`;
+    <button data-mm="pack" title="يلزقوا جنب بعض على الحيطة من غير فراغات">⇤⇥ لزّقهم</button><button data-mm="spread" title="نفس الفراغ بين كل واحدة والتانية">↔ وزّع بالتساوي</button><button data-mm="algn" title="نفس الارتفاع من الأرض ونفس البعد">☰ نفس الارتفاع</button><button data-mm="mat">🎨 الخامات</button><button data-mm="dup">⧉ نسخة</button><button data-mm="del">🗑 امسح</button><button data-mm="up">↑ 5</button><button data-mm="down">↓ 5</button><button data-mm="all">الكل</button><button data-mm="off">✕ خلاص</button>`;
 }
 $("#multibar").addEventListener("pointerdown", (e) => e.stopPropagation());
 $("#multibar").addEventListener("click", (e) => {
@@ -3955,7 +4058,7 @@ $("#multibar").addEventListener("click", (e) => {
   if (k === "all") { ui.multi = new Set(state.project.units.map((x) => x.id)); renderMulti(); renderStrip(); view.update(); return; }
   if (k === "up" || k === "down") { for (const x of targetUnits()) x.lift = Math.max(0, (+x.lift || 0) + (k === "up" ? 5 : -5)); save(); renderChips(); view.update(); return; }
   if (k === "mat") { ui.pop = "mkeys"; renderPop(); }
-  if (k === "move") { ui.moveMode = !ui.moveMode; if (ui.moveMode && !state.whole) state.whole = true; renderMulti(); renderMoveBar(); renderChips(); view.update(); return; }
+  if (k === "pack" || k === "spread" || k === "algn") { arrangeMany(k); return; }
   if (k === "dup") {
     const list = targetUnits(); if (!list.length) return;
     const made = list.map((x) => { const c = JSON.parse(JSON.stringify(x)); c.id = uid(); delete c.code; delete c.pos; c.name = x.name; return c; });
@@ -3973,6 +4076,46 @@ $("#multibar").addEventListener("click", (e) => {
     return;
   }
 });
+/** v117: several units at once — «pack» them side by side with no gaps (from the first one on), «spread» them with equal gaps
+ *  between the first and the last, or give them all the selected unit's height from the floor */
+function arrangeMany(k) {
+  const list = targetUnits();
+  if (list.length < 2) { alertBar("اختار وحدتين على الأقل"); return; }
+  if (k === "algn") {
+    const ref = selUnit() || list[0];
+    for (const x of list) x.lift = +ref.lift || 0;
+    save(); renderChips(); renderProps(); view.update(); alertBar(`${list.length} وحدات بقوا على نفس الارتفاع من الأرض (${n1(+ref.lift || 0)} سم)`); return;
+  }
+  const poses = projectPoses(state.project);
+  pinOthers("__none__");
+  const byWall = new Map();
+  for (const x of list) { const L = poses.get(x.id); if (!L?.wall) continue; const w = localBox(R(x)); (byWall.get(L.wall) || byWall.set(L.wall, []).get(L.wall)).push({ x, s: L.s, w: w.x1 - w.x0 }); }
+  let n = 0;
+  for (const [wall, arr] of byWall) {
+    arr.sort((a, b) => a.s - b.s);
+    if (k === "pack") {
+      // the units that are not picked stay where they are: a picked one that would land on one of them goes on past it
+      const sel = new Set(arr.map((a) => a.x.id)), items = projectItems(state.project);
+      const obst = items.filter((it) => !sel.has(it.id) && poses.get(it.id)?.wall === wall).map((it) => ({ a: poses.get(it.id).s, b: poses.get(it.id).s + (it.box.x1 - it.box.x0), row: it.row }));
+      let cur = arr[0].s;
+      for (const a of arr) {
+        const row = rowOf(a.x, R(a.x));
+        let s = cur, guard = 0;
+        for (let o; (o = obst.find((q) => sameBand(q.row, row) && q.a < s + a.w - 0.5 && q.b > s + 0.5)) && guard < 20; guard++) s = o.b;
+        a.x.pos = { wall, s: Math.round(s * 10) / 10 }; cur = s + a.w; n++;
+      }
+    }
+    else if (arr.length >= 3) {
+      const first = arr[0], last = arr[arr.length - 1], mid = arr.slice(1, -1);
+      const gap = (last.s - (first.s + first.w) - mid.reduce((t, a) => t + a.w, 0)) / (arr.length - 1);
+      let cur = first.s + first.w + gap;
+      for (const a of mid) { a.x.pos = { wall, s: Math.round(cur * 10) / 10 }; cur += a.w + gap; n++; }
+    }
+  }
+  if (!n) { alertBar(k === "pack" ? "الوحدات المختارة لازم تكون على حيطة" : "التوزيع محتاج 3 وحدات على نفس الحيطة"); return; }
+  save(); renderChips(); renderProps(); view.update(); if (ui.planOn) plan.render();
+  alertBar(k === "pack" ? "اتلزقوا جنب بعض ✓ — ↶ تراجع لو مش ده" : "اتوزّعوا بفراغات متساوية ✓");
+}
 /** line a unit up with another one: its left edges, centres or right edges (as you face the units) */
 function alignUnit(u, o, mode) {
   const poses = projectPoses(state.project);
@@ -3981,12 +4124,13 @@ function alignUnit(u, o, mode) {
   const bu = localBox(R(u)), bo = localBox(R(o));
   const wu = bu.x1 - bu.x0, wo = bo.x1 - bo.x0;
   if (Lu.wall && Lu.wall === Lo.wall) {
-    const sv = mode === "start" ? Lo.s : mode === "end" ? Lo.s + wo - wu : Lo.s + (wo - wu) / 2;
+    pinOthers(u.id);
+    const sv = mode === "start" ? Lo.s : mode === "end" ? Lo.s + wo - wu : mode === "before" ? Lo.s - wu : mode === "after" ? Lo.s + wo : Lo.s + (wo - wu) / 2;
     u.pos = { wall: Lu.wall, s: Math.max(0, Math.round(sv * 10) / 10) };
     return;
   }
   const ax = Room.axisX(Lo.rot), cu = Room.centerOf(Lu, bu), co = Room.centerOf(Lo, bo);
-  const want = mode === "start" ? -(wo - wu) / 2 : mode === "end" ? (wo - wu) / 2 : 0;
+  const want = mode === "start" ? -(wo - wu) / 2 : mode === "end" ? (wo - wu) / 2 : mode === "before" ? -(wo + wu) / 2 : mode === "after" ? (wo + wu) / 2 : 0;
   const now = (cu[0] - co[0]) * ax[0] + (cu[1] - co[1]) * ax[1];
   const c = [cu[0] + ax[0] * (want - now), cu[1] + ax[1] * (want - now)];
   const pose = Room.snapPose([], bu, c, Lo.rot, [], rowOf(u, R(u)));
@@ -4555,6 +4699,162 @@ function filterProps(el = $("#props")) {
 }
 // ---- direct editing in 3D: the selected unit's sizes float next to it — tap one to type a new value,
 // or drag the round handle on its side to make it wider / narrower
+/** v117: the selected unit's own toolbar, floating right under it (3D and plan): move by a number, turn, line up,
+ *  copy, material, delete — the things that used to sit on four different tabs and bars */
+const selBar = {
+  el: null, cur: "",
+  host() { return document.querySelector("#v-design .stage"); },
+  ensure() {
+    if (this.el) return this.el;
+    const el = (this.el = document.createElement("div"));
+    el.className = "selbar"; el.hidden = true;
+    el.setAttribute("role", "toolbar"); el.setAttribute("aria-label", "أوامر الوحدة المختارة");
+    this.host().appendChild(el);
+    el.addEventListener("pointerdown", (e) => e.stopPropagation());
+    el.addEventListener("click", (e) => this.click(e));
+    return el;
+  },
+  show() {
+    const u = selUnit();
+    return !!(u && ui.mode === "owner" && state.tab === "design" && wholeView() && !ui.multi && !ui.dragging && !ui.asm && !ui.present && !ui.worker && !ui.xdraw && !ui.xmove && !ui.pop
+      && !(ui.planOn && (ui.planTool === "draw" || ui.planView === "elev" || (ui.planSel && ui.planSel.kind !== "unit"))) && !(ui.room3d && ui.planSel) && !view.final?.active && !document.body.classList.contains("fs") && R(u).ok);
+  },
+  html(u) {
+    const inPlan = ui.planOn, armed = this.armed === u.id;
+    if (ui.alignPick) return `<span class="sbhint">⇹ دوس على الوحدة اللي هتتظبط عليها</span><button data-sb="alignx">إلغاء</button>`;
+    return `${R(u).params?.template === "wall_comp" ? `<button data-sb="wc" class="gold" title="قسّم الحيطة">🧩<small>قسّم</small></button>` : ""}${inPlan ? "" : `<button data-sb="nudge" class="${ui.nudgeOpen ? "on" : ""}" title="حرّكها مسافة محددة">↔<small>بمقاس</small></button>`}
+      <button data-sb="rot" title="لف 90 درجة">↻<small>لف</small></button>
+      <button data-sb="align" title="محاذاة مع وحدة تانية">⇹<small>محاذاة</small></button>
+      <button data-sb="dup" title="نسخة جنبها">⧉<small>نسخة</small></button>
+      ${inPlan ? "" : `<button data-sb="mat" class="${ui.matpOpen ? "on" : ""}" title="الخامات">🎨<small>خامة</small></button>`}
+      <button data-sb="del" class="danger ${armed ? "armed" : ""}" title="حذف">${armed ? "أكّد؟" : "🗑"}<small>${armed ? "دوس تاني" : "حذف"}</small></button>`;
+  },
+  /** where to stand: under the box b = {x0, y0, x1, y1} (stage pixels), or over it when there is no room below */
+  put(b) {
+    const el = this.ensure(), host = this.host();
+    const W = host.clientWidth, H = host.clientHeight, w = el.offsetWidth || 300, h = el.offsetHeight || 54;
+    const strip = host.querySelector(".units")?.offsetHeight || 70;
+    let x = (b.x0 + b.x1) / 2 - w / 2, y = b.y1 + 14;
+    if (y + h > H - strip - 70) y = b.y0 - h - 54; // above the width tag
+    x = Math.max(8, Math.min(W - w - 8, x)); y = Math.max(60, Math.min(H - strip - h - 8, y));
+    el.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
+  },
+  render(b) {
+    const el = this.ensure(), u = selUnit();
+    if (!b || !this.show()) { el.hidden = true; this.cur = ""; return; }
+    const key = [u.id, ui.planOn, ui.alignPick, ui.nudgeOpen, ui.matpOpen, this.armed].join("|");
+    if (key !== this.cur) { el.innerHTML = this.html(u); this.cur = key; }
+    el.hidden = false;
+    this.put(b);
+  },
+  place3d(v) {
+    if (ui.planOn || !this.show()) { if (!ui.planOn) this.render(null); return; }
+    const T = v.three, ug = v.pickables?.find((o) => o.userData.unitId === state.sel);
+    if (!ug) { this.render(null); return; }
+    // the unit's box is measured once per scene build (this runs on every frame the camera moves)
+    let wb = ug.userData.wbox;
+    if (!wb) {
+      wb = new T.Box3();
+      ug.updateMatrixWorld(true);
+      ug.traverse((o) => { if (o.isMesh && o.geometry && !o.userData.grip) { if (!o.geometry.boundingBox) o.geometry.computeBoundingBox(); wb.union(o.geometry.boundingBox.clone().applyMatrix4(o.matrixWorld)); } });
+      ug.userData.wbox = wb;
+    }
+    if (wb.isEmpty()) { this.render(null); return; }
+    const rc = v.ren.domElement.getBoundingClientRect(), hr = this.host().getBoundingClientRect();
+    const b = { x0: 1e9, y0: 1e9, x1: -1e9, y1: -1e9 };
+    for (const x of [wb.min.x, wb.max.x]) for (const y of [wb.min.y, wb.max.y]) for (const z of [wb.min.z, wb.max.z]) {
+      const q = new T.Vector3(x, y, z).project(v.cam); if (q.z > 1) continue;
+      const sx = rc.left - hr.left + ((q.x + 1) / 2) * rc.width, sy = rc.top - hr.top + ((1 - q.y) / 2) * rc.height;
+      b.x0 = Math.min(b.x0, sx); b.x1 = Math.max(b.x1, sx); b.y0 = Math.min(b.y0, sy); b.y1 = Math.max(b.y1, sy);
+    }
+    this.render(b.x0 < b.x1 ? b : null);
+  },
+  placePlan() {
+    if (!ui.planOn) return;
+    const svg = $("#plan svg"), g = svg && state.sel && svg.querySelector(`[data-unit="${state.sel}"]`);
+    if (!g || !this.show()) { this.render(null); return; }
+    const hr = this.host().getBoundingClientRect(), b = { x0: 1e9, y0: 1e9, x1: -1e9, y1: -1e9 };
+    // under the unit, its dimension chain and its turn handle — never over them
+    for (const x of [g, ...svg.querySelectorAll(".pchain, .prot")]) { const r = x.getBoundingClientRect(); if (!r.width && !r.height) continue; b.x0 = Math.min(b.x0, r.left - hr.left); b.y0 = Math.min(b.y0, r.top - hr.top); b.x1 = Math.max(b.x1, r.right - hr.left); b.y1 = Math.max(b.y1, r.bottom - hr.top); }
+    const r = g.getBoundingClientRect();
+    b.x0 = r.left - hr.left; b.x1 = r.right - hr.left; // centred under the unit itself
+    this.render(b);
+  },
+  refresh() { this.cur = ""; if (ui.planOn) this.placePlan(); else if (view.ready) { view.dirty = true; } },
+  click(e) {
+    const b = e.target.closest("[data-sb]"); if (!b) return;
+    const k = b.dataset.sb, u = selUnit(); if (!u) return;
+    if (k !== "del") this.armed = null;
+    if (k === "nudge") { ui.nudgeOpen = !ui.nudgeOpen; ui.matpOpen = false; renderMatp(); }
+    else if (k === "mat") { ui.matpOpen = !ui.matpOpen; ui.nudgeOpen = false; renderMatp(); }
+    else if (k === "rot") { rotateUnit(u, 90); return; }
+    else if (k === "wc") { openWallComp(u); return; }
+    else if (k === "align") { ui.alignPick = true; alertBar("⇹ دوس على الوحدة اللي عايزها تتظبط عليها (في العرض أو في الشريط اللي تحت)"); }
+    else if (k === "alignx") { ui.alignPick = false; }
+    else if (k === "dup") { dupUnits(u); return; }
+    else if (k === "del") {
+      if (this.armed !== u.id) { this.armed = u.id; clearTimeout(this.armT); this.armT = setTimeout(() => { this.armed = null; this.refresh(); }, 3500); }
+      else { this.armed = null; delUnits(u); return; }
+    }
+    this.refresh();
+  },
+};
+/** turn a unit by `deg` about its centre (it stands free; turned back to face the room the way its wall does, it goes back onto that wall) */
+function rotateUnit(u, deg) {
+  const poses = projectPoses(state.project), L = poses.get(u.id);
+  if (!L) return;
+  const box = localBox(R(u)), c = Room.centerOf(L, box);
+  const rot = (L.rot || 0) - ((+deg || 90) * Math.PI) / 180;
+  const pose = Room.snapPose([], box, c, rot, [], rowOf(u, R(u)));
+  const wall = u.wallBefore && roomSegs(state.project).find((g) => g.id === u.wallBefore.wall);
+  const wrot = wall ? Room.rotFor(wall.n) : null, same = (a, b) => Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b))) < 0.01;
+  pinOthers(u.id);
+  if (L.wall) u.wallBefore = { wall: L.wall, s: L.s };
+  if (wall && same(rot, wrot)) { u.pos = { wall: u.wallBefore.wall, s: u.wallBefore.s }; delete u.wallBefore; }
+  else u.pos = { x: pose.x, z: pose.z, rot };
+  save(); renderChips(); renderProps(); view.update(); if (ui.planOn) plan.render();
+}
+function dupUnits(u) {
+  const many = ui.multi?.size > 1 && ui.multi.has(u.id) ? targetUnits() : [u];
+  const made = many.map((x) => { const c = { ...clone(x), id: uid(), name: x.name + " (نسخة)" }; delete c.code; delete c.pos; return c; });
+  state.project.units.splice(state.project.units.indexOf(u) + 1, 0, ...made);
+  ensureCodes(state.project);
+  if (many.length > 1) ui.multi = new Set(made.map((x) => x.id));
+  state.sel = made[0].id;
+  save(); render(true);
+}
+function delUnits(u) {
+  const many = ui.multi?.size > 1 && ui.multi.has(u.id) ? targetUnits() : [u];
+  const i = state.project.units.indexOf(u), gone = new Set(many.map((x) => x.id));
+  state.project.units = state.project.units.filter((x) => !gone.has(x.id));
+  if (many.length > 1) ui.multi = null;
+  state.sel = state.project.units[Math.max(0, Math.min(i, state.project.units.length) - 1)]?.id ?? state.project.units[0]?.id ?? null;
+  save(); render(true);
+  alertBar(`اتمسحت ${many.length > 1 ? `${many.length} وحدات` : "الوحدة"} — ↶ تراجع لو غلط`);
+}
+/** v117: while a unit follows the finger in 3D, the free space on both sides of it along its wall, next to the finger */
+function dragTag(e, pose, box, others, row) {
+  let el = document.querySelector(".dragtag");
+  if (!e) { el?.remove(); return; }
+  if (!el) { el = document.createElement("div"); el.className = "dragtag"; document.body.appendChild(el); }
+  let t = "واقفة حرة — قرّبها من حيطة تلزق فيها";
+  const seg = pose?.wall && roomSegs(state.project).find((g) => g.id === pose.wall);
+  if (seg) {
+    const w = box.x1 - box.x0, s = tidyPose(pose, box, others).s, en = s + w;
+    let a = 0, b = seg.L;
+    for (const o of others || []) { if (o.pose?.wall !== pose.wall || !sameBand(o.row, row)) continue; const os = o.pose.s, oe = os + (o.box.x1 - o.box.x0); if (oe <= s + 0.6) a = Math.max(a, oe); if (os >= en - 0.6) b = Math.min(b, os); }
+    const k = roomSegs(state.project).indexOf(seg) + 1;
+    t = `حيطة ${k} · ⇤ ${n1(Math.max(0, s - a))}   |   ${n1(Math.max(0, b - en))} ⇥`;
+  }
+  el.textContent = t;
+  el.style.left = Math.min(innerWidth - 20, e.clientX) + "px"; el.style.top = Math.max(70, e.clientY - 70) + "px";
+}
+/** v117: «line up with…» picked on the screen — the target unit was tapped, now choose how */
+function alignPickDone(id) {
+  ui.alignPick = false;
+  ui.alignTo = id;
+  ui.pop = "align"; renderPop(); selBar.refresh();
+}
 const dimTags = {
   el: null, drag: null,
   dims(u, r) {
@@ -4565,7 +4865,7 @@ const dimTags = {
   },
   target() {
     const u = selUnit();
-    if (!u || ui.mode !== "owner" || state.tab !== "design" || ui.planOn || ui.asm || ui.xdraw || ui.xmove || ui.moveMode || ui.multi || ui.present || ui.worker || view.final?.active || document.body.classList.contains("fs")) return null; // moving units: the size tags would sit under the finger
+    if (!u || ui.mode !== "owner" || state.tab !== "design" || ui.planOn || ui.asm || ui.xdraw || ui.xmove || ui.dragging || ui.multi || ui.present || ui.worker || view.final?.active || document.body.classList.contains("fs")) return null; // moving units: the size tags would sit under the finger
     const r = R(u);
     if (!r.ok) return null;
     const d = this.dims(u, r);
@@ -4658,6 +4958,11 @@ function mySavePop() {
     <div class="btnrow">${same && !it ? `<button class="ghost2" data-myreplace="${same.id}">حدّث "${esc(same.label)}"</button>` : ""}<button class="primary" data-myok>${it ? "حفظ" : "احفظ"}</button></div></div>`;
 }
 function renderPop() {
+  if (ui.pop !== "align") ui.alignTo = null;
+  renderPop0();
+  if (typeof selBar !== "undefined") selBar.refresh();
+}
+function renderPop0() {
   const pop = $("#pop");
   if (!ui.pop) { pop.hidden = true; return; }
   let h = "";
@@ -4734,14 +5039,17 @@ function renderPop() {
   else if (ui.pop === "align") {
     const u = selUnit(), poses = projectPoses(state.project), Lu = poses.get(u?.id);
     const cu = Lu ? Room.centerOf(Lu, localBox(R(u))) : [0, 0];
-    const others = state.project.units.filter((x) => x.id !== u?.id && poses.get(x.id) && R(x).ok)
+    const others = state.project.units.filter((x) => x.id !== u?.id && poses.get(x.id) && R(x).ok && (!ui.alignTo || x.id === ui.alignTo))
       .map((x) => { const c = Room.centerOf(poses.get(x.id), localBox(R(x))); return [x, Math.hypot(c[0] - cu[0], c[1] - cu[1])]; })
       .sort((a, b) => a[1] - b[1]).slice(0, 8);
     const n = targetUnits().length;
     h = `<div class="popbox" role="dialog" aria-label="محاذاة"><div class="libhead"><h2>محاذاة ${n > 1 ? `${n} وحدات` : esc(u?.name || "")}</h2><button class="x" data-close aria-label="قفل">×</button></div>
       <p class="hint">اختار الوحدة اللي هتتظبط عليها (مثلاً العلوية على السفلية اللي تحتها). الشمال واليمين وانت باصص على وش الوحدات.</p>
-      <div class="alist">${others.map(([x]) => `<div class="arow"><span><span class="ucode">${esc(unitCode(x))}</span>${esc(x.name)}</span>
-        <span class="aopts"><button class="chip" data-al="${x.id}" data-am="start">⇤ الشمال</button><button class="chip" data-al="${x.id}" data-am="mid">⇹ السنتر</button><button class="chip" data-al="${x.id}" data-am="end">⇥ اليمين</button></span></div>`).join("") || `<p class="hint">مفيش وحدات تانية في المشروع.</p>`}</div></div>`;
+      <div class="alist">${others.map(([x]) => {
+        // v117: two units of the same row can't stand on top of each other — for them «line up» means «stand right next to it»
+        const beside = u && sameBand(rowOf(u, R(u)), rowOf(x, R(x)));
+        return `<div class="arow"><span><span class="ucode">${esc(unitCode(x))}</span>${esc(x.name)}</span>
+        <span class="aopts">${beside ? `<button class="chip" data-al="${x.id}" data-am="before">⇤ لزقها شمالها</button><button class="chip" data-al="${x.id}" data-am="after">لزقها يمينها ⇥</button>` : `<button class="chip" data-al="${x.id}" data-am="start">⇤ الشمال</button><button class="chip" data-al="${x.id}" data-am="mid">⇹ السنتر</button><button class="chip" data-al="${x.id}" data-am="end">⇥ اليمين</button>`}</span></div>`; }).join("") || `<p class="hint">مفيش وحدات تانية في المشروع.</p>`}</div></div>`;
   }
   else if (ui.pop === "mysave") h = mySavePop();
   else if (ui.pop === "variants") h = variantsPop();
@@ -4894,7 +5202,7 @@ $("#pop").addEventListener("change", async (e) => {
       const room = Room.fromRoomPlan(JSON.parse(await e.target.files[0].text()));
       state.project.room = room;
       for (const u of state.project.units) delete u.pos;
-      state.whole = true; ui.planOn = true; ui.planSel = null; plan.vb = null; ui.pop = null;
+      state.whole = true; ui.planOn = true; ui.planIn = "room"; ui.planSel = null; plan.vb = null; ui.pop = null;
       renderPop(); save(); render(true);
       alertBar(`اتعملت ${room.walls.length} حيطة و${room.openings.length} باب/شباك من المسح — راجع المقاسات.`);
     } catch (err) { alertBar(err?.message?.length < 60 ? err.message : "الملف ده مش مسح RoomPlan."); }
@@ -5249,6 +5557,8 @@ async function newProject(name) {
   resetCut();
   state.sel = null; state.libOpen = false; state.tab = "design";
   ui.planSel = null; ui.multi = null; ui.asm = null;
+  // v117: a new project starts where the job starts — the room (step 1), not an empty 3D view
+  ui.planOn = true; ui.planIn = "room"; ui.planView = "plan"; ui.planTool = "select"; plan.vb = null;
   closeHome();
   ui.pop = null; renderPop();
   save(); render(true);
@@ -5259,7 +5569,7 @@ window.noveraRoomScan = (data) => {
     const room = Room.fromRoomPlan(data);
     state.project.room = room;
     for (const u of state.project.units) delete u.pos;
-    state.whole = true; ui.planOn = true; ui.planSel = null; plan.vb = null; ui.pop = null;
+    state.whole = true; ui.planOn = true; ui.planIn = "room"; ui.planSel = null; plan.vb = null; ui.pop = null;
     closeHome(); renderPop(); save(); render(true);
     alertBar(`اتعملت ${room.walls.length} حيطة و${room.openings.length} باب/شباك من المسح — راجع المقاسات وعدّل أي حيطة بالضغط عليها.`);
   } catch (err) { alertBar(err?.message?.length < 80 ? err.message : "ما قدرتش أقرا المسح — جرّب تمسح تاني ببطء."); }
@@ -5335,17 +5645,26 @@ function renderErrs() {
   const el = $("#errs");
   if (!u) { el.hidden = true; return; }
   const r = R(u);
-  const list = [...(r.ok ? [] : r.errors).map((t) => `<p class="e">${esc(t)}</p>`), ...r.checks.filter((c) => c.level === "error").map((c) => `<p class="e">${esc(c.text)}</p>`),
-    ...(r.ok ? r.warnings : []).slice(0, 3).map((t) => `<p class="w">${esc(t)}</p>`)];
-  el.hidden = !list.length;
-  el.innerHTML = list.join("");
+  // v117: one small badge in the corner instead of a strip over the tools; tap it to read them (English engine prefixes in Arabic)
+  const ar = (t) => String(t).replace(/^Handles:\s*/, "المقابض: ").replace(/^Carcass:\s*/, "الهيكل: ").replace(/^Drawers?:\s*/, "الأدراج: ");
+  const errs = [...(r.ok ? [] : r.errors), ...r.checks.filter((c) => c.level === "error").map((c) => c.text)].map(ar);
+  const warns = (r.ok ? r.warnings : []).map(ar);
+  el.hidden = !(errs.length + warns.length);
+  if (el.hidden) return;
+  const open = ui.errsOpen === u.id;
+  const badge = `<button class="errbadge ${errs.length ? "bad" : ""}" data-errtog>${errs.length ? `⛔ ${errs.length} ${errs.length > 1 ? "أخطاء" : "خطأ"}` : ""}${errs.length && warns.length ? " · " : ""}${warns.length ? `⚠ ${warns.length} ${warns.length > 1 ? "ملاحظات" : "ملاحظة"}` : ""}<span>${open ? "▾ اقفل" : "▸ اعرض"}</span></button>`;
+  el.innerHTML = (open ? errs.map((t) => `<p class="e">${esc(t)}</p>`).join("") + warns.slice(0, 6).map((t) => `<p class="w">${esc(t)}</p>`).join("") : "") + badge;
 }
+$("#errs").addEventListener("click", (e) => { if (!e.target.closest("[data-errtog]")) return; const u = selUnit(); ui.errsOpen = ui.errsOpen === u?.id ? null : u?.id; renderErrs(); });
+$("#errs").addEventListener("pointerdown", (e) => e.stopPropagation());
 
 // ------------------------------------------------------------------ project layout (all units on the walls)
 // Room frame: wall A is the line Y = 0 (room towards -Y), wall B the line X = 0 (room towards +X).
 // A unit's own frame is the plugin's: front at y = 0 facing -y, back (wall side) at y = depth;
 // corner units (L / diagonal / open / glass display) sit in the A-B corner.
 const wholeView = () => (ui.mode === "client" ? !!ui.clientWhole : !!state.whole);
+/** v117: units follow the finger whenever the whole project is on screen (no separate move mode) */
+const canMove = () => wholeView() && ui.mode === "owner" && state.tab === "design" && !ui.planOn && !ui.present && !ui.worker && !ui.asm && !ui.xdraw && !ui.xmove && !ui.tapHide && !(view.final?.active);
 function localBox(r) {
   const b = { x0: 1e9, x1: -1e9, y0: 1e9, y1: -1e9 };
   const add = (q) => { b.x0 = Math.min(b.x0, q.x0); b.x1 = Math.max(b.x1, q.x1); b.y0 = Math.min(b.y0, q.y0); b.y1 = Math.max(b.y1, q.y1); };
@@ -5394,6 +5713,37 @@ const roomSegs = (project) => (project?.room ? Room.segments(project.room) : Roo
 
 // ------------------------------------------------------------------ plan (top view) + wall elevations
 const ROW_FILL = { lower: "#cfe3d3", upper: "#e9ddb8", tall: "#b9cdbf", free: "#dcd6ea" };
+/** two rows that can bump into each other on a wall (a tall unit meets both the lower and the upper row) */
+const sameBand = (a, b) => a === b || a === "tall" || b === "tall";
+/** v117: a unit standing on a wall and its neighbours there — what the live dimension chain shows and edits */
+function wallSpan(project, id) {
+  const poses = projectPoses(project), L = poses.get(id);
+  if (!L?.wall) return null;
+  const segs = roomSegs(project), seg = segs.find((g) => g.id === L.wall);
+  if (!seg) return null;
+  const items = projectItems(project), it = items.find((x) => x.id === id);
+  if (!it) return null;
+  const w = it.box.x1 - it.box.x0, s = L.s, e = s + w;
+  let leftEnd = 0, rightStart = seg.L;
+  for (const o of items) {
+    const P = poses.get(o.id);
+    if (o.id === id || P?.wall !== L.wall || !sameBand(o.row, it.row)) continue;
+    const os = P.s, oe = P.s + (o.box.x1 - o.box.x0);
+    if (oe <= s + 0.6) leftEnd = Math.max(leftEnd, oe);
+    if (os >= e - 0.6) rightStart = Math.min(rightStart, os);
+  }
+  return { seg, L, it, w, s, e, leftEnd, rightStart, depth: it.box.y1 - it.box.y0, index: segs.indexOf(seg) + 1 };
+}
+/** v117: a dragged unit lands on whole centimetres — unless it sits flush against a neighbour or a wall end */
+function tidyPose(pose, box, others) {
+  if (!pose?.wall) return pose;
+  const w = box.x1 - box.x0, edges = [0];
+  const seg = roomSegs(state.project).find((g) => g.id === pose.wall);
+  if (seg) edges.push(seg.L - w);
+  for (const o of others || []) if (o.pose?.wall === pose.wall) { const ow = o.box.x1 - o.box.x0; edges.push(o.pose.s + ow, o.pose.s - w); }
+  const near = edges.find((x) => Math.abs(x - pose.s) < 0.6);
+  return { ...pose, s: near != null ? Math.round(near * 10) / 10 : Math.round(pose.s) };
+}
 const plan = {
   vb: null, pointers: new Map(), act: null, hover: null,
   host: () => $("#plan"),
@@ -5430,9 +5780,10 @@ const plan = {
     const host = this.host();
     if (!ui.planOn) { host.hidden = true; return; }
     host.hidden = false;
-    if (ui.planView === "elev") { host.innerHTML = this.elevSvg(ui.planSel?.id); return; }
+    if (ui.planView === "elev") { host.innerHTML = this.elevSvg(ui.planSel?.id); selBar.render(null); return; }
     if (!this.vb) this.fit();
     host.innerHTML = this.svg();
+    selBar.placePlan();
   },
   svg() {
     const room = this.room(), vb = this.vb;
@@ -5454,6 +5805,15 @@ const plan = {
       let ang = (Math.atan2(sg.d[1], sg.d[0]) * 180) / Math.PI;
       if (ang > 90 || ang < -90) ang += 180;
       h += `<text x="${mid[0]}" y="${mid[1]}" font-size="${fs}" class="pdim" transform="rotate(${ang} ${mid[0]} ${mid[1]})" text-anchor="middle" dominant-baseline="middle">${n1(sg.L)}</text>`;
+      // v117: the wall's number (as every message and field calls it) and a small arrow at its start («من أولها»)
+      if (!plan.printing) {
+        const k = segs.findIndex((x) => x.id === sg.id) + 1, bo = sg.t + fs * 3.3;
+        const bx = sg.A[0] + sg.d[0] * sg.L / 2 - sg.n[0] * bo, bz = sg.A[1] + sg.d[1] * sg.L / 2 - sg.n[1] * bo;
+        h += `<g class="pwnum ${on ? "on" : ""}" data-wall="${sg.id}"><circle cx="${bx}" cy="${bz}" r="${fs * 0.95}"/><text x="${bx}" y="${bz}" font-size="${fs * 1.05}" text-anchor="middle" dominant-baseline="central">${k}</text></g>`;
+        const ax = sg.A[0] + sg.d[0] * Math.min(sg.L * 0.25, fs * 2.2) - sg.n[0] * sg.t / 2, az = sg.A[1] + sg.d[1] * Math.min(sg.L * 0.25, fs * 2.2) - sg.n[1] * sg.t / 2;
+        const tl = Math.min(fs * 0.9, sg.t * 0.9), tw = Math.min(fs * 0.5, sg.t * 0.42);
+        h += `<polygon class="pwstart" points="${[[ax + sg.d[0] * tl, az + sg.d[1] * tl], [ax - sg.n[0] * tw, az - sg.n[1] * tw], [ax + sg.n[0] * tw, az + sg.n[1] * tw]].map((p) => p.join(",")).join(" ")}"/>`;
+      }
     }
     // corners that are not square: their inside angle
     let angH = "";
@@ -5489,12 +5849,21 @@ const plan = {
     // units (wall units drawn last, dashed, since they hang above)
     const poses = projectPoses(state.project);
     const items = projectItems(state.project).sort((x, y) => (x.row === "upper") - (y.row === "upper"));
+    // v117: which row the plan shows — all (the upper row as a dashed outline you can see through), only the lower or only the upper row
+    const rows = ui.planRows || "all";
     for (const it of items) {
       const L = poses.get(it.id);
       if (!L) continue;
+      if (rows === "lower" && it.row === "upper") continue;
+      const ghost = rows === "upper" && it.row !== "upper" && it.row !== "tall";
       const u = state.project.units.find((x) => x.id === it.id);
       const fp = Room.footprint(L, it.box);
       const on = state.sel === it.id;
+      if (ghost) { h += `<polygon points="${fp.map((p) => p.join(",")).join(" ")}" class="pghost"/>`; continue; }
+      if (it.row === "upper" && rows === "all" && !on) {
+        h += `<g class="punit upper thru" data-unit="${it.id}"><polygon points="${fp.map((p) => p.join(",")).join(" ")}" fill="${ROW_FILL.upper}"/></g>`;
+        continue;
+      }
       const c = Room.centerOf(L, it.box);
       const wpx = Math.max(1, it.box.x1 - it.box.x0);
       const tfs = Math.min(fs * 0.9, wpx / Math.max(4, u.name.length * 0.55));
@@ -5520,12 +5889,40 @@ const plan = {
       const r = fs * (l.kind === "pendant" ? 1.1 : 0.8);
       h += `<g class="plight"><circle cx="${l.x}" cy="${l.z}" r="${r}" fill="#fff3c4" stroke="#b07d12" stroke-width="${fs * 0.1}"/>${l.kind === "pendant" ? `<circle cx="${l.x}" cy="${l.z}" r="${r * 0.55}" fill="none" stroke="#b07d12" stroke-width="${fs * 0.1}"/>` : `<path d="M${l.x - r * 0.6} ${l.z - r * 0.6}L${l.x + r * 0.6} ${l.z + r * 0.6}M${l.x + r * 0.6} ${l.z - r * 0.6}L${l.x - r * 0.6} ${l.z + r * 0.6}" stroke="#b07d12" stroke-width="${fs * 0.1}"/>`}</g>`;
     }
+    // v117: live dimension chains — the selected unit (or door / window) and the free space on both sides of it along its wall;
+    // every number is a button: tap it and type the distance you want
+    if (!plan.printing && ui.planTool !== "draw") {
+      const chain = (sg, a, b, off, key, cls = "") => {
+        if (b - a < 0.4) return "";
+        const P = (s, o) => [sg.A[0] + sg.d[0] * s + sg.n[0] * o, sg.A[1] + sg.d[1] * s + sg.n[1] * o];
+        const p0 = P(a, off), p1 = P(b, off), t0 = P(a, off - fs * 0.45), t1 = P(a, off + fs * 0.45), u0 = P(b, off - fs * 0.45), u1 = P(b, off + fs * 0.45);
+        const m = P((a + b) / 2, off);
+        let ang = (Math.atan2(sg.d[1], sg.d[0]) * 180) / Math.PI;
+        if (ang > 90 || ang < -90) ang += 180;
+        const txt = n1(b - a), tw = fs * (0.62 * txt.length + 1.1), th = fs * 1.5;
+        return `<g class="pchain ${cls}"><line x1="${p0[0]}" y1="${p0[1]}" x2="${p1[0]}" y2="${p1[1]}"/><line x1="${t0[0]}" y1="${t0[1]}" x2="${t1[0]}" y2="${t1[1]}"/><line x1="${u0[0]}" y1="${u0[1]}" x2="${u1[0]}" y2="${u1[1]}"/>
+          <g class="pdimbtn" data-pdim="${key}" transform="rotate(${ang} ${m[0]} ${m[1]})"><rect x="${m[0] - tw / 2}" y="${m[1] - th / 2}" width="${tw}" height="${th}" rx="${th / 2}"/><text x="${m[0]}" y="${m[1]}" font-size="${fs * 0.95}" text-anchor="middle" dominant-baseline="central">${txt}</text></g></g>`;
+      };
+      const ws = state.sel && (sel?.kind === "unit" || !sel || plan.act?.kind === "unit") ? wallSpan(state.project, state.sel) : null;
+      if (ws && (rows === "all" || (rows === "upper") === (ws.it.row === "upper") || ws.it.row === "tall")) {
+        const off = ws.depth + fs * 1.3;
+        h += chain(ws.seg, ws.leftEnd, ws.s, off, "gl", "gap") + chain(ws.seg, ws.s, ws.e, off, "w") + chain(ws.seg, ws.e, ws.rightStart, off, "gr", "gap");
+      }
+      if (sel?.kind === "open") {
+        const o = (room?.openings || []).find((x) => x.id === sel.id), sg = o && segs.find((x) => x.id === o.wall);
+        if (sg) { const off = fs * 2.4; h += chain(sg, 0, o.at, off, "oa", "gap") + chain(sg, o.at, o.at + o.w, off, "ow") + chain(sg, o.at + o.w, sg.L, off, "ob", "gap"); }
+      }
+      if (sel?.kind === "pt") {
+        const pt = (room?.points || []).find((x) => x.id === sel.id), sg = pt && segs.find((x) => x.id === pt.wall);
+        if (sg) { const off = fs * 3.2; h += chain(sg, 0, pt.at, off, "pa", "gap") + chain(sg, pt.at, sg.L, off, "pb", "gap"); }
+      }
+    }
     // rotate handle in front of the selected unit
     {
       const it = items.find((x) => x.id === state.sel), L = it && poses.get(it.id);
       if (L && ui.planTool !== "draw" && !plan.printing) {
         const c = Room.centerOf(L, it.box), f = Room.axisZ(L.rot);
-        const dep = (it.box.y1 - it.box.y0) / 2 + fs * 2.4;
+        const dep = (it.box.y1 - it.box.y0) / 2 + fs * (wallSpan(state.project, it.id) ? 3.9 : 2.4);
         const hx = c[0] + f[0] * dep, hz = c[1] + f[1] * dep;
         h += `<line x1="${c[0] + f[0] * ((it.box.y1 - it.box.y0) / 2)}" y1="${c[1] + f[1] * ((it.box.y1 - it.box.y0) / 2)}" x2="${hx}" y2="${hz}" class="prot-l"/><g class="prot" data-rot="1"><circle cx="${hx}" cy="${hz}" r="${fs * 1.1}"/><text x="${hx}" y="${hz}" font-size="${fs * 1.3}" text-anchor="middle" dominant-baseline="central">↻</text></g>`;
       }
@@ -5548,7 +5945,6 @@ const plan = {
     } else if (room) {
       room.pts.forEach((p, i) => { h += `<circle cx="${p[0]}" cy="${p[1]}" r="${fs * 0.55}" class="phandle" data-pt="${i}"/>`; });
     }
-    if (!room && ui.planTool !== "draw") h += `<text x="${vb.x + vb.w / 2}" y="${vb.y + fs * 3}" font-size="${fs * 1.2}" text-anchor="middle" class="phint">مفيش حيطان لسه — اختار "أوضة جاهزة" أو "ارسم حيطان"</text>`;
     return h + `</svg>`;
   },
   /** wall elevation: the wall, its openings and the fronts of every unit standing against it */
@@ -5632,6 +6028,8 @@ const plan = {
       renderChips(); renderProps(); plan.render();
       return;
     }
+    const dimB = e.target.closest("[data-pdim]");
+    if (dimB) { plan.pointers.delete(e.pointerId); planDimEdit(dimB); return; }
     const t = e.target.closest("[data-rot],[data-pt],[data-open],[data-mep],[data-col],[data-unit],[data-wall]");
     const d = t?.dataset || {};
     if (d.pt != null) plan.act = { kind: "pt", i: +d.pt };
@@ -5639,6 +6037,7 @@ const plan = {
     else if (d.col) { ui.planSel = { kind: "col", id: d.col }; const c = room().columns.find((o) => o.id === d.col); plan.act = { kind: "col", c, off: [c.x - p[0], c.z - p[1]] }; after(true); }
     else if (d.open) { ui.planSel = { kind: "open", id: d.open }; plan.act = { kind: "open", id: d.open, p0: p, at0: room().openings.find((o) => o.id === d.open).at }; after(true); }
     else if (d.unit) {
+      if (ui.alignPick && d.unit !== state.sel) { plan.pointers.delete(e.pointerId); alignPickDone(d.unit); return; }
       if (state.sel !== d.unit) { state.sel = d.unit; renderStrip(); }
       ui.planSel = { kind: "unit", id: d.unit };
       const u = selUnit(), L = projectPoses(state.project).get(u.id), box = localBox(R(u));
@@ -5699,7 +6098,7 @@ const plan = {
       const o = room().openings.find((x) => x.id === a.id);
       const seg = Room.segments(room()).find((x) => x.id === o.wall);
       const da = (p[0] - a.p0[0]) * seg.d[0] + (p[1] - a.p0[1]) * seg.d[1];
-      o.at = Math.max(0, Math.min(seg.L - o.w, Math.round((a.at0 + da) * 2) / 2));
+      o.at = Math.max(0, Math.min(seg.L - o.w, Math.round(a.at0 + da)));
       plan.render();
     } else if (a.kind === "wall") {
       const off = Math.round((p[0] - a.p0[0]) * a.sg.n[0] + (p[1] - a.p0[1]) * a.sg.n[1]);
@@ -5730,9 +6129,9 @@ const plan = {
       plan.render();
     } else if (a.kind === "unit") {
       if (!a.pinned) { a.pinned = true; pinOthers(a.u.id); }
-      a.pose = Room.snapPose(a.segs, a.box, [p[0] + a.off[0], p[1] + a.off[1]], a.rot, a.others, a.row);
+      a.pose = tidyPose(Room.snapPose(a.segs, a.box, [p[0] + a.off[0], p[1] + a.off[1]], a.rot, a.others, a.row), a.box, a.others);
       a.u.pos = a.pose.wall ? { wall: a.pose.wall, s: a.pose.s } : { x: a.pose.x, z: a.pose.z, rot: a.pose.rot };
-      a.moved = true;
+      a.moved = true; ui.dragging = true;
       plan.render();
     }
   });
@@ -5741,7 +6140,7 @@ const plan = {
     const a = plan.act;
     if (!a) return;
     if (a.kind === "pinch" && plan.pointers.size) return;
-    plan.act = null;
+    plan.act = null; ui.dragging = false;
     if (["unit", "pt", "open", "mep", "col", "wall", "rot"].includes(a.kind)) { after(true); view.update(); }
   };
   host.addEventListener("pointerup", up);
@@ -5752,6 +6151,46 @@ const plan = {
     plan.vb = { x: p[0] - (p[0] - vb.x) * k, y: p[1] - (p[1] - vb.y) * k, w: vb.w * k, h: vb.h * k };
     plan.render();
   }, { passive: false });
+}
+/** v117: a number of the plan's live dimension chain was tapped — type the distance you want */
+function planDimEdit(el) {
+  const k = el.dataset.pdim, room = state.project.room;
+  const val = +el.textContent || 0;
+  const done = () => { save(); plan.render(); renderProps(); renderChips(); view.update(); };
+  if (k === "gl" || k === "gr" || k === "w") {
+    const u = selUnit(), ws = u && wallSpan(state.project, u.id);
+    if (!ws) return;
+    if (k === "w") {
+      const dk = dimTags.dims(u, R(u))[0]?.[0] || "width";
+      numAsk(el, "عرض الوحدة", val, (v) => { if (v > 0) setParams(u, (p) => { p[dk] = v; }); }, { min: 5 });
+      return;
+    }
+    const max = ws.seg.L - ws.w;
+    numAsk(el, k === "gl" ? "المسافة اللي قبلها" : "المسافة اللي بعدها", val, (v) => {
+      pinOthers(u.id);
+      const s = k === "gl" ? ws.leftEnd + v : ws.rightStart - v - ws.w;
+      u.pos = { wall: ws.L.wall, s: Math.round(Math.max(0, Math.min(max, s)) * 10) / 10 };
+      done();
+    }, { min: 0 });
+    return;
+  }
+  const sel = ui.planSel;
+  if (!room || !sel) return;
+  const segOf = (id) => Room.segments(room).find((x) => x.id === id);
+  if (sel.kind === "open") {
+    const o = room.openings.find((x) => x.id === sel.id), sg = o && segOf(o.wall);
+    if (!sg) return;
+    const lab = { oa: "من أول الحيطة لحد الفتحة", ow: "عرض الفتحة", ob: "من الفتحة لآخر الحيطة" }[k];
+    numAsk(el, lab, val, (v) => {
+      if (k === "ow") o.w = Math.max(10, Math.min(sg.L - o.at, v));
+      else o.at = Math.max(0, Math.min(sg.L - o.w, k === "oa" ? v : sg.L - o.w - v));
+      done();
+    }, { min: 0 });
+  } else if (sel.kind === "pt") {
+    const pt = (room.points || []).find((x) => x.id === sel.id), sg = pt && segOf(pt.wall);
+    if (!sg) return;
+    numAsk(el, k === "pa" ? "من أول الحيطة" : "لآخر الحيطة", val, (v) => { pt.at = Math.max(0, Math.min(sg.L, k === "pa" ? v : sg.L - v)); done(); }, { min: 0 });
+  }
 }
 function finishDraw(close) {
   const pts = ui.draft || [];
@@ -5828,6 +6267,7 @@ const view = {
         // while a finger turns the camera: skip the heavy ambient-occlusion pass, add it back when it stops
         if (this.usePost() && !this.interacting) this.postFx.render(); else this.ren.render(this.scene, this.cam);
         dimTags.place(this);
+        selBar.place3d(this);
       };
       this.ren.shadowMap.autoUpdate = false;
       this.ren.shadowMap.needsUpdate = true;
@@ -6320,7 +6760,7 @@ const view = {
       if (inspected && ui.cut && r.ok) { ug.updateMatrixWorld(true); this.cutUnit(ug, ui.cut, ui.cutT ?? 0.5); }
       if (whole && u.id === (ui.mode === "client" ? ui.clientUnit?.id : state.sel) && ui.mode === "owner") selBox = ug;
       // move mode: gold dots on the selected unit's corners — hold one to move the unit by that corner
-      if (whole && ui.moveMode && ui.mode === "owner" && u.id === state.sel && r.ok) {
+      if (whole && ui.mode === "owner" && u.id === state.sel && r.ok && !ui.multi && !ui.present && !ui.worker) {
         const lb = new THREE.Box3();
         ug.updateMatrixWorld(true);
         const inv = ug.matrixWorld.clone().invert();
@@ -6341,9 +6781,10 @@ const view = {
     if (whole && ui.ergo?.on && ui.mode === "owner") this.buildErgo(g, dark);
     g.updateMatrixWorld(true);
     const box = new THREE.Box3().setFromObject(g);
-    if (selBox) {
+    const sb0 = selBox && new THREE.Box3().setFromObject(selBox);
+    if (selBox && !sb0.isEmpty()) { // (a unit with no boards yet — a wall not divided yet — has no box: nothing to outline)
       // a gold glass box + footprint around the selected unit: this is the one that moves
-      const sb = new THREE.Box3().setFromObject(selBox);
+      const sb = sb0;
       const bs = sb.getSize(new THREE.Vector3()).addScalar(4), bc = sb.getCenter(new THREE.Vector3());
       const bx = new THREE.Mesh(new THREE.BoxGeometry(bs.x, bs.y, bs.z), new THREE.MeshBasicMaterial({ color: 0xd9a63a, transparent: true, opacity: ui.moveMode ? 0.16 : 0.08, depthWrite: false }));
       bx.position.copy(bc);
@@ -6482,13 +6923,46 @@ const view = {
     if (cam.far < d * 4) { cam.far = d * 10; cam.updateProjectionMatrix(); }
     // standard views around what the camera looks at (x → right, z → towards the viewer, y up)
     const dirs = { top: [0.0001, 1, 0.0001], front: [0, 0.06, 1], back: [0, 0.06, -1], right: [1, 0.06, 0], left: [-1, 0.06, 0], iso: [0.62, 0.5, 0.78] };
+    // v117: with a room, the views turn with it — «فوق» puts the main wall (the one carrying most units) at the top of the screen,
+    // square to the screen, and «قدام» looks straight at that wall (before: the room came out turned 45° and half off screen)
+    const project = ui.mode === "client" ? ui.sharedProject : state.project;
+    if (wholeView() && project?.room) {
+      const segs = Room.segments(project.room), count = new Map();
+      for (const L of this.poses?.values() || []) if (L.wall) count.set(L.wall, (count.get(L.wall) || 0) + 1);
+      const main = segs.slice().sort((a, b) => (count.get(b.id) || 0) - (count.get(a.id) || 0) || b.L - a.L)[0];
+      if (main) {
+        const [nx, nz] = main.n, [dx, dz] = main.d;
+        Object.assign(dirs, { top: [nx * 0.002, 1, nz * 0.002], front: [nx, 0.06, nz], back: [-nx, 0.06, -nz], right: [dx, 0.06, dz], left: [-dx, 0.06, -dz] });
+      }
+    }
     const v = dirs[kind];
     if (!v) return;
     const n = Math.hypot(...v);
     c.set(t.x + (v[0] / n) * d, t.y + (v[1] / n) * d, t.z + (v[2] / n) * d);
     this.cam.up.set(0, 1, 0);
-    this.cam.lookAt(t); this.ctl.update?.();
+    this.cam.lookAt(t);
+    // frame the whole project in the new view, clear of the buttons floating over the top of it
+    if (flat && wholeView()) { this.fitTight(this.cam.aspect, 0.1); this.clearOfChips(); }
+    this.ctl.update?.();
     this.dirty = true;
+  },
+  /** v117: after a fit, move the picture down (and a little further away) so nothing hides under the buttons floating over the top of the view */
+  clearOfChips() {
+    const T = this.three, c = this.cam, ch = $("#chips"), cv = this.ren.domElement.getBoundingClientRect();
+    const cr = ch && !ch.hidden ? ch.getBoundingClientRect() : null;
+    const top = cr && cr.height ? Math.max(0, Math.min(cv.height * 0.4, cr.bottom - cv.top + 8)) : 0;
+    c.lookAt(this.ctl.target);
+    if (top < 4) return;
+    const H = cv.height, k = H / (H - top), t = this.ctl.target;
+    const dir = c.position.clone().sub(t), dist = dir.length() * k;
+    dir.normalize();
+    c.updateMatrixWorld(true);
+    const up = new T.Vector3().setFromMatrixColumn(c.matrixWorld, 1);
+    const hw = 2 * dist * Math.tan((c.fov * Math.PI) / 360);
+    t.addScaledVector(up, (top / 2 / H) * hw);
+    c.position.copy(t).addScaledVector(dir, dist);
+    c.far = Math.max(c.far, dist * 20); c.updateProjectionMatrix();
+    c.lookAt(t);
   },
   /** lift a unit a little and tint it while it is being moved */
   highlight(id, on) {
@@ -7429,6 +7903,34 @@ function alertBar(t) {
   d.textContent = t;
   document.body.appendChild(d);
   setTimeout(() => d.remove(), 3500);
+}
+/** v117: type a number right where it is shown — a small box with the app's number pad opens over the tapped label.
+ *  `at` = the element tapped (or {x, y} on screen), `onSet(v)` gets the new number (only when it changed). */
+function numAsk(at, label, value, onSet, { min = -1e9, max = 1e9, unit = "سم" } = {}) {
+  document.querySelector(".numask")?.remove();
+  const r = at?.getBoundingClientRect ? at.getBoundingClientRect() : { left: at.x, top: at.y, width: 0, height: 0 };
+  const box = document.createElement("div");
+  box.className = "numask";
+  box.innerHTML = `<label><span>${esc(label)}</span><input type="text" inputmode="${Keypad.active() ? "none" : "decimal"}" data-keypad data-kpsolo value="${n1(+value || 0)}" aria-label="${esc(label)}"><small>${esc(unit)}</small></label><button class="numok" aria-label="تمام">✓</button>`;
+  document.body.appendChild(box);
+  const bw = box.offsetWidth, bh = box.offsetHeight;
+  const x = Math.max(8, Math.min(innerWidth - bw - 8, r.left + r.width / 2 - bw / 2));
+  const y = r.top - bh - 8 > 60 ? r.top - bh - 8 : Math.min(innerHeight - bh - 8, r.top + r.height + 8);
+  box.style.left = x + "px"; box.style.top = y + "px";
+  const inp = box.querySelector("input");
+  let done = false;
+  const finish = (ok) => {
+    if (done) return; done = true;
+    const v = toNum(inp.value);
+    box.remove();
+    if (ok && Number.isFinite(v) && Math.abs(v - (+value || 0)) > 1e-6) onSet(Math.max(min, Math.min(max, v)));
+  };
+  inp.addEventListener("keydown", (ev) => { if (ev.key === "Enter") finish(true); if (ev.key === "Escape") finish(false); });
+  inp.addEventListener("blur", () => setTimeout(() => { if (document.activeElement !== inp) finish(true); }, 60));
+  box.querySelector(".numok").addEventListener("pointerdown", (ev) => { ev.preventDefault(); finish(true); });
+  box.addEventListener("pointerdown", (ev) => ev.stopPropagation());
+  setTimeout(() => { inp.focus(); inp.select(); }, 0);
+  return box;
 }
 let ownerSubs = [];
 function watchOwnerShared() {

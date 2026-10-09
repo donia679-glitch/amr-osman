@@ -1147,7 +1147,12 @@ function twoClick(make, label) {
     click(xy) {
       const st = ui.st;
       const inf = infer(...xy, st ? { anchor: st.a, plane: st.plane, axes: ui.tool === "rect" ? [] : inPlaneAxes(st.plane) } : {});
-      if (!st) { const pl = drawPlaneFor(inf); ui.st = { plane: pl, a: inf.p, a2: G.toPlane(pl, inf.p).slice(0, 2) }; if (ui.tool === "rect") { setMsg(`الركن الأول اتحدد (${planeName(pl)}) — دوس الركن التاني، أو اكتب العرض والطول في الجنب ودوس «ارسم»`); renderUI(); } return; }
+      if (!st) {
+        const pl = drawPlaneFor(inf); ui.st = { plane: pl, a: inf.p, a2: G.toPlane(pl, inf.p).slice(0, 2) };
+        overlay(() => oMarker({ ...inf, kind: inf.kind === "free" || !inf.kind ? "end" : inf.kind, label: "الركن الأول" })); // v117: show where the first corner landed
+        if (ui.tool === "rect") { setMsg(`الركن الأول اتحدد (${planeName(pl)}) — دوس الركن التاني، أو اكتب العرض والطول في الجنب ودوس «ارسم»`); renderUI(); }
+        return;
+      }
       const b2 = G.toPlane(st.plane, inf.p).slice(0, 2);
       if (Math.hypot(b2[0] - st.a2[0], b2[1] - st.a2[1]) < 0.2) return;
       const sh = make(st.a2, b2);
@@ -1175,7 +1180,9 @@ function twoClick(make, label) {
       if (ui.tool === "rect") {
         const [w, h] = v.list || [v.v, v.v];
         if (!(w > 0) || !(h > 0)) return;
-        const sx = st.hb ? Math.sign(st.hb[0] - st.a2[0]) || 1 : ui.rdir[0], sy = st.hb ? Math.sign(st.hb[1] - st.a2[1]) || 1 : ui.rdir[1];
+        let sy0 = ui.rdir[1];
+        if (!ui.rdirSet) { const cp = cam.position, cw = [cp.x, -cp.z, cp.y], cv = G.toPlane(st.plane, cw)[1] - st.a2[1]; if (Math.abs(cv) > 1) sy0 = Math.sign(cv); }
+        const sx = st.hb ? Math.sign(st.hb[0] - st.a2[0]) || 1 : ui.rdir[0], sy = st.hb ? Math.sign(st.hb[1] - st.a2[1]) || 1 : sy0;
         commitShape(make(st.a2, [st.a2[0] + sx * w, st.a2[1] + sy * h]), st.plane);
       } else if (v.v > 0) {
         const ang = st.hb ? Math.atan2(st.hb[1] - st.a2[1], st.hb[0] - st.a2[0]) : 0;
@@ -1189,6 +1196,33 @@ function commitShape(sh, plane) {
   if (!sh) return;
   edit(() => { const k = addSketch({ plane, pts: sh.pts, closed: true }); if (sh.center) k.center = sh.center; if (sh.smooth) k.smooth = true; });
   overlay();
+  showIfHidden(sh.pts.map((p) => G.toWorld(plane, p)));
+}
+/** v117: something was just drawn where the camera can't see it (behind the view, off screen): frame the drawing */
+function showIfHidden(W) {
+  if (!cam || !W?.length) return;
+  cam.updateMatrixWorld(true);
+  const out = W.some((P) => { const q = T3(P).project(cam); return q.z > 1 || Math.abs(q.x) > 1.02 || Math.abs(q.y) > 1.02; });
+  if (out) { zoomExtents(); setMsg("الشكل اترسم بره الكادر — الكاميرا راحت له"); }
+}
+/** v117: «✓ خلصت» with flat shapes only (no board has a thickness yet): offer to make them boards first */
+function flatSheet() {
+  el.querySelector(".dsleave")?.remove();
+  const n = M.sketches.filter((k) => k.closed).length;
+  const p = document.createElement("div"); p.className = "dsleave";
+  p.innerHTML = `<div class="dsleavebox"><b>الرسمة لسه أشكال مسطّحة</b><p>${n} شكل من غير سُمك — عشان يبقوا ألواح تتقص لازم يبقى ليهم سُمك (سحب / زق).</p>
+    <div class="dsbtns"><button class="dsb primary" data-ds="flatmake">▤ اعملهم ألواح 1.8 سم وخلّص</button><button class="dsb" data-ds="leaveback">ارجع للرسم</button><button class="dsb" data-ds="flatdone">احفظ زي ما هي</button></div></div>`;
+  el.appendChild(p);
+}
+function flatMake(t = 1.8) {
+  const cp = cam.position, cw = [cp.x, -cp.z, cp.y];
+  edit(() => {
+    for (const k of M.sketches.filter((x) => x.closed && x.pts.length >= 3)) {
+      const toward = G.dot(G.nOf(k.plane), G.sub(cw, G.toWorld(k.plane, k.pts[0]))) >= 0 ? 1 : -1; // the board grows towards the viewer (off the wall it was drawn on)
+      const s = solidFromLoop(k.plane, k.pts, toward * t, k.holes);
+      if (s) { M.solids.push(s); M.sketches = M.sketches.filter((x) => x !== k); }
+    }
+  });
 }
 TOOL.rect = twoClick((a, b) => (Math.abs(a[0] - b[0]) < 0.05 || Math.abs(a[1] - b[1]) < 0.05 ? null : { pts: G.rect(a[0], a[1], b[0], b[1]) }), (st, b) => {
   st.hb = b; const w = Math.abs(b[0] - st.a2[0]), h = Math.abs(b[1] - st.a2[1]);
@@ -2495,7 +2529,7 @@ function onClick(e) {
   if (d.rot90 != null) { rotSel90(+d.rot90); return; }
   if (d.orient) { orientSel(d.orient); return; }
   if (d.plane) { ui.plane = d.plane; if (ui.face2d) { ui.face2d = null; applyControls(); } if (ui.st && DRAWTOOLS_WALL.includes(ui.tool)) ui.st = null; renderUI(); setMsg(d.plane === "auto" ? "الرسم على الوش اللي تحت صباعك" : `الرسم ${PLANES.find((x) => x[0] === d.plane)[1].replace(/^\S+ /, "")}`); return; }
-  if (d.rdir != null) { const i = +d.rdir; if (i < 2) ui.rdir[0] = i === 0 ? 1 : -1; else ui.rdir[1] = i === 2 ? 1 : -1; renderUI(); return; }
+  if (d.rdir != null) { const i = +d.rdir; if (i < 2) ui.rdir[0] = i === 0 ? 1 : -1; else { ui.rdir[1] = i === 2 ? 1 : -1; ui.rdirSet = true; } renderUI(); return; }
   if (d.mv) { const [ax, sg] = d.mv.split(",").map(Number); const dist = +el.querySelector("#dsMvD").value; if (!(dist > 0)) { setMsg("اكتب المسافة الأول"); return; } ui.mvD = dist; moveSelBy(G.mul(AX[ax], sg * dist)); return; }
   if (d.align != null) { alignSel(+el.querySelector("#dsAlAx").value, d.align); return; }
   if (d.mirror != null) { mirrorSel(+d.mirror); return; }
@@ -2509,7 +2543,9 @@ function onClick(e) {
   }
   switch (d.ds) {
     case "rectgo": rectGo(); break;
-    case "done": finishDone(); break;
+    case "done": if (!M.solids.length && !M.sweeps.length && M.sketches.some((k) => k.closed)) flatSheet(); else finishDone(); break;
+    case "flatmake": el.querySelector(".dsleave")?.remove(); flatMake(); finishDone(); break;
+    case "flatdone": el.querySelector(".dsleave")?.remove(); finishDone(); break;
     case "cancel": if (!changed()) { ctx.onCancel?.(); close(); } else leaveSheet(); break;
     case "leavesave": el.querySelector(".dsleave")?.remove(); finishDone(); break;
     case "leavedrop": el.querySelector(".dsleave")?.remove(); ctx.onCancel?.(); close(); break;

@@ -3026,6 +3026,38 @@ export const LIST = {
                 "niches": [ { "on": true, "x": "center", "z": 40, "w": 150, "h": 35, "depth": 25, "shelves": 0, "led": true, "lining": "carcass", "back": "carcass" } ] },
             "materials": { "carcass": { "lib": "hpl_offwhite" }, "front": { "lib": "hpl_offwhite" }, "accent": { "lib": "wood_walnut_v" }, "shelf": { "lib": "hpl_offwhite" } } }
     },
+    "wc_tv": {
+        "label": "حيطة مقسومة: شاشة بين مكتبتين",
+        "group": "الريسبشن",
+        "desc": "قسّم الحيطة: أرفف بليد يمين وشمال، وفي النص تكسية مصمتة فوق مكان الشاشة وأدراج تحتها — افتحها وغيّر أي خانة أو مقاس بلمسة.",
+        "params": { "template": "wall_comp", "width": 360, "height": 260, "handle": "push",
+            "wc": { "depth": 35, "root": { "dir": "v", "parts": [ { "size": 60, "node": { "kind": "open", "shelves": 5, "led": true } },
+                { "size": null, "node": { "dir": "h", "parts": [ { "size": 80, "node": { "kind": "solid" } }, { "size": null, "node": { "kind": "device", "tv": true } }, { "size": 50, "node": { "kind": "drawers", "count": 2, "depth": 45 } } ] } },
+                { "size": 60, "node": { "kind": "open", "shelves": 5, "led": true } } ] } },
+            "materials": { "carcass": { "lib": "hpl_offwhite" }, "front": { "lib": "hpl_offwhite" }, "accent": { "lib": "wood_walnut_v" }, "shelf": { "lib": "hpl_offwhite" } } }
+    },
+    "wc_wardrobe": {
+        "label": "حيطة مقسومة: دولاب حيطة بأدراج وتجويف",
+        "group": "غرف النوم",
+        "desc": "دولاب حيطة كاملة: ضلف فوق وأدراج تحت في الأطراف، وفي النص تجويف ديكور بليد وأدراج — كل خانة بتتغيّر من «قسّم الحيطة».",
+        "params": { "template": "wall_comp", "width": 300, "height": 260, "handle": "bar",
+            "wc": { "depth": 58, "root": { "dir": "v", "parts": [
+                { "size": 100, "node": { "dir": "h", "parts": [ { "size": null, "node": { "kind": "doors", "count": 2, "shelves": 3 } }, { "size": 70, "node": { "kind": "drawers", "count": 3 } } ] } },
+                { "size": null, "node": { "dir": "h", "parts": [ { "size": 60, "node": { "kind": "doors", "count": 1, "shelves": 0 } }, { "size": null, "node": { "kind": "niche", "shelves": 1, "led": true, "depth": 35 } }, { "size": 70, "node": { "kind": "drawers", "count": 3 } } ] } },
+                { "size": 100, "node": { "dir": "h", "parts": [ { "size": null, "node": { "kind": "doors", "count": 2, "shelves": 3 } }, { "size": 70, "node": { "kind": "drawers", "count": 3 } } ] } } ] } },
+            "materials": { "carcass": { "lib": "hpl_offwhite" }, "front": { "lib": "hpl_offwhite" }, "accent": { "lib": "wood_oak_natural_v" }, "shelf": { "lib": "hpl_offwhite" } } }
+    },
+    "wc_study": {
+        "label": "حيطة مقسومة: مكتبة ومكتب",
+        "group": "غرف النوم",
+        "desc": "مكتبة حيطة: أرفف مفتوحة فوق، ضلف تحت، وفي النص مكان مكتب فاضي فوقه تجويف بليد — قسّمها على مقاس الأوضة.",
+        "params": { "template": "wall_comp", "width": 280, "height": 240, "handle": "push",
+            "wc": { "depth": 35, "root": { "dir": "v", "parts": [
+                { "size": 80, "node": { "dir": "h", "parts": [ { "size": null, "node": { "kind": "open", "shelves": 3 } }, { "size": 80, "node": { "kind": "doors", "count": 2, "shelves": 1 } } ] } },
+                { "size": null, "node": { "dir": "h", "parts": [ { "size": 40, "node": { "kind": "doors", "count": 2, "shelves": 0 } }, { "size": 60, "node": { "kind": "niche", "led": true, "depth": 25 } }, { "size": null, "node": { "kind": "empty" } } ] } },
+                { "size": 80, "node": { "dir": "h", "parts": [ { "size": null, "node": { "kind": "open", "shelves": 3 } }, { "size": 80, "node": { "kind": "doors", "count": 2, "shelves": 1 } } ] } } ] } },
+            "materials": { "carcass": { "lib": "hpl_offwhite" }, "front": { "lib": "hpl_greige" }, "accent": { "lib": "wood_oak_natural_v" }, "shelf": { "lib": "hpl_offwhite" } } }
+    },
     "tvw_slats_two_niches": {
         "label": "وحدة شاشة: دولابين مفتوحين + وحدة مصمتة سادة",
         "group": "الريسبشن",

@@ -633,3 +633,99 @@ export function buildTvWall(tb) {
     inc(d.hardware, "حامل شاشة حيطة", 1);
     d.notes.push("حامل الشاشة يتثبت في الحيطة نفسها (أو عرق جوه الوحدة المصمتة) مش في وش الوحدة المصمتة. منتصف الشاشة المعتاد 110–120 سم من الأرض.");
 }
+// ================================================================ v118 — «قسّم الحيطة»: a wall divided into cells
+// p.wc.root is a tree: a split {dir: "v" (columns, left → right) | "h" (rows, top → bottom), parts: [{size: cm | null (shares the rest), node}]}
+// or a cell {kind, depth, shelves, count, led, mat}. Every cell becomes real boards: a cabinet (doors / open shelves / drawers / flap),
+// a decorative niche (an open box lined in the accent material), a solid built-out face, a place for an appliance, or nothing.
+export const WC_KINDS = { doors: "دولاب ضلف", open: "أرفف مفتوحة", drawers: "أدراج", flap: "قلاب", niche: "تجويف ديكور", solid: "تكسية مصمتة", device: "مكان جهاز / شاشة", empty: "فاضي" };
+export const WC_BOX = new Set(["doors", "open", "drawers", "flap", "niche"]);
+/** every cell of the tree with its rectangle (x0..x1 from the left, z0..z1 from the floor); bad sizes → errors */
+export function wallCompLayout(wc, W, H, errors = []) {
+    const cells = [];
+    const walk = (node, x0, x1, z0, z1, path) => {
+        if (!node) return;
+        if (node.dir === "v" || node.dir === "h") {
+            const total = node.dir === "v" ? x1 - x0 : z1 - z0, parts = node.parts || [];
+            const fixed = parts.reduce((t, q) => t + (q.size != null && q.size !== "" ? +q.size : 0), 0);
+            let autos = parts.filter((q) => q.size == null || q.size === "").length;
+            const sizes = parts.map((q) => (q.size == null || q.size === "" ? null : +q.size));
+            if (!autos && parts.length && Math.abs(fixed - total) > 0.05) { sizes[sizes.length - 1] = null; autos = 1; } // the last part takes what is left
+            const fx = sizes.reduce((t, v) => t + (v ?? 0), 0), each = autos ? (total - fx) / autos : 0;
+            if (autos && each < 4.99) errors.push(`المقاسات (${sizes.filter((v) => v != null).join(" + ")}) أكبر من المساحة (${fmt(total)} سم).`);
+            let at = node.dir === "v" ? x0 : z1;
+            parts.forEach((q, i) => {
+                const s = Math.max(0, sizes[i] ?? each);
+                if (node.dir === "v") { walk(q.node, at, at + s, z0, z1, [...path, i]); at += s; }
+                else { walk(q.node, x0, x1, at - s, at, [...path, i]); at -= s; }
+            });
+            return;
+        }
+        cells.push({ x0, x1, z0, z1, node, path });
+    };
+    walk(wc.root, 0, W, 0, H, []);
+    return cells;
+}
+/** a solid face built out from the wall by `dd` over [x0, x1] × [z0, z1]: face boards (≤ 118 × one board, grain up) + a frame behind it */
+function wcSolid(tb, c, dd, D, mat, nm, maxB) {
+    const { d, t } = tb;
+    const fy0 = D - dd, fy1 = fy0 + t, w = c.x1 - c.x0;
+    const bands = [];
+    { let a = c.z0; for (const hh of stackHeights(c.z1 - c.z0, maxB, 0)) { bands.push([a, a + hh]); a += hh; } }
+    const face = bands.flatMap(([a, b]) => splitRect({ x0: c.x0, x1: c.x1, z0: a, z1: b }, 118, maxB));
+    face.forEach((f, i) => tb.add(face.length > 1 ? `${nm} - وش ${i + 1}` : `${nm} - وش`, "other", mat, tb.box(f.x0, fy0, f.z0, f.x1, fy1, f.z1), { band: ["left", "right", "top", "bottom"], grain: "z", layer: "front" }));
+    if (D - fy1 > 0.5 && w > 2 * t + 1) {
+        for (const [a, b] of bands) {
+            tb.add(`${nm} - جنب شمال`, "side", "carcass", tb.box(c.x0, fy1, a, c.x0 + t, D, b), { band: [], grain: "z", note: "بيتثبت في الحيطة بزوايا" });
+            tb.add(`${nm} - جنب يمين`, "side", "carcass", tb.box(c.x1 - t, fy1, a, c.x1, D, b), { band: [], grain: "z", note: "بيتثبت في الحيطة بزوايا" });
+        }
+        for (const [a, b] of strips(w - 2 * t, maxB)) {
+            tb.add(d.seqName(`${nm} - رأس`), "horizontal", "carcass", tb.box(c.x0 + t + a, fy1, c.z1 - t, c.x0 + t + b, D, c.z1), { band: [], grain: "x" });
+            tb.add(d.seqName(`${nm} - قاعدة`), "horizontal", "carcass", tb.box(c.x0 + t + a, fy1, c.z0, c.x0 + t + b, D, c.z0 + t), { band: [], grain: "x" });
+        }
+        for (const [a] of bands.slice(1))
+            for (const [p0, p1] of strips(w - 2 * t, maxB)) tb.add(d.seqName(`${nm} - عرضية ربط`), "horizontal", "carcass", tb.box(c.x0 + t + p0, fy1, a - t, c.x0 + t + p1, D, a), { band: [], grain: "x", note: "بتربط الجزء اللي تحت باللي فوق" });
+        const n = Math.floor((w - 2 * t) / 60);
+        for (let k = 1; k <= n; k++) { const x = c.x0 + (w * k) / (n + 1); for (const [a, b] of bands) tb.add(d.seqName(`${nm} - عرق`), "divider", "carcass", tb.box(x - t / 2, fy1, a + (a === c.z0 ? t : 0), x + t / 2, D, b - t), { band: [], grain: "z" }); }
+        inc(d.hardware, "زاوية تثبيت في الحيطة", 4 + 2 * n);
+    }
+}
+export function buildWallComp(tb) {
+    const { d, p, t } = tb;
+    const wc = p.wc, W = +p.width, H = +p.height, maxB = Math.max(100, +wc.max_board || 240);
+    const errors = [];
+    const cells = wallCompLayout(wc, W, H, errors);
+    for (const e of errors) d.errors.push(e);
+    if (errors.length) return;
+    const depthOf = (n) => (n.depth != null && n.depth !== "" ? +n.depth : n.kind === "solid" ? Math.min(30, +wc.depth || 35) : +wc.depth || 35);
+    const D = Math.max(5, ...cells.filter((c) => c.node.kind !== "device" && c.node.kind !== "empty").map((c) => depthOf(c.node)));
+    p.depth = D;
+    const count = {};
+    cells.forEach((c, i) => {
+        const n = c.node, k = n.kind, w = c.x1 - c.x0, h = c.z1 - c.z0;
+        count[k] = (count[k] || 0) + 1;
+        const nm = `${WC_KINDS[k] || k} ${count[k]}`;
+        if (k === "empty") return;
+        if (k === "device") { d.notes.push(`${nm}: ${fmt(w)}×${fmt(h)} سم على ارتفاع ${fmt(c.z0)} — فاضي للجهاز.`); if (n.tv) inc(d.hardware, "حامل شاشة حيطة", 1); return; }
+        if (w < 2 * t + 5 || h < 2 * t + 5) { d.errors.push(`${nm} (${fmt(w)}×${fmt(h)}) صغيرة قوي على إنها تتعمل.`); return; }
+        const dd = Math.min(D, Math.max(t + 1, depthOf(n)));
+        if (k === "solid") { withModule(tb, `wc${i}`, () => wcSolid(tb, c, dd, D, n.mat || "accent", nm, maxB)); if (n.led) d.addLed(`ليد ${nm}`, tb.box(c.x0 + 3, D - 0.8, c.z1 - 3, c.x1 - 3, D, c.z1 - 1.4)); return; }
+        const zone = k === "doors" ? { type: "doors", count: n.count ?? (w >= 70 ? 2 : 1), height: "auto", shelves: n.shelves ?? 2 }
+            : k === "drawers" ? { type: "drawers", count: n.count ?? Math.max(1, Math.min(6, Math.round(h / 22))), height: "auto", shelves: 0 }
+            : k === "flap" ? { type: "flap", count: 1, height: "auto", shelves: n.shelves ?? 0 }
+            : { type: "open", count: 1, height: "auto", shelves: n.shelves ?? (k === "niche" ? 0 : Math.max(0, Math.round(h / 35) - 1)), led: !!n.led };
+        const segs = stackHeights(h, maxB, 0);
+        let z = c.z0;
+        segs.forEach((hh, j) => {
+            const first = j === 0, n0 = d.parts.length;
+            subUnit(tb, { width: w, height: hh, depth: dd, mount: first && c.z0 < 0.5 ? "floor" : "wall", top: "full",
+                fronts: first ? [zone] : [{ type: "open", count: 1, height: "auto", shelves: 0 }], led_under: false },
+                [c.x0, D - dd, z], first ? nm : `${nm} - تكملة`, `wc${i}${j ? `_t${j}` : ""}`);
+            if (k === "niche" || n.mat) for (const pt of d.parts.slice(n0)) if (["carcass", "shelf", "back"].includes(pt.material)) pt.material = n.mat || "accent";
+            z += hh;
+        });
+        if (segs.length > 1) { inc(d.hardware, "مسمار ربط وحدات", 4 * (segs.length - 1)); d.notes.push(`${nm} ارتفاعها ${fmt(h)} سم أطول من لوح — اتعملت ${segs.map(fmt).join(" + ")} فوق بعض.`); }
+    });
+    const boxes = cells.filter((c) => WC_BOX.has(c.node.kind));
+    if (boxes.length > 1) inc(d.hardware, "مسمار ربط وحدات", 2 * (boxes.length - 1));
+    d.notes.push(`الحيطة ${fmt(W)}×${fmt(H)} سم مقسومة على ${cells.length} خانة — كل علبة لوحدها بتتربط في اللي جنبها.`);
+}

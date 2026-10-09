@@ -5,7 +5,7 @@ import { rround, sum } from "../core/rubyMath.js";
 import * as Catalog from "./catalog.js";
 import * as TableSpec from "./tableSpec.js";
 import { Design } from "./design.js";
-import { buildTv, buildTvWall, buildBed, buildDresser, buildDesk } from "./templatesRooms.js";
+import { buildTv, buildTvWall, buildWallComp, buildBed, buildDresser, buildDesk } from "./templatesRooms.js";
 import { buildTable } from "./templatesTables.js";
 import { buildBlocks } from "./templatesBlocks.js";
 export class TemplateBuilder {
@@ -34,6 +34,9 @@ export class TemplateBuilder {
                 break;
             case "tv_wall":
                 buildTvWall(this);
+                break;
+            case "wall_comp":
+                buildWallComp(this);
                 break;
             case "bed":
                 buildBed(this);
