@@ -78,6 +78,17 @@ function boxIn(e, tr) {
         z0: toCm(Math.min(...zs)), z1: toCm(Math.max(...zs)),
     };
 }
+/** v124: the box of a piece's real vertices in a frame — a diagonal door's own bounds are a square, turned 45° they'd be far too deep */
+function tightBox(e, tr) {
+    const xs = [], ys = [], zs = [];
+    const walk = (ents, t) => {
+        for (const f of ents.faces()) for (const v of f.vertices()) { const q = t.applyPoint(v.position); xs.push(q.x); ys.push(q.y); zs.push(q.z); }
+        for (const c of ents.list) if (isInst(c)) walk(c.definition.entities, t.mul(c.transformation));
+    };
+    try { walk(e.definition.entities, tr); } catch (_) { /* fall back below */ }
+    if (!xs.length) return boxIn(e, tr);
+    return { x0: toCm(Math.min(...xs)), x1: toCm(Math.max(...xs)), y0: toCm(Math.min(...ys)), y1: toCm(Math.max(...ys)), z0: toCm(Math.min(...zs)), z1: toCm(Math.max(...zs)) };
+}
 const attr = (e, k, d = null) => e.getAttribute("KUD", k, d);
 function collectFronts(entities, tr, out) {
     for (const e of entities.list) {
@@ -91,7 +102,9 @@ function collectFronts(entities, tr, out) {
             const nl = Math.hypot(nw.x, nw.y, nw.z) || 1;
             let V = null;
             if (!(nw.y / nl < -0.5)) {
-                if (!(Math.abs(nw.x / nl) > 0.9 || nw.y / nl > 0.9))
+                // v124: any door facing sideways or at an angle (L corner ±x/+y, diagonal corner 45°) is handled in a frame
+                // turned to face −y; only a door facing up/down (no horizontal normal) is skipped
+                if (Math.hypot(nw.x, nw.y) / nl < 0.5)
                     continue;
                 V = Transformation.rotation([0, 0, 0], [0, 0, 1], -Math.PI / 2 - Math.atan2(nw.y, nw.x));
             }
@@ -101,7 +114,7 @@ function collectFronts(entities, tr, out) {
             const t0 = t;
             if (V) {
                 const tt = V.mul(t0);
-                out.push({ kind: "door", hinge, piece: e, piece_tr: tt, holder: e, holder_tr: tt, framed: false, frameW: 0, name: e.name, parent_ents: entities, rot: true });
+                out.push({ kind: "door", hinge, piece: e, piece_tr: tt, holder: e, holder_tr: tt, framed: false, frameW: 0, name: e.name, parent_ents: entities, rot: true, V, axisOk: Math.abs(nw.x / nl) > 0.98 || Math.abs(nw.y / nl) > 0.98 });
                 continue;
             }
             const framed = e.name.includes("زجاج") || e.definition.entities.list.some((c) => isInst(c) && attr(c, "is_cut_piece", false));
@@ -255,8 +268,8 @@ export function applyHandles(ctx, group, params, appDefault = null) {
     const W = toF(params["width"]), T = toF(params["panel_thickness"]) || 1.8;
     const clipX = W > 2 * T ? [T, W - T] : null;
     for (const f of fronts0) {
-        f.box = boxIn(f.piece, f.piece_tr);
-        f.clipX = clipX;
+        f.box = f.rot ? tightBox(f.piece, f.piece_tr) : boxIn(f.piece, f.piece_tr);
+        f.clipX = f.rot ? null : clipX; // v124: a corner door's frame is turned — the unit's side planes mean nothing there
     }
     // v107: only the fronts in the door plane get a handle — an inner drawer's own front («وش داخلي») hides behind the main front
     const planeY = Math.min(...fronts0.filter((f) => !f.rot).map((f) => f.box.y0));
@@ -274,7 +287,7 @@ export function applyHandles(ctx, group, params, appDefault = null) {
     const boards = notchable ? solids.filter((sd) => !sd.owner && sd.x1 - sd.x0 < 2.6 && sd.y1 - sd.y0 > 20 && sd.z1 - sd.z0 > 20 && /جنب|فاصل|قاطوع/.test(sd.name)) : [];
     if (notchable)
         // v110: a glass side (aluminium / wood frame + glass) can't be notched — the profile stops at its inner face
-        for (const f of fronts) { f.clipX = [/زجاج/.test(sL.name) ? sL.x1 : sL.x0, /زجاج/.test(sR.name) ? sR.x0 : sR.x1]; f.boards = boards; f.sides = [sL, sR]; }
+        for (const f of fronts) if (!f.rot) { f.clipX = [/زجاج/.test(sL.name) ? sL.x1 : sL.x0, /زجاج/.test(sR.name) ? sR.x0 : sR.x1]; f.boards = boards; f.sides = [sL, sR]; }
     const notches = [];
     const recess = unitType === "base" ? recessFor(params) : 0.0;
     const pieces = ctx.labels.pieces.filter((p) => p.unit_id === unitId);
@@ -287,9 +300,8 @@ export function applyHandles(ctx, group, params, appDefault = null) {
         if (!isKick && !unitOn)
             continue;
         const b = f.box;
-        // NOVERA: a corner door (turned frame) gets only a handle that sticks out — bar / knob on its free edge; never a built-in profile
-        if (f.rot && !(!isKick && ["bar", "knob"].includes(cfg?.type)))
-            continue;
+        // v124 (Amr: «وحدة الزاوية مش بتاخد نفس المقابض»): a corner door (turned frame, L or diagonal) gets the SAME handle as
+        // the other units — the built-in profile above it, an edge pull, an aluminium profile, a bar or a knob
         const hidden = f.rot ? null : blockedBy(f);
         if (hidden && ["bar", "knob", "edge_pull", "profile"].includes((isKick && kcfg ? kcfg : cfg)?.type)) {
             warnings.push(`${f.name}: ورا «${hidden.name}» — اتعمل من غير مقبض بارز (قصّة إيد أو Push).`);
@@ -338,7 +350,7 @@ export function applyHandles(ctx, group, params, appDefault = null) {
         }
         draw(ctx, group, f, plan);
         updateLabel(ctx, group, pieces, used, f, plan);
-        for (const v of plan.visuals)
+        for (const v of f.rot ? [] : plan.visuals)
             if (v.mat === "gola" && v.section)
                 notches.push({ x0: b.x0 + (v.rx0 ?? v.x0), x1: b.x0 + (v.rx1 ?? v.x1), y0: b.y0 + v.y0, y1: b.y0 + v.y1, z0: b.z0 + v.z0, z1: b.z0 + v.z1, kind: /L/.test(v.name) ? "L" : "C" });
     }
@@ -427,8 +439,78 @@ const NAMES = { handle: "مقبض", profile: "بروفايل مقبض", gola: "�
 function local(tr, x, y, z) {
     return tr.inverse().applyPoint(new Point3d(cm(x), cm(y), cm(z)));
 }
+/** v124: a rectilinear section [[y, z]…] → rectangles {y0,y1,z0,z1} (horizontal bands; a curve becomes steps) */
+function sectionRects(sec) {
+    const zs = [...new Set(sec.map((p) => p[1]))].sort((a, b) => a - b), out = [];
+    for (let i = 0; i + 1 < zs.length; i++) {
+        const za = zs[i], zb = zs[i + 1], zm = (za + zb) / 2;
+        if (zb - za < 1e-4) continue;
+        const ys = [];
+        for (let j = 0; j < sec.length; j++) {
+            const [y1, z1] = sec[j], [y2, z2] = sec[(j + 1) % sec.length];
+            if ((z1 > zm) !== (z2 > zm)) ys.push(y1 + ((zm - z1) * (y2 - y1)) / (z2 - z1));
+        }
+        ys.sort((a, b) => a - b);
+        for (let k = 0; k + 1 < ys.length; k += 2) if (ys[k + 1] - ys[k] > 1e-4) out.push({ y0: ys[k], y1: ys[k + 1], z0: za, z1: zb });
+    }
+    return out;
+}
+/** v124: the handle of a turned (corner) door — every part built as an upright prism in the door's own frame, so it sits right at
+ *  any angle (the L corner's ±x doors and the diagonal corner's 45° door) */
+function drawTurned(ctx, group, f, plan) {
+    const b = f.box, fy = b.y0, t = b.y1 - b.y0;
+    for (const v of plan.visuals) {
+        const [holder, htr] = v.attach === "carcass" ? [group, f.V] : [f.holder, f.holder_tr];
+        const ents = holder.definition.entities, color = v.mat === "wood_strip" ? stripMaterial(ctx, plan) : COLORS[v.mat] ?? COLORS.handle;
+        const nm = `${f.name} - ${v.name || NAMES[v.mat]}`;
+        const L = (x, y, z) => local(htr, b.x0 + x, fy + y, b.z0 + z);
+        const boxes = [];
+        if (v.section && v.run === "x") for (const r of sectionRects(v.section)) boxes.push([v.x0, v.x1, r.y0, r.y1, r.z0, r.z1]);
+        else if (v.section) {
+            // an upright profile: its (y, x) outline extruded up — already works at any angle
+            const a = L(0, 0, v.z0), c = L(0, 0, v.z1);
+            const xy = v.section.map(([y, x]) => { const q = L(x, y, 0); return { x: q.x, y: q.y }; });
+            const inst = createFlatSlab(ctx, ents, nm, xy, Math.min(a.z, c.z), Math.max(a.z, c.z), color);
+            inst.setAttribute("KUD", "is_cut_piece", false); inst.setAttribute("KUD", "handle_part", true);
+            inst.layer = ctx.model.layers.get(LAYER) ?? ctx.model.layers.add(LAYER);
+            continue;
+        }
+        else if (v.kind === "bar") {
+            const pr = v.proj, r = 0.6;
+            for (const [px, pz] of v.pts) boxes.push([px - 0.45, px + 0.45, -pr, 0, pz - 0.45, pz + 0.45]);
+            if (v.vertical) boxes.push([v.cx - r, v.cx + r, -pr, -pr + 2 * r, v.cz - v.len / 2.0, v.cz + v.len / 2.0]);
+            else boxes.push([v.cx - v.len / 2.0, v.cx + v.len / 2.0, -pr, -pr + 2 * r, v.cz - r, v.cz + r]);
+        }
+        else if (v.kind === "knob") {
+            const pr = v.proj, head = Math.min(1.6, pr * 0.6), [px, pz] = v.pts[0];
+            boxes.push([px - 1.3, px + 1.3, -pr, -pr + head, pz - 1.3, pz + 1.3], [px - 0.5, px + 0.5, -(pr - head), 0, pz - 0.5, pz + 0.5]);
+        }
+        else boxes.push([v.x0, v.x1, v.y0, v.y1, v.z0, v.z1]);
+        for (const [x0, x1, y0, y1, z0, z1] of boxes) {
+            if (x1 - x0 < 1e-3 || y1 - y0 < 1e-3 || z1 - z0 < 1e-3) continue;
+            const xy = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]].map(([x, y]) => { const q = L(x, y, z0); return { x: q.x, y: q.y }; });
+            const za = L(x0, y0, z0).z, zb = L(x0, y0, z1).z;
+            const inst = createFlatSlab(ctx, ents, nm, xy, Math.min(za, zb), Math.max(za, zb), color);
+            const piece = v.mat === "wood_strip";
+            inst.setAttribute("KUD", "is_cut_piece", piece);
+            inst.setAttribute("KUD", "handle_part", true);
+            if (piece) assignLayer(ctx, inst, TAGS.front);
+            else inst.layer = ctx.model.layers.get(LAYER) ?? ctx.model.layers.add(LAYER);
+        }
+    }
+    // the drill markers: only where the door faces along an axis (a cylinder can't lie at 45°); the label keeps the holes anyway
+    if (f.axisOk) for (const h of plan.holes) {
+        const depth = h.face === "through" ? t : Math.max(toF(h.depth), 0.3);
+        const cy = h.face === "back" ? fy + t - depth / 2.0 : fy + t / 2.0;
+        const c = local(f.holder_tr, b.x0 + h.x, cy, b.z0 + h.z);
+        const m = cylN(ctx, f.holder.definition.entities, f.holder_tr, "خرم مقبض", c, cm(h.d / 2.0), cm(depth + 0.02), KCOLORS.assembly);
+        m.setAttribute("KUD", "handle_part", true);
+        assignLayer(ctx, m, TAGS.assembly);
+    }
+}
 function draw(ctx, group, f, plan) {
     try {
+        if (f.rot) return drawTurned(ctx, group, f, plan);
         const b = f.box;
         const fy = b.y0;
         const t = b.y1 - b.y0;
