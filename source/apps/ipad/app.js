@@ -37,7 +37,7 @@ import * as DG from "./draw/geom.js";
 
 const APP_URL = "https://claude.ai/artifact/EP8c8LmBNS8d3EqLcDioXi";
 const APP_VERSION = "1.0";
-const RELEASE = "v121"; // bumped with every shipped version (the developer notes carry it)
+const RELEASE = "v122"; // bumped with every shipped version (the developer notes carry it)
 // the NOVERA mark — the same one as the website (two cream panels, the brass profile between them, the brass base line)
 const MARK_SVG = '<svg viewBox="0 0 40 40" aria-hidden="true"><rect width="40" height="40" rx="3" fill="#0f2e1c"/><rect x="9" y="9" width="7" height="22" fill="#e9d9b0"/><rect x="24" y="9" width="7" height="22" fill="#e9d9b0"/><path d="M16 9h3l5 22h-3z" fill="#b98d34"/><rect x="6" y="33" width="28" height="2" fill="#b98d34"/></svg>';
 /** the App Store build (inside the iOS app): no links to the online version, no plugin / other-brand wording */
@@ -6163,7 +6163,7 @@ const plan = {
     const pad = Math.max(60, (b.x1 - b.x0 + b.z1 - b.z0) * 0.08);
     const host = this.host();
     // the buttons floating over the top of the plan: fit the room into the part of the plan below them
-    const ch = $("#chips"), hr = host.getBoundingClientRect(), cr = ch && !ch.hidden ? ch.getBoundingClientRect() : null;
+    const ch = $("#chips"), hr = host.getBoundingClientRect?.() || { top: 0 }, cr = ch && !ch.hidden && host.getBoundingClientRect ? ch.getBoundingClientRect() : null;
     const HH = host.clientHeight || 600, top = cr && cr.height ? Math.max(0, Math.min(HH * 0.45, cr.bottom - hr.top + 6)) : 0;
     const ar = (host.clientWidth || 800) / Math.max(1, HH - top);
     let w = b.x1 - b.x0 + 2 * pad, h = b.z1 - b.z0 + 2 * pad;
@@ -6173,6 +6173,7 @@ const plan = {
   },
   render() {
     const host = this.host();
+    if (host !== $("#plan")) $("#plan").hidden = !ui.planOn; // never leave the real plan showing (belt and braces)
     if (!ui.planOn) { host.hidden = true; return; }
     host.hidden = false;
     if (ui.planView === "elev") { host.innerHTML = this.elevSvg(ui.planSel?.id); selBar.render(null); return; }
@@ -9676,19 +9677,11 @@ async function exportLabelsPdf() {
 async function exportDrawingsPdf() {
   const room = state.project.room;
   if (!room) throw new Error("ارسم الحيطان الأول");
-  const savedVb = plan.vb;
-  plan.vb = null;
-  const fitHost = { clientWidth: 1414, clientHeight: 880 };
-  const oldHost = plan.host;
-  plan.host = () => fitHost;
-  plan.fit();
-  plan.printing = true;
-  const planSvg = plan.svg().replace(/class="(\w+)([^"]*)"/g, (m) => m); // styles inlined below
-  plan.printing = false;
-  plan.host = oldHost;
-  plan.vb = savedVb;
+  // v121 (Amr #14): this used to swap the plan's host for a fake one and crash inside fit() — the swap was never undone, so the
+  // real plan stayed on screen under the 3D for good and covered the buttons. One safe helper now (planPrintSvg restores in finally).
+  const planSvg = planPrintSvg("all");
   const style = `<style>${PLAN_PRINT_CSS}</style>`;
-  const pages = [{ title: "المسقط الأفقي", svg: style + nest(planSvg.replace("<svg ", '<svg xmlns="http://www.w3.org/2000/svg" '), 20, 80, 1374, 880) }];
+  const pages = [{ title: "المسقط الأفقي", svg: style + nest(planSvg, 20, 80, 1374, 880) }];
   for (const seg of Room.segments(room)) {
     const e = plan.elevSvg(seg.id).replace("<svg ", '<svg xmlns="http://www.w3.org/2000/svg" ');
     pages.push({ title: `واجهة حيطة ${seg.i + 1}`, svg: style + nest(e, 40, 90, 1334, 860) });
