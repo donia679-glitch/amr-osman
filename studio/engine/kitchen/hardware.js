@@ -64,9 +64,19 @@ export function scanEntities(ctx, entities, stats, params = null) {
                 const dims = localDimensionsCm(e);
                 const len = flip ? Math.max(dims.width, dims.depth) : dims.height;
                 const own = Number(e.getAttribute("KUD", "hinge_count", 0)) || 0;
-                stats.hinges += own > 0 ? own : hingesForDoor(len, params);
-                if (flip)
-                    stats.lift_arms += 1;
+                // v127: a flap zone's front names its own lift mechanism (an Aventos HL carries the flap on its arms — no hinges)
+                const lift = String(e.getAttribute("KUD", "lift_kind", "") ?? "");
+                if (lift) {
+                    stats.lifts = stats.lifts ?? {};
+                    stats.lifts[lift] = (stats.lifts[lift] ?? 0) + 1;
+                    if (lift !== "aventos_hl")
+                        stats.hinges += own > 0 ? own : hingesForDoor(len, params);
+                }
+                else {
+                    stats.hinges += own > 0 ? own : hingesForDoor(len, params);
+                    if (flip)
+                        stats.lift_arms += 1;
+                }
             }
             else if (e.getAttribute("KUD", "is_drawer", false)) {
                 stats.drawers += 1;
@@ -123,6 +133,8 @@ export function scanHardware(ctx, group) {
     scanEntities(ctx, group.entities, stats, params);
     return stats;
 }
+/** v127: the flap-zone lift mechanisms (same wording as categories.js FLAP_LIFTS) */
+export const LIFT_LABELS = { aventos_hk: "مكانيزم رفع قلاب Aventos HK (طقم)", aventos_hl: "مكانيزم رفع موازي Aventos HL (طقم)", gas: "مكبس غاز للقلاب (زوج)", stay: "ذراع قلاب ميكانيكي بفرامل (زوج)" };
 /** HardwareBOM.hardware_rows (labels/quantities; prices live in the app) */
 export function hardwareRows(stats) {
     const rows = [];
@@ -132,6 +144,8 @@ export function hardwareRows(stats) {
     };
     add("hinges", "مفصلات");
     add("lift_arms", "ذراع رفع قلاب (طقم)");
+    for (const [k, q] of Object.entries(stats.lifts ?? {}))
+        rows.push({ label: LIFT_LABELS[k] ?? "ذراع رفع قلاب (طقم)", qty: q });
     if (stats.drawers > 0) {
         const per = stats.runners ?? { [runnerLength(45)]: stats.drawers };
         for (const L of Object.keys(per).map(Number).sort((a, b) => a - b))

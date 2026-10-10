@@ -158,6 +158,7 @@ export function computeKitchen(input, opts = {}) {
             checks: pc.note ? [pc.note] : [],
             material_name: pc.material,
             ...(pc.band_len != null ? { band_len: pc.band_len } : {}),
+            ...(pc.flutes ? { flutes: pc.flutes } : {}), // v127: fluted front — the grooves for the CNC export
         });
     });
     const stats = scanHardware(ctx, g);
@@ -176,7 +177,14 @@ export function computeKitchen(input, opts = {}) {
                 delete res.hardware[k];
         // v110: the trays really built (a short unit drops some) — runners at the first and the last one
         const trays = pieces.filter((pc) => /^صينية بول أوت \d+ - قاعدة$/.test(pc.name)).length;
-        res.hardware[`مجاري فول إكستنشن ${L} سم للبول أوت (زوج)`] = Math.min(2, Math.max(1, trays));
+        if (String(params["pullout_runner"]) === "bottom") {
+            // v127: one pair of concealed undermount runners under the base board (+ a top guide on a tall pull-out)
+            res.hardware[`مجرى سفلي مخفي (أندر ماونت) فول إكستنشن ${L} سم للبول أوت (زوج)`] = 1;
+            if ((Number(params["height"]) || 0) - (Number(params["toe_kick_height"]) || 0) > 100)
+                res.hardware["دليل علوي للبول أوت الطويل (طقم)"] = 1;
+        }
+        else
+            res.hardware[`مجاري فول إكستنشن ${L} سم للبول أوت (زوج)`] = Math.min(2, Math.max(1, trays));
     }
     if (String(params["drawer_turbo"]) === "true" || params["drawer_turbo"] === true) {
         // wooden turbo drawers run on side full-extension runners — same lengths, its own line

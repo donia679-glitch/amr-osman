@@ -6,6 +6,7 @@ import { CarcassBuilder } from "./carcass.js";
 import { applicable as handlesApplicable, applyHandles } from "./handles.js";
 import { Ctx } from "./helpers.js";
 import { applyJoints } from "./joints.js";
+import { applyFlutes } from "./fluted.js";
 import { record } from "./record.js";
 import { toF, toS } from "./rb.js";
 import { cm, Transformation } from "./su/geom.js";
@@ -60,6 +61,13 @@ export function buildRaw(ctx, params, opts = {}) {
         catch (e) {
             ctx.puts(`[KitchenUnitDesigner] Handles apply error: ${e.message}`);
         }
+    }
+    // v127 (NOVERA): fluted fronts — after the handles (a gola / edge pull may have cut the front), opt-in by front_style
+    try {
+        applyFlutes(ctx, g, params);
+    }
+    catch (e) {
+        ctx.puts(`[KitchenUnitDesigner] ⚠ فلوتد: ${e.message}`);
     }
     return g;
 }

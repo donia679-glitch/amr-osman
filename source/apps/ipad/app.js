@@ -39,7 +39,7 @@ import * as DG from "./draw/geom.js";
 
 const APP_URL = "https://claude.ai/artifact/EP8c8LmBNS8d3EqLcDioXi";
 const APP_VERSION = "1.0";
-const RELEASE = "v126"; // bumped with every shipped version (the developer notes carry it)
+const RELEASE = "v127"; // bumped with every shipped version (the developer notes carry it)
 // the NOVERA mark — the same one as the website (two cream panels, the brass profile between them, the brass base line)
 const MARK_SVG = '<svg viewBox="0 0 40 40" aria-hidden="true"><rect width="40" height="40" rx="3" fill="#0f2e1c"/><rect x="9" y="9" width="7" height="22" fill="#e9d9b0"/><rect x="24" y="9" width="7" height="22" fill="#e9d9b0"/><path d="M16 9h3l5 22h-3z" fill="#b98d34"/><rect x="6" y="33" width="28" height="2" fill="#b98d34"/></svg>';
 /** the App Store build (inside the iOS app): no links to the online version, no plugin / other-brand wording */
@@ -2835,7 +2835,8 @@ const stepChip = (path, label, val, d = 5) => `<span class="chip step"><button d
 const cycleChip = (path, label, table, v) => `<button class="chip" data-cyc="${path}" data-table="${table}">${esc(label)}: <b>${esc(short(TABLES[table][v] ?? String(v)))}</b>${ICON.cycle}</button>`;
 const togChip = (path, label, v) => `<button class="chip tog ${v ? "on" : ""}" data-toggle="${path}">${esc(label)}</button>`;
 const TABLES = { D_STYLES: D.DOOR_STYLES, D_LAYOUT: D.DOOR_LAYOUTS, D_HANDLES: D.HANDLE_TYPES, D_CONTENT: D.CONTENTS, D_DOORS: D.DOORS, D_CONSTR: D.CONSTRUCTIONS,
-  K_DOORS: KU.K_DOORS, K_POS: KU.K_POS, K_HANDLES: KU.K_HANDLES, K_GAP_SIDE: KU.K_GAP_SIDE, K_TOP: KU.K_TOP, K_ZONE: KU.K_ZONE_TYPES, K_WR_STYLE: { hinged: "مفصلي", sliding: "سحّاب" } };
+  K_DOORS: KU.K_DOORS, K_POS: KU.K_POS, K_HANDLES: KU.K_HANDLES, K_GAP_SIDE: KU.K_GAP_SIDE, K_TOP: KU.K_TOP, K_ZONE: KU.K_ZONE_TYPES, K_WR_STYLE: { hinged: "مفصلي", sliding: "سحّاب" },
+  K_FRONT_STYLE: KU.K_FRONT_STYLE, K_FLAP_ZONE: KU.K_FLAP_ZONE, K_PULLOUT_RUNNER: KU.K_PULLOUT_RUNNER }; // v127
 
 function planChips() {
   const room = state.project.room, sel = ui.planSel, inDesign = ui.planIn === "design";
@@ -2894,8 +2895,10 @@ function renderChips() {
       h += cycleChip("kud_handles.type", "المقبض", "K_HANDLES", p.kud_handles?.type || "none") + togChip("include_toe_kick", "سكلو", p.include_toe_kick) + togChip("include_assembly_holes", "أليتا", p.include_assembly_holes);
       el.innerHTML = `<div class="cbody">${h}</div>`; return;
     }
-    if (p.unit_category === "pullout") h += stepChip("pullout_tray_count", "صواني", p.pullout_tray_count ?? 3, 1);
+    if (p.unit_category === "pullout") h += stepChip("pullout_tray_count", "صواني", p.pullout_tray_count ?? 3, 1) + cycleChip("pullout_runner", "المجرى", "K_PULLOUT_RUNNER", p.pullout_runner || ""); // v127
     else if (!["corner", "corner_glass_display", "oven", "fridge", "washing_machine"].includes(p.unit_category)) h += cycleChip("door_type", "الضلف", "K_DOORS", p.door_type); // v124: those build their own fronts
+    if (!p.unit_category || p.unit_category === "standard") h += cycleChip("flap_zone", "قلاب فوق", "K_FLAP_ZONE", p.flap_zone || ""); // v127
+    if (!["washer_gap", "cooker_gap", "open_shelf", "corner_glass_display"].includes(p.unit_category)) h += cycleChip("front_style", "الوش", "K_FRONT_STYLE", p.front_style || ""); // v127
     if (p.door_type === "drawers" || p.door_type === "drawer_top_two_doors_bottom") h += stepChip("drawer_count", "أدراج", p.drawer_count, 1);
     if (p.include_drawer_boxes && (p.door_type === "drawers" || p.door_type === "drawer_top_two_doors_bottom")) h += togChip("drawer_turbo", "تيربو خشب", p.drawer_turbo);
     if (p.include_shelves) h += stepChip("shelf_count", "أرفف", p.shelf_count, 1);
@@ -10555,6 +10558,8 @@ function cncOps(pc) {
     if (g.axis === "vertical") { const x = g.ratio * W; op.grooves.push({ x: Math.round((x - gw / 2) * 10) / 10, y: 0, w: gw, h: H, z: gz }); }
     else { const y = g.ratio * H; op.grooves.push({ x: 0, y: Math.round((y - gw / 2) * 10) / 10, w: W, h: gw, z: gz }); }
   }
+  // v127: fluted front — every groove is a rectangular pocket on the FRONT face (ball-nose cutter, depth in the layer name)
+  if (pt.flutes?.rects?.length) for (const r of pt.flutes.rects) op.pockets.push({ rect: r.map((v) => mm(v)), z: mm(+pt.flutes.z || 0.4), face: "front" });
   const rm = /حفر CNC مقبض بلت إن من الضهر على (الحرف اللي فوق|الحرف اللي تحت|الحرف الشمال|الحرف اليمين): طول ([\d.]+) × عرض ([\d.]+) × عمق ([\d.]+)/.exec(op.note);
   if (rm) {
     const L = mm(+rm[2]), Wd = mm(+rm[3]), Z = mm(+rm[4]);

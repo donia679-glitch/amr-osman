@@ -31,6 +31,14 @@ export const K_ZONE_TYPES = {
   shelves_double: "أرفف + ضلفتين", shelves_single: "أرفف + ضلفة", shelves_open: "أرفف مفتوحة",
   rail_double: "شماعة + ضلفتين", rail_single: "شماعة + ضلفة", rail_open: "شماعة مفتوحة", drawers: "أدراج",
 };
+// v127 (NOVERA): fluted fronts, a lift-up flap zone, undermount runners for narrow pull-outs
+export const K_FRONT_STYLE = { "": "سادة", fluted: "فلوتد (مجاري CNC)" };
+export const K_FLUTE_DIR = { v: "رأسي", h: "أفقي" };
+export const K_FLUTE_ON = { all: "كل الضلف والأدراج", doors: "الضلف بس", drawers: "وشوش الأدراج بس" };
+export const K_FLAP_ZONE = { "": "بدون", top: "قلاب فوق (جزء لوحده)" };
+export const K_FLAP_LIFT = { aventos_hk: "Aventos HK (رفع لفوق)", aventos_hl: "Aventos HL (رفع موازي)", gas: "مكبس غاز", stay: "ذراع ميكانيكي بفرامل" };
+export const K_PULLOUT_RUNNER = { "": "جانبي (على الجنب والحافة)", bottom: "سفلي مخفي (أندر ماونت)" };
+const NO_FRONTS = ["washer_gap", "cooker_gap", "open_shelf", "corner_glass_display"];
 export const K_HANDLES = Object.fromEntries(Object.entries(HANDLE_TYPES).map(([k, v]) => [k, v.label]));
 
 /** material roles shown in the properties panel → [label, plugin param holding its name] */
@@ -86,7 +94,8 @@ export function extraFields(p) {
   } else if (cat === "cooker_gap") {
     f.push(["washer_gap_side", "جنب تقفيلة (لو الفتحة آخر الصف)", "choice", K_GAP_SIDE], ["cooker_base_height", "ارتفاع القعدة (0 = البوتجاز على الأرض)", "num"]);
   } else if (cat === "pullout") {
-    f.push(["pullout_tray_count", "عدد الصواني", "int"], ["pullout_tray_lip", "ارتفاع حافة الصينية", "num"], ["pullout_spine_side", "الضهر الرأسي (جنب البول أوت) ناحية", "choice", K_HINGE]);
+    f.push(["pullout_tray_count", "عدد الصواني", "int"], ["pullout_tray_lip", "ارتفاع حافة الصينية", "num"], ["pullout_spine_side", "الضهر الرأسي (جنب البول أوت) ناحية", "choice", K_HINGE],
+      ["pullout_runner", "نوع المجرى (السفلي للضيق 15 سم)", "choice", K_PULLOUT_RUNNER]); // v127
   } else if (cat === "fridge") {
     f.push(["fridge_include_left_side", "جنب طويل شمال", "bool"], ["fridge_include_right_side", "جنب طويل يمين", "bool"]);
   } else if (cat === "divided") {
@@ -95,6 +104,7 @@ export function extraFields(p) {
     f.push(["corner_style", "نوع الزاوية", "choice", K_CORNER]);
     if (p.corner_style === "l_shape") f.push(["corner_angle", "الزاوية بين الرجلين", "num"], ["corner_notch_size", "قصة الركن (عمود)", "num"], ["corner_shelf_mode", "الأرفف", "choice", K_SHELF_MODE]);
     if (p.corner_style === "blind" || !p.corner_style) f.push(["corner_door_side", "مكان الضلفة", "choice", K_HINGE], ["include_edge_filler", "فيلر بين الضلفة والأعمى", "bool"]);
+    if ((p.corner_style === "blind" || !p.corner_style) && (p.include_edge_filler === true || p.include_edge_filler === "true" || p.include_edge_filler === 1)) f.push(["edge_filler_width", "عرض الفيلر (سم)", "num"]); // v127
   } else if (cat === "wardrobe" || cat === "bedroom_wardrobe") {
     f.push(["door_style", "نوع الأبواب", "choice", { hinged: "مفصلات", sliding: "سحّاب (جرّار)" }]);
     if (p.door_style === "sliding") f.push(["sliding_panel_count", "عدد ألواح السحّاب (2–4)", "int"]);
@@ -114,6 +124,17 @@ export function extraFields(p) {
       }
     }
     f.push(["wardrobe_rail_diameter", "قطر الشماعة", "num"], ["wardrobe_rail_depth_offset", "بعد الشماعة عن الظهر", "num"]);
+  }
+  // v127: a lift-up flap zone on top of a standard unit (the rest below keeps «الضلف»: أدراج / ضلف / مفتوحة)
+  if (!cat || cat === "standard") {
+    f.push(["flap_zone", "قلاب فوق الوحدة", "choice", K_FLAP_ZONE]);
+    if (p.flap_zone === "top") f.push(["flap_zone_height", "ارتفاع جزء القلاب (من جوه)", "num"], ["flap_lift", "مكانيزم القلاب", "choice", K_FLAP_LIFT], ["flap_zone_shelves", "أرفف جوه جزء القلاب", "int"]);
+  }
+  // v127: fluted fronts on any unit with board fronts (glass / framed fronts stay plain)
+  if (!NO_FRONTS.includes(cat)) {
+    f.push(["front_style", "شكل وش الضلف", "choice", K_FRONT_STYLE]);
+    if (p.front_style === "fluted") f.push(["front_flute_dir", "اتجاه المجاري", "choice", K_FLUTE_DIR], ["front_flute_groove", "عرض المجرى (السكينة)", "num"], ["front_flute_rib", "المسافة بين مجريين", "num"],
+      ["front_flute_depth", "عمق المجرى", "num"], ["front_flute_margin", "برواز سادة حوالين المجاري (0 = من حرف لحرف)", "num"], ["front_flute_on", "على", "choice", K_FLUTE_ON]);
   }
   if (p.door_type === "sliding" && p.door_style !== "sliding" && !f.some((x) => x[0] === "sliding_panel_count")) f.push(["sliding_panel_count", "عدد ألواح السحّاب (2–4)", "int"]);
   // NOVERA v55: any wall unit can carry a hood on its own — the bottom is raised by the hood body and the hood hangs under it

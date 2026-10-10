@@ -2,21 +2,76 @@
 // Standard, Wardrobe, Oven, Microwave, Fridge, Washing machine, Open shelf, Divided, Blind corner,
 // Bedroom wardrobe.
 import { COLORS } from "./config.js";
-import { assignLayer, bandAllSideEdges, bandEdges, createBox, createHoleMarker, createHoleMarkerY, getOrCreateNamedMaterial, NO_BAND, tagDrawerSlide } from "./helpers.js";
+import { assignLayer, bandAllSideEdges, bandEdges, createBox, createHoleMarker, createHoleMarkerY, getOrCreateNamedMaterial, NO_BAND, tagDoorHinge3d, tagDrawerSlide } from "./helpers.js";
 import { CarcassBuilder, materialLabelName, TAGS, argError } from "./carcass.js";
 import { strip, toF, toI, toS, truthy } from "./rb.js";
-import { cm, rmax, rmin } from "./su/geom.js";
+import { cm, Point3d, rmax, rmin } from "./su/geom.js";
 import { rround } from "../core/rubyMath.js";
 import { Entities, Material } from "./su/model.js";
 import { Vector3d } from "./su/geom.js";
 const pcm = (v) => cm(toF(v));
+/** v127 (NOVERA): the lift mechanisms a flap zone can take → [hardware line, hinges?] */
+export const FLAP_LIFTS = {
+    aventos_hk: ["مكانيزم رفع قلاب Aventos HK (طقم)", true],
+    aventos_hl: ["مكانيزم رفع موازي Aventos HL (طقم)", false],
+    gas: ["مكبس غاز للقلاب (زوج)", true],
+    stay: ["ذراع قلاب ميكانيكي بفرامل (زوج)", true],
+};
 export class StandardUnitBuilder extends CarcassBuilder {
     /** v110: a unit of drawers has no loose shelves (they ran through the drawer boxes when include_shelves stayed on) */
     shelvesEnabled() {
         return toS(this.p["door_type"]) !== "drawers" && super.shelvesEnabled();
     }
+    /** v127 (NOVERA): a lift-up flap zone at the top of a standard base / wall / tall unit («flap_zone» = "top"):
+     *  its own compartment over a fixed shelf, the rest of the unit below takes door_type (drawers, doors, open …) */
+    flapActive() {
+        return toS(this.p["flap_zone"]) === "top" && ["standard", ""].includes(toS(this.p["unit_category"]));
+    }
+    /** the fixed shelf under the flap: [bottom, top] (inches), or null */
+    flapShelf() {
+        return this.once("flap_shelf", () => {
+            if (!this.flapActive())
+                return null;
+            const io = this.innerOpening(), pt = this.panelT();
+            const [, top] = this.frontZClamp(io.z0, io.z1);
+            const want = pcm(this.p["flap_zone_height"] ?? 36.0) || cm(36.0);
+            const maxH = top - io.z0 - pt - cm(10.0);
+            if (maxH < cm(10.0)) {
+                this.ctx.puts(`[KitchenUnitDesigner] ⚠ القلاب: الوحدة واطية قوي على قلاب فوق جزء تاني — اتعملت من غير تقسيم.`);
+                return null;
+            }
+            const h = rmin(rmax(want, cm(10.0)), maxH);
+            if (h < want - cm(0.05))
+                this.ctx.puts(`[KitchenUnitDesigner] ⚠ القلاب: ارتفاعه (${rround(want / cm(1.0), 1)} سم) أكبر من اللي الوحدة تسمح بيه — اتظبط على ${rround(h / cm(1.0), 1)} سم.`);
+            const z1 = top - h;
+            return [z1 - pt, z1];
+        });
+    }
+    /** with a flap the dividers would run through its shelf — not built (the flap zone is one compartment) */
+    verticalDividersEnabled() {
+        return !this.flapShelf() && super.verticalDividersEnabled();
+    }
+    buildShelves(e) {
+        const fs0 = this.flapShelf();
+        if (!fs0)
+            return super.buildShelves(e);
+        const io = this.innerOpening();
+        this.buildShelvesInRange(e, io.z0, fs0[0], this.shelfCount());
+    }
     buildFrontContent(e) {
-        const zone = this.activeZone();
+        let zone = this.activeZone();
+        const fs0 = this.flapShelf();
+        if (fs0) {
+            // the shelf the flap compartment stands on (fixed, full depth)
+            this.buildSingleShelfAt(e, fs0[0], "رف تحت القلاب", "above");
+            const n = Math.min(Math.max(toI(this.p["flap_zone_shelves"]), 0), 3);
+            if (n > 0)
+                this.buildShelvesInRange(e, fs0[1], this.innerOpening().z1, n);
+            const overlay = this.doorPosition() === "overlay";
+            const split = overlay ? (fs0[0] + fs0[1]) / 2.0 : null;
+            this.buildFlapFront(e, zone.x0, zone.x1, overlay ? split : fs0[1], zone.z1);
+            zone = { ...zone, z1: overlay ? split : fs0[0] };
+        }
         const dt = toS(this.p["door_type"]);
         if (dt === "drawer_top_two_doors_bottom") {
             const drawerH = cm(rmax(toF(this.p["top_drawer_height"]), 10.0));
@@ -31,6 +86,36 @@ export class StandardUnitBuilder extends CarcassBuilder {
         }
         this.buildTopValancePanel(e, this.innerOpening().x0, this.innerOpening().x1);
         this.buildBottomValancePanel(e, this.innerOpening().x0, this.innerOpening().x1);
+    }
+    /** the lift-up front of the flap zone: hinged at its top edge, opens up; a base unit with the built-in profile keeps the
+     *  handle gap at its top (the L under the counter). The mechanism is tagged so the hardware list buys the right one. */
+    buildFlapFront(e, x0, x1, z0, z1) {
+        const overlay = this.doorPosition() === "overlay";
+        const gap = overlay ? this.doorGapOverlay() : this.doorGapInset();
+        const fy0 = overlay ? -this.frontT() : 0, fy1 = overlay ? 0 : this.frontT();
+        const [, cz1] = this.frontZClamp(z0, z1);
+        const zx0 = x0 + gap, zx1 = x1 - gap, zz0 = z0 + gap;
+        const zz1 = rmax(cz1 - gap - (this.golaMode() ? this.handleRecess() : 0), zz0);
+        if (zx1 - zx0 < cm(10.0) || zz1 - zz0 < cm(10.0))
+            return;
+        let kind = toS(this.p["flap_lift"]);
+        if (!FLAP_LIFTS[kind])
+            kind = "aventos_hk";
+        const name = "ضلفة قلاب (رفع لفوق)";
+        const f = createBox(this.ctx, e, name, zx0, fy0, zz0, zx1, fy1, zz1, this.frontColor());
+        assignLayer(this.ctx, f, TAGS.front);
+        const mx = (zx0 + zx1) / 2.0;
+        tagDoorHinge3d(f, new Point3d(mx, fy0, zz1), new Vector3d(1, 0, 0), new Point3d(mx, fy0, zz0), new Vector3d(0, -1, 0));
+        f.setAttribute("KUD", "lift_kind", kind);
+        if (this.edgeBandingEnabled())
+            bandAllSideEdges(this.ctx, f, this.edgeBandingMaterial());
+        this.recordDoorLabel(name, zx0, zx1, zz0, zz1, FLAP_LIFTS[kind][1] ? "top" : null);
+        const h = (zz1 - zz0) / cm(1.0), w = (zx1 - zx0) / cm(1.0);
+        const lab = this.ctx.labels.last(this.unitId, name);
+        if (lab)
+            lab.note = `قلاب بيتفتح لفوق — ${FLAP_LIFTS[kind][0].replace(/ \((طقم|زوج)\)$/, "")}: قوة المكانيزم حسب وزن الضلفة (${rround(w, 1)}×${rround(h, 1)} سم) — شوف جدول المصنع${kind === "aventos_hl" ? " · من غير مفصلات (الذراعين شايلين الضلفة)" : ""}`;
+        if (h > 60.0 && kind !== "aventos_hl")
+            this.ctx.puts(`[KitchenUnitDesigner] ⚠ القلاب ارتفاعه ${rround(h, 1)} سم — طويل على ${FLAP_LIFTS[kind][0].replace(/ \(.*\)$/, "")}، الأنسب Aventos HL أو قلابين.`);
     }
 }
 export const ZONE_TYPES = {
@@ -545,7 +630,11 @@ export class PulloutBuilder extends CarcassBuilder {
         if (this.edgeBandingEnabled())
             bandAllSideEdges(this.ctx, f, this.edgeBandingMaterial());
         this.recordDoorLabel(label, x0, x1, z0, z1, null);
-        const t = this.drawerBoxT(), clr = this.drawerBoxSideClearance(), eb = this.edgeBandingEnabled();
+        // v127 (NOVERA): `pullout_runner` "bottom" = one pair of concealed undermount runners under a full base board (the spine stands
+        // on it) — 0.6 cm a side instead of the side runners' clearance, so a 15 cm pull-out keeps a usable tray
+        const under = toS(this.p["pullout_runner"]) === "bottom";
+        const t = this.drawerBoxT(), eb = this.edgeBandingEnabled();
+        const clr = under ? (toS(this.p["drawer_runner"]) === "bottom" ? rmin(this.drawerBoxSideClearance(), cm(1.0)) : cm(0.6)) : this.drawerBoxSideClearance();
         const mat = this.carcassMaterial(), matName = this.carcassMaterialName();
         const warn = (m) => this.ctx.puts(`[KitchenUnitDesigner] ⚠ بول أوت: ${m}`);
         // v110: never deeper than the space in front of the back (it was forced to ≥ 20 cm even in a shallow unit)
@@ -553,7 +642,7 @@ export class PulloutBuilder extends CarcassBuilder {
         const y0 = fy1, y1 = fy1 + depth;
         // v110: the spine / first tray stand ABOVE the carcass bottom (an overlay front starts below its top)
         const io0 = this.innerOpening();
-        const bz0 = rmax(zone.z0, io0.z0) + cm(0.5), bz1 = z1 - cm(1.5);
+        const bz0 = rmax(zone.z0, io0.z0) + (under ? cm(1.4) : cm(0.5)), bz1 = z1 - cm(1.5); // v127: the undermount runner lifts the base 1.4 cm
         if (depth < cm(15.0) || bz1 - bz0 < cm(10.0)) {
             warn(`المكان جوه الوحدة صغير على البول أوت (عمق ${rround(depth / cm(1.0), 1)} سم، ارتفاع ${rround(rmax(bz1 - bz0, 0) / cm(1.0), 1)} سم) — اتعمل الوش بس. زوّد عمق / ارتفاع الوحدة.`);
             tagDrawerSlide(group, rmin(rmax(depth, cm(5.0)) * 0.9, this.drawerSlideBase() + cm(30.0)));
@@ -565,12 +654,14 @@ export class PulloutBuilder extends CarcassBuilder {
         // the spine: one full-height panel on the runner side, screwed to the back of the front
         const io = this.innerOpening(), ox0 = rmax(x0, io.x0), ox1 = rmin(x1, io.x1); // v107: runners sit against the carcass sides
         const sx0 = spineRight ? ox1 - clr - t : ox0 + clr, sx1 = sx0 + t;
-        const sp = createBox(this.ctx, sub, "جنب البول أوت (الضهر الرأسي)", sx0, y0, bz0, sx1, y1, bz1, mat);
+        const sz0 = under ? bz0 + t : bz0; // v127: on undermount runners the spine stands on the base board
+        const sp = createBox(this.ctx, sub, "جنب البول أوت (الضهر الرأسي)", sx0, y0, sz0, sx1, y1, bz1, mat);
         assignLayer(this.ctx, sp, TAGS.front);
         if (eb) bandAllSideEdges(this.ctx, sp, this.edgeBandingMaterial());
-        this.ctx.labels.add(this.unitId, this.unitGroupName(), "جنب البول أوت (الضهر الرأسي)", y1 - y0, bz1 - bz0, t, {
+        this.ctx.labels.add(this.unitId, this.unitGroupName(), "جنب البول أوت (الضهر الرأسي)", y1 - y0, bz1 - sz0, t, {
             banded: { top: eb, bottom: false, left: false, right: false }, material: matName, // v98: like a drawer box wall — the top edge
-            note: "لوح رأسي واحد بارتفاع البول أوت: بيتثبت في ضهر الوش بدوبل ومسامير، والصواني بتتعلق فيه من جنب واحد، والمجرى بيتركب على وشه الخارجي",
+            note: under ? "لوح رأسي واحد بارتفاع البول أوت: واقف على القاعدة ومتثبت فيها وفي ضهر الوش بدوبل ومسامير، والصواني بتتعلق فيه من جنب واحد"
+                : "لوح رأسي واحد بارتفاع البول أوت: بيتثبت في ضهر الوش بدوبل ومسامير، والصواني بتتعلق فيه من جنب واحد، والمجرى بيتركب على وشه الخارجي",
         });
         // the trays: shallow open boxes hung off the spine (bottom + front, back and outer walls); the spine is the inner wall
         const nWant = Math.min(Math.max(toI(this.p["pullout_tray_count"]), 1), 8);
@@ -593,19 +684,30 @@ export class PulloutBuilder extends CarcassBuilder {
         const step = n > 1 ? span / (n - 1) : 0;
         for (let i = 0; i < n; i++) {
             const zt = bz0 + step * i, name = `صينية بول أوت ${i + 1}`;
-            const base = createBox(this.ctx, sub, `${name} - قاعدة`, tx0, y0, zt, tx1, y1, zt + bt, this.backMaterial());
-            assignLayer(this.ctx, base, TAGS.front);
-            this.ctx.labels.add(this.unitId, this.unitGroupName(), `${name} - قاعدة`, tx1 - tx0, y1 - y0, bt, { banded: { ...NO_BAND }, material: materialLabelName(this.backMaterial()), note: "بتتثبت في جنب البول أوت (الضهر الرأسي) بمسامير من بره" });
+            if (under && i === 0) {
+                // v127: the bottom tray IS the base board on the runners — full width (under the spine), a whole board
+                const ux0 = ox0 + clr, ux1 = ox1 - clr;
+                const base = createBox(this.ctx, sub, `${name} - قاعدة`, ux0, y0, zt, ux1, y1, zt + t, mat);
+                assignLayer(this.ctx, base, TAGS.front);
+                if (eb) bandEdges(this.ctx, base, [new Vector3d(-1, 0, 0), new Vector3d(1, 0, 0)], this.edgeBandingMaterial());
+                this.ctx.labels.add(this.unitId, this.unitGroupName(), `${name} - قاعدة`, ux1 - ux0, y1 - y0, t, { banded: { ...NO_BAND, left: eb, right: eb }, material: matName, note: "قاعدة البول أوت على مجرى سفلي مخفي (أندر ماونت): خرامين المجرى في ضهرها وكلبسات المجرى من قدام تحت الوش — الجنب الرأسي والحواف واقفين عليها" });
+            }
+            else {
+                const base = createBox(this.ctx, sub, `${name} - قاعدة`, tx0, y0, zt, tx1, y1, zt + bt, this.backMaterial());
+                assignLayer(this.ctx, base, TAGS.front);
+                this.ctx.labels.add(this.unitId, this.unitGroupName(), `${name} - قاعدة`, tx1 - tx0, y1 - y0, bt, { banded: { ...NO_BAND }, material: materialLabelName(this.backMaterial()), note: "بتتثبت في جنب البول أوت (الضهر الرأسي) بمسامير من بره" });
+            }
             const walls = [[`${name} - حافة أمامية`, tx0, y0, tx1, y0 + t, "x"], [`${name} - حافة خلفية`, tx0, y1 - t, tx1, y1, "x"],
                 [`${name} - حافة جانبية`, spineRight ? tx0 : tx1 - t, y0 + t, spineRight ? tx0 + t : tx1, y1 - t, "y"]];
             for (const [nm, a0, b0, a1, b1, ax] of walls) {
-                const w = createBox(this.ctx, sub, nm, a0, b0, zt + bt, a1, b1, zt + trayH, mat);
+                const wb = under && i === 0 ? t : bt; // v127: the undermount base is a whole board
+                const w = createBox(this.ctx, sub, nm, a0, b0, zt + wb, a1, b1, zt + wb + lip, mat);
                 assignLayer(this.ctx, w, TAGS.front);
                 if (eb) bandEdges(this.ctx, w, [new Vector3d(0, 0, 1)], this.edgeBandingMaterial());
-                this.ctx.labels.add(this.unitId, this.unitGroupName(), nm, ax === "x" ? a1 - a0 : b1 - b0, lip, t, { banded: { top: eb, bottom: false, left: false, right: false }, material: matName, note: ax === "y" ? "الحافة الخارجية — المجرى بيتركب عليها في الصينية الأولى والأخيرة" : "حافة عشان الحاجة ما تقعش لما البول أوت يتسحب" });
+                this.ctx.labels.add(this.unitId, this.unitGroupName(), nm, ax === "x" ? a1 - a0 : b1 - b0, lip, t, { banded: { top: eb, bottom: false, left: false, right: false }, material: matName, note: ax === "y" ? (under ? "الحافة الخارجية للصينية" : "الحافة الخارجية — المجرى بيتركب عليها في الصينية الأولى والأخيرة") : "حافة عشان الحاجة ما تقعش لما البول أوت يتسحب" });
             }
-            if (i === 0 || i === n - 1)
-                this.ctx.labels.addAssemblyMark(this.unitId, this.unitGroupName(), "drawer", `${name} (مجرى)`, zt + bt - this.z0Carcass());
+            if (under ? i === 0 : i === 0 || i === n - 1)
+                this.ctx.labels.addAssemblyMark(this.unitId, this.unitGroupName(), "drawer", `${name} (مجرى)`, (under ? zt : zt + bt) - this.z0Carcass());
         }
         tagDrawerSlide(group, rmin(depth * 0.9, this.drawerSlideBase() + cm(30.0)));
         this.buildTopValancePanel(e, this.innerOpening().x0, this.innerOpening().x1);

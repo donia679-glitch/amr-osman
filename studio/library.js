@@ -2,6 +2,7 @@
 // Everything here is plain engine parameters (the same ones the SketchUp plugin reads), so a unit
 // added from here rebuilds exactly the same in SketchUp. Nothing new in the engine itself.
 import { EXTRA_PRESETS } from "./decor.js";
+import X127 from "./lib127/index.js";
 
 // ------------------------------------------------------------------ kitchen & wardrobes (kitchen engine)
 const W = { unit_type: "wall", height: 70, depth: 32, include_toe_kick: false };
@@ -332,6 +333,9 @@ export const FREE_PANELS = {
   px_free_hall_tree: FREE("ركن مدخل: بنش وشماعات", "بنش جزم 4 خانات، حيطة شرايح أوك 8 سم بشريط شماعات ورف فوق.", hallTree(), { carcass: "hpl_white", accent: "wood_oak_natural_v", shelf: "hpl_white" }),
 };
 
+// v127: the additions in lib127/ (kitchen · sleep · rooms · engine), each gets the same helpers
+const X127R = X127.map((f) => f({ W, T, ACC, DC, M, P, FREE, b }) || {});
+for (const x of X127R) { Object.assign(KITCHEN, x.KITCHEN || {}); Object.assign(DRESSING, x.DRESSING || {}); Object.assign(PANEL, x.PANEL || {}); Object.assign(FREE_PANELS, x.FREE || {}); }
 Object.assign(EXTRA_PRESETS, PANEL, FREE_PANELS);
 
 // ------------------------------------------------------------------ smart designs: several units that work together
@@ -390,6 +394,8 @@ export const SMART = {
     { k: "k_wr_3col240", at: 0 }, { k: "k_wr_single50", at: 240, p: { height: 250, depth: 60 } },
   ] },
 };
+
+for (const x of X127R) Object.assign(SMART, x.SMART || {});
 
 // precomputed zero-waste library (apps/ipad/zwlib.js, built by scratchpad/lib/zwpre.py) — used when the sheet settings match its sig
 export { default as ZW_PRE } from "./zwlib.js";
